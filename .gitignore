@@ -1,0 +1,19 @@
+# Build directory
+build/
+
+# Clion Files
+.idea/
+
+# Compilation database and tags
+tags
+compile_commands.json
+
+# Swap files
+*.swp
+
+# macOS specific files
+.DS_Store
+.cache/
+
+# VSCode files
+.vscode/
