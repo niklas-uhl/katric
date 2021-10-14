@@ -1,4 +1,5 @@
 #include <io/distributed_graph_io.h>
+#include <limits>
 #pragma GCC diagnostic push
 #define BOOST_BIND_GLOBAL_PLACEHOLDERS
 #pragma GCC diagnostic ignored "-Wunused-variable"
@@ -181,7 +182,7 @@ LocalGraphView gen_local_graph(const Config& conf_, PEID rank, PEID size) {
         fix_broken_edge_list(edge_list, ranges, ghosts, rank, size);
     }
 
-    NodeId current_node = -1;
+    NodeId current_node = std::numeric_limits<NodeId>::max();
     Degree degree_counter = 0;
     std::vector<LocalGraphView::NodeInfo> node_info;
     std::vector<NodeId> edge_heads;
@@ -191,7 +192,7 @@ LocalGraphView gen_local_graph(const Config& conf_, PEID rank, PEID size) {
         if (tail >= local_from && tail < local_to) {
             Edge e{tail, head};
             if (current_node != e.tail) {
-                if (current_node != - 1) {
+                if (current_node != std::numeric_limits<NodeId>::max()) {
                     node_info.emplace_back(current_node, degree_counter);
                 }
                 degree_counter = 0;
@@ -266,7 +267,7 @@ LocalGraphView read_local_partitioned_edgelist(const std::string& input, const C
         fix_broken_edge_list(edges, ranges, ghosts, rank, size);
     }
 
-    NodeId current_node = -1;
+    NodeId current_node = std::numeric_limits<NodeId>::max();
     Degree degree_counter = 0;
     std::vector<LocalGraphView::NodeInfo> node_info;
     std::vector<NodeId> edge_heads;
@@ -276,7 +277,7 @@ LocalGraphView read_local_partitioned_edgelist(const std::string& input, const C
         if (tail >= local_from && tail < local_to) {
             Edge e{tail, head};
             if (current_node != e.tail) {
-                if (current_node != - 1) {
+                if (current_node != std::numeric_limits<NodeId>::max()) {
                     node_info.emplace_back(current_node, degree_counter);
                 }
                 degree_counter = 0;

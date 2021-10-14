@@ -5,12 +5,14 @@
 #ifndef PARALLEL_TRIANGLE_COUNTER_DISTRIBUTED_GRAPH_H
 #define PARALLEL_TRIANGLE_COUNTER_DISTRIBUTED_GRAPH_H
 
+#include <limits>
 #include <vector>
 #include <sstream>
 #include <google/dense_hash_map>
 #include <google/dense_hash_set>
 #include <util.h>
 #include <datastructures/graph_definitions.h>
+#include <datastructures/distributed/local_graph_view.h>
 #include <communicator.h>
 
 
@@ -35,8 +37,9 @@ public:
         NodeId node_info;
     };
     struct LocalData {
-        LocalData(bool is_interface) : is_interface(is_interface) { }
-        LocalData(): LocalData(false) { }
+        LocalData(NodeId global_id, bool is_interface) : global_id(global_id), is_interface(is_interface) { }
+        LocalData(): LocalData(0, false) { }
+        NodeId global_id;
         bool is_interface;
     };
 
@@ -278,7 +281,7 @@ public:
     [[nodiscard]] inline NodeId to_global_id(NodeId local_node_id) const {
         assert((is_local_from_local(local_node_id) || is_ghost(local_node_id)));
         if (!is_ghost(local_node_id)) {
-            return first_local_node_ + local_node_id;
+            return node_range_.first + local_node_id;
         } else {
             return get_ghost_data(local_node_id).global_id;
         }
@@ -289,8 +292,8 @@ public:
     }
 
     [[nodiscard]] inline NodeId to_local_id(NodeId global_node_id) const {
-        if (is_local(global_node_id)) {
-            NodeId local_id = global_node_id - first_local_node_;
+        if (consecutive_vertices_ && is_local(global_node_id)) {
+            NodeId local_id = global_node_id - node_range_.first;
             assert(is_local_from_local(local_id));
             return local_id;
         } else {
@@ -300,7 +303,7 @@ public:
     }
 
     [[nodiscard]] inline bool is_local(NodeId global_node_id) const {
-        return global_node_id >= first_local_node_ && global_node_id < first_local_node_ + local_node_count_;
+        return global_node_id >= node_range_.first && global_node_id < node_range_.second;
     }
 
     [[nodiscard]] inline bool is_local_from_local(NodeId local_node_id) const {
@@ -361,19 +364,45 @@ public:
         });
     }
 
-    DistributedGraph(LocalGraphView&& G) {
+    DistributedGraph(cetric::graph::LocalGraphView&& G) {
         local_node_count_ = G.node_info.size();
         first_out_.resize(local_node_count_ + 1);
         first_out_offset_.resize(local_edge_count_);
         degree_.resize(local_node_count_);
         local_data_.resize(local_node_count_);
         auto degree_sum = 0;
+        node_range_ = std::make_pair(std::numeric_limits<NodeId>::max(), std::numeric_limits<NodeId>::min());
+        global_to_local_.set_empty_key(-1);
+        global_to_local_.set_deleted_key(-2);
         for(size_t i = 0; i < G.node_info.size(); ++i) {
             first_out_[i] = degree_sum;
             degree_sum += G.node_info[i].degree;
+            NodeId local_id = i;
+            NodeId global_id = G.node_info[i].global_id;
+            global_to_local_[global_id] = local_id;
+            local_data_[local_id].global_id = global_id;
+            node_range_.first = std::min(node_range_.first, global_id);
+            node_range_.second = std::max(node_range_.second, global_id);
+        }
+        consecutive_vertices_ = node_range_.second - node_range_.first == local_node_count_;
+        if (consecutive_vertices_) {
+            for (const LocalGraphView::NodeInfo& node_info : G.node_info) {
+                global_to_local_.erase(node_info.global_id);
+            }
         }
         first_out_[local_node_count_] = degree_sum;
-        
+        head_ = std::move(G.edge_heads);
+        auto ghost_count = 0;
+        for(EdgeId edge_id = 0; edge_id < head_.size(); ++edge_id) {
+            NodeId head = head_[edge_id];
+            if (!is_local(head)) {
+                if (global_to_local_.find(head) == global_to_local_.end()) {
+                    global_to_local_[head] = ghost_count;
+                    ghost_count++;
+                }
+            }
+            head_[edge_id] = to_local_id(head);
+        }
     }
 
 private:
@@ -385,11 +414,12 @@ private:
     std::vector<NodeId> head_;
     std::vector<GhostData> ghost_data_;
     std::vector<LocalData> local_data_;
+    bool consecutive_vertices_;
     node_map global_to_local_;
     NodeId local_node_count_{};
     EdgeId local_edge_count_{};
     NodeId total_node_count_{};
-    NodeId first_local_node_{};
+    std::pair<NodeId, NodeId> node_range_;
     PEID rank_;
     PEID size_;
 };

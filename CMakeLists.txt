@@ -12,18 +12,27 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
     set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
     # Add build type Asan for using AddressSanitizer
-    include(cmake/AddAsanBuildType.cmake)
+    #include(cmake/AddAsanBuildType.cmake)
+    include(CTest)
 endif()
 
 option(USE_SUBMODULES "This options prevents loading dependencies via FetchContent, but assumes that they are loaded as git submodules" OFF)
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_LIST_DIR}/cmake)
 
+
 # set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fno-omit-frame-pointer -fsanitize=address")
 # set (CMAKE_LINKER_FLAGS_DEBUG "${CMAKE_LINKER_FLAGS_DEBUG} -fno-omit-frame-pointer -fsanitize=address")
 
 if(NOT USE_SUBMODULES)
     include(FetchContent)
+
+    FetchContent_Declare(
+        catch
+        GIT_REPOSITORY https://github.com/catchorg/Catch2.git
+        GIT_TAG v2.13.7
+    )
+    FetchContent_MakeAvailable(catch)
 
     FetchContent_Declare(
         CLI11
@@ -67,7 +76,7 @@ else()
     set(kagen_SOURCE_DIR ${PROJECT_SOURCE_DIR}/extern/kagen)
 endif()
 if(NOT kagen_POPULATED)
-    add_subdirectory("${kagen_SOURCE_DIR}")
+    add_subdirectory("${kagen_SOURCE_DIR}" EXCLUDE_FROM_ALL)
     set(KAGEN_INCLUDE_DIRS
             ${kagen_SOURCE_DIR}/extlib/sampling/sampling
             ${kagen_SOURCE_DIR}/extlib/sampling/extlib/tlx/tlx
@@ -106,3 +115,7 @@ add_subdirectory(src)
 add_subdirectory(apps)
 
 add_subdirectory(extern)
+
+if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME AND BUILD_TESTING)
+    add_subdirectory(tests)
+endif()
