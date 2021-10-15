@@ -87,5 +87,10 @@ std::ostream& operator<< (std::ostream& out, const std::vector<T>& v) {
     return out;
 }
 
+template<class T, class V>
+std::ostream& operator<< (std::ostream& out, const std::pair<T,V>& p) {
+    return out << "<" << p.first << ", " << p.second << ">";
+}
+
 
 #endif //PARALLEL_TRIANGLE_COUNTER_UTIL_H

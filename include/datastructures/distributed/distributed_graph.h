@@ -303,7 +303,7 @@ public:
     }
 
     [[nodiscard]] inline bool is_local(NodeId global_node_id) const {
-        return global_node_id >= node_range_.first && global_node_id < node_range_.second;
+        return global_node_id >= node_range_.first && global_node_id <= node_range_.second;
     }
 
     [[nodiscard]] inline bool is_local_from_local(NodeId local_node_id) const {
@@ -315,7 +315,13 @@ public:
     }
 
     [[nodiscard]] inline bool is_ghost_from_global(NodeId global_node_id) const {
-        return global_to_local_.find(global_node_id) != global_to_local_.end();
+        auto it = global_to_local_.find(global_node_id);
+        if (it == global_to_local_.end()) {
+            return false;
+        } else {
+            NodeId local_id = (*it).second;
+            return local_id >= local_node_count_;
+        }
     }
 
 
@@ -367,19 +373,20 @@ public:
     DistributedGraph(cetric::graph::LocalGraphView&& G) {
         local_node_count_ = G.node_info.size();
         first_out_.resize(local_node_count_ + 1);
-        first_out_offset_.resize(local_edge_count_);
+        first_out_offset_.resize(local_node_count_, 0);
         degree_.resize(local_node_count_);
         local_data_.resize(local_node_count_);
         auto degree_sum = 0;
         node_range_ = std::make_pair(std::numeric_limits<NodeId>::max(), std::numeric_limits<NodeId>::min());
         global_to_local_.set_empty_key(-1);
         global_to_local_.set_deleted_key(-2);
-        for(size_t i = 0; i < G.node_info.size(); ++i) {
+        for (size_t i = 0; i < G.node_info.size(); ++i) {
             first_out_[i] = degree_sum;
             degree_sum += G.node_info[i].degree;
             NodeId local_id = i;
             NodeId global_id = G.node_info[i].global_id;
             global_to_local_[global_id] = local_id;
+            degree_[local_id] = G.node_info[i].degree;
             local_data_[local_id].global_id = global_id;
             node_range_.first = std::min(node_range_.first, global_id);
             node_range_.second = std::max(node_range_.second, global_id);
@@ -393,11 +400,16 @@ public:
         first_out_[local_node_count_] = degree_sum;
         head_ = std::move(G.edge_heads);
         auto ghost_count = 0;
-        for(EdgeId edge_id = 0; edge_id < head_.size(); ++edge_id) {
+        for (EdgeId edge_id = 0; edge_id < head_.size(); ++edge_id) {
             NodeId head = head_[edge_id];
             if (!is_local(head)) {
                 if (global_to_local_.find(head) == global_to_local_.end()) {
-                    global_to_local_[head] = ghost_count;
+                    NodeId local_id = local_node_count_ + ghost_count;
+                    global_to_local_[head] = local_id;
+                    GhostData ghost_data;
+                    ghost_data.global_id = head;
+                    ghost_data.rank = -1;
+                    ghost_data_.emplace_back(std::move(ghost_data));
                     ghost_count++;
                 }
             }

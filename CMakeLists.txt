@@ -20,6 +20,15 @@ option(USE_SUBMODULES "This options prevents loading dependencies via FetchConte
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_LIST_DIR}/cmake)
 
+find_package(sparsehash REQUIRED)
+add_library(sparsehash INTERFACE)
+target_include_directories(sparsehash INTERFACE ${SPARSEHASH_INCLUDE_DIR})
+
+find_package(Boost)
+#find_package(OpenMP REQUIRED)
+find_package(MPI REQUIRED)
+message(STATUS "Run: ${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} ${MPIEXEC_MAX_NUMPROCS} ${MPIEXEC_PREFLAGS} EXECUTABLE ${MPIEXEC_POSTFLAGS} ARGS")
+
 
 # set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fno-omit-frame-pointer -fsanitize=address")
 # set (CMAKE_LINKER_FLAGS_DEBUG "${CMAKE_LINKER_FLAGS_DEBUG} -fno-omit-frame-pointer -fsanitize=address")
@@ -76,34 +85,33 @@ else()
     set(kagen_SOURCE_DIR ${PROJECT_SOURCE_DIR}/extern/kagen)
 endif()
 if(NOT kagen_POPULATED)
-    add_subdirectory("${kagen_SOURCE_DIR}" EXCLUDE_FROM_ALL)
+    #add_subdirectory("${kagen_SOURCE_DIR}" EXCLUDE_FROM_ALL)
     set(KAGEN_INCLUDE_DIRS
-            ${kagen_SOURCE_DIR}/extlib/sampling/sampling
-            ${kagen_SOURCE_DIR}/extlib/sampling/extlib/tlx/tlx
-            ${kagen_SOURCE_DIR}/app
-            ${kagen_SOURCE_DIR}/include
-            ${kagen_SOURCE_DIR}/include/generators
-            ${kagen_SOURCE_DIR}/include/generators/barabassi
-            ${kagen_SOURCE_DIR}/include/generators/geometric
-            ${kagen_SOURCE_DIR}/include/generators/geometric/delaunay
-            ${kagen_SOURCE_DIR}/include/generators/geometric/rgg
-            ${kagen_SOURCE_DIR}/include/generators/gnm
-            ${kagen_SOURCE_DIR}/include/generators/gnp
-            ${kagen_SOURCE_DIR}/include/generators/hyperbolic
-            ${kagen_SOURCE_DIR}/include/io
-            ${kagen_SOURCE_DIR}/include/tools
-            ${kagen_SOURCE_DIR}/interface/)
-    set(KAGEN_LINK_LIBRARIES sampling tlx)
+        ${kagen_SOURCE_DIR}/extlib/sampling/sampling
+        ${kagen_SOURCE_DIR}/app
+        ${kagen_SOURCE_DIR}/include
+        ${kagen_SOURCE_DIR}/include/generators
+        ${kagen_SOURCE_DIR}/include/generators/barabassi
+        ${kagen_SOURCE_DIR}/include/generators/geometric
+        ${kagen_SOURCE_DIR}/include/generators/geometric/delaunay
+        ${kagen_SOURCE_DIR}/include/generators/geometric/rgg
+        ${kagen_SOURCE_DIR}/include/generators/gnm
+        ${kagen_SOURCE_DIR}/include/generators/gnp
+        ${kagen_SOURCE_DIR}/include/generators/hyperbolic
+        ${kagen_SOURCE_DIR}/include/io
+        ${kagen_SOURCE_DIR}/include/tools
+        ${kagen_SOURCE_DIR}/interface/)
+    find_package(CGAL)
+    add_subdirectory(${kagen_SOURCE_DIR}/extlib/sampling EXCLUDE_FROM_ALL)
+    add_library(kagen INTERFACE)
+    target_include_directories(kagen INTERFACE ${KAGEN_INCLUDE_DIRS})
+    target_link_libraries(kagen INTERFACE sampling tlx CGAL::CGAL)
+    #set(KAGEN_LINK_LIBRARIES sampling tlx)
     set(kagen_POPULATED TRUE)
 endif()
 
 #FetchContent_MakeAvailable(tlx)
 
-find_package(sparsehash REQUIRED)
-find_package(Boost)
-#find_package(OpenMP REQUIRED)
-find_package(MPI REQUIRED)
-message(STATUS "Run: ${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} ${MPIEXEC_MAX_NUMPROCS} ${MPIEXEC_PREFLAGS} EXECUTABLE ${MPIEXEC_POSTFLAGS} ARGS")
 # Library usage:
 #target_link_libraries(<openmp-app> PUBLIC OpenMP::OpenMP_CXX)
 #target_link_libraries(<mpi-app> PUBLIC MPI::MPI_CXX)

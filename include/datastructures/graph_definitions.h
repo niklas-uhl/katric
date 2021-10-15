@@ -3,6 +3,7 @@
 
 #include <cassert>
 #include <cinttypes>
+#include <ostream>
 #include <utility>
 
 namespace cetric {
@@ -21,11 +22,20 @@ struct Edge {
     Edge(NodeId tail, NodeId head): tail(tail), head(head) { }
     Edge reverse() const {
         return Edge {head, tail};
-    };
+    }
+    template<typename VertexMap>
+    Edge map(VertexMap map) {
+        return Edge {map(tail), map(head)};
+    }
 
     NodeId tail;
     NodeId head;
 };
+
+inline std::ostream& operator<<(std::ostream& out, const Edge& edge) {
+    out << "(" << edge.tail << ", " << edge.head << ")";
+    return out;
+}
 
 inline bool operator==(const Edge& x, const Edge& y) {
     return x.tail == y.tail && x.head == y.head;

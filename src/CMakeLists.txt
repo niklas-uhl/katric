@@ -7,12 +7,12 @@ set(FILE_LIST
 add_library(cetric-lib ${FILE_LIST} ${HEADER_LIST})
 
 target_include_directories(cetric-lib PUBLIC ${PROJECT_SOURCE_DIR}/include/)
-target_include_directories(cetric-lib PUBLIC ${SPARSEHASH_INCLUDE_DIR})
-target_include_directories(cetric-lib PUBLIC ${KAGEN_INCLUDE_DIRS})
 
-target_link_libraries(cetric-lib PUBLIC local_spooky)
+target_link_libraries(cetric-lib PRIVATE local_spooky)
 target_link_libraries(cetric-lib PUBLIC MPI::MPI_CXX)
-target_link_libraries(cetric-lib PUBLIC ${KAGEN_LINK_LIBRARIES})
+target_link_libraries(cetric-lib PRIVATE kagen)
+target_link_libraries(cetric-lib PUBLIC tlx)
+target_link_libraries(cetric-lib PRIVATE sparsehash)
 target_link_libraries(cetric-lib PUBLIC nlohmann_json::nlohmann_json) 
 
 
