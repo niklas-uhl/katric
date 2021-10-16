@@ -4,7 +4,7 @@
 #include <cassert>
 #include <cinttypes>
 #include <ostream>
-#include <utility>
+#include <algorithm>
 
 namespace cetric {
     namespace graph {

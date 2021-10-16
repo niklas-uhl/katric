@@ -7,6 +7,9 @@
 #include <counters/cetric.h>
 #include <nlohmann/json.hpp>
 #include <unistd.h>
+#include <iostream>
+#include <algorithm>
+#include <cstdlib>
 
 Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
     (void) size;
