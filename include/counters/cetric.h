@@ -3,6 +3,8 @@
 
 #include "cost_function.h"
 #include <counters/cetric_edge_iterator.h>
+#include "datastructures/distributed/distributed_graph.h"
+#include "datastructures/graph_definitions.h"
 #include "tlx/algorithm/multiway_merge.hpp"
 #include "tlx/multi_timer.hpp"
 #include <util.h>
@@ -13,7 +15,7 @@
 #include <timer.h>
 #include <load_balancing.h>
 
-void preprocessing(DistributedGraph& G, cetric::profiling::Statistics& stats, PEID rank, PEID size) {
+inline void preprocessing(DistributedGraph& G, cetric::profiling::Statistics& stats, PEID rank, PEID size) {
     GraphCommunicator comm(G, rank, size, MessageTag::Orientation);
     comm.distribute_degree(stats.local.preprocessing.message_statistics);
     auto degree = [&](NodeId node) {
@@ -52,9 +54,11 @@ void run_cetric(Graph& G, cetric::profiling::Statistics& stats, const Config& co
     /*     preprocessing(G, stats, rank, size); */
     /* } */
     /* atomic_debug(G); */
-    CompactGraph G_compact(std::move(G));
     //atomic_debug(G_compact);
-    cetric::load_balancing::LoadBalancer lb(G_compact, conf);
+    auto cost = [](LocalGraphView& G_local, NodeId node) {
+        return G_local.node_info[node].degree;
+    };
+    G = cetric::load_balancing::LoadBalancer::run(G.to_local_graph_view(), cost, conf);
     //atomic_debug(G_compact);
     //cetric::CetricEdgeIterator<CompactGraph, true, true> ctr(G_compact, conf, rank, size);
     //tlx::MultiTimer dummy;

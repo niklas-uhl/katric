@@ -5,6 +5,7 @@
 #ifndef PARALLEL_TRIANGLE_COUNTER_PARALLEL_GHOST_NODE_ITERATOR_H
 #define PARALLEL_TRIANGLE_COUNTER_PARALLEL_GHOST_NODE_ITERATOR_H
 
+#include <config.h>
 #include <statistics.h>
 #include <timer.h>
 #include <communicator.h>
@@ -12,6 +13,7 @@
 
 
 namespace cetric {
+  using namespace graph;
 template<class GraphType, bool compress_more, bool use_flags = false>
 class CetricEdgeIterator {
 public:

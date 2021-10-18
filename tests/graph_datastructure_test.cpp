@@ -1,3 +1,4 @@
+#include "datastructures/graph_definitions.h"
 #include <algorithm>
 #include <catch2/catch.hpp>
 #include <datastructures/distributed/distributed_graph.h>
@@ -7,7 +8,7 @@
 #include <iterator>
 #include <mpi.h>
 #include <numeric>
-#include <string>
+#include <vector>
 
 TEST_CASE("Construct graph from input file", "[io][datastructure]") {
     using namespace cetric;
@@ -123,6 +124,42 @@ TEST_CASE("Construct graph from input file", "[io][datastructure]") {
                 in_degree++;
             });
             CHECK(in_degree == 0);
+        });
+    }
+    SECTION("orientation works") {
+        G.orient([&](NodeId x, NodeId y) {
+            return G.to_global_id(x) < G.to_global_id(y);
+        });
+        G.for_each_local_node([&](NodeId node) {
+          Degree degree = 0;
+          G.for_each_local_out_edge(node, [&](Edge edge) {
+            edge =
+                edge.map([&](NodeId local) { return G.to_global_id(local); });
+            CHECK(edge.tail < edge.head);
+            degree++;
+          });
+          G.for_each_local_in_edge(node, [&](Edge edge) {
+            edge =
+                edge.map([&](NodeId local) { return G.to_global_id(local); });
+            CHECK(edge.tail < edge.head);
+            degree++;
+          });
+          REQUIRE(degree == G.degree(node));
+        });
+    }
+    SECTION("Graph expansion works") {
+        auto to_global = [&](NodeId node_id) { return G.to_global_id(node_id); };
+        G.expand_ghosts();
+        G.for_each_ghost_node([&](NodeId node) {
+            std::vector<Edge> edges;
+            G.for_each_edge(node, [&](Edge edge) {
+                NodeId global_id = G.to_global_id(edge.head);
+                INFO("global_id " << global_id);
+                CHECK(G.to_local_id(global_id) == edge.head);
+                // edges.emplace_back(to_global(edge.tail), to_global(edge.head));
+                edges.push_back(edge.map(to_global));
+            });
+            CHECK_THAT(G_full[to_global(node)], Catch::Contains(edges));
         });
     }
 }

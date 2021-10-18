@@ -47,15 +47,15 @@ using PEID = int;
 #endif
 
 template<class MessageType>
-inline void atomic_debug(MessageType message, bool newline = true) {
-    std::stringstream out;
+inline void atomic_debug(MessageType message, std::ostream& out = std::cout, bool newline = true) {
+    std::stringstream sout;
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     out << "[R" << rank << "] " << message;
     if (newline) {
-        out << std::endl;
+        sout << std::endl;
     }
-    std::cout << out.str();
+    out << sout.str();
 }
 
 constexpr unsigned long long log2(unsigned long long x) {

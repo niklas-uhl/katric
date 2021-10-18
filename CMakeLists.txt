@@ -40,6 +40,7 @@ if(NOT USE_SUBMODULES)
         catch
         GIT_REPOSITORY https://github.com/catchorg/Catch2.git
         GIT_TAG v2.13.7
+        GIT_PROGRESS TRUE
     )
     FetchContent_MakeAvailable(catch)
 
@@ -47,6 +48,7 @@ if(NOT USE_SUBMODULES)
         CLI11
         GIT_REPOSITORY https://github.com/CLIUtils/CLI11.git
         GIT_TAG v1.9.1
+        GIT_PROGRESS TRUE
         )
     FetchContent_MakeAvailable(CLI11)
 
@@ -54,6 +56,7 @@ if(NOT USE_SUBMODULES)
         json 
         GIT_REPOSITORY https://github.com/ArthurSonzogni/nlohmann_json_cmake_fetchcontent.git
         GIT_TAG v3.10.2
+        GIT_PROGRESS TRUE
         )
     FetchContent_GetProperties(json)
     if (NOT json_POPULATED)
@@ -63,8 +66,9 @@ if(NOT USE_SUBMODULES)
 
     FetchContent_Declare(
         kagen
-        GIT_REPOSITORY https://github.com/sebalamm/KaGen.git
-        GIT_TAG 1fe87f7131ca740d803b764d2fab2fae819abf33
+        GIT_REPOSITORY https://github.com/niklas-uhl/KaGen.git
+        GIT_TAG origin/update-sampling
+        GIT_PROGRESS TRUE
         )
     FetchContent_GetProperties(kagen)
     if(NOT kagen_POPULATED)

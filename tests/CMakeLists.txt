@@ -77,4 +77,6 @@ nuhl_add_mpi_test_executable(CATCH TARGET graph_datastructure_test FILES graph_d
 target_link_libraries(graph_datastructure_test PRIVATE cetric-lib)
 nuhl_add_mpi_test(graph_datastructure_test CORES 2 4 8 16)
 
-nuhl_add_mpi_test_executable(GTEST TARGET wrapper-test FILES ./mpi-wrapper-listener-unit-tests.cpp)
+nuhl_add_mpi_test_executable(GTEST TARGET load_balancing_test FILES load_balancing_test.cpp)
+target_link_libraries(load_balancing_test PRIVATE cetric-lib)
+nuhl_add_mpi_test(load_balancing_test CORES 2 4 8 16)

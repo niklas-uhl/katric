@@ -5,6 +5,7 @@
 #ifndef PARALLEL_TRIANGLE_COUNTER_DISTRIBUTED_GRAPH_H
 #define PARALLEL_TRIANGLE_COUNTER_DISTRIBUTED_GRAPH_H
 
+#include <cstddef>
 #include <limits>
 #include <vector>
 #include <sstream>
@@ -182,37 +183,6 @@ public:
 
     }
 
-    inline void orient() {
-        auto node_cmp = [&](NodeId a, NodeId b) {
-            return std::tuple<Degree, NodeId>(degree(a), a) < std::tuple<Degree, NodeId>(degree(b), b);
-        };
-        auto is_outgoing = [&](NodeId tail, NodeId head) {
-            if (is_ghost(head)) {
-                return get_ghost_data(head).rank > rank_;
-            } else {
-                return node_cmp(tail, head);
-            }
-        };
-        for_each_local_node_and_ghost([&](NodeId node) {
-            int64_t left = first_out_[node];
-            int64_t right = first_out_[node] + degree_[node] - 1;
-            while (left <= right) {
-                while (left <= right && !is_outgoing(node, head_[left])) {
-                    left++;
-                }
-                while (right >= (int64_t) first_out_[node] && is_outgoing(node, head_[right])) {
-                    right--;
-                }
-                if (left <= right) {
-                    std::iter_swap(head_.begin() + left, head_.begin() + right);
-                    // left++;
-                    // right--;
-                }
-            }
-            first_out_offset_[node] = left - first_out_[node];
-        });
-    }
-
     inline void set_ghost_info(NodeId local_node_id, NodeId ghost_info) {
         assert(is_ghost(local_node_id));
         ghost_data_[local_node_id - local_node_count_].node_info = ghost_info;
@@ -370,6 +340,32 @@ public:
         });
     }
 
+    void expand_ghosts() {
+        std::vector<std::vector<NodeId>> ghost_neighbors(ghost_count());
+        size_t ghost_edges = 0;
+        for_each_local_node([&](NodeId node) {
+            for_each_edge(node, [&](Edge edge) {
+                if (is_ghost(edge.head)) {
+                    ghost_neighbors[ghost_to_ghost_index(edge.head)].push_back(edge.tail);
+                    ghost_edges++;
+                }
+            });
+        });
+        size_t edge_index = head_.size();
+        head_.resize(head_.size() + ghost_edges);
+        first_out_.resize(first_out_.size() + ghost_count());
+        first_out_offset_.resize(first_out_offset_.size() + ghost_count(), 0);
+        degree_.resize(degree_.size() + ghost_count());
+        for(size_t i = 0; i < ghost_neighbors.size(); ++i) {
+            first_out_[local_node_count_ + i + 1] = first_out_[local_node_count_ + i] + ghost_neighbors[i].size();
+            degree_[local_node_count_ + i] = ghost_neighbors[i].size();
+            for(NodeId neighbor : ghost_neighbors[i]) {
+                head_[edge_index] = neighbor;
+                edge_index++;
+            }
+        }
+    }
+
     DistributedGraph(cetric::graph::LocalGraphView&& G) {
         local_node_count_ = G.node_info.size();
         first_out_.resize(local_node_count_ + 1);
@@ -417,7 +413,47 @@ public:
         }
     }
 
+    LocalGraphView to_local_graph_view(bool remove_isolated = true, bool keep_only_out_edges = true) {
+        DistributedGraph G = std::move(*this);
+        std::vector<LocalGraphView::NodeInfo> node_info;
+        EdgeId edge_counter = 0;
+        G.for_each_local_node([&](NodeId node) {
+            auto degree = G.degree(node);
+            if (remove_isolated && (degree == 0 || (keep_only_out_edges && G.outdegree(node) == 0))) {
+                return;
+            }
+            auto global_id = G.to_global_id(node);
+            if (keep_only_out_edges) {
+                degree = G.outdegree(node);
+            }
+            node_info.emplace_back(global_id, degree);
+            if (keep_only_out_edges) {
+                G.for_each_local_out_edge(node, [&](Edge edge) {
+                    G.head_[edge_counter] = G.to_global_id(edge.head);
+                    edge_counter++;
+                });
+            } else {
+                G.for_each_edge(node, [&](Edge edge) {
+                    G.head_[edge_counter] = G.to_global_id(edge.head);
+                    edge_counter++;
+                });
+            }
+        });
+        G.head_.resize(edge_counter);
+        G.head_.shrink_to_fit();
+        auto head = std::move(G.head_);
+        LocalGraphView view;
+        view.node_info = std::move(node_info);
+        view.edge_heads = std::move(head);
+        return view;
+    }
+
 private:
+
+    NodeId ghost_to_ghost_index(NodeId local_node_id) const {
+        assert( is_ghost(local_node_id) );
+        return local_node_id - local_node_count_;
+    }
 
     using node_map = google::dense_hash_map<NodeId, NodeId>;
     std::vector<EdgeId> first_out_;
