@@ -13,7 +13,7 @@
 TEST_CASE("Construct graph from input file", "[io][datastructure]") {
     using namespace cetric;
     std::vector<std::vector<Edge>> G_full;
-    auto input = GENERATE("examples/metis-sample.metis", "examples/triangle.metis");
+    auto input = GENERATE("examples/metis-sample.metis", "examples/triangle.metis", "examples/com-amazon.metis");
     //auto input = GENERATE("examples/triangle.metis");
     INFO(input);
 

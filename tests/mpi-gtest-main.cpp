@@ -8,6 +8,7 @@
  ******************************************************************************/
 
 #include "gtest/gtest.h"
+#include <stdexcept>
 #include "gtest-mpi-listener.hpp"
 #include "mpi.h"
 
@@ -19,6 +20,12 @@ int main(int argc, char** argv) {
   MPI_Init(&argc, &argv);
 
   // Add object that will finalize MPI on exit; Google Test owns this pointer
+
+  int init_flag;
+  MPI_Initialized(&init_flag);
+  if (!init_flag) {
+      throw std::runtime_error("Not initialized");
+  }
   ::testing::AddGlobalTestEnvironment(new GTestMPIListener::MPIEnvironment);
 
   // Get the event listener list.
