@@ -22,8 +22,6 @@ namespace {
             MPI_Comm_rank(MPI_COMM_WORLD, &rank);
             MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-            DEBUG_BARRIER(rank);
-
             // our metis parser should work sequentially, so we read the whole graph
             EdgeId total_number_of_edges = 0;
             read_metis(
@@ -50,20 +48,25 @@ namespace {
     };
 
     TEST_P(LoadBalancing, BalancingWithConstCost) {
-        DEBUG_BARRIER(rank);
         auto G_view_old = G_view;
         auto cost = [](const LocalGraphView&, NodeId) { return 1; };
+	size_t per_pe_cost = (G_full.size() + size - 1) / size;
         G_view = load_balancing::LoadBalancer::run(std::move(G_view), cost, conf);
-        EXPECT_EQ(G_view_old.node_info.size(), G_view.node_info.size());
         for (size_t node = 0; node < G_view.node_info.size(); ++node) {
             auto expected_degree = G_full.at(G_view.node_info.at(node).global_id).size();
             auto actual_degree = G_view.node_info.at(node).degree;
+            EXPECT_EQ(G_view.node_info.at(node).global_id / per_pe_cost, rank);
             EXPECT_EQ(expected_degree, actual_degree);
+        }
+        NodeId local_node_count = G_view.node_info.size();
+        NodeId total_node_count = 0;
+        MPI_Reduce(&local_node_count, &total_node_count, 1, MPI_NODE, MPI_SUM, 0, MPI_COMM_WORLD);
+        if (rank == 0) {
+            ASSERT_EQ(total_node_count, G_full.size());
         }
     }
 
     TEST_P(LoadBalancing, BalancingWithDegree) {
-        auto G_view_old = G_view;
         std::vector<NodeId> actual_cost(G_full.size());
         auto running_sum = 0;
         for (size_t i = 0; i < G_full.size(); ++i) {

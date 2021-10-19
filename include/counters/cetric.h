@@ -60,7 +60,7 @@ void run_cetric(Graph& G, cetric::profiling::Statistics& stats, const Config& co
     };
     G = cetric::load_balancing::LoadBalancer::run(G.to_local_graph_view(), cost, conf);
     //atomic_debug(G_compact);
-    cetric::CetricEdgeIterator<CompactGraph, true, true> ctr(G, conf, rank, size);
+    //cetric::CetricEdgeIterator<CompactGraph, true, true> ctr(G, conf, rank, size);
     //tlx::MultiTimer dummy;
     //ctr.get_triangle_count(stats);
     /* size_t triangle_count = 0; */
