@@ -43,7 +43,6 @@ inline void preprocessing(DistributedGraph& G, cetric::profiling::Statistics& st
 
 template<class Graph>
 void run_cetric(Graph& G, cetric::profiling::Statistics& stats, const Config& conf, PEID rank, PEID size) {
-    preprocessing(G, stats, rank, size);
 
     /* if (conf.cost_function != "N") { */
     /*     auto G_simple = make_simple(std::move(G)); */
@@ -58,9 +57,14 @@ void run_cetric(Graph& G, cetric::profiling::Statistics& stats, const Config& co
     auto cost = [](LocalGraphView& G_local, NodeId node) {
         return G_local.node_info[node].degree;
     };
-    G = cetric::load_balancing::LoadBalancer::run(G.to_local_graph_view(), cost, conf);
-    //atomic_debug(G_compact);
-    //cetric::CetricEdgeIterator<CompactGraph, true, true> ctr(G, conf, rank, size);
+    auto tmp = cetric::load_balancing::LoadBalancer::run(G.to_local_graph_view(), cost, conf);
+    G = DistributedGraph(std::move(tmp), rank, size);
+    G.expand_ghosts();
+    G.find_ghost_ranks();
+    preprocessing(G, stats, rank, size);
+    // atomic_debug(G_compact);
+    cetric::CetricEdgeIterator<DistributedGraph, true, true> ctr(G, conf, rank, size);
+    ctr.get_triangle_count(stats);
     //tlx::MultiTimer dummy;
     //ctr.get_triangle_count(stats);
     /* size_t triangle_count = 0; */

@@ -6,7 +6,7 @@
 #define PARALLEL_TRIANGLE_COUNTER_GRAPH_COMMUNICATOR_H
 
 #include <datastructures/graph_definitions.h>
-#include <comm_utils.h>
+#include <communicator.h>
 #include <util.h>
 #include <optional>
 #include <vector>

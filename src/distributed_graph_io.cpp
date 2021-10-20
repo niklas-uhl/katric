@@ -103,7 +103,7 @@ PEID get_PE_from_node_ranges(NodeId node, const std::vector<std::pair<NodeId, No
     NodeId local_to;
     for (size_t i = 0; i < ranges.size(); ++i) {
         std::tie(local_from, local_to) = ranges[i];
-        if (local_from <= node && node < local_to) {
+        if (local_from <= node && node <= local_to) {
             return i;
         }
     }

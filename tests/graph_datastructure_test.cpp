@@ -51,7 +51,7 @@ TEST_CASE("Construct graph from input file", "[io][datastructure]") {
     }
 
     //construct the "real" datastructure
-    DistributedGraph G = std::move(G_view);
+    DistributedGraph G = DistributedGraph(std::move(G_view), rank, size);
     SECTION( "global and local ids are correct" ) {
         std::vector<NodeId> local_nodes;
         G.for_each_local_node([&](NodeId node) {

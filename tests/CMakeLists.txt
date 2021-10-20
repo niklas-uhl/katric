@@ -80,3 +80,7 @@ nuhl_add_mpi_test(graph_datastructure_test CORES 2 4 8 16)
 nuhl_add_mpi_test_executable(GTEST TARGET load_balancing_test FILES load_balancing_test.cpp)
 target_link_libraries(load_balancing_test PRIVATE cetric-lib)
 nuhl_add_mpi_test(load_balancing_test CORES 2 4 8 16)
+
+nuhl_add_mpi_test_executable(GTEST TARGET communicator_test FILES gather_test.cpp)
+target_link_libraries(communicator_test PRIVATE cetric-lib)
+nuhl_add_mpi_test(communicator_test CORES 2 4 8 16)

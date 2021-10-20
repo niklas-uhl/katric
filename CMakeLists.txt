@@ -53,7 +53,7 @@ if(NOT USE_SUBMODULES)
     FetchContent_MakeAvailable(CLI11)
 
     FetchContent_Declare(
-        json 
+        json
         GIT_REPOSITORY https://github.com/ArthurSonzogni/nlohmann_json_cmake_fetchcontent.git
         GIT_TAG v3.10.2
         GIT_PROGRESS TRUE
@@ -68,26 +68,26 @@ if(NOT USE_SUBMODULES)
         kagen
         GIT_REPOSITORY https://github.com/niklas-uhl/KaGen.git
         GIT_TAG origin/update-sampling
-        GIT_PROGRESS TRUE
         )
     FetchContent_GetProperties(kagen)
     if(NOT kagen_POPULATED)
         FetchContent_Populate(kagen)
         set(kagen_POPULATED FALSE)
     endif()
-    FetchContent_Declare(
-            tlx
-            GIT_REPOSITORY https://github.com/tlx/tlx.git
-            SOURCE_DIR ${kagen_SOURCE_DIR}/extlib/sampling/extlib/tlx/tlx
-    )
-    if(NOT tlx_POPULATED)
-        FetchContent_Populate(tlx)
-    endif()
+    # FetchContent_Declare(
+    #         tlx
+    #         GIT_REPOSITORY https://github.com/tlx/tlx.git
+    #         SOURCE_DIR ${kagen_SOURCE_DIR}/extlib/sampling/extlib/tlx/tlx
+    # )
+    # if(NOT tlx_POPULATED)
+    #     FetchContent_Populate(tlx)
+    # endif()
 else()
     add_subdirectory(extern/cli11)
     #add_subdirectory(extern/tlx)
     set(kagen_SOURCE_DIR ${PROJECT_SOURCE_DIR}/extern/kagen)
 endif()
+find_package(CGAL)
 if(NOT kagen_POPULATED)
     #add_subdirectory("${kagen_SOURCE_DIR}" EXCLUDE_FROM_ALL)
     set(KAGEN_INCLUDE_DIRS
@@ -105,7 +105,6 @@ if(NOT kagen_POPULATED)
         ${kagen_SOURCE_DIR}/include/io
         ${kagen_SOURCE_DIR}/include/tools
         ${kagen_SOURCE_DIR}/interface/)
-    find_package(CGAL)
     add_subdirectory(${kagen_SOURCE_DIR}/extlib/sampling EXCLUDE_FROM_ALL)
     add_library(kagen INTERFACE)
     target_include_directories(kagen INTERFACE ${KAGEN_INCLUDE_DIRS})

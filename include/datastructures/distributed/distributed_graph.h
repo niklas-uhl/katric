@@ -5,6 +5,7 @@
 #ifndef PARALLEL_TRIANGLE_COUNTER_DISTRIBUTED_GRAPH_H
 #define PARALLEL_TRIANGLE_COUNTER_DISTRIBUTED_GRAPH_H
 
+#include "io/distributed_graph_io.h"
 #include <cstddef>
 #include <limits>
 #include <vector>
@@ -366,7 +367,9 @@ public:
         }
     }
 
-    DistributedGraph(cetric::graph::LocalGraphView&& G) {
+    DistributedGraph(cetric::graph::LocalGraphView&& G, PEID rank, PEID size) {
+        rank_ = rank;
+        size_ = size;
         local_node_count_ = G.node_info.size();
         first_out_.resize(local_node_count_ + 1);
         first_out_offset_.resize(local_node_count_, 0);
@@ -387,7 +390,8 @@ public:
             node_range_.first = std::min(node_range_.first, global_id);
             node_range_.second = std::max(node_range_.second, global_id);
         }
-        consecutive_vertices_ = node_range_.second - node_range_.first == local_node_count_;
+        consecutive_vertices_ = node_range_.second - node_range_.first  + 1 == local_node_count_;
+        atomic_debug(consecutive_vertices_);
         if (consecutive_vertices_) {
             for (const LocalGraphView::NodeInfo& node_info : G.node_info) {
                 global_to_local_.erase(node_info.global_id);
@@ -396,20 +400,49 @@ public:
         first_out_[local_node_count_] = degree_sum;
         head_ = std::move(G.edge_heads);
         auto ghost_count = 0;
-        for (EdgeId edge_id = 0; edge_id < head_.size(); ++edge_id) {
-            NodeId head = head_[edge_id];
-            if (!is_local(head)) {
-                if (global_to_local_.find(head) == global_to_local_.end()) {
-                    NodeId local_id = local_node_count_ + ghost_count;
-                    global_to_local_[head] = local_id;
-                    GhostData ghost_data;
-                    ghost_data.global_id = head;
-                    ghost_data.rank = -1;
-                    ghost_data_.emplace_back(std::move(ghost_data));
-                    ghost_count++;
+        for (NodeId node = 0; node < local_node_count_; ++node) {
+            for (EdgeId edge_id = first_out_[node]; edge_id < first_out_[node + 1]; ++edge_id) {
+                NodeId head = head_[edge_id];
+                if (!is_local(head)) {
+                    local_data_[node].is_interface = true;
+                    if (global_to_local_.find(head) == global_to_local_.end()) {
+                        NodeId local_id = local_node_count_ + ghost_count;
+                        global_to_local_[head] = local_id;
+                        GhostData ghost_data;
+                        ghost_data.global_id = head;
+                        ghost_data.rank = -1;
+                        ghost_data_.emplace_back(std::move(ghost_data));
+                        ghost_count++;
+                    }
+                }
+                head_[edge_id] = to_local_id(head);
+            }
+        }
+    }
+
+    void find_ghost_ranks() {
+        if (consecutive_vertices_) {
+            std::vector<std::pair<NodeId, NodeId>> ranges(size_);
+            gather_PE_ranges(node_range_.first, node_range_.second, ranges, MPI_COMM_WORLD, rank_, size_);
+            for_each_ghost_node([&](NodeId node) {
+                PEID rank = get_PE_from_node_ranges(to_global_id(node), ranges);
+                ghost_data_[ghost_to_ghost_index(node)].rank = rank;
+            });
+        } else {
+            std::vector<NodeId> nodes(local_node_count_);
+            for_each_local_node([&](NodeId node) {
+                nodes[node] = to_global_id(node);
+            });
+            auto [all_nodes, displs] = CommunicationUtility::all_gather(nodes, MPI_NODE, MPI_COMM_WORLD, rank_, size_);
+            for (PEID rank = 0; rank < size_; rank++) {
+                for (int i = displs[rank]; i < displs[rank + 1]; ++i) {
+                    NodeId node = all_nodes[i];
+                    if (is_ghost_from_global(node)) {
+                        NodeId local_id = to_local_id(node);
+                        ghost_data_[ghost_to_ghost_index(local_id)].rank = rank;
+                    }
                 }
             }
-            head_[edge_id] = to_local_id(head);
         }
     }
 

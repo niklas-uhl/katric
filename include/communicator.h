@@ -217,6 +217,27 @@ public:
         recv_buffer.clear();
         recv_buffer.shrink_to_fit();
     }
+
+    template<typename T>
+    static std::pair<std::vector<T>, std::vector<int>> all_gather(std::vector<T>& send_buffer, MPI_Datatype mpi_type, MPI_Comm comm, PEID rank, PEID size) {
+        (void) rank;
+        int send_count = send_buffer.size();
+        std::vector<int> receive_counts(size);
+        std::vector<int> displs(size + 1);
+        assert(receive_counts.size() == static_cast<size_t>(size));
+        MPI_Allgather(&send_count, 1, MPI_INT, receive_counts.data(), 1, MPI_INT, comm);
+
+        int receive_count = 0;
+        for(size_t i = 0; i < receive_counts.size(); ++i) {
+            displs[i] = receive_count;
+            receive_count += receive_counts[i];
+        }
+        displs[size] = receive_count;
+
+        std::vector<T> receive_buffer(receive_count);
+        MPI_Allgatherv(send_buffer.data(), send_count, mpi_type, receive_buffer.data(), receive_counts.data(), displs.data(), mpi_type, comm);
+        return std::make_pair(std::move(receive_buffer), std::move(displs));
+    }
 };
 
 template<typename T>
