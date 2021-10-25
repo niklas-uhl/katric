@@ -28,7 +28,7 @@ public:
                 pe_min_degree.resize(size);
                 G.for_each_ghost_node([&](NodeId node) {
                     const auto& ghost_data = G.get_ghost_data(node);
-                    pe_min_degree[ghost_data.rank] = std::min(pe_min_degree[ghost_data.rank], ghost_data.node_info);
+                    pe_min_degree[ghost_data.rank] = std::min(pe_min_degree[ghost_data.rank], ghost_data.payload);
                 });
             }
 
@@ -144,7 +144,7 @@ private:
             assert(G.is_ghost(e.head));
             if (conf_.degree_filtering) {
                 const auto& ghost_data = G.get_ghost_data(e.head);
-                if (ghost_data.node_info < pe_min_degree[u_rank]) {
+                if (ghost_data.payload < pe_min_degree[u_rank]) {
                     return;
                 }
             }

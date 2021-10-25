@@ -5,9 +5,13 @@
 #ifndef PARALLEL_TRIANGLE_COUNTER_DISTRIBUTED_GRAPH_H
 #define PARALLEL_TRIANGLE_COUNTER_DISTRIBUTED_GRAPH_H
 
+#include "debug_assert.hpp"
 #include "io/distributed_graph_io.h"
+#include <algorithm>
 #include <cstddef>
+#include <iterator>
 #include <limits>
+#include <stdexcept>
 #include <vector>
 #include <sstream>
 #include <google/dense_hash_map>
@@ -27,16 +31,18 @@ namespace cetric {
 using node_set = google::dense_hash_set<NodeId>;
 
 
+template<typename GhostPayloadType>
 class DistributedGraph {
     friend class cetric::load_balancing::LoadBalancer;
     friend class GraphBuilder;
     friend class CompactGraph;
 
 public:
+    template<typename Payload>
     struct GhostData {
         PEID rank;
         NodeId global_id;
-        NodeId node_info;
+        Payload payload;
     };
     struct LocalData {
         LocalData(NodeId global_id, bool is_interface) : global_id(global_id), is_interface(is_interface) { }
@@ -129,7 +135,9 @@ public:
     inline void for_each_edge(NodeId node, EdgeFunc on_edge) const {
         assert(is_local_from_local(node) || is_ghost(node));
         EdgeId begin = first_out_[node];
+        // TODO change it!!!
         EdgeId end = first_out_[node] + degree_[node];
+        // EdgeId end = first_out_[node] + first_out_[node + 1];
         for (size_t edge_id = begin; edge_id < end; ++edge_id) {
             NodeId head = head_[edge_id];
             Edge edge {node, head};
@@ -184,9 +192,9 @@ public:
 
     }
 
-    inline void set_ghost_info(NodeId local_node_id, NodeId ghost_info) {
+    inline void set_ghost_payload(NodeId local_node_id, GhostPayloadType payload) {
         assert(is_ghost(local_node_id));
-        ghost_data_[local_node_id - local_node_count_].node_info = ghost_info;
+        ghost_data_[local_node_id - local_node_count_].payload = payload;
     }
 
     inline void sort_neighborhoods() {
@@ -252,7 +260,11 @@ public:
     [[nodiscard]] inline NodeId to_global_id(NodeId local_node_id) const {
         assert((is_local_from_local(local_node_id) || is_ghost(local_node_id)));
         if (!is_ghost(local_node_id)) {
-            return node_range_.first + local_node_id;
+            if (consecutive_vertices_) {
+                return node_range_.first + local_node_id;
+            } else {
+                return local_data_[local_node_id].global_id;
+            }
         } else {
             return get_ghost_data(local_node_id).global_id;
         }
@@ -296,7 +308,7 @@ public:
     }
 
 
-    [[nodiscard]] inline const GhostData& get_ghost_data(NodeId local_node_id) const {
+    [[nodiscard]] inline const GhostData<GhostPayloadType>& get_ghost_data(NodeId local_node_id) const {
         assert(is_ghost(local_node_id));
         NodeId ghost_index = local_node_id - local_node_count_;
         return ghost_data_[ghost_index];
@@ -367,19 +379,27 @@ public:
         }
     }
 
-    DistributedGraph(cetric::graph::LocalGraphView&& G, PEID rank, PEID size) {
-        rank_ = rank;
-        size_ = size;
-        local_node_count_ = G.node_info.size();
-        first_out_.resize(local_node_count_ + 1);
-        first_out_offset_.resize(local_node_count_, 0);
-        degree_.resize(local_node_count_);
-        local_data_.resize(local_node_count_);
-        auto degree_sum = 0;
-        node_range_ = std::make_pair(std::numeric_limits<NodeId>::max(), std::numeric_limits<NodeId>::min());
+    DistributedGraph(cetric::graph::LocalGraphView &&G, PEID rank, PEID size)
+        : first_out_(G.node_count() + 1), first_out_offset_(G.node_count()),
+          degree_(G.node_count()),
+          head_(), ghost_data_(),
+          local_data_(G.node_count()),
+          consecutive_vertices_(false),
+          ghost_ranks_available_(false),
+          global_to_local_(),
+          local_node_count_(G.node_count()),
+          local_edge_count_{G.edge_heads.size()},
+          total_node_count_{},
+          node_range_(
+              std::numeric_limits<NodeId>::max(),
+              std::numeric_limits<NodeId>::min()),
+          rank_(rank),
+          size_(size) {
+
         global_to_local_.set_empty_key(-1);
         global_to_local_.set_deleted_key(-2);
-        for (size_t i = 0; i < G.node_info.size(); ++i) {
+        auto degree_sum = 0;
+        for (size_t i = 0; i < local_node_count_; ++i) {
             first_out_[i] = degree_sum;
             degree_sum += G.node_info[i].degree;
             NodeId local_id = i;
@@ -391,13 +411,16 @@ public:
             node_range_.second = std::max(node_range_.second, global_id);
         }
         consecutive_vertices_ = node_range_.second - node_range_.first  + 1 == local_node_count_;
-        atomic_debug(consecutive_vertices_);
-        if (consecutive_vertices_) {
-            for (const LocalGraphView::NodeInfo& node_info : G.node_info) {
-                global_to_local_.erase(node_info.global_id);
-            }
-        }
+
         first_out_[local_node_count_] = degree_sum;
+        assert(first_out_.size() == local_node_count_ + 1);
+        assert(first_out_[0] == 0);
+
+        for(size_t i = 0; i < local_node_count_; ++i) {
+            assert(degree_[i] == G.node_info[i].degree);
+            assert(first_out_[i + 1] - first_out_[i] == degree_[i]);
+        }
+        assert(first_out_[first_out_.size() - 1] == G.edge_heads.size());
         head_ = std::move(G.edge_heads);
         auto ghost_count = 0;
         for (NodeId node = 0; node < local_node_count_; ++node) {
@@ -408,7 +431,7 @@ public:
                     if (global_to_local_.find(head) == global_to_local_.end()) {
                         NodeId local_id = local_node_count_ + ghost_count;
                         global_to_local_[head] = local_id;
-                        GhostData ghost_data;
+                        GhostData<GhostPayloadType> ghost_data;
                         ghost_data.global_id = head;
                         ghost_data.rank = -1;
                         ghost_data_.emplace_back(std::move(ghost_data));
@@ -421,38 +444,50 @@ public:
     }
 
     void find_ghost_ranks() {
-        if (consecutive_vertices_) {
-            std::vector<std::pair<NodeId, NodeId>> ranges(size_);
-            gather_PE_ranges(node_range_.first, node_range_.second, ranges, MPI_COMM_WORLD, rank_, size_);
-            for_each_ghost_node([&](NodeId node) {
-                PEID rank = get_PE_from_node_ranges(to_global_id(node), ranges);
-                ghost_data_[ghost_to_ghost_index(node)].rank = rank;
-            });
-        } else {
-            std::vector<NodeId> nodes(local_node_count_);
-            for_each_local_node([&](NodeId node) {
-                nodes[node] = to_global_id(node);
-            });
-            auto [all_nodes, displs] = CommunicationUtility::all_gather(nodes, MPI_NODE, MPI_COMM_WORLD, rank_, size_);
-            for (PEID rank = 0; rank < size_; rank++) {
-                for (int i = displs[rank]; i < displs[rank + 1]; ++i) {
-                    NodeId node = all_nodes[i];
-                    if (is_ghost_from_global(node)) {
-                        NodeId local_id = to_local_id(node);
-                        ghost_data_[ghost_to_ghost_index(local_id)].rank = rank;
-                    }
-                }
+        assert(!ghost_ranks_available_);
+        // if (consecutive_vertices_) {
+        // atomic_debug("consecutive vertices");
+        std::vector<std::pair<NodeId, NodeId>> ranges(size_);
+        gather_PE_ranges(node_range_.first, node_range_.second, ranges,
+                         MPI_COMM_WORLD, rank_, size_);
+        for_each_ghost_node([&](NodeId node) {
+            PEID rank = get_PE_from_node_ranges(to_global_id(node), ranges);
+            ghost_data_[ghost_to_ghost_index(node)].rank = rank;
+        });
+        // } else {
+        //     atomic_debug("No consecutive vertices");
+        //     std::vector<NodeId> nodes(local_node_count_);
+        //     for_each_local_node([&](NodeId node) {
+        //         nodes[node] = to_global_id(node);
+        //     });
+        //     auto [all_nodes, displs] = CommunicationUtility::all_gather(nodes, MPI_NODE, MPI_COMM_WORLD, rank_, size_);
+        //     for (PEID rank = 0; rank < size_; rank++) {
+        //         for (int i = displs[rank]; i < displs[rank + 1]; ++i) {
+        //             NodeId node = all_nodes[i];
+        //             if (is_ghost_from_global(node)) {
+        //                 NodeId local_id = to_local_id(node);
+        //                 ghost_data_[ghost_to_ghost_index(local_id)].rank = rank;
+        //             }
+        //         }
+        //     }
+        // }
+        for_each_ghost_node([&](NodeId node) {
+            if (get_ghost_data(node).rank < 0 || get_ghost_data(node).rank >= size_) {
+                assert(false);
             }
-        }
+        });
+        ghost_ranks_available_ = true;
     }
 
-    LocalGraphView to_local_graph_view(bool remove_isolated = true, bool keep_only_out_edges = true) {
+    LocalGraphView to_local_graph_view(bool remove_isolated, bool keep_only_out_edges) {
         DistributedGraph G = std::move(*this);
         std::vector<LocalGraphView::NodeInfo> node_info;
         EdgeId edge_counter = 0;
         G.for_each_local_node([&](NodeId node) {
             auto degree = G.degree(node);
-            if (remove_isolated && (degree == 0 || (keep_only_out_edges && G.outdegree(node) == 0))) {
+            //TODO we need to handle vertices with out degree 0
+            // maybe prevent sending to them, as we should know their degree (?)
+            if (remove_isolated && degree == 0)  {
                 return;
             }
             auto global_id = G.to_global_id(node);
@@ -481,6 +516,10 @@ public:
         return view;
     }
 
+    bool ghost_ranks_available() const {
+        return ghost_ranks_available_;
+    }
+
 private:
 
     NodeId ghost_to_ghost_index(NodeId local_node_id) const {
@@ -493,9 +532,10 @@ private:
     std::vector<EdgeId> first_out_offset_;
     std::vector<Degree> degree_;
     std::vector<NodeId> head_;
-    std::vector<GhostData> ghost_data_;
+    std::vector<GhostData<GhostPayloadType>> ghost_data_;
     std::vector<LocalData> local_data_;
     bool consecutive_vertices_;
+    bool ghost_ranks_available_;
     node_map global_to_local_;
     NodeId local_node_count_{};
     EdgeId local_edge_count_{};
@@ -505,7 +545,8 @@ private:
     PEID size_;
 };
 
-inline std::ostream& operator<<(std::ostream& out, DistributedGraph& G) {
+template<typename GhostPayloadType>
+inline std::ostream& operator<<(std::ostream& out, DistributedGraph<GhostPayloadType>& G) {
     G.for_each_local_node([&](NodeId node) {
         G.for_each_local_out_edge(node, [&](Edge edge) {
             out << "(" << G.to_global_id(edge.tail) << ", " << G.to_global_id(edge.head) << ")" << std::endl;

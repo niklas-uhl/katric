@@ -29,6 +29,7 @@ public:
     }
 
     void distribute_degree(cetric::profiling::MessageStatistics& stats) {
+        assert(G.ghost_ranks_available());
         send_buffers.clear();
         receive_buffers.clear();
         for (NodeId node = 0; node < G.local_node_count(); ++node) {
@@ -37,16 +38,16 @@ public:
             if (G.get_local_data(node).is_interface) {
                 Degree deg = G.degree(node);
                 G.for_each_edge(node, [&](Edge edge) {
-                    if (G.is_ghost(edge.head)) {
-                        PEID rank = G.get_ghost_data(edge.head).rank;
-                        if (neighboring_PEs.find(rank) == neighboring_PEs.end()) {
-                            send_buffers[rank].emplace_back(G.to_global_id(node));
-                            send_buffers[rank].emplace_back(deg);
-                            neighboring_PEs.insert(rank);
-                        }
+                  if (G.is_ghost(edge.head)) {
+                    PEID rank = G.get_ghost_data(edge.head).rank;
+                    if (neighboring_PEs.find(rank) == neighboring_PEs.end()) {
+                      send_buffers[rank].emplace_back(G.to_global_id(node));
+                      send_buffers[rank].emplace_back(deg);
+                      neighboring_PEs.insert(rank);
                     }
+                  }
                 });
-            }
+              }
         }
         CommunicationUtility::sparse_all_to_all(send_buffers, receive_buffers, MPI_NODE, rank_, size_, stats, message_tag_);
         for (const auto& elem : receive_buffers) {
@@ -55,7 +56,7 @@ public:
             for (size_t i = 0; i < buffer.size(); i+=2) {
                 NodeId node = buffer[i];
                 Degree degree = buffer[i + 1];
-                assert(G.is_ghost_from_global(node));
+                //assert(G.is_ghost_from_global(node));
                 NodeId local_node = G.to_local_id(node);
                 ghost_degree_[local_node - G.local_node_count()] = degree;
             }
@@ -64,24 +65,26 @@ public:
     }
 
     void distribute_out_degree(const std::vector<Degree>& out_degree, cetric::profiling::MessageStatistics& stats) {
-        assert(degree_broadcast_);
-        send_buffers.clear();
-        receive_buffers.clear();
-        for (NodeId node = 0; node < G.local_node_count(); ++node) {
-            local_max_out_degree = std::max(local_max_out_degree.value_or(0), G.degree(node));
-            neighboring_PEs.clear();
-            if (G.get_local_data(node).is_interface) {
-                G.for_each_edge(node, [&](Edge edge) {
-                    if (G.is_ghost(edge.head)) {
-                        PEID rank = G.get_ghost_data(edge.head).rank;
-                        if (neighboring_PEs.find(rank) == neighboring_PEs.end()) {
-                            send_buffers[rank].emplace_back(G.to_global_id(node));
-                            send_buffers[rank].emplace_back(out_degree[node]);
-                            neighboring_PEs.insert(rank);
-                        }
-                    }
-                });
+      assert(G.ghost_ranks_available());
+      assert(degree_broadcast_);
+      send_buffers.clear();
+      receive_buffers.clear();
+      for (NodeId node = 0; node < G.local_node_count(); ++node) {
+        local_max_out_degree =
+            std::max(local_max_out_degree.value_or(0), G.degree(node));
+        neighboring_PEs.clear();
+        if (G.get_local_data(node).is_interface) {
+          G.for_each_edge(node, [&](Edge edge) {
+            if (G.is_ghost(edge.head)) {
+              PEID rank = G.get_ghost_data(edge.head).rank;
+              if (neighboring_PEs.find(rank) == neighboring_PEs.end()) {
+                send_buffers[rank].emplace_back(G.to_global_id(node));
+                send_buffers[rank].emplace_back(out_degree[node]);
+                neighboring_PEs.insert(rank);
+              }
             }
+          });
+        }
         }
         CommunicationUtility::sparse_all_to_all(send_buffers, receive_buffers, MPI_NODE, rank_, size_, stats, message_tag_ + 1);
         for (const auto& elem : receive_buffers) {

@@ -12,8 +12,14 @@
 #include <unistd.h>
 #include <vector>
 #include <iostream>
+#include <debug_assert.hpp>
 
 using PEID = int;
+
+
+#define MODULE_A_LEVEL 1
+struct debug_module : debug_assert::default_handler, debug_assert::set_level<MODULE_A_LEVEL>
+{};
 
 #ifndef DEBUG_BARRIER
 #ifndef NDEBUG

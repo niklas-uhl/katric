@@ -53,6 +53,13 @@ if(NOT USE_SUBMODULES)
     FetchContent_MakeAvailable(CLI11)
 
     FetchContent_Declare(
+        debug_assert
+        GIT_REPOSITORY https://github.com/foonathan/debug_assert.git
+        GIT_PROGRESS TRUE
+        )
+    FetchContent_MakeAvailable(debug_assert)
+
+    FetchContent_Declare(
         json
         GIT_REPOSITORY https://github.com/ArthurSonzogni/nlohmann_json_cmake_fetchcontent.git
         GIT_TAG v3.10.2

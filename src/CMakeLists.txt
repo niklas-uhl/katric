@@ -14,6 +14,7 @@ target_link_libraries(cetric-lib PRIVATE kagen)
 target_link_libraries(cetric-lib PUBLIC tlx)
 target_link_libraries(cetric-lib PRIVATE sparsehash)
 target_link_libraries(cetric-lib PUBLIC nlohmann_json::nlohmann_json) 
+target_link_libraries(cetric-lib PUBLIC debug_assert) 
 
 
 target_compile_options(cetric-lib PUBLIC -Wall -Wextra -pedantic)

@@ -7,25 +7,25 @@
 #include <algorithm>
 #include <config.h>
 #include <cstddef>
-#include <datastructures/distributed/compact_graph.h>
 #include <numeric>
 #include <string>
 #include <vector>
 #include <mpi.h>
+#include <cost_function.h>
 
 namespace cetric {
     namespace load_balancing {
 
         class LoadBalancer {
         public:
-            template<typename CostFunc>
-            static graph::LocalGraphView run(graph::LocalGraphView&& G, CostFunc cost_function, const Config& conf) {
-                using namespace cetric::graph;
-                std::vector<size_t> cost(G.node_info.size());
-                size_t prefix_sum = 0;
-                for (size_t node = 0; node < G.node_info.size(); ++node) {
-                    cost[node] = prefix_sum;
-                    prefix_sum += cost_function(G, node);
+            template<typename CostFunction>
+            static graph::LocalGraphView run(graph::LocalGraphView&& G, CostFunction& cost_function, const Config& conf) {
+              using namespace cetric::graph;
+              std::vector<size_t> cost(G.node_info.size());
+              size_t prefix_sum = 0;
+              for (size_t node = 0; node < G.node_info.size(); ++node) {
+                cost[node] = prefix_sum;
+                prefix_sum += cost_function(G, node);
                 }
                 // atomic_debug(cost);
                 size_t global_prefix;
@@ -43,7 +43,7 @@ namespace cetric {
                 std::vector<std::pair<NodeId, NodeId>> to_send(conf.PEs);
                 for (size_t node = 0; node < cost.size(); ++node) {
                     cost[node] += global_prefix;
-                    PEID new_pe = cost[node] / per_pe_cost;
+                    PEID new_pe = std::min(static_cast<int>(cost[node] / per_pe_cost), conf.PEs - 1);
                     to_send[new_pe].first++;
                     to_send[new_pe].second += G.node_info[node].degree;
                 }
@@ -76,6 +76,7 @@ namespace cetric {
                 MPI_Type_commit(&mpi_node_info);
                 std::vector<LocalGraphView::NodeInfo> node_info_recv(recv_displs[conf.PEs - 1] +
                                                                      recv_counts[conf.PEs - 1]);
+
                 MPI_Alltoallv(G.node_info.data(), send_counts.data(),
                               send_displs.data(), mpi_node_info, node_info_recv.data(),
                               recv_counts.data(), recv_displs.data(), mpi_node_info,
@@ -98,10 +99,20 @@ namespace cetric {
                 MPI_Alltoallv(G.edge_heads.data(), send_counts.data(), send_displs.data(), MPI_NODE, head.data(), recv_counts.data(), recv_displs.data(), MPI_NODE, MPI_COMM_WORLD);
                 G.edge_heads.resize(0);
                 G.edge_heads.shrink_to_fit();
+                //#ifdef DEBUG
+                {
+                    unsigned edge_count = 0;
+                    for (auto& ninfo : node_info_recv) {
+                        edge_count += ninfo.degree;
+                    }
+                    assert(edge_count == head.size());
+                }
+                // #endif
 
                 LocalGraphView G_balanced;
                 G_balanced.node_info = std::move(node_info_recv);
                 G_balanced.edge_heads = std::move(head);
+
                 return G_balanced;
             }
         };
