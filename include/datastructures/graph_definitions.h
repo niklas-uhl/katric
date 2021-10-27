@@ -64,7 +64,10 @@ inline bool operator==(const Triangle& t1, const Triangle& t2) {
     return t1.x == t2.x && t1.y == t2.y && t1.z == t2.z;
 }
 
-
+inline std::ostream &operator<<(std::ostream &out, const Triangle &t) {
+    out << "(" << t.x << ", " << t.y <<  ", " << t.z << ")";
+  return out;
+}
 }
 }
 

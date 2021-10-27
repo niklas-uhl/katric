@@ -328,6 +328,10 @@ public:
         return total_node_count_;
     }
 
+    inline std::pair<NodeId, NodeId> node_range() const{
+        return node_range_;
+    }
+
     void remove_internal_edges() {
         for_each_local_node([&](NodeId node) {
             if (!get_local_data(node).is_interface) {
@@ -380,14 +384,14 @@ public:
     }
 
     DistributedGraph(cetric::graph::LocalGraphView &&G, PEID rank, PEID size)
-        : first_out_(G.node_count() + 1), first_out_offset_(G.node_count()),
-          degree_(G.node_count()),
+        : first_out_(G.local_node_count() + 1), first_out_offset_(G.local_node_count()),
+          degree_(G.local_node_count()),
           head_(), ghost_data_(),
-          local_data_(G.node_count()),
+          local_data_(G.local_node_count()),
           consecutive_vertices_(false),
           ghost_ranks_available_(false),
           global_to_local_(),
-          local_node_count_(G.node_count()),
+          local_node_count_(G.local_node_count()),
           local_edge_count_{G.edge_heads.size()},
           total_node_count_{},
           node_range_(
@@ -444,7 +448,9 @@ public:
     }
 
     void find_ghost_ranks() {
-        assert(!ghost_ranks_available_);
+        if (ghost_ranks_available_) {
+            return;
+        }
         // if (consecutive_vertices_) {
         // atomic_debug("consecutive vertices");
         std::vector<std::pair<NodeId, NodeId>> ranges(size_);

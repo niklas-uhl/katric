@@ -32,7 +32,8 @@ struct Config {
     double max_degree_threshold_alpha = 1.0;
     bool empty_pending_buffers_on_overflow = false;
     size_t iterations = 1;
-    std::string cost_function = "N";
+    std::string primary_cost_function = "N";
+    std::string secondary_cost_function = "";
 
     bool full_all_to_all = false;
     bool use_two_phases = false;
@@ -61,6 +62,6 @@ struct Config {
     double false_positive_rate = 0.01;
 };
 
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(Config, input_file, hostname, PEs, gen, gen_n, gen_m, gen_r, gen_r_coeff, gen_p, gen_gamma, gen_d, gen_scale_weak, cost_function)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(Config, input_file, hostname, PEs, gen, gen_n, gen_m, gen_r, gen_r_coeff, gen_p, gen_gamma, gen_d, gen_scale_weak, primary_cost_function, secondary_cost_function)
 
 #endif //PARALLEL_TRIANGLE_COUNTER_CONFIG_H

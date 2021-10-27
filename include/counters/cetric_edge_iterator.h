@@ -77,7 +77,7 @@ public:
                 });
             }
         });
-        stats.local.local_phase_time = phase_time.elapsed_time();
+        stats.local.local_phase_time += phase_time.elapsed_time();
     }
 
     template<typename TriangleFunc>
@@ -112,7 +112,7 @@ public:
         comm.all_to_all([&](PEID, const std::vector<NodeId>& message) {
             handle_buffer(message, emit, stats);
         }, stats.local.message_statistics, conf_.full_all_to_all);
-        stats.local.global_phase_time = phase_time.elapsed_time();
+        stats.local.global_phase_time += phase_time.elapsed_time();
     }
 
     template<typename TriangleFunc>
@@ -120,7 +120,7 @@ public:
         run_local(emit, stats);
         cetric::profiling::Timer phase_time;
         G.remove_internal_edges();
-        stats.local.contraction_time = phase_time.elapsed_time();
+        stats.local.contraction_time += phase_time.elapsed_time();
         run_distributed(emit, stats);
     }
 

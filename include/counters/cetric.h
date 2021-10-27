@@ -3,6 +3,7 @@
 
 #include "cost_function.h"
 #include "datastructures/distributed/distributed_graph.h"
+#include "datastructures/distributed/local_graph_view.h"
 #include "datastructures/graph_definitions.h"
 #include "tlx/algorithm/multiway_merge.hpp"
 #include "tlx/multi_timer.hpp"
@@ -49,33 +50,44 @@ void run_cetric(DistributedGraph<GhostPayloadType> &G,
                 PEID rank, PEID size) {
 
     G.find_ghost_ranks();
-    preprocessing(G, stats, rank, size);
-    auto cost_function =
-        get_cost_function_by_name(conf.cost_function, G, rank, size);
-    LocalGraphView tmp = G.to_local_graph_view(true, false);
-    tmp = cetric::load_balancing::LoadBalancer::run(
-        std::move(tmp), *cost_function, conf);
-    G = DistributedGraph<GhostPayloadType>(std::move(tmp), rank, size);
+    if (conf.primary_cost_function != "N") {
+        auto cost_function = get_cost_function_by_name(
+            conf.primary_cost_function, G, rank, size);
+        LocalGraphView tmp = G.to_local_graph_view(false, false);
+        tmp = cetric::load_balancing::LoadBalancer::run(
+            std::move(tmp), *cost_function, conf);
+        G = DistributedGraph<GhostPayloadType>(std::move(tmp), rank, size);
+        G.find_ghost_ranks();
+        preprocessing(G, stats, rank, size);
+    }
     G.expand_ghosts();
-    G.find_ghost_ranks();
     preprocessing(G, stats, rank, size);
     cetric::CetricEdgeIterator<DistributedGraph<GhostPayloadType>, true, true>
         ctr(G, conf, rank, size);
     size_t triangle_count = 0;
-    ctr.run_local([&](Triangle) {
-        triangle_count++; 
+    ctr.run_local([&](Triangle t) {
+        //atomic_debug(t);
+        triangle_count++;
     }, stats);
     G.remove_internal_edges();
-    tmp = G.to_local_graph_view(true, false);
-    tmp = cetric::load_balancing::LoadBalancer::run(std::move(tmp),
-                                                    *cost_function, conf);
-    G = DistributedGraph<GhostPayloadType>(std::move(tmp), rank, size);
-    G.expand_ghosts();
-    G.find_ghost_ranks();
-    preprocessing(G, stats, rank, size);
+    if (!conf.secondary_cost_function.empty()) {
+        auto cost_function = get_cost_function_by_name(
+            conf.secondary_cost_function, G, rank, size);
+        auto tmp =
+            G.to_local_graph_view(true, false);
+        tmp = cetric::load_balancing::LoadBalancer::run(std::move(tmp),
+                                                        *cost_function, conf);
+        G = DistributedGraph<GhostPayloadType>(std::move(tmp), rank, size);
+        G.expand_ghosts();
+        G.find_ghost_ranks();
+        preprocessing(G, stats, rank, size);
+    }
     cetric::CetricEdgeIterator<DistributedGraph<GhostPayloadType>, true, true>
         ctr_dist(G, conf, rank, size);
-    ctr_dist.run_distributed([&](Triangle) { triangle_count++; }, stats);
+    ctr_dist.run([&](Triangle t) {
+        //atomic_debug(t);
+        triangle_count++;
+    }, stats);
     // tlx::MultiTimer dummy;
     // ctr.get_triangle_count(stats);
     /* size_t triangle_count = 0; */
@@ -88,8 +100,10 @@ void run_cetric(DistributedGraph<GhostPayloadType> &G,
     /* ctr.run_distributed([&](Triangle) { */
     /*     triangle_count++; */
     /* }, stats, dummy); */
-    /* MPI_Reduce(&triangle_count, &stats.counted_triangles, 1, MPI_NODE,
-     * MPI_SUM, 0, MPI_COMM_WORLD); */
+    MPI_Reduce(&triangle_count, &stats.counted_triangles, 1, MPI_NODE, MPI_SUM, 0, MPI_COMM_WORLD);
+    if (rank == 0) {
+        atomic_debug("total number of triangles: " + std::to_string(stats.counted_triangles));
+    }
 }
 
 #endif /* end of include guard: CETRIC_H_1MZUS6LP */

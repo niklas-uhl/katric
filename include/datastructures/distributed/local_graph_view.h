@@ -20,8 +20,12 @@ namespace cetric {
             std::vector<NodeInfo> node_info;
             std::vector<NodeId> edge_heads;
 
-            NodeId node_count() const {
+            NodeId local_node_count() const {
                 return node_info.size();
+            }
+
+            Degree degree(NodeId local_id) const {
+                return node_info[local_id].degree;
             }
 
             class Indexer {

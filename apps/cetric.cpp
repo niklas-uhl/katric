@@ -30,7 +30,9 @@ Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
 
     app.add_option("--iterations", conf.iterations);
 
-    app.add_set("--cost-function", conf.cost_function, {"N", "D", "DH", "DDH", "DH2", "DPD", "IDPD", "D*"});
+    app.add_set("--primary-cost-function", conf.primary_cost_function, {"N", "D", "DH", "DDH", "DH2", "DPD", "IDPD", "D*"});
+    app.add_set("--secondary-cost-function", conf.secondary_cost_function,
+                {"N", "D", "DH", "DDH", "DH2", "DPD", "IDPD", "D*"});
 
     app.add_flag("-v", conf.verbosity_level, "verbosity level");
 
