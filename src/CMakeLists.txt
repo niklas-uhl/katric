@@ -12,7 +12,7 @@ target_link_libraries(cetric-lib PRIVATE local_spooky)
 target_link_libraries(cetric-lib PUBLIC MPI::MPI_CXX)
 target_link_libraries(cetric-lib PRIVATE kagen)
 target_link_libraries(cetric-lib PUBLIC tlx)
-target_link_libraries(cetric-lib PRIVATE sparsehash)
+target_link_libraries(cetric-lib PUBLIC sparsehash)
 target_link_libraries(cetric-lib PUBLIC nlohmann_json::nlohmann_json) 
 target_link_libraries(cetric-lib PUBLIC debug_assert) 
 
