@@ -20,41 +20,31 @@ enum class Phase {
     Global
 };
 
-template<Phase phase>
 inline void preprocessing(DistributedGraph<> &G,
-                          cetric::profiling::Statistics &stats, const Config& conf) {
+                          cetric::profiling::Statistics &stats, const Config& conf, Phase phase) {
     cetric::profiling::Timer timer;
-    if constexpr (phase == Phase::Local) {
-            if (!conf.orient_locally) {
-                GraphCommunicator comm(G, conf.rank, conf.PEs,
-                                       as_int(MessageTag::Orientation));
-                comm.get_ghost_degree(
-                    [&](NodeId global_id, Degree degree) {
-                        G.get_ghost_payload(G.to_local_id(global_id)).degree = degree;
-                    },
-                    stats.local.preprocessing.message_statistics);
+    if (!conf.orient_locally || phase == Phase::Global) {
+        GraphCommunicator comm(G, conf.rank, conf.PEs,
+                               as_int(MessageTag::Orientation));
+        comm.get_ghost_degree(
+            [&](NodeId global_id, Degree degree) {
+                G.get_ghost_payload(G.to_local_id(global_id)).degree = degree;
+            },
+            stats.local.preprocessing.message_statistics);
 
-                timer.restart();
-                G.orient([&](NodeId a, NodeId b) {
-                        return std::make_tuple(G.degree(a), G.to_global_id(a)) <
-                            std::make_tuple(G.degree(b), G.to_global_id(b));
-                    });
-                stats.local.preprocessing.orientation_time += timer.elapsed_time();
-            } else {
-                G.orient([&](NodeId a, NodeId b) {
-                        return std::make_tuple(G.local_degree(a), G.to_global_id(a)) <
-                            std::make_tuple(G.local_degree(b), G.to_global_id(b));
-                    });
-                stats.local.preprocessing.orientation_time += timer.elapsed_time();
-            }
+        timer.restart();
+        G.orient([&](NodeId a, NodeId b) {
+                return std::make_tuple(G.degree(a), G.to_global_id(a)) <
+                    std::make_tuple(G.degree(b), G.to_global_id(b));
+            });
+        stats.local.preprocessing.orientation_time += timer.elapsed_time();
     } else {
-      G.orient([&](NodeId a, NodeId b) {
-        return std::make_tuple(G.local_degree(a), G.to_global_id(a)) <
-               std::make_tuple(G.local_degree(b), G.to_global_id(b));
-      });
-      stats.local.preprocessing.orientation_time += timer.elapsed_time();
+        G.orient([&](NodeId a, NodeId b) {
+                return std::make_tuple(G.local_degree(a), G.to_global_id(a)) <
+                    std::make_tuple(G.local_degree(b), G.to_global_id(b));
+            });
+        stats.local.preprocessing.orientation_time += timer.elapsed_time();
     }
-
     timer.restart();
     G.sort_neighborhoods();
 
@@ -74,11 +64,9 @@ inline void run_cetric(DistributedGraph<> &G,
             std::move(tmp), *cost_function, conf);
         G = DistributedGraph(std::move(tmp), rank, size);
         G.find_ghost_ranks();
-        //TODO this is weird
-        preprocessing<Phase::Local>(G, stats, conf);
     }
     G.expand_ghosts();
-    preprocessing<Phase::Local>(G, stats, conf);
+    preprocessing(G, stats, conf, Phase::Local);
     cetric::CetricEdgeIterator<DistributedGraph<>, true, true>
         ctr(G, conf, rank, size);
     size_t triangle_count = 0;
@@ -100,7 +88,7 @@ inline void run_cetric(DistributedGraph<> &G,
         G = DistributedGraph(std::move(tmp), rank, size);
         G.expand_ghosts();
         G.find_ghost_ranks();
-        preprocessing<Phase::Global>(G, stats, conf);
+        preprocessing(G, stats, conf, Phase::Global);
     }
     cetric::CetricEdgeIterator<DistributedGraph<>, true, true>
         ctr_dist(G, conf, rank, size);
