@@ -7,6 +7,7 @@
 
 #include <google/dense_hash_map>
 #include <statistics.h>
+#include <type_traits>
 #include <util.h>
 #include <mpi.h>
 
@@ -31,7 +32,7 @@ struct CommunicationStats {
     }
 };
 
-enum MessageTag {
+enum class MessageTag {
     CostFunction = 0,
     LoadBalancing = 5,
     LoadBalancingBoundaries = 9,
@@ -40,6 +41,10 @@ enum MessageTag {
     Orientation = 31,
     Neighborhood = 42,
 };
+
+inline int as_int(const MessageTag tag) {
+    return static_cast<std::underlying_type<MessageTag>::type>(tag);
+}
 
 inline CommunicationStats reduce_stats(const CommunicationStats& stats) {
     size_t local[4];

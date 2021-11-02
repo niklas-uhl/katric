@@ -15,27 +15,19 @@
 #include <timer.h>
 #include <util.h>
 
-template <typename GraphPayloadType>
-inline void preprocessing(DistributedGraph<GraphPayloadType> &G,
+inline void preprocessing(DistributedGraph<> &G,
                           cetric::profiling::Statistics &stats, PEID rank,
                           PEID size) {
-    GraphCommunicator comm(G, rank, size, MessageTag::Orientation);
-    comm.distribute_degree(stats.local.preprocessing.message_statistics);
-    auto degree = [&](NodeId node) {
-        if (G.is_ghost(node)) {
-            return comm.get_ghost_degree(node);
-        } else {
-            return G.initial_degree(node);
-        }
-    };
+    GraphCommunicator comm(G, rank, size, as_int(MessageTag::Orientation));
+    comm.get_ghost_degree([&](NodeId global_id, Degree degree) {
+        G.get_ghost_payload(G.to_local_id(global_id)).degree = degree;
+    }, stats.local.preprocessing.message_statistics);
 
     cetric::profiling::Timer timer;
     G.orient([&](NodeId a, NodeId b) {
-        return std::make_tuple(degree(a), G.to_global_id(a)) <
-            std::make_tuple(degree(b), G.to_global_id(b));
+        return std::make_tuple(G.degree(a), G.to_global_id(a)) <
+            std::make_tuple(G.degree(b), G.to_global_id(b));
     });
-    G.for_each_ghost_node(
-        [&](NodeId node) { G.set_ghost_payload(node, degree(node)); });
     stats.local.preprocessing.orientation_time += timer.elapsed_time();
 
     timer.restart();
@@ -44,8 +36,7 @@ inline void preprocessing(DistributedGraph<GraphPayloadType> &G,
     stats.local.preprocessing.sorting_time += timer.elapsed_time();
 }
 
-template <class GhostPayloadType>
-void run_cetric(DistributedGraph<GhostPayloadType> &G,
+inline void run_cetric(DistributedGraph<> &G,
                 cetric::profiling::Statistics &stats, const Config &conf,
                 PEID rank, PEID size) {
 
@@ -56,13 +47,13 @@ void run_cetric(DistributedGraph<GhostPayloadType> &G,
         LocalGraphView tmp = G.to_local_graph_view(false, false);
         tmp = cetric::load_balancing::LoadBalancer::run(
             std::move(tmp), *cost_function, conf);
-        G = DistributedGraph<GhostPayloadType>(std::move(tmp), rank, size);
+        G = DistributedGraph(std::move(tmp), rank, size);
         G.find_ghost_ranks();
         preprocessing(G, stats, rank, size);
     }
     G.expand_ghosts();
     preprocessing(G, stats, rank, size);
-    cetric::CetricEdgeIterator<DistributedGraph<GhostPayloadType>, true, true>
+    cetric::CetricEdgeIterator<DistributedGraph<>, true, true>
         ctr(G, conf, rank, size);
     size_t triangle_count = 0;
     ctr.run_local([&](Triangle t) {
@@ -77,12 +68,12 @@ void run_cetric(DistributedGraph<GhostPayloadType> &G,
             G.to_local_graph_view(true, false);
         tmp = cetric::load_balancing::LoadBalancer::run(std::move(tmp),
                                                         *cost_function, conf);
-        G = DistributedGraph<GhostPayloadType>(std::move(tmp), rank, size);
+        G = DistributedGraph(std::move(tmp), rank, size);
         G.expand_ghosts();
         G.find_ghost_ranks();
         preprocessing(G, stats, rank, size);
     }
-    cetric::CetricEdgeIterator<DistributedGraph<GhostPayloadType>, true, true>
+    cetric::CetricEdgeIterator<DistributedGraph<>, true, true>
         ctr_dist(G, conf, rank, size);
     ctr_dist.run([&](Triangle t) {
         //atomic_debug(t);

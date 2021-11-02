@@ -1,5 +1,6 @@
 # Build directory
 build/
+build-debug/
 
 # Clion Files
 .idea/
@@ -17,3 +18,4 @@ compile_commands.json
 
 # VSCode files
 .vscode/
+**/.gdb_history

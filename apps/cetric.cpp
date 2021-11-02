@@ -78,13 +78,13 @@ int main(int argc, char* argv[]) {
     MPI_Barrier(MPI_COMM_WORLD);
     cetric::profiling::Timer global_time;
 
-    DistributedGraph<Degree> G;
+    DistributedGraph<> G;
     cetric::profiling::Statistics stats(rank, size);
     cetric::profiling::Timer timer;
     if (conf.gen == "") {
-        G = DistributedGraph<Degree>(cetric::read_local_graph(conf.input_file, conf.input_format, rank, size), rank, size);
+        G = DistributedGraph<>(cetric::read_local_graph(conf.input_file, conf.input_format, rank, size), rank, size);
     } else {
-        G = DistributedGraph<Degree>(cetric::gen_local_graph(conf, rank, size), rank, size);
+        G = DistributedGraph<>(cetric::gen_local_graph(conf, rank, size), rank, size);
     }
     stats.local.io_time = timer.elapsed_time();
 

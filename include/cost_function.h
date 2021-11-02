@@ -5,6 +5,7 @@
 #ifndef PARALLEL_TRIANGLE_COUNTER_COST_FUNCTION_H
 #define PARALLEL_TRIANGLE_COUNTER_COST_FUNCTION_H
 
+#include <cstddef>
 #include <datastructures/distributed/distributed_graph.h>
 #include <datastructures/distributed/graph_communicator.h>
 #include <datastructures/distributed/local_graph_view.h>
@@ -73,9 +74,17 @@ private:
 
 template<class GraphType>
 struct OutDegreeCostFunction : AbstractCostFunction {
-    explicit OutDegreeCostFunction(const GraphType& G, PEID rank, PEID size): comm(G, rank, size, MessageTag::CostFunction), out_degree_(G.local_node_count()) {
-        comm.distribute_degree(stats);
-        out_degree_ = out_degree_from_comm(G, comm);
+    explicit OutDegreeCostFunction(GraphType& G, PEID rank, PEID size): comm(G, rank, size, as_int(MessageTag::CostFunction)), out_degree_(G.local_node_count()) {
+        comm.get_ghost_degree([&](NodeId global_node_id, Degree degree) {
+            G.get_ghost_payload(G.to_local_id(global_node_id)).degree = degree;
+        }, stats);
+        G.for_each_local_node([&](NodeId node) {
+            G.for_each_edge(node, [&](Edge e) {
+                if (G.is_outgoing(e)) {
+                    out_degree_[node]++;
+                }
+            });
+        });
     }
     size_t operator()(const LocalGraphView& G, NodeId node) const override {
         (void) G;
@@ -89,9 +98,17 @@ private:
 
 template<class GraphType>
 struct DegreeAndOutDegreeCostFunction : AbstractCostFunction {
-    explicit DegreeAndOutDegreeCostFunction(const GraphType& G, PEID rank, PEID size): G(G), comm(G, rank, size, MessageTag::CostFunction), out_degree_(G.local_node_count()) {
-        comm.distribute_degree(stats);
-        out_degree_ = out_degree_from_comm(G, comm);
+    explicit DegreeAndOutDegreeCostFunction(GraphType& G, PEID rank, PEID size): G(G), comm(G, rank, size, as_int(MessageTag::CostFunction)), out_degree_(G.local_node_count()) {
+        comm.get_ghost_degree([&](NodeId global_node_id, Degree degree) {
+            G.get_ghost_payload(G.to_local_id(global_node_id)).degree = degree;
+        }, stats);
+        G.for_each_local_node([&](NodeId node) {
+            G.for_each_edge(node, [&](Edge e) {
+                if (G.is_outgoing(e)) {
+                    out_degree_[node]++;
+                }
+            });
+        });
     }
     size_t operator()(const LocalGraphView& G, NodeId node) const override {
       return G.node_info[node].degree * out_degree_[node];
@@ -105,9 +122,17 @@ private:
 
 template<class GraphType>
 struct OutDegreeSquaredCostFunction : AbstractCostFunction {
-    explicit OutDegreeSquaredCostFunction(const GraphType& G, PEID rank, PEID size): G(G), comm(G, rank, size, MessageTag::CostFunction), out_degree_(G.local_node_count()) {
-        comm.distribute_degree(stats);
-        out_degree_ = out_degree_from_comm(G, comm);
+    explicit OutDegreeSquaredCostFunction(GraphType& G, PEID rank, PEID size): G(G), comm(G, rank, size, as_int(MessageTag::CostFunction)), out_degree_(G.local_node_count()) {
+        comm.get_ghost_degree([&](NodeId global_node_id, Degree degree) {
+            G.get_ghost_payload(G.to_local_id(global_node_id)).degree = degree;
+        }, stats);
+        G.for_each_local_node([&](NodeId node) {
+            G.for_each_edge(node, [&](Edge e) {
+                if (G.is_outgoing(e)) {
+                    out_degree_[node]++;
+                }
+            });
+        });
     }
     size_t operator()(const LocalGraphView& G, NodeId node) const override {
         (void) G;
@@ -122,35 +147,21 @@ private:
 
 template<class GraphType>
 struct OutNeighborOutDegreeCostFunction : AbstractCostFunction {
-    explicit OutNeighborOutDegreeCostFunction(const GraphType& G, PEID rank, PEID size): G(G), comm(G, rank, size, MessageTag::CostFunction), out_degree_(G.local_node_count()), cost_(G.local_node_count()) {
-        comm.distribute_degree(stats);
-        out_degree_ = out_degree_from_comm(G, comm);
-        comm.distribute_out_degree(out_degree_, stats);
-        auto degree = [&](NodeId node) {
-            if (G.is_ghost(node)) {
-                return comm.get_ghost_degree(node);
-            } else {
-                assert(G.is_local_from_local(node));
-                return G.initial_degree(node);
-            }
-        };
-        auto is_outgoing = [&](const Edge& e) {
-            return std::make_pair(degree(e.tail), G.to_global_id(e.tail)) < std::make_pair(degree(e.head), G.to_global_id(e.head));
-        };
-        auto get_out_degree = [&](NodeId node) {
-            if (G.is_ghost(node)) {
-                return comm.get_ghost_out_degree(node);
-            } else {
-                assert(G.is_local_from_local(node));
-                return out_degree_[node];
-            }
-        };
+    explicit OutNeighborOutDegreeCostFunction(GraphType& G, PEID rank, PEID size): G(G), comm(G, rank, size, as_int(MessageTag::CostFunction)), out_degree_(G.local_node_count()), cost_(G.local_node_count()) {
+        comm.get_ghost_degree([&](NodeId global_node_id, Degree degree) {
+            G.get_ghost_payload(G.to_local_id(global_node_id)).degree = degree;
+        }, stats);
+        comm.get_ghost_outdegree([&](Edge e) {
+            return G.is_outgoing(e);
+        }, [&](NodeId global_id, Degree outdegree) {
+            G.get_ghost_payload(G.to_local_id(global_id)).outdegree = outdegree;
+        }, stats);
         G.for_each_local_node([&](NodeId v) {
             cost_[v] = 0;
             G.for_each_edge(v, [&](Edge edge) {
-                if (is_outgoing(edge)) {
+                if (G.is_outgoing(edge)) {
                     NodeId u = edge.head;
-                    cost_[v] += get_out_degree(v) + get_out_degree(u);
+                    cost_[v] += G.outdegree(v) + G.outdegree(u);
                 }
            });
         });
@@ -170,37 +181,23 @@ private:
 
 template<class GraphType>
 struct InNeighborOutDegreeCostFunction : AbstractCostFunction {
-    explicit InNeighborOutDegreeCostFunction(const GraphType& G, PEID rank, PEID size): G(G), comm(G, rank, size, MessageTag::CostFunction), out_degree_(G.local_node_count()), cost_(G.local_node_count()) {
-        comm.distribute_degree(stats);
-        out_degree_ = out_degree_from_comm(G, comm);
-        comm.distribute_out_degree(out_degree_, stats);
-        auto degree = [&](NodeId node) {
-            if (G.is_ghost(node)) {
-                return comm.get_ghost_degree(node);
-            } else {
-                assert(G.is_local_from_local(node));
-                return G.initial_degree(node);
-            }
-        };
-        auto is_outgoing = [&](const Edge& e) {
-            return std::make_pair(degree(e.tail), G.to_global_id(e.tail)) < std::make_pair(degree(e.head), G.to_global_id(e.head));
-        };
-        auto get_out_degree = [&](NodeId node) {
-            if (G.is_ghost(node)) {
-                return comm.get_ghost_out_degree(node);
-            } else {
-                assert(G.is_local_from_local(node));
-                return out_degree_[node];
-            }
-        };
+    explicit InNeighborOutDegreeCostFunction(GraphType& G, PEID rank, PEID size): G(G), comm(G, rank, size, as_int(MessageTag::CostFunction)), out_degree_(G.local_node_count()), cost_(G.local_node_count()) {
+        comm.get_ghost_degree([&](NodeId global_node_id, Degree degree) {
+            G.get_ghost_payload(G.to_local_id(global_node_id)).degree = degree;
+        }, stats);
+        comm.get_ghost_outdegree([&](Edge e) {
+            return G.is_outgoing(e);
+        }, [&](NodeId global_id, Degree outdegree) {
+            G.get_ghost_payload(G.to_local_id(global_id)).outdegree = outdegree;
+        }, stats);
         G.for_each_local_node([&](NodeId v) {
             cost_[v] = 0;
             G.for_each_edge(v, [&](Edge edge) {
-                if (!is_outgoing(edge)) {
+                if (!G.is_outgoing(edge)) {
                     NodeId u = edge.head;
-                    cost_[v] += get_out_degree(v) + get_out_degree(u);
+                    cost_[v] += G.outdegree(v) + G.outdegree(u);
                 }
-            });
+           });
         });
     }
     size_t operator()(const LocalGraphView& G, NodeId node) const override {
@@ -217,7 +214,7 @@ private:
 
 
 template<class GraphType>
-std::unique_ptr<AbstractCostFunction> get_cost_function_by_name(const std::string& name, const GraphType& G, PEID rank, PEID size) {
+std::unique_ptr<AbstractCostFunction> get_cost_function_by_name(const std::string& name, GraphType& G, PEID rank, PEID size) {
     if (name == "N") {
         return std::make_unique<UniformCostFunction<GraphType>>(G, rank, size);
     } else if (name == "D") {

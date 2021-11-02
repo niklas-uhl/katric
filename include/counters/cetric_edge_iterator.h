@@ -10,6 +10,7 @@
 #include <timer.h>
 #include <communicator.h>
 #include <datastructures/graph_definitions.h>
+#include <type_traits>
 
 
 namespace cetric {
@@ -21,16 +22,19 @@ public:
         G(G), conf_(conf), rank_(rank), size_(size),
         last_proc_(G.local_node_count(), -1),
         is_v_neighbor_(G.local_node_count() + G.ghost_count(), false),
-        comm(conf.buffer_threshold, MPI_NODE, rank_, size_, MessageTag::Neighborhood, conf.empty_pending_buffers_on_overflow),
+        comm(conf.buffer_threshold, MPI_NODE, rank_, size_, as_int(MessageTag::Neighborhood), conf.empty_pending_buffers_on_overflow),
         interface_nodes_(),
         pe_min_degree() {
+        using payload_type = typename GraphType::payload_type;
+        if constexpr(std::is_convertible_v<decltype(payload_type {}.degree), Degree>) {
             if (conf_.degree_filtering) {
                 pe_min_degree.resize(size);
                 G.for_each_ghost_node([&](NodeId node) {
                     const auto& ghost_data = G.get_ghost_data(node);
-                    pe_min_degree[ghost_data.rank] = std::min(pe_min_degree[ghost_data.rank], ghost_data.payload);
+                    pe_min_degree[ghost_data.rank] = std::min(pe_min_degree[ghost_data.rank], ghost_data.payload.degree);
                 });
             }
+        }
 
     }
 
@@ -142,11 +146,14 @@ private:
         //size_t send_count = 0;
         G.for_each_local_out_edge(v, [&](Edge e) {
             assert(G.is_ghost(e.head));
-            if (conf_.degree_filtering) {
-                const auto& ghost_data = G.get_ghost_data(e.head);
-                if (ghost_data.payload < pe_min_degree[u_rank]) {
-                    return;
-                }
+            using payload_type = typename GraphType::payload_type;
+            if constexpr(std::is_convertible_v<decltype(payload_type {}.degree), Degree>) {
+                    if (conf_.degree_filtering) {
+                        const auto& ghost_data = G.get_ghost_data(e.head);
+                        if (ghost_data.payload.degree < pe_min_degree[u_rank]) {
+                            return;
+                        }
+                    }
             }
             if constexpr (compress_more) {
                 if (G.get_ghost_data(e.head).rank != u_rank) {

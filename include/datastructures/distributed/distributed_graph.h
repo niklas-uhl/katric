@@ -12,6 +12,8 @@
 #include <iterator>
 #include <limits>
 #include <stdexcept>
+#include <tuple>
+#include <type_traits>
 #include <vector>
 #include <sstream>
 #include <google/dense_hash_map>
@@ -30,14 +32,46 @@ namespace cetric {
 
 using node_set = google::dense_hash_set<NodeId>;
 
+template<typename PayloadType>
+class payload_has_degree {
+    template<typename C>
+    static char test(decltype(&C::degree));
 
-template<typename GhostPayloadType>
+    template<typename C>
+    static char test(int, typename std::enable_if<std::is_convertible_v<C, Degree>>::type* = 0);
+
+    template<typename C>
+    static int test(...);
+
+public:
+    static const bool value = (sizeof(test<PayloadType>(0)) == sizeof(char));
+};
+
+template <typename PayloadType> class payload_has_outdegree {
+  template <typename C>
+  static char test(decltype(&C::outdegree));
+
+  template <typename C>
+  static int test(...);
+
+public:
+  static const bool value = (sizeof(test<PayloadType>(0)) == sizeof(char));
+};
+
+struct DegreeAndOutDegreePayload {
+    Degree degree;
+    Degree outdegree;
+};
+
+template<typename GhostPayloadType = DegreeAndOutDegreePayload>
 class DistributedGraph {
     friend class cetric::load_balancing::LoadBalancer;
     friend class GraphBuilder;
     friend class CompactGraph;
 
 public:
+    using payload_type = GhostPayloadType;
+
     template<typename Payload>
     struct GhostData {
         PEID rank;
@@ -189,12 +223,16 @@ public:
             }
             first_out_offset_[node] = left - first_out_[node];
         });
+        oriented_ = true;
+    }
 
+    inline bool oriented() const {
+        return oriented_;
     }
 
     inline void set_ghost_payload(NodeId local_node_id, GhostPayloadType payload) {
         assert(is_ghost(local_node_id));
-        ghost_data_[local_node_id - local_node_count_].payload = payload;
+        ghost_data_[local_node_id - local_node_count_].payload = std::move(payload);
     }
 
     inline void sort_neighborhoods() {
@@ -241,14 +279,34 @@ public:
 
     inline Degree degree(NodeId node) const {
         //TODO different types of degrees
-        assert(is_local_from_local(node));
-        return degree_[node];
+        if constexpr(payload_has_degree<payload_type>::value) {
+            if (is_ghost(node)) {
+                if constexpr(std::is_convertible_v<payload_type, Degree>) {
+                    return get_ghost_payload(node);
+                } else {
+                    return get_ghost_payload(node).degree;
+                }
+            } else {
+                return degree_[node];
+            }
+        } else {
+            assert(is_local_from_local(node));
+            return degree_[node];
+        }
     }
 
     inline Degree outdegree(NodeId node) const {
         //TODO different types of degrees
-        assert(is_local_from_local(node));
-        return degree_[node] - first_out_offset_[node];
+        if constexpr(payload_has_outdegree<payload_type>::value) {
+            if (is_ghost(node)) {
+              return get_ghost_payload(node).outdegree;
+            } else {
+              return degree_[node] - first_out_offset_[node];
+            }
+        } else {
+          assert(is_local_from_local(node));
+          return degree_[node] - first_out_offset_[node];
+        }
     }
 
     Degree initial_degree(NodeId node) const {
@@ -307,6 +365,19 @@ public:
         }
     }
 
+    [[nodiscard]] inline const GhostPayloadType &
+    get_ghost_payload(NodeId local_node_id) const {
+      assert(is_ghost(local_node_id));
+      NodeId ghost_index = local_node_id - local_node_count_;
+      return ghost_data_[ghost_index].payload;
+    }
+
+    [[nodiscard]] inline GhostPayloadType &
+    get_ghost_payload(NodeId local_node_id) {
+      assert(is_ghost(local_node_id));
+      NodeId ghost_index = local_node_id - local_node_count_;
+      return ghost_data_[ghost_index].payload;
+    }
 
     [[nodiscard]] inline const GhostData<GhostPayloadType>& get_ghost_data(NodeId local_node_id) const {
         assert(is_ghost(local_node_id));
@@ -318,6 +389,11 @@ public:
     [[nodiscard]] inline const LocalData& get_local_data(NodeId local_node_id) const {
         assert(is_local_from_local(local_node_id));
         return local_data_[local_node_id];
+    }
+
+    template<typename = std::enable_if_t<payload_has_degree<payload_type>::value>>
+    inline bool is_outgoing(Edge e) const {
+        return std::forward_as_tuple(degree(e.tail), to_global_id(e.tail)) < std::forward_as_tuple(degree(e.head), to_global_id(e.head));
     }
 
     DistributedGraph() {
@@ -384,71 +460,68 @@ public:
     }
 
     DistributedGraph(cetric::graph::LocalGraphView &&G, PEID rank, PEID size)
-        : first_out_(G.local_node_count() + 1), first_out_offset_(G.local_node_count()),
-          degree_(G.local_node_count()),
-          head_(), ghost_data_(),
-          local_data_(G.local_node_count()),
-          consecutive_vertices_(false),
-          ghost_ranks_available_(false),
-          global_to_local_(),
-          local_node_count_(G.local_node_count()),
-          local_edge_count_{G.edge_heads.size()},
-          total_node_count_{},
-          node_range_(
-              std::numeric_limits<NodeId>::max(),
-              std::numeric_limits<NodeId>::min()),
-          rank_(rank),
-          size_(size) {
+        : first_out_(G.local_node_count() + 1),
+          first_out_offset_(G.local_node_count()),
+          degree_(G.local_node_count()), head_(), ghost_data_(),
+          local_data_(G.local_node_count()), consecutive_vertices_(false),
+          ghost_ranks_available_(false), oriented_(false),
+          global_to_local_(), local_node_count_(G.local_node_count()),
+          local_edge_count_{G.edge_heads.size()}, total_node_count_{},
+          node_range_(std::numeric_limits<NodeId>::max(),
+                      std::numeric_limits<NodeId>::min()),
+          rank_(rank), size_(size) {
 
-        global_to_local_.set_empty_key(-1);
-        global_to_local_.set_deleted_key(-2);
-        auto degree_sum = 0;
-        for (size_t i = 0; i < local_node_count_; ++i) {
-            first_out_[i] = degree_sum;
-            degree_sum += G.node_info[i].degree;
-            NodeId local_id = i;
-            NodeId global_id = G.node_info[i].global_id;
-            global_to_local_[global_id] = local_id;
-            degree_[local_id] = G.node_info[i].degree;
-            local_data_[local_id].global_id = global_id;
-            node_range_.first = std::min(node_range_.first, global_id);
-            node_range_.second = std::max(node_range_.second, global_id);
-        }
-        consecutive_vertices_ = node_range_.second - node_range_.first  + 1 == local_node_count_;
+      global_to_local_.set_empty_key(-1);
+      global_to_local_.set_deleted_key(-2);
+      auto degree_sum = 0;
+      for (size_t i = 0; i < local_node_count_; ++i) {
+        first_out_[i] = degree_sum;
+        degree_sum += G.node_info[i].degree;
+        NodeId local_id = i;
+        NodeId global_id = G.node_info[i].global_id;
+        global_to_local_[global_id] = local_id;
+        degree_[local_id] = G.node_info[i].degree;
+        local_data_[local_id].global_id = global_id;
+        node_range_.first = std::min(node_range_.first, global_id);
+        node_range_.second = std::max(node_range_.second, global_id);
+      }
+      consecutive_vertices_ =
+          node_range_.second - node_range_.first + 1 == local_node_count_;
 
-        first_out_[local_node_count_] = degree_sum;
-        assert(first_out_.size() == local_node_count_ + 1);
-        assert(first_out_[0] == 0);
+      first_out_[local_node_count_] = degree_sum;
+      assert(first_out_.size() == local_node_count_ + 1);
+      assert(first_out_[0] == 0);
 
-        for(size_t i = 0; i < local_node_count_; ++i) {
-            assert(degree_[i] == G.node_info[i].degree);
-            assert(first_out_[i + 1] - first_out_[i] == degree_[i]);
-        }
-        assert(first_out_[first_out_.size() - 1] == G.edge_heads.size());
-        head_ = std::move(G.edge_heads);
-        auto ghost_count = 0;
-        for (NodeId node = 0; node < local_node_count_; ++node) {
-            for (EdgeId edge_id = first_out_[node]; edge_id < first_out_[node + 1]; ++edge_id) {
-                NodeId head = head_[edge_id];
-                if (!is_local(head)) {
-                    local_data_[node].is_interface = true;
-                    if (global_to_local_.find(head) == global_to_local_.end()) {
-                        NodeId local_id = local_node_count_ + ghost_count;
-                        global_to_local_[head] = local_id;
-                        GhostData<GhostPayloadType> ghost_data;
-                        ghost_data.global_id = head;
-                        ghost_data.rank = -1;
-                        ghost_data_.emplace_back(std::move(ghost_data));
-                        ghost_count++;
-                    }
-                }
-                head_[edge_id] = to_local_id(head);
+      for (size_t i = 0; i < local_node_count_; ++i) {
+        assert(degree_[i] == G.node_info[i].degree);
+        assert(first_out_[i + 1] - first_out_[i] == degree_[i]);
+      }
+      assert(first_out_[first_out_.size() - 1] == G.edge_heads.size());
+      head_ = std::move(G.edge_heads);
+      auto ghost_count = 0;
+      for (NodeId node = 0; node < local_node_count_; ++node) {
+        for (EdgeId edge_id = first_out_[node]; edge_id < first_out_[node + 1];
+             ++edge_id) {
+          NodeId head = head_[edge_id];
+          if (!is_local(head)) {
+            local_data_[node].is_interface = true;
+            if (global_to_local_.find(head) == global_to_local_.end()) {
+              NodeId local_id = local_node_count_ + ghost_count;
+              global_to_local_[head] = local_id;
+              GhostData<GhostPayloadType> ghost_data;
+              ghost_data.global_id = head;
+              ghost_data.rank = -1;
+              ghost_data_.emplace_back(std::move(ghost_data));
+              ghost_count++;
             }
+          }
+          head_[edge_id] = to_local_id(head);
         }
+      }
     }
 
     void find_ghost_ranks() {
-        if (ghost_ranks_available_) {
+        if (ghost_ranks_available()) {
             return;
         }
         // if (consecutive_vertices_) {
@@ -483,6 +556,10 @@ public:
             }
         });
         ghost_ranks_available_ = true;
+    }
+
+    void fetch_from_ghosts() {
+        assert(ghost_ranks_available());
     }
 
     LocalGraphView to_local_graph_view(bool remove_isolated, bool keep_only_out_edges) {
@@ -526,7 +603,15 @@ public:
         return ghost_ranks_available_;
     }
 
-private:
+    PEID rank() const {
+        return rank_;
+    }
+
+    PEID size() const {
+        return size_;
+    }
+
+  private:
 
     NodeId ghost_to_ghost_index(NodeId local_node_id) const {
         assert( is_ghost(local_node_id) );
@@ -542,6 +627,7 @@ private:
     std::vector<LocalData> local_data_;
     bool consecutive_vertices_;
     bool ghost_ranks_available_;
+    bool oriented_;
     node_map global_to_local_;
     NodeId local_node_count_{};
     EdgeId local_edge_count_{};

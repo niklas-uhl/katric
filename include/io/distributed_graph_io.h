@@ -61,7 +61,7 @@ template<class EdgeList>
 void fix_broken_edge_list(EdgeList& edge_list, const std::vector<std::pair<NodeId, NodeId>>& ranges, node_set& ghosts, PEID rank, PEID size) {
     NodeId local_from = ranges[rank].first;
     NodeId local_to = ranges[rank].second;
-    BufferedCommunicator<NodeId> communicator(std::numeric_limits<size_t>::max(), MPI_NODE, rank, size, MessageTag::RHGFix);
+    BufferedCommunicator<NodeId> communicator(std::numeric_limits<size_t>::max(), MPI_NODE, rank, size, as_int(MessageTag::RHGFix));
     cetric::profiling::MessageStatistics dummy_stats;
     auto handle_message = [&](PEID, const std::vector<NodeId> &message) {
         for (size_t i = 0; i < message.size(); i += 2) {
