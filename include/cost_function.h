@@ -11,8 +11,11 @@
 #include <datastructures/distributed/local_graph_view.h>
 #include <datastructures/graph_definitions.h>
 #include <numeric>
+#include <unordered_map>
 
 #include <statistics.h>
+#include <type_traits>
+#include <utility>
 
 using namespace cetric::graph;
 
@@ -41,6 +44,67 @@ std::vector<Degree> out_degree_from_comm(const GraphType& G, const GraphCommunic
 
     return out_degree;
 }
+
+
+template <typename PayloadType>
+class CostFunction {
+public:
+    template<typename CostFunctionType>
+    explicit CostFunction(DistributedGraph<PayloadType> &G,
+                          CostFunctionType &&cost_function): G(G), cost(G.local_node_count()) {
+        G.for_each_local_node(
+            [&](NodeId node) { cost[node] = cost_function(*this, G, node); });
+    }
+
+    size_t operator()(NodeId local_node_id) { return cost[local_node_id]; }
+
+    typename std::enable_if<payload_has_degree<PayloadType>::value, Degree>::type
+    degree(NodeId local_node_id) {
+        return G.degree(local_node_id);
+    }
+
+    typename std::enable_if<payload_has_outdegree<PayloadType>::value, Degree>::type
+    out_degree(NodeId local_node_id) {
+        return G.outdegree(local_node_id);
+    }
+    PEID rank(NodeId local_node_id) {
+        G.find_ghost_ranks();
+        if (G.is_local(local_node_id)) {
+            return G.rank();
+        } else {
+            return G.get_ghost_data(local_node_id).rank;
+        }
+    }
+    DistributedGraph<PayloadType> &G;
+    std::vector<size_t> cost;
+};
+
+template <typename PayloadType> struct CostFunctionRegistry {
+    static CostFunction<PayloadType> get(const std::string &name, DistributedGraph<PayloadType> &G,
+                    const Config &conf) {
+        (void) conf;
+        using RefType = CostFunction<PayloadType>&;
+        using GraphType = DistributedGraph<PayloadType>&;
+        std::unordered_map<
+            std::string,
+            std::function<size_t(CostFunction<PayloadType> &,
+                                 DistributedGraph<PayloadType> &, NodeId)>>
+            cost_functions = {
+            std::make_pair("N",
+                           [](RefType, GraphType, NodeId) { return 1; }),
+            std::make_pair("D",
+                           [](RefType ctx, GraphType, NodeId node) {
+                               return ctx.degree(node);
+                           }),
+            std::make_pair("DH",
+                           [](RefType ctx, GraphType, NodeId node) {
+                               return ctx.out_degree(node);
+                           })
+
+        };
+        return CostFunction<PayloadType>(G, cost_functions[name]);
+    }
+};
 
 struct AbstractCostFunction {
     virtual size_t operator()(const LocalGraphView& G, NodeId node) const = 0;

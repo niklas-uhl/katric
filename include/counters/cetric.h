@@ -55,6 +55,7 @@ inline void run_cetric(DistributedGraph<> &G,
                 cetric::profiling::Statistics &stats, const Config &conf,
                 PEID rank, PEID size) {
 
+    auto my_cost = CostFunctionRegistry<DegreeAndOutDegreePayload>::get("N", G, conf);
     G.find_ghost_ranks();
     if (conf.primary_cost_function != "N") {
         auto cost_function = get_cost_function_by_name(
