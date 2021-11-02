@@ -41,6 +41,8 @@ Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
 
     app.add_flag("--degree-filtering", conf.degree_filtering);
 
+    app.add_flag("--orient-locally", conf.orient_locally);
+
     parse_gen_parameters(app, conf);
 
     CLI::Option* input_option = app.get_option("input");

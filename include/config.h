@@ -39,6 +39,7 @@ struct Config {
     bool use_two_phases = false;
 
     bool degree_filtering = false;
+    bool orient_locally = false;
 
     int verbosity_level = 0;
     bool json_output = false;

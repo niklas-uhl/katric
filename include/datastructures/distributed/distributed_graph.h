@@ -295,6 +295,11 @@ public:
         }
     }
 
+    inline Degree local_degree(NodeId node) const {
+        assert(is_local_from_local(node) || is_ghost(node));
+        return degree_[node];
+    }
+
     inline Degree outdegree(NodeId node) const {
         //TODO different types of degrees
         if constexpr(payload_has_outdegree<payload_type>::value) {
