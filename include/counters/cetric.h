@@ -31,6 +31,7 @@ inline void preprocessing(DistributedGraph<> &G,
                 G.get_ghost_payload(G.to_local_id(global_id)).degree = degree;
             },
             stats.local.preprocessing.message_statistics);
+        G.get_graph_payload().ghost_degree_available = true;
 
         timer.restart();
         G.orient([&](NodeId a, NodeId b) {
@@ -55,16 +56,16 @@ inline void run_cetric(DistributedGraph<> &G,
                 cetric::profiling::Statistics &stats, const Config &conf,
                 PEID rank, PEID size) {
 
-    auto my_cost = CostFunctionRegistry<DegreeAndOutDegreePayload>::get("N", G, conf);
+    auto my_cost = CostFunctionRegistry<DistributedGraph<>>::get("N", G, conf);
     G.find_ghost_ranks();
     if (conf.primary_cost_function != "N") {
-        auto cost_function = get_cost_function_by_name(
-            conf.primary_cost_function, G, rank, size);
-        LocalGraphView tmp = G.to_local_graph_view(false, false);
-        tmp = cetric::load_balancing::LoadBalancer::run(
-            std::move(tmp), *cost_function, conf);
-        G = DistributedGraph(std::move(tmp), rank, size);
-        G.find_ghost_ranks();
+      auto cost_function =
+          CostFunctionRegistry<DistributedGraph<>>::get(conf.primary_cost_function, G, conf);
+      LocalGraphView tmp = G.to_local_graph_view(false, false);
+      tmp = cetric::load_balancing::LoadBalancer::run(std::move(tmp),
+                                                      cost_function, conf);
+      G = DistributedGraph(std::move(tmp), rank, size);
+      G.find_ghost_ranks();
     }
     G.expand_ghosts();
     preprocessing(G, stats, conf, Phase::Local);
@@ -80,16 +81,15 @@ inline void run_cetric(DistributedGraph<> &G,
         stats);
     G.remove_internal_edges();
     if (!conf.secondary_cost_function.empty()) {
-        auto cost_function = get_cost_function_by_name(
-            conf.secondary_cost_function, G, rank, size);
-        auto tmp =
-            G.to_local_graph_view(true, false);
-        tmp = cetric::load_balancing::LoadBalancer::run(std::move(tmp),
-                                                        *cost_function, conf);
-        G = DistributedGraph(std::move(tmp), rank, size);
-        G.expand_ghosts();
-        G.find_ghost_ranks();
-        preprocessing(G, stats, conf, Phase::Global);
+      auto cost_function = CostFunctionRegistry<DistributedGraph<>>::get(
+          conf.secondary_cost_function, G, conf);
+      auto tmp = G.to_local_graph_view(true, false);
+      tmp = cetric::load_balancing::LoadBalancer::run(std::move(tmp),
+                                                      cost_function, conf);
+      G = DistributedGraph(std::move(tmp), rank, size);
+      G.expand_ghosts();
+      G.find_ghost_ranks();
+      preprocessing(G, stats, conf, Phase::Global);
     }
     cetric::CetricEdgeIterator<DistributedGraph<>, true, true>
         ctr_dist(G, conf, rank, size);

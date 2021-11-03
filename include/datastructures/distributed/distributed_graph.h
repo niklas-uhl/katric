@@ -63,7 +63,12 @@ struct DegreeAndOutDegreePayload {
     Degree outdegree;
 };
 
-template<typename GhostPayloadType = DegreeAndOutDegreePayload>
+struct DegreeAndOutDegreeIndicators {
+    bool ghost_degree_available = false;
+    Degree ghost_outdegree_available;
+};
+
+template<typename GhostPayloadType = DegreeAndOutDegreePayload, typename GraphPayload = DegreeAndOutDegreeIndicators>
 class DistributedGraph {
     friend class cetric::load_balancing::LoadBalancer;
     friend class GraphBuilder;
@@ -370,6 +375,14 @@ public:
         }
     }
 
+    [[nodiscard]] inline const GraphPayload& get_graph_payload() const {
+        return graph_payload_;
+    }
+
+    [[nodiscard]] inline GraphPayload &get_graph_payload() {
+      return graph_payload_;
+    }
+
     [[nodiscard]] inline const GhostPayloadType &
     get_ghost_payload(NodeId local_node_id) const {
       assert(is_ghost(local_node_id));
@@ -563,9 +576,6 @@ public:
         ghost_ranks_available_ = true;
     }
 
-    void fetch_from_ghosts() {
-        assert(ghost_ranks_available());
-    }
 
     LocalGraphView to_local_graph_view(bool remove_isolated, bool keep_only_out_edges) {
         DistributedGraph G = std::move(*this);
@@ -633,6 +643,7 @@ public:
     bool consecutive_vertices_;
     bool ghost_ranks_available_;
     bool oriented_;
+    GraphPayload graph_payload_;
     node_map global_to_local_;
     NodeId local_node_count_{};
     EdgeId local_edge_count_{};
