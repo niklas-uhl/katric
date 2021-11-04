@@ -3,11 +3,13 @@
 
 #include "datastructures/distributed/local_graph_view.h"
 #include "datastructures/graph_definitions.h"
+#include "debug_assert.hpp"
 #include "util.h"
 #include <algorithm>
 #include <config.h>
 #include <cstddef>
 #include <numeric>
+#include <sstream>
 #include <string>
 #include <vector>
 #include <mpi.h>
@@ -105,7 +107,9 @@ namespace cetric {
                   for (auto& ninfo : node_info_recv) {
                       edge_count += ninfo.degree;
                   }
-                  assert(edge_count == head.size());
+                  std::stringstream message;
+                  message << edge_count << " != " << head.size();
+                  DEBUG_ASSERT(edge_count == head.size(), debug_module {}, message.str().c_str());
               }
               // #endif
 

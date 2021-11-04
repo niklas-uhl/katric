@@ -6,6 +6,7 @@
 #define PARALLEL_TRIANGLE_COUNTER_GRAPH_COMMUNICATOR_H
 
 #include <datastructures/graph_definitions.h>
+#include <google/dense_hash_map>
 #include <communicator.h>
 #include <util.h>
 #include <optional>

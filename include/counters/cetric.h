@@ -56,11 +56,12 @@ inline void run_cetric(DistributedGraph<> &G,
                 cetric::profiling::Statistics &stats, const Config &conf,
                 PEID rank, PEID size) {
 
-    auto my_cost = CostFunctionRegistry<DistributedGraph<>>::get("N", G, conf);
+    // TODO remove
+    cetric::profiling::MessageStatistics dummy;
     G.find_ghost_ranks();
     if (conf.primary_cost_function != "N") {
       auto cost_function =
-          CostFunctionRegistry<DistributedGraph<>>::get(conf.primary_cost_function, G, conf);
+          CostFunctionRegistry<DistributedGraph<>>::get(conf.primary_cost_function, G, conf, dummy);
       LocalGraphView tmp = G.to_local_graph_view(false, false);
       tmp = cetric::load_balancing::LoadBalancer::run(std::move(tmp),
                                                       cost_function, conf);
@@ -82,7 +83,7 @@ inline void run_cetric(DistributedGraph<> &G,
     G.remove_internal_edges();
     if (!conf.secondary_cost_function.empty()) {
       auto cost_function = CostFunctionRegistry<DistributedGraph<>>::get(
-          conf.secondary_cost_function, G, conf);
+          conf.secondary_cost_function, G, conf, dummy);
       auto tmp = G.to_local_graph_view(true, false);
       tmp = cetric::load_balancing::LoadBalancer::run(std::move(tmp),
                                                       cost_function, conf);
@@ -90,6 +91,26 @@ inline void run_cetric(DistributedGraph<> &G,
       G.expand_ghosts();
       G.find_ghost_ranks();
       preprocessing(G, stats, conf, Phase::Global);
+    } else {
+        if (conf.orient_locally) {
+            //if we only oriented locally and do no secondary load balancing
+            //we have to now have to orient the edges globally
+            assert(!G.get_graph_payload().ghost_degree_available);
+            GraphCommunicator comm(G, conf.rank, conf.PEs,
+                                   as_int(MessageTag::Orientation));
+            comm.get_ghost_degree(
+                [&](NodeId global_id, Degree degree) {
+                    G.get_ghost_payload(G.to_local_id(global_id)).degree = degree;
+                },
+                stats.local.preprocessing.message_statistics);
+            G.get_graph_payload().ghost_degree_available = true;
+            cetric::profiling::Timer timer;
+            G.orient([&](NodeId a, NodeId b) {
+                    return std::make_tuple(G.local_degree(a), G.to_global_id(a)) <
+                        std::make_tuple(G.local_degree(b), G.to_global_id(b));
+                });
+            stats.local.preprocessing.orientation_time += timer.elapsed_time();
+        }
     }
     cetric::CetricEdgeIterator<DistributedGraph<>, true, true>
         ctr_dist(G, conf, rank, size);

@@ -25,41 +25,39 @@ template <typename Graph>
 class CostFunction {
 public:
 
-    static void init_degree(Graph& G) {
+    static void init_degree(Graph& G, cetric::profiling::MessageStatistics& stats) {
         GraphCommunicator comm(G, G.rank(), G.size(), as_int(MessageTag::CostFunction));
-        //TODO replace this dummy
-        cetric::profiling::MessageStatistics dummy;
         if (!G.get_graph_payload().ghost_degree_available) {
           comm.get_ghost_degree(
               [&](NodeId global_id, Degree degree) {
                 G.get_ghost_payload(G.to_local_id(global_id)).degree = degree;
               },
-              dummy);
+              stats);
           G.get_graph_payload().ghost_degree_available = true;
         }
     }
 
-    static void init_all(Graph &G) {
-        GraphCommunicator<Graph> comm(G, G.rank(), G.size(), as_int(MessageTag::CostFunction));
-        cetric::profiling::MessageStatistics dummy;
-        if (!G.get_graph_payload().ghost_degree_available) {
-          comm.get_ghost_degree(
-              [&](NodeId global_id, Degree degree) {
-                G.get_ghost_payload(G.to_local_id(global_id)).degree = degree;
-              },
-              dummy);
-          G.get_graph_payload().ghost_degree_available = true;
-        }
-        if (!G.get_graph_payload().ghost_outdegree_available) {
-            comm.get_ghost_outdegree(
-                [&](Edge e) { return G.is_outgoing(e); },
-                [&](NodeId global_id, Degree outdegree) {
-                    G.get_ghost_payload(G.to_local_id(global_id)).outdegree =
-                        outdegree;
-                },
-                dummy);
-            G.get_graph_payload().ghost_outdegree_available = true;
-        }
+    static void init_all(Graph &G, cetric::profiling::MessageStatistics& stats) {
+      GraphCommunicator<Graph> comm(G, G.rank(), G.size(),
+                                    as_int(MessageTag::CostFunction));
+      if (!G.get_graph_payload().ghost_degree_available) {
+        comm.get_ghost_degree(
+            [&](NodeId global_id, Degree degree) {
+              G.get_ghost_payload(G.to_local_id(global_id)).degree = degree;
+            },
+            stats);
+        G.get_graph_payload().ghost_degree_available = true;
+      }
+      if (!G.get_graph_payload().ghost_outdegree_available) {
+        comm.get_ghost_outdegree(
+            [&](Edge e) { return G.is_outgoing(e); },
+            [&](NodeId global_id, Degree outdegree) {
+              G.get_ghost_payload(G.to_local_id(global_id)).outdegree =
+                  outdegree;
+            },
+            stats);
+        G.get_graph_payload().ghost_outdegree_available = true;
+      }
     }
 
     template<typename CostFunctionType>
@@ -98,37 +96,37 @@ private:
 
 template <typename Graph> struct CostFunctionRegistry {
     static CostFunction<Graph> get(const std::string &name, Graph &G,
-                                   const Config &conf) {
+                                   const Config &conf, cetric::profiling::MessageStatistics& stats) {
         (void) conf;
         using RefType = CostFunction<Graph>&;
         using GraphType = Graph&;
         std::unordered_map<
             std::string,
-            std::pair<std::function<void(GraphType)>,
+            std::pair<std::function<void(GraphType, cetric::profiling::MessageStatistics&)>,
                       std::function<size_t(RefType, GraphType, NodeId)>>>
             cost_functions = {
             {"N",
-             {[](auto) {},
+             {[](auto, auto) {},
               [](RefType, GraphType, NodeId) {
                   return 1;
               }}},
             {"D",
-             {[](auto) {},
+             {[](auto, auto) {},
               [](RefType ctx, GraphType, NodeId node) {
                   return ctx.degree(node);
               }}},
             {"DH",
-             {[](auto) {},
+             {[](auto, auto) {},
               [](RefType ctx, GraphType, NodeId node) {
                   return ctx.out_degree(node);
               }}},
             {"DDH",
-             {[](auto) {},
+             {[](auto, auto) {},
               [](RefType ctx, GraphType, NodeId node){
                   return ctx.degree(node) * ctx.out_degree(node);
               }}},
             {"DH2",
-             {[](auto) {},
+             {[](auto, auto) {},
               [](RefType ctx, GraphType, NodeId node) {
                   Degree out_deg = ctx.out_degree(node);
                   return out_deg * out_deg;
@@ -162,8 +160,8 @@ template <typename Graph> struct CostFunctionRegistry {
         if (it == cost_functions.end()) {
             throw std::runtime_error("Unsupported cost function");
         }
-        auto [init, cost] = *it.second;
-        init(G);
+        auto [init, cost] = it->second;
+        init(G, stats);
         return CostFunction<Graph>(G, cost);
     }
 };

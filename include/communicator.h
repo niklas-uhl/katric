@@ -6,10 +6,16 @@
 #define PARALLEL_TRIANGLE_COUNTER_COMM_UTILS_H
 
 #include <google/dense_hash_map>
-#include <statistics.h>
+#include <message_statistics.h>
 #include <type_traits>
 #include <util.h>
 #include <mpi.h>
+
+template<class, class = void>
+struct has_data : std::false_type {};
+
+template<class T>
+struct has_data<T, std::void_t<typename T::data>> : std::true_type {};
 
 
 struct CommunicationStats {
@@ -242,6 +248,37 @@ public:
         std::vector<T> receive_buffer(receive_count);
         MPI_Allgatherv(send_buffer.data(), send_count, mpi_type, receive_buffer.data(), receive_counts.data(), displs.data(), mpi_type, comm);
         return std::make_pair(std::move(receive_buffer), std::move(displs));
+    }
+
+    template <typename Container>
+    static std::pair<std::vector<typename Container::value_type>, std::vector<int>>
+    gather(Container &send_buffer, MPI_Datatype mpi_type,
+           MPI_Comm comm, PEID root, PEID rank, PEID size) {
+      int send_count = send_buffer.size();
+      std::vector<int> receive_counts;
+      std::vector<int> displs;
+      if (rank == root) {
+          receive_counts.resize(size);
+          displs.resize(size + 1);
+      }
+      MPI_Gather(&send_count, 1, MPI_INT, receive_counts.data(), 1, MPI_INT,
+                 root, comm);
+
+      std::vector<typename Container::value_type> receive_buffer;
+      if (rank == root) {
+        int receive_count = 0;
+        for (size_t i = 0; i < receive_counts.size(); ++i) {
+          displs[i] = receive_count;
+          receive_count += receive_counts[i];
+        }
+        displs[size] = receive_count;
+        receive_buffer.resize(receive_count);
+      }
+
+      MPI_Gatherv(send_buffer.data(), send_count, mpi_type,
+                     receive_buffer.data(), receive_counts.data(),
+                  displs.data(), mpi_type, root, comm);
+      return std::make_pair(std::move(receive_buffer), std::move(displs));
     }
 };
 

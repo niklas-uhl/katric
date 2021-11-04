@@ -98,6 +98,7 @@ int main(int argc, char* argv[]) {
     stats.reduce();
     if (conf.json_output) {
         if (rank == 0) {
+            assert(stats.triangles == stats.counted_triangles);
             auto output = nlohmann::json(stats);
             output["config"] = conf;
             std::cout << nlohmann::json(output).dump(4) << std::endl;

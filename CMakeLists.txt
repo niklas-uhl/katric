@@ -72,6 +72,17 @@ if(NOT USE_SUBMODULES)
     endif()
 
     FetchContent_Declare(
+      cereal
+      GIT_REPOSITORY https://github.com/USCiLab/cereal.git
+      GIT_PROGRESS TRUE
+      )
+    FetchContent_GetProperties(cereal)
+    if (NOT cereal_POPULATED)
+      FetchContent_Populate(cereal)
+      add_subdirectory(${cereal_SOURCE_DIR} EXCLUDE_FROM_ALL)
+    endif()
+
+    FetchContent_Declare(
         kagen
         GIT_REPOSITORY https://github.com/niklas-uhl/KaGen.git
         GIT_TAG origin/update-sampling
