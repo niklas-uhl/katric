@@ -52,6 +52,7 @@ namespace cetric {
               cost.resize(0);
               cost.shrink_to_fit();
 
+              //TODO we should also try sparse all to all
               std::vector<std::pair<NodeId, NodeId>> to_receive(conf.PEs);
               MPI_Alltoall(to_send.data(), 2, MPI_NODE, to_receive.data(), 2,
                            MPI_NODE, MPI_COMM_WORLD);

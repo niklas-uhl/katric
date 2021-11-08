@@ -93,23 +93,7 @@ inline void run_cetric(DistributedGraph<> &G,
       preprocessing(G, stats, conf, Phase::Global);
     } else {
         if (conf.orient_locally) {
-            //if we only oriented locally and do no secondary load balancing
-            //we have to now have to orient the edges globally
-            assert(!G.get_graph_payload().ghost_degree_available);
-            GraphCommunicator comm(G, conf.rank, conf.PEs,
-                                   as_int(MessageTag::Orientation));
-            comm.get_ghost_degree(
-                [&](NodeId global_id, Degree degree) {
-                    G.get_ghost_payload(G.to_local_id(global_id)).degree = degree;
-                },
-                stats.local.preprocessing.message_statistics);
-            G.get_graph_payload().ghost_degree_available = true;
-            cetric::profiling::Timer timer;
-            G.orient([&](NodeId a, NodeId b) {
-                    return std::make_tuple(G.local_degree(a), G.to_global_id(a)) <
-                        std::make_tuple(G.local_degree(b), G.to_global_id(b));
-                });
-            stats.local.preprocessing.orientation_time += timer.elapsed_time();
+            preprocessing(G, stats, conf, Phase::Global);
         }
     }
     cetric::CetricEdgeIterator<DistributedGraph<>, true, true>
