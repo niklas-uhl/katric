@@ -60,17 +60,15 @@ public:
     static const bool value = (sizeof(test<PayloadType>(0)) == sizeof(char));
 };
 
-struct DegreeAndOutDegreePayload {
+struct DegreePayload {
     Degree degree;
-    Degree outdegree;
 };
 
-struct DegreeAndOutDegreeIndicators {
+struct DegreeIndicators {
     bool ghost_degree_available = false;
-    bool ghost_outdegree_available = false;
 };
 
-template <typename GhostPayloadType = DegreeAndOutDegreePayload, typename GraphPayload = DegreeAndOutDegreeIndicators>
+template <typename GhostPayloadType = DegreePayload, typename GraphPayload = DegreeIndicators>
 class DistributedGraph {
     friend class cetric::load_balancing::LoadBalancer;
     friend class GraphBuilder;
@@ -286,10 +284,13 @@ public:
         }
     }
 
+    //! returns the degree for the given local id
+    //! if ghost_payload has degree this also works for ghosts
     inline Degree degree(NodeId node) const {
-        // TODO different types of degrees
         if constexpr (payload_has_degree<payload_type>::value) {
+            assert(is_local_from_local(node) || is_ghost(node));
             if (is_ghost(node)) {
+                assert(graph_payload_.ghost_degree_available);
                 if constexpr (std::is_convertible_v<payload_type, Degree>) {
                     return get_ghost_payload(node);
                 } else {
@@ -310,22 +311,12 @@ public:
     }
 
     inline Degree outdegree(NodeId node) const {
-        // TODO different types of degrees
         assert(oriented());
-        if constexpr (payload_has_outdegree<payload_type>::value) {
-            if (is_ghost(node)) {
-                return get_ghost_payload(node).outdegree;
-            } else {
-                return degree_[node] - first_out_offset_[node];
-            }
-        } else {
-            assert(is_local_from_local(node));
-            return degree_[node] - first_out_offset_[node];
-        }
+        assert(is_local_from_local(node));
+        return degree_[node] - first_out_offset_[node];
     }
 
     Degree initial_degree(NodeId node) const {
-        // TODO different types of degrees
         assert(is_local_from_local(node));
         return first_out_[node + 1] - first_out_[node];
     }
