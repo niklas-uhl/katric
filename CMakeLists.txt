@@ -60,6 +60,31 @@ if(NOT USE_SUBMODULES)
     FetchContent_MakeAvailable(debug_assert)
 
     FetchContent_Declare(
+      backward-cpp
+      GIT_REPOSITORY https://github.com/bombela/backward-cpp.git
+      GIT_TAG v1.6
+      GIT_PROGRESS TRUE
+      )
+    FetchContent_GetProperties(backward-cpp)
+    if (NOT backward-cpp_POPULATED)
+      FetchContent_Populate(backward-cpp)
+      set(Backward_DIR ${backward-cpp_SOURCE_DIR})
+      find_package(Backward)
+    endif()
+
+    FetchContent_Declare(
+      fmt
+      GIT_REPOSITORY https://github.com/fmtlib/fmt.git
+      GIT_TAG 8.0.1
+      GIT_PROGRESS TRUE
+      )
+    FetchContent_GetProperties(fmt)
+    if (NOT fmt_POPULATED)
+      FetchContent_Populate(fmt)
+      add_subdirectory(${fmt_SOURCE_DIR} EXCLUDE_FROM_ALL)
+    endif()
+
+    FetchContent_Declare(
         json
         GIT_REPOSITORY https://github.com/ArthurSonzogni/nlohmann_json_cmake_fetchcontent.git
         GIT_TAG v3.10.2

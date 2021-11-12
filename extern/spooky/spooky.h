@@ -29,14 +29,14 @@
 #include <stddef.h>
 
 #ifdef _MSC_VER
-# define INLINE __forceinline
+# define SPOOKY_INLINE __forceinline
   typedef  unsigned __int64 uint64;
   typedef  unsigned __int32 uint32;
   typedef  unsigned __int16 uint16;
   typedef  unsigned __int8  uint8;
 #else
 # include <stdint.h>
-# define INLINE inline
+# define SPOOKY_INLINE inline
   typedef  uint64_t  uint64;
   typedef  uint32_t  uint32;
   typedef  uint16_t  uint16;
@@ -112,7 +112,7 @@ public:
     //
     // left rotate a 64-bit value by k bytes
     //
-    static INLINE uint64 Rot64(uint64 x, int k)
+    static SPOOKY_INLINE uint64 Rot64(uint64 x, int k)
     {
         return (x << k) | (x >> (64 - k));
     }
@@ -130,7 +130,7 @@ public:
     //   When run forward or backwards one Mix
     // I tried 3 pairs of each; they all differed by at least 212 bits.
     //
-    static INLINE void Mix(
+    static SPOOKY_INLINE void Mix(
         const uint64 *data, 
         uint64 &s0, uint64 &s1, uint64 &s2, uint64 &s3,
         uint64 &s4, uint64 &s5, uint64 &s6, uint64 &s7,
@@ -166,7 +166,7 @@ public:
     // Two iterations was almost good enough for a 64-bit result, but a
     // 128-bit result is reported, so End() does three iterations.
     //
-    static INLINE void EndPartial(
+    static SPOOKY_INLINE void EndPartial(
         uint64 &h0, uint64 &h1, uint64 &h2, uint64 &h3,
         uint64 &h4, uint64 &h5, uint64 &h6, uint64 &h7, 
         uint64 &h8, uint64 &h9, uint64 &h10,uint64 &h11)
@@ -185,7 +185,7 @@ public:
         h10+= h0;    h1 ^= h10;   h0 = Rot64(h0,54);
     }
 
-    static INLINE void End(
+    static SPOOKY_INLINE void End(
         uint64 &h0, uint64 &h1, uint64 &h2, uint64 &h3,
         uint64 &h4, uint64 &h5, uint64 &h6, uint64 &h7, 
         uint64 &h8, uint64 &h9, uint64 &h10,uint64 &h11)
@@ -210,7 +210,7 @@ public:
     // with diffs defined by either xor or subtraction
     // with a base of all zeros plus a counter, or plus another bit, or random
     //
-    static INLINE void ShortMix(uint64 &h0, uint64 &h1, uint64 &h2, uint64 &h3)
+    static SPOOKY_INLINE void ShortMix(uint64 &h0, uint64 &h1, uint64 &h2, uint64 &h3)
     {
         h2 = Rot64(h2,50);  h2 += h3;  h0 ^= h2;
         h3 = Rot64(h3,52);  h3 += h0;  h1 ^= h3;
@@ -238,7 +238,7 @@ public:
     // For every pair of input bits,
     // with probability 50 +- .75% (the worst case is approximately that)
     //
-    static INLINE void ShortEnd(uint64 &h0, uint64 &h1, uint64 &h2, uint64 &h3)
+    static SPOOKY_INLINE void ShortEnd(uint64 &h0, uint64 &h1, uint64 &h2, uint64 &h3)
     {
         h3 ^= h2;  h2 = Rot64(h2,15);  h3 += h2;
         h0 ^= h3;  h3 = Rot64(h3,52);  h0 += h3;
