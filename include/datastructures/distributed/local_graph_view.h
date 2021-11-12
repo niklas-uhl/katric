@@ -85,7 +85,11 @@ namespace cetric {
             os << "(" << c.global_id << ", " << c.degree << ")";
             return os;
         }
-    }
+        inline bool operator==(const LocalGraphView::NodeInfo& lhs, const LocalGraphView::NodeInfo& rhs) {
+            return lhs.global_id == rhs.global_id && lhs.degree == rhs.degree;
+        }
+        } // namespace graph
 }
+
 
 #endif /* end of include guard: LOCAL_GRAPH_VIEW_H_Z5NCVYVP */

@@ -64,16 +64,13 @@ public:
     void get_ghost_outdegree(OnDegreeFunc &&on_degree_receive,
                              cetric::profiling::MessageStatistics &stats) {
         assert(G.oriented());
-        get_ghost_outdegree([](auto) {}, on_degree_receive, stats);
+        get_ghost_outdegree([&](Edge e) {return G.is_outgoing(e);}, on_degree_receive, stats);
     }
 
     template<typename EdgePred, typename OnDegreeFunc>
     void get_ghost_outdegree(EdgePred&& is_outgoing, OnDegreeFunc&& on_degree_receive, cetric::profiling::MessageStatistics& stats) {
         assert(G.ghost_ranks_available());
         auto get_out_degree = [&](NodeId local_node_id) {
-            if (G.oriented()) {
-                return G.outdegree(local_node_id);
-            } else {
                 Degree outdegree = 0;
                 G.for_each_edge(local_node_id, [&](Edge e) {
                     if (is_outgoing(e)) {
@@ -81,7 +78,6 @@ public:
                     }
                 });
                 return outdegree;
-            }
         };
         // assert(G.oriented());
         send_buffers.clear();
