@@ -1,0 +1,12 @@
+﻿---
+BasedOnStyle: Chromium
+AccessModifierOffset: '-4'
+AllowShortCaseLabelsOnASingleLine: 'false'
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLambdasOnASingleLine: Inline
+AllowShortLoopsOnASingleLine: 'false'
+ColumnLimit: '120'
+IndentWidth: '4'
+
+...
