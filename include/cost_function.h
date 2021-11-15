@@ -18,6 +18,7 @@
 #include <unordered_map>
 #include "communicator.h"
 #include "fmt/core.h"
+#include "timer.h"
 #include "util.h"
 
 #include <statistics.h>
@@ -61,12 +62,12 @@ template <typename Graph>
 class CostFunction {
 public:
     static void init_nop(Graph& G, OutDegreeCache& cache, cetric::profiling::MessageStatistics& stats) {
-        (void) G;
+        (void)G;
         (void)cache;
-        (void) stats;
+        (void)stats;
     }
     static void init_degree(Graph& G, OutDegreeCache& cache, cetric::profiling::MessageStatistics& stats) {
-        (void) cache;
+        (void)cache;
         GraphCommunicator comm(G, G.rank(), G.size(), as_int(MessageTag::CostFunction));
         if (!G.get_graph_payload().ghost_degree_available) {
             comm.get_ghost_degree(
@@ -91,13 +92,19 @@ public:
     }
 
     template <typename CostFunctionType>
-    explicit CostFunction(Graph& G, const std::string& name, OutDegreeCache& cache, CostFunctionType&& cost_function)
+    explicit CostFunction(Graph& G,
+                          const std::string& name,
+                          OutDegreeCache& cache,
+                          CostFunctionType&& cost_function,
+                          cetric::profiling::LoadBalancingStatistics& stats)
         : G(G), outdegree_cache(cache), global_to_index(G.local_node_count()), cost(G.local_node_count()), name(name) {
+        cetric::profiling::Timer t;
         global_to_index.set_empty_key(-1);
         G.for_each_local_node([&](NodeId node) {
             global_to_index[G.to_global_id(node)] = node;
             cost[node] = cost_function(*this, G, node);
         });
+        stats.cost_function_evaluation_time = t.elapsed_time();
     }
 
     size_t operator()(const LocalGraphView& G_local, NodeId local_node_id) {
@@ -152,7 +159,7 @@ struct CostFunctionRegistry {
     static CostFunction<Graph> get(const std::string& name,
                                    Graph& G,
                                    const Config& conf,
-                                   cetric::profiling::MessageStatistics& stats) {
+                                   cetric::profiling::LoadBalancingStatistics& stats) {
         (void)conf;
         using RefType = CostFunction<Graph>&;
         using GraphType = Graph&;
@@ -160,64 +167,64 @@ struct CostFunctionRegistry {
             std::string,
             std::pair<std::function<void(GraphType, OutDegreeCache&, cetric::profiling::MessageStatistics&)>,
                       std::function<size_t(RefType, GraphType, NodeId)>>>
-            cost_functions = {
-                {"N",
-                 {CostFunction<Graph>::init_nop,
-                  [](RefType, GraphType, NodeId) {
-                      return 1;
-                  }}},
-                {"D",
-                 {CostFunction<Graph>::init_nop,
-                  [](RefType ctx, GraphType, NodeId node) {
-                      return ctx.degree(node);
-                  }}},
-                {"DH",
-                 {CostFunction<Graph>::init_nop,
-                  [](RefType ctx, GraphType, NodeId node) {
-                      return ctx.out_degree(node);
-                  }}},
-                {"DDH",
-                 {CostFunction<Graph>::init_nop,
-                  [](RefType ctx, GraphType, NodeId node) {
-                      return ctx.degree(node) * ctx.out_degree(node);
-                  }}},
-                {"DH2",
-                 {CostFunction<Graph>::init_nop,
-                   [](RefType ctx, GraphType, NodeId node) {
-                       Degree out_deg = ctx.out_degree(node);
-                       return out_deg * out_deg;
-                   }}},
-                 {"DPD",
-                  {CostFunction<Graph>::init_all,
-                   [](RefType ctx, GraphType G, NodeId v) {
-                       size_t cost = 0;
-                       G.for_each_edge(v, [&](Edge e) {
-                           if (G.is_outgoing(e)) {
-                               NodeId u = e.head;
-                               cost += ctx.out_degree(v) + ctx.out_degree(u);
-                           }
-                       });
-                       return cost;
-                   }}},
-                 {"IDPD", {CostFunction<Graph>::init_all, [](RefType ctx, GraphType G, NodeId v) {
-                               size_t cost = 0;
-                               G.for_each_edge(v, [&](Edge e) {
-                                   if (!G.is_outgoing(e)) {
-                                       NodeId u = e.head;
-                                       cost += ctx.out_degree(v) + ctx.out_degree(u);
-                                   }
-                               });
-                               return cost;
-                           }}}};
+            cost_functions = {{"N",
+                               {CostFunction<Graph>::init_nop,
+                                [](RefType, GraphType, NodeId) {
+                                    return 1;
+                                }}},
+                              {"D",
+                               {CostFunction<Graph>::init_nop,
+                                [](RefType ctx, GraphType, NodeId node) {
+                                    return ctx.degree(node);
+                                }}},
+                              {"DH",
+                               {CostFunction<Graph>::init_nop,
+                                [](RefType ctx, GraphType, NodeId node) {
+                                    return ctx.out_degree(node);
+                                }}},
+                              {"DDH",
+                               {CostFunction<Graph>::init_nop,
+                                [](RefType ctx, GraphType, NodeId node) {
+                                    return ctx.degree(node) * ctx.out_degree(node);
+                                }}},
+                              {"DH2",
+                               {CostFunction<Graph>::init_nop,
+                                [](RefType ctx, GraphType, NodeId node) {
+                                    Degree out_deg = ctx.out_degree(node);
+                                    return out_deg * out_deg;
+                                }}},
+                              {"DPD",
+                               {CostFunction<Graph>::init_all,
+                                [](RefType ctx, GraphType G, NodeId v) {
+                                    size_t cost = 0;
+                                    G.for_each_edge(v, [&](Edge e) {
+                                        if (G.is_outgoing(e)) {
+                                            NodeId u = e.head;
+                                            cost += ctx.out_degree(v) + ctx.out_degree(u);
+                                        }
+                                    });
+                                    return cost;
+                                }}},
+                              {"IDPD", {CostFunction<Graph>::init_all, [](RefType ctx, GraphType G, NodeId v) {
+                                            size_t cost = 0;
+                                            G.for_each_edge(v, [&](Edge e) {
+                                                if (!G.is_outgoing(e)) {
+                                                    NodeId u = e.head;
+                                                    cost += ctx.out_degree(v) + ctx.out_degree(u);
+                                                }
+                                            });
+                                            return cost;
+                                        }}}};
         auto it = cost_functions.find(name);
         if (it == cost_functions.end()) {
             throw std::runtime_error("Unsupported cost function");
         }
         auto [init, cost] = it->second;
-        G.check_consistency();
         OutDegreeCache cache;
-        init(G, cache, stats);
-        return CostFunction<Graph>(G, name, cache, cost);
+        cetric::profiling::Timer t;
+        init(G, cache, stats.message_statistics);
+        stats.cost_function_communication_time += t.elapsed_time();
+        return CostFunction<Graph>(G, name, cache, cost, stats);
     }
 };
 

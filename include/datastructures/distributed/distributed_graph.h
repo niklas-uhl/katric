@@ -566,11 +566,6 @@ public:
         //         }
         //     }
         // }
-        for_each_ghost_node([&](NodeId node) {
-            if (get_ghost_data(node).rank < 0 || get_ghost_data(node).rank >= size_) {
-                assert(false);
-            }
-        });
         ghost_ranks_available_ = true;
     }
 

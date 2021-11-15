@@ -6,9 +6,9 @@
 #define PARALLEL_TRIANGLE_COUNTER_COMM_UTILS_H
 
 #include <google/dense_hash_map>
-#include <message_statistics.h>
+#include "message_statistics.h"
 #include <type_traits>
-#include <util.h>
+#include "util.h"
 #include <mpi.h>
 
 template<class, class = void>

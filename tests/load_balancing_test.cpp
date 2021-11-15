@@ -43,6 +43,7 @@ namespace {
 
         std::vector<std::vector<Edge>> G_full;
         LocalGraphView G_view;
+        profiling::LoadBalancingStatistics stats;
         Config conf;
         PEID rank, size;
     };
@@ -51,7 +52,7 @@ namespace {
         auto G_view_old = G_view;
         auto cost = [](const LocalGraphView&, NodeId) { return 1; };
 	size_t per_pe_cost = (G_full.size() + size - 1) / size;
-        G_view = load_balancing::LoadBalancer::run(std::move(G_view), cost, conf);
+  G_view = load_balancing::LoadBalancer::run(std::move(G_view), cost, conf, stats);
         for (size_t node = 0; node < G_view.node_info.size(); ++node) {
             auto expected_degree = G_full.at(G_view.node_info.at(node).global_id).size();
             auto actual_degree = G_view.node_info.at(node).degree;
@@ -75,7 +76,7 @@ namespace {
         }
         size_t per_pe_cost = (running_sum + size - 1) / size;
         auto cost = [](const LocalGraphView& G, NodeId node) { return G.node_info[node].degree; };
-        G_view = load_balancing::LoadBalancer::run(std::move(G_view), cost, conf);
+        G_view = load_balancing::LoadBalancer::run(std::move(G_view), cost, conf, stats);
         for (size_t node = 0; node < G_view.node_info.size(); ++node) {
             auto expected_degree =
                 G_full.at(G_view.node_info.at(node).global_id).size();

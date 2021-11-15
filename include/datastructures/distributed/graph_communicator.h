@@ -5,9 +5,10 @@
 #ifndef PARALLEL_TRIANGLE_COUNTER_GRAPH_COMMUNICATOR_H
 #define PARALLEL_TRIANGLE_COUNTER_GRAPH_COMMUNICATOR_H
 
-#include <datastructures/graph_definitions.h>
+#include "../graph_definitions.h"
 #include <google/dense_hash_map>
-#include <communicator.h>
+#include <google/dense_hash_set>
+#include "../../communicator.h"
 #include <util.h>
 #include <optional>
 #include <vector>

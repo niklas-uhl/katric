@@ -14,6 +14,7 @@
 #include "datastructures/distributed/local_graph_view.h"
 #include "datastructures/graph_definitions.h"
 #include "debug_assert.hpp"
+#include "timer.h"
 #include "util.h"
 #include <fmt/core.h>
 
@@ -23,11 +24,16 @@ namespace load_balancing {
 class LoadBalancer {
 public:
     template <typename CostFunction>
-    static graph::LocalGraphView run(graph::LocalGraphView&& G, CostFunction& cost_function, const Config& conf) {
+    static graph::LocalGraphView run(graph::LocalGraphView&& G, CostFunction& cost_function, const Config& conf, profiling::LoadBalancingStatistics& stats) {
+        cetric::profiling::Timer timer;
         auto to_send = reassign_nodes(G, cost_function, conf);
+        stats.computation_time = timer.elapsed_time();
 
+        timer.restart();
         // TODO we should also try sparse all to all
         std::vector<std::pair<NodeId, NodeId>> to_receive(conf.PEs);
+        stats.message_statistics.send_volume += 2;
+        stats.message_statistics.receive_volume += 2;
         MPI_Alltoall(to_send.data(), 2, MPI_NODE, to_receive.data(), 2, MPI_NODE, MPI_COMM_WORLD);
 
         std::vector<int> send_counts(conf.PEs);
@@ -51,11 +57,10 @@ public:
         MPI_Type_contiguous(2, MPI_NODE, &mpi_node_info);
         MPI_Type_commit(&mpi_node_info);
 
-        auto [nodes_before, _displs] =
-            CommunicationUtility::gather(G.node_info, mpi_node_info, MPI_COMM_WORLD, 0, conf.rank, conf.PEs);
-
         std::vector<LocalGraphView::NodeInfo> node_info_recv(recv_displs[conf.PEs - 1] + recv_counts[conf.PEs - 1]);
 
+        stats.message_statistics.send_volume += G.node_info.size() * 2;
+        stats.message_statistics.receive_volume += node_info_recv.size() * 2;
         MPI_Alltoallv(G.node_info.data(), send_counts.data(), send_displs.data(), mpi_node_info, node_info_recv.data(),
                       recv_counts.data(), recv_displs.data(), mpi_node_info, MPI_COMM_WORLD);
         G.node_info.resize(0);
@@ -73,6 +78,8 @@ public:
             recv_running_sum += recv_counts[i];
         }
         std::vector<NodeId> head(recv_displs[conf.PEs - 1] + recv_counts[conf.PEs - 1]);
+        stats.message_statistics.send_volume += G.edge_heads.size();
+        stats.message_statistics.receive_volume += head.size();
         MPI_Alltoallv(G.edge_heads.data(), send_counts.data(), send_displs.data(), MPI_NODE, head.data(),
                       recv_counts.data(), recv_displs.data(), MPI_NODE, MPI_COMM_WORLD);
         G.edge_heads.resize(0);
@@ -82,6 +89,7 @@ public:
         G_balanced.node_info = std::move(node_info_recv);
         G_balanced.edge_heads = std::move(head);
 
+        stats.redistribution_time = timer.elapsed_time();
         return G_balanced;
     }
 

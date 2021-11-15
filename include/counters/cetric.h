@@ -48,23 +48,26 @@ inline void preprocessing(DistributedGraph<>& G,
     stats.local.preprocessing.sorting_time += timer.elapsed_time();
 }
 
-inline void run_cetric(DistributedGraph<>& G,
+inline size_t run_cetric(DistributedGraph<>& G,
                        cetric::profiling::Statistics& stats,
                        const Config& conf,
                        PEID rank,
                        PEID size) {
-    // TODO remove
-    cetric::profiling::MessageStatistics dummy;
     G.find_ghost_ranks();
+    cetric::profiling::Timer timer;
     if (conf.primary_cost_function != "N") {
-        auto cost_function = CostFunctionRegistry<DistributedGraph<>>::get(conf.primary_cost_function, G, conf, dummy);
+        auto cost_function = CostFunctionRegistry<DistributedGraph<>>::get(conf.primary_cost_function, G, conf,
+                                                                           stats.local.primary_load_balancing);
         LocalGraphView tmp = G.to_local_graph_view(false, false);
-        tmp = cetric::load_balancing::LoadBalancer::run(std::move(tmp), cost_function, conf);
+        tmp = cetric::load_balancing::LoadBalancer::run(std::move(tmp), cost_function, conf,
+                                                        stats.local.primary_load_balancing);
         G = DistributedGraph(std::move(tmp), rank, size);
         G.find_ghost_ranks();
     }
+    stats.local.primary_load_balancing.phase_time += timer.elapsed_time();
     G.expand_ghosts();
     preprocessing(G, stats, conf, Phase::Local);
+    timer.restart();
     cetric::CetricEdgeIterator<DistributedGraph<>, true, true> ctr(G, conf, rank, size);
     size_t triangle_count = 0;
     ctr.run_local(
@@ -74,14 +77,17 @@ inline void run_cetric(DistributedGraph<>& G,
             triangle_count++;
         },
         stats);
+    stats.local.local_phase_time += timer.elapsed_time();
+    timer.restart();
     G.remove_internal_edges();
-    G.check_consistency();
-    /* atomic_debug(G); */
+    stats.local.contraction_time += timer.elapsed_time();
+    timer.restart();
     if (!conf.secondary_cost_function.empty()) {
-        auto cost_function =
-            CostFunctionRegistry<DistributedGraph<>>::get(conf.secondary_cost_function, G, conf, dummy);
+        auto cost_function = CostFunctionRegistry<DistributedGraph<>>::get(conf.secondary_cost_function, G, conf,
+                                                                           stats.local.secondary_load_balancing);
         auto tmp = G.to_local_graph_view(true, false);
-        tmp = cetric::load_balancing::LoadBalancer::run(std::move(tmp), cost_function, conf);
+        tmp = cetric::load_balancing::LoadBalancer::run(std::move(tmp), cost_function, conf,
+                                                        stats.local.secondary_load_balancing);
         G = DistributedGraph(std::move(tmp), rank, size);
         G.expand_ghosts();
         G.find_ghost_ranks();
@@ -91,6 +97,8 @@ inline void run_cetric(DistributedGraph<>& G,
             preprocessing(G, stats, conf, Phase::Global);
         }
     }
+    stats.local.secondary_load_balancing.phase_time += timer.elapsed_time();
+    timer.restart();
     cetric::CetricEdgeIterator<DistributedGraph<>, true, true> ctr_dist(G, conf, rank, size);
     ctr_dist.run(
         [&](Triangle t) {
@@ -99,22 +107,11 @@ inline void run_cetric(DistributedGraph<>& G,
             triangle_count++;
         },
         stats);
-    // tlx::MultiTimer dummy;
-    // ctr.get_triangle_count(stats);
-    /* size_t triangle_count = 0; */
-    /* ctr.run_local([&](Triangle) { */
-    /*     triangle_count++; */
-    /* }, stats, dummy); */
-    /* cetric::profiling::Timer phase_time; */
-    /* G.remove_internal_edges(); */
-    /* stats.local.contraction_time = phase_time.elapsed_time(); */
-    /* ctr.run_distributed([&](Triangle) { */
-    /*     triangle_count++; */
-    /* }, stats, dummy); */
+    stats.local.global_phase_time = timer.elapsed_time();
+    timer.restart();
     MPI_Reduce(&triangle_count, &stats.counted_triangles, 1, MPI_NODE, MPI_SUM, 0, MPI_COMM_WORLD);
-    if (rank == 0) {
-        atomic_debug("total number of triangles: " + std::to_string(stats.counted_triangles));
-    }
+    stats.local.reduce_time = timer.elapsed_time();
+    return stats.counted_triangles;
 }
 
 #endif /* end of include guard: CETRIC_H_1MZUS6LP */

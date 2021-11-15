@@ -9,7 +9,7 @@
 #include <datastructures/graph_definitions.h>
 #include <util.h>
 #include <io/definitions.h>
-#include <nlohmann/json.hpp>
+#include <cereal/cereal.hpp>
 
 struct Config {
     Config() = default;
@@ -61,8 +61,14 @@ struct Config {
     bool gen_scale_weak = false;
     bool rhg_fix = false;
     double false_positive_rate = 0.01;
-};
 
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(Config, input_file, hostname, PEs, gen, gen_n, gen_m, gen_r, gen_r_coeff, gen_p, gen_gamma, gen_d, gen_scale_weak, primary_cost_function, secondary_cost_function)
+    template <class Archive>
+    void serialize(Archive& archive) {
+        archive(CEREAL_NVP(input_file), CEREAL_NVP(hostname), CEREAL_NVP(PEs), CEREAL_NVP(gen), CEREAL_NVP(gen_n),
+           CEREAL_NVP(gen_m), CEREAL_NVP(gen_r), CEREAL_NVP(gen_r_coeff), CEREAL_NVP(gen_p), CEREAL_NVP(gen_gamma),
+           CEREAL_NVP(gen_d), CEREAL_NVP(gen_scale_weak), CEREAL_NVP(primary_cost_function),
+                CEREAL_NVP(secondary_cost_function));
+    }
+};
 
 #endif //PARALLEL_TRIANGLE_COUNTER_CONFIG_H

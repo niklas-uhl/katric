@@ -1,24 +1,25 @@
-#include <mpi.h>
-#include <CLI/CLI.hpp>
-#include <util.h>
 #include <config.h>
-#include "parse_parameters.h"
-#include <io/distributed_graph_io.h>
 #include <counters/cetric.h>
-#include <nlohmann/json.hpp>
+#include <io/distributed_graph_io.h>
+#include <mpi.h>
 #include <unistd.h>
-#include <iostream>
+#include <util.h>
+#include <CLI/CLI.hpp>
 #include <algorithm>
+#include <cereal/archives/json.hpp>
 #include <cstdlib>
+#include <iostream>
+#include "cereal/cereal.hpp"
+#include "parse_parameters.h"
 
 Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
-    (void) size;
+    (void)size;
 
     CLI::App app("Parallel Triangle Counter");
 
     Config conf;
 
-    //conf.hostname = std::getenv("HOST");
+    // conf.hostname = std::getenv("HOST");
     char hostname[256];
     gethostname(hostname, sizeof(hostname));
     conf.hostname = hostname;
@@ -30,13 +31,14 @@ Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
 
     app.add_option("--iterations", conf.iterations);
 
-    app.add_set("--primary-cost-function", conf.primary_cost_function, {"N", "D", "DH", "DDH", "DH2", "DPD", "IDPD", "D*"});
+    app.add_set("--primary-cost-function", conf.primary_cost_function,
+                {"N", "D", "DH", "DDH", "DH2", "DPD", "IDPD", "D*"});
     app.add_set("--secondary-cost-function", conf.secondary_cost_function,
                 {"N", "D", "DH", "DDH", "DH2", "DPD", "IDPD", "D*"});
 
     app.add_flag("-v", conf.verbosity_level, "verbosity level");
 
-    //app.add_option("--iterations", conf.iterations);
+    // app.add_option("--iterations", conf.iterations);
     app.add_flag("--json-output", conf.json_output);
 
     app.add_flag("--degree-filtering", conf.degree_filtering);
@@ -99,9 +101,14 @@ int main(int argc, char* argv[]) {
     if (conf.json_output) {
         if (rank == 0) {
             assert(stats.triangles == stats.counted_triangles);
-            auto output = nlohmann::json(stats);
-            output["config"] = conf;
-            std::cout << nlohmann::json(output).dump(4) << std::endl;
+            std::stringstream out;
+            {
+                cereal::JSONOutputArchive ar(out);
+                ar(cereal::make_nvp("stats", stats));
+                ar(cereal::make_nvp("config", conf));
+            }
+
+            std::cout << out.str();
         }
     }
     return MPI_Finalize();
