@@ -6,6 +6,7 @@
 #define PARALLEL_TRIANGLE_COUNTER_CONFIG_H
 
 #include <limits>
+#include <optional>
 #include <datastructures/graph_definitions.h>
 #include <util.h>
 #include <io/definitions.h>
@@ -43,7 +44,7 @@ struct Config {
     bool pseudo2core = false;
 
     int verbosity_level = 0;
-    bool json_output = false;
+    std::string json_output = "";
     std::string hostname;
     PEID PEs;
     PEID rank;

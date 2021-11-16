@@ -8,7 +8,11 @@
 #include <algorithm>
 #include <cereal/archives/json.hpp>
 #include <cstdlib>
+#include <iomanip>
 #include <iostream>
+#include <istream>
+#include <memory>
+#include <sstream>
 #include "cereal/cereal.hpp"
 #include "parse_parameters.h"
 
@@ -39,7 +43,7 @@ Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
     app.add_flag("-v", conf.verbosity_level, "verbosity level");
 
     // app.add_option("--iterations", conf.iterations);
-    app.add_flag("--json-output", conf.json_output);
+    app.add_option("--json-output", conf.json_output);
 
     app.add_flag("--degree-filtering", conf.degree_filtering);
 
@@ -100,9 +104,10 @@ int main(int argc, char* argv[]) {
     stats.global_wall_time = global_time.elapsed_time();
 
     stats.reduce();
-    if (conf.json_output) {
+    if (!conf.json_output.empty()) {
         if (rank == 0) {
             assert(stats.triangles == stats.counted_triangles);
+            if (conf.json_output == "stdout") {
             std::stringstream out;
             {
                 cereal::JSONOutputArchive ar(out);
@@ -111,6 +116,19 @@ int main(int argc, char* argv[]) {
             }
 
             std::cout << out.str();
+            } else {
+                std::ofstream out(conf.json_output);
+                {
+                    cereal::JSONOutputArchive ar(out);
+                    ar(cereal::make_nvp("stats", stats));
+                    ar(cereal::make_nvp("config", conf));
+                }
+            }
+        }
+    } else {
+        if (rank == 0) {
+            std::cout << std::left << std::setw(15) << "triangles: " << std::right << std::setw(10) << stats.counted_triangles << std::endl;
+            std::cout << std::left << std::setw(15) << "time: " << std::right << std::setw(10) << stats.global_wall_time << " s" << std::endl;
         }
     }
     return MPI_Finalize();
