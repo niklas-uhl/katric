@@ -49,10 +49,10 @@ inline void preprocessing(DistributedGraph<>& G,
 }
 
 inline size_t run_cetric(DistributedGraph<>& G,
-                       cetric::profiling::Statistics& stats,
-                       const Config& conf,
-                       PEID rank,
-                       PEID size) {
+                         cetric::profiling::Statistics& stats,
+                         const Config& conf,
+                         PEID rank,
+                         PEID size) {
     G.find_ghost_ranks();
     cetric::profiling::Timer timer;
     if (conf.primary_cost_function != "N") {
@@ -99,14 +99,24 @@ inline size_t run_cetric(DistributedGraph<>& G,
     }
     stats.local.secondary_load_balancing.phase_time += timer.elapsed_time();
     timer.restart();
-    cetric::CetricEdgeIterator<DistributedGraph<>, true, true> ctr_dist(G, conf, rank, size);
-    ctr_dist.run(
-        [&](Triangle t) {
-            (void)t;
-            // atomic_debug(t);
-            triangle_count++;
-        },
-        stats);
+    if (!conf.secondary_cost_function.empty()) {
+        cetric::CetricEdgeIterator<DistributedGraph<>, true, true> ctr_dist(G, conf, rank, size);
+        ctr_dist.run(
+            [&](Triangle t) {
+                (void)t;
+                // atomic_debug(t);
+                triangle_count++;
+            },
+            stats);
+    } else {
+        ctr.run_distributed(
+            [&](Triangle t) {
+                (void)t;
+                // atomic_debug(t);
+                triangle_count++;
+            },
+            stats);
+    }
     stats.local.global_phase_time = timer.elapsed_time();
     timer.restart();
     MPI_Reduce(&triangle_count, &stats.counted_triangles, 1, MPI_NODE, MPI_SUM, 0, MPI_COMM_WORLD);

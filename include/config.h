@@ -40,6 +40,7 @@ struct Config {
 
     bool degree_filtering = false;
     bool orient_locally = false;
+    bool pseudo2core = false;
 
     int verbosity_level = 0;
     bool json_output = false;
