@@ -58,6 +58,10 @@ public:
         interface_nodes.clear();
         // std::vector<NodeId> interface_nodes;
         G.for_each_local_node_and_ghost([&](NodeId v) {
+            if (conf_.pseudo2core && G.local_outdegree(v) < 2) {
+                stats.local.skipped_nodes++;
+                return;
+            }
             if (G.is_local_from_local(v) && G.get_local_data(v).is_interface) {
                 interface_nodes.emplace_back(v);
             }
@@ -100,20 +104,24 @@ public:
         cetric::profiling::Timer phase_time;
         for (NodeId v : interface_nodes) {
             // iterate over neighborhood and delegate to other PEs if necessary
-            G.for_each_local_out_edge(v, [&](Edge edge) {
-                NodeId u = edge.head;
-                if (G.is_ghost(u)) {
-                    assert(G.is_local_from_local(v));
-                    assert(G.is_local(G.to_global_id(v)));
-                    assert(!G.is_local(G.to_global_id(u)));
-                    assert(!G.is_local_from_local(u));
-                    PEID u_rank = G.get_ghost_data(u).rank;
-                    assert(u_rank != rank_);
-                    if (last_proc_[v] != u_rank) {
-                        enqueue_for_sending(v, u_rank, emit, stats);
+            if (conf_.pseudo2core && G.outdegree(v) < 2) {
+                stats.local.skipped_nodes++;
+            } else {
+                G.for_each_local_out_edge(v, [&](Edge edge) {
+                    NodeId u = edge.head;
+                    if (G.is_ghost(u)) {
+                        assert(G.is_local_from_local(v));
+                        assert(G.is_local(G.to_global_id(v)));
+                        assert(!G.is_local(G.to_global_id(u)));
+                        assert(!G.is_local_from_local(u));
+                        PEID u_rank = G.get_ghost_data(u).rank;
+                        assert(u_rank != rank_);
+                        if (last_proc_[v] != u_rank) {
+                            enqueue_for_sending(v, u_rank, emit, stats);
+                        }
                     }
-                }
-            });
+                });
+            }
             // timer.start("Communication");
             comm.check_for_message(
                 [&](PEID, const std::vector<NodeId>& message) { handle_buffer(message, emit, stats); },

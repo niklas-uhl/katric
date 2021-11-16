@@ -45,6 +45,8 @@ Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
 
     app.add_flag("--orient-locally", conf.orient_locally);
 
+    app.add_flag("--pseudo2core", conf.pseudo2core);
+
     parse_gen_parameters(app, conf);
 
     CLI::Option* input_option = app.get_option("input");

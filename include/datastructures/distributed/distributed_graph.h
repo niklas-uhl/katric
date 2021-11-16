@@ -310,6 +310,13 @@ public:
         return degree_[node];
     }
 
+    inline Degree local_outdegree(NodeId node) const {
+        assert(oriented());
+        assert(is_local_from_local(node) || is_ghost(node));
+        assert(ghosts_expanded_ || is_local_from_local(node));
+        return degree_[node] - first_out_offset_[node];
+    }
+
     inline Degree outdegree(NodeId node) const {
         assert(oriented());
         assert(is_local_from_local(node));

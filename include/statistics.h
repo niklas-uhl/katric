@@ -65,6 +65,7 @@ struct Statistics {
         double global_phase_time = 0;
         double reduce_time = 0;
         MessageStatistics message_statistics;
+        size_t skipped_nodes = 0;
         size_t local_triangles = 0;
         size_t type3_triangles = 0;
 
@@ -73,7 +74,7 @@ struct Statistics {
             archive(CEREAL_NVP(io_time), CEREAL_NVP(preprocessing), CEREAL_NVP(primary_load_balancing),
                     CEREAL_NVP(secondary_load_balancing), CEREAL_NVP(local_phase_time), CEREAL_NVP(contraction_time),
                     CEREAL_NVP(global_phase_time), CEREAL_NVP(reduce_time), CEREAL_NVP(message_statistics),
-                    CEREAL_NVP(local_triangles), CEREAL_NVP(type3_triangles));
+                    CEREAL_NVP(skipped_nodes), CEREAL_NVP(local_triangles), CEREAL_NVP(type3_triangles));
         }
     };
     LocalStatistics local;
