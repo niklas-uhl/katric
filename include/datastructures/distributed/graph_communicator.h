@@ -143,7 +143,7 @@ public:
                                    cetric::profiling::MessageStatistics& stats,
                                    [[maybe_unused]] PEID rank,
                                    PEID size,
-                                   bool sparse = false) {
+                                   bool sparse = true) {
         if (sparse) {
             return relocate_sparse_impl(std::forward<LocalGraphView>(G), nodes_to_send, stats, rank, size);
         } else {
@@ -250,6 +250,9 @@ private:
         CompactBuffer node_recv_buffer(G_balanced.node_info, rank, size);
         CommunicationUtility::sparse_all_to_all<LocalGraphView::NodeInfo>(to_send_node_info, node_recv_buffer, rank, size,
                                                 as_int(MessageTag::LoadBalancing), stats);
+        CompactBuffer edge_recv_buffer(G_balanced.edge_heads, rank, size);
+        CommunicationUtility::sparse_all_to_all<NodeId>(
+            to_send_head, edge_recv_buffer, rank, size, as_int(MessageTag::LoadBalancing), stats);
         return G_balanced;
     }
 };

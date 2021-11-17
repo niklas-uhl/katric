@@ -76,21 +76,21 @@ template <typename T>
 class VectorView {
 public:
     using iterator_type = typename std::vector<T>::iterator;
-    VectorView(std::vector<T>& vector, iterator_type begin, iterator_type end)
-        : begin_(begin), end_(end), data_(&vector) {}
+    VectorView(std::vector<T>& vector, size_t begin, size_t end)
+        :data_(&vector), begin_(begin), end_(end) {}
 
-    VectorView(): begin_(), end_(), data_(nullptr) {}
+    VectorView(): data_(nullptr), begin_(), end_() {}
 
     iterator_type begin() {
-        return begin_;
+        return data_->begin() + begin_;
     }
 
     iterator_type end() {
-        return end_;
+        return data_->begin() + end_;
     }
 
     size_t size() const {
-        return std::distance(begin_, end_);
+        return end_ - begin_;
     }
 
     bool empty() const {
@@ -98,13 +98,13 @@ public:
     }
 
     T* data() {
-        return &*begin_;
+        return &*begin();
     }
 
 private:
-    iterator_type begin_;
-    iterator_type end_;
     std::vector<T>* data_;
+    size_t begin_;
+    size_t end_;
 };
 
 template <typename T>
@@ -117,7 +117,7 @@ public:
         return views_[rank];
     };
     void set_extent(PEID rank, size_t begin, size_t end) {
-        views_[rank] = VectorView<T>(data_, data_.begin() + begin, data_.begin() + end);
+        views_[rank] = VectorView<T>(data_, begin, end);
     };
     std::vector<T>& data() {
         return data_;
@@ -130,7 +130,7 @@ private:
 
 template <typename T>
 VectorView<T> slice(std::vector<T>& vector, size_t pos, size_t n) {
-    return VectorView(vector, vector.begin() + pos, vector.begin() + pos + n);
+    return VectorView(vector, pos, pos + n);
 }
 
 struct CommunicationUtility {
