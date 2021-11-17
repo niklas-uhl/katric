@@ -3,9 +3,11 @@
 
 #include <cstddef>
 #include <sparsehash/dense_hash_map>
+#include <utility>
 #include <vector>
 #include "../graph_definitions.h"
 #include <util.h>
+#include "mpi_traits.h"
 
 namespace cetric {
     namespace graph {
@@ -38,6 +40,10 @@ namespace cetric {
                     for (EdgeId edge_id = first_out[index]; edge_id < first_out[index + 1]; ++edge_id) {
                         on_neighbor(G.edge_heads[edge_id]);
                     }
+                }
+
+                std::pair<EdgeId, EdgeId> neighborhood_index_range(NodeId index) const {
+                    return std::make_pair(first_out[index], first_out[index + 1]);
                 }
                 bool has_node(NodeId node_id) const {
                     return id_to_index.find(node_id) != id_to_index.end();
@@ -91,5 +97,15 @@ namespace cetric {
         } // namespace graph
 }
 
+template<>
+struct mpi_traits<cetric::graph::LocalGraphView::NodeInfo> {
+    static MPI_Datatype register_type() {
+        MPI_Datatype mpi_node_info;
+        MPI_Type_contiguous(2, MPI_NODE, &mpi_node_info);
+        MPI_Type_commit(&mpi_node_info);
+        return mpi_node_info;
+    }
+    static constexpr bool builtin = false;
+};
 
 #endif /* end of include guard: LOCAL_GRAPH_VIEW_H_Z5NCVYVP */

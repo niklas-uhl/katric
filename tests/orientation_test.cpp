@@ -52,7 +52,7 @@ TEST_P(Orientation, GlobalDegree) {
     profiling::MessageStatistics dummy;
     G.find_ghost_ranks();
     G.expand_ghosts();
-    GraphCommunicator comm(G, conf.rank, conf.PEs, as_int(MessageTag::Orientation));
+    DegreeCommunicator comm(G, conf.rank, conf.PEs, as_int(MessageTag::Orientation));
     comm.get_ghost_degree(
         [&](NodeId global_id, Degree degree) { G.get_ghost_payload(G.to_local_id(global_id)).degree = degree; }, dummy);
     G.get_graph_payload().ghost_degree_available = true;
@@ -78,7 +78,7 @@ TEST_P(Orientation, LocalDegree) {
     profiling::MessageStatistics dummy;
     G.find_ghost_ranks();
     G.expand_ghosts();
-    GraphCommunicator comm(G, conf.rank, conf.PEs, as_int(MessageTag::Orientation));
+    DegreeCommunicator comm(G, conf.rank, conf.PEs, as_int(MessageTag::Orientation));
     comm.get_ghost_degree(
         [&](NodeId global_id, Degree degree) { G.get_ghost_payload(G.to_local_id(global_id)).degree = degree; }, dummy);
     G.get_graph_payload().ghost_degree_available = true;
@@ -105,7 +105,7 @@ TEST_P(Orientation, OrientTwice) {
     profiling::MessageStatistics dummy;
     G.find_ghost_ranks();
     G.expand_ghosts();
-    GraphCommunicator comm(G, conf.rank, conf.PEs, as_int(MessageTag::Orientation));
+    DegreeCommunicator comm(G, conf.rank, conf.PEs, as_int(MessageTag::Orientation));
     comm.get_ghost_degree(
         [&](NodeId global_id, Degree degree) { G.get_ghost_payload(G.to_local_id(global_id)).degree = degree; }, dummy);
     G.get_graph_payload().ghost_degree_available = true;

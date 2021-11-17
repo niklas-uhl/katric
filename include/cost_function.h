@@ -68,7 +68,7 @@ public:
     }
     static void init_degree(Graph& G, OutDegreeCache& cache, cetric::profiling::MessageStatistics& stats) {
         (void)cache;
-        GraphCommunicator comm(G, G.rank(), G.size(), as_int(MessageTag::CostFunction));
+        DegreeCommunicator comm(G, G.rank(), G.size(), as_int(MessageTag::CostFunction));
         if (!G.get_graph_payload().ghost_degree_available) {
             comm.get_ghost_degree(
                 [&](NodeId global_id, Degree degree) { G.get_ghost_payload(G.to_local_id(global_id)).degree = degree; },
@@ -79,7 +79,7 @@ public:
 
     static void init_all(Graph& G, OutDegreeCache& cache, cetric::profiling::MessageStatistics& stats) {
         cache = OutDegreeCache(G);
-        GraphCommunicator<Graph> comm(G, G.rank(), G.size(), as_int(MessageTag::CostFunction));
+        DegreeCommunicator<Graph> comm(G, G.rank(), G.size(), as_int(MessageTag::CostFunction));
         if (!G.get_graph_payload().ghost_degree_available) {
             comm.get_ghost_degree(
                 [&](NodeId global_id, Degree degree) { G.get_ghost_payload(G.to_local_id(global_id)).degree = degree; },

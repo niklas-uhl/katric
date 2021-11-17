@@ -24,7 +24,7 @@ inline void preprocessing(DistributedGraph<>& G,
                           Phase phase) {
     cetric::profiling::Timer timer;
     if (!conf.orient_locally || phase == Phase::Global) {
-        GraphCommunicator comm(G, conf.rank, conf.PEs, as_int(MessageTag::Orientation));
+        DegreeCommunicator comm(G, conf.rank, conf.PEs, as_int(MessageTag::Orientation));
         comm.get_ghost_degree(
             [&](NodeId global_id, Degree degree) { G.get_ghost_payload(G.to_local_id(global_id)).degree = degree; },
             stats.local.preprocessing.message_statistics);

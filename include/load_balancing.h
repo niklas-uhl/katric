@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <iterator>
 #include <numeric>
+#include <sparsehash/dense_hash_map>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -27,75 +28,14 @@ public:
     static graph::LocalGraphView run(graph::LocalGraphView&& G, CostFunction& cost_function, const Config& conf, profiling::LoadBalancingStatistics& stats) {
         cetric::profiling::Timer timer;
         auto to_send = reassign_nodes(G, cost_function, conf);
-        stats.computation_time = timer.elapsed_time();
-
-        timer.restart();
-        // TODO we should also try sparse all to all
-        std::vector<std::pair<NodeId, NodeId>> to_receive(conf.PEs);
-        stats.message_statistics.send_volume += 2;
-        stats.message_statistics.receive_volume += 2;
-        MPI_Alltoall(to_send.data(), 2, MPI_NODE, to_receive.data(), 2, MPI_NODE, MPI_COMM_WORLD);
-
-        std::vector<int> send_counts(conf.PEs);
-        std::vector<int> send_displs(conf.PEs);
-        std::vector<int> recv_counts(conf.PEs);
-        std::vector<int> recv_displs(conf.PEs);
-
-        int send_running_sum = 0;
-        int recv_running_sum = 0;
-        for (size_t i = 0; i < send_counts.size(); ++i) {
-            send_counts[i] = to_send[i].first;
-            send_displs[i] = send_running_sum;
-            send_running_sum += send_counts[i];
-
-            recv_counts[i] = to_receive[i].first;
-            recv_displs[i] = recv_running_sum;
-            recv_running_sum += recv_counts[i];
-        }
-
-        MPI_Datatype mpi_node_info;
-        MPI_Type_contiguous(2, MPI_NODE, &mpi_node_info);
-        MPI_Type_commit(&mpi_node_info);
-
-        std::vector<LocalGraphView::NodeInfo> node_info_recv(recv_displs[conf.PEs - 1] + recv_counts[conf.PEs - 1]);
-
-        stats.message_statistics.send_volume += G.node_info.size() * 2;
-        stats.message_statistics.receive_volume += node_info_recv.size() * 2;
-        MPI_Alltoallv(G.node_info.data(), send_counts.data(), send_displs.data(), mpi_node_info, node_info_recv.data(),
-                      recv_counts.data(), recv_displs.data(), mpi_node_info, MPI_COMM_WORLD);
-        G.node_info.resize(0);
-        G.node_info.shrink_to_fit();
-
-        send_running_sum = 0;
-        recv_running_sum = 0;
-        for (size_t i = 0; i < send_counts.size(); ++i) {
-            send_counts[i] = to_send[i].second;
-            send_displs[i] = send_running_sum;
-            send_running_sum += send_counts[i];
-
-            recv_counts[i] = to_receive[i].second;
-            recv_displs[i] = recv_running_sum;
-            recv_running_sum += recv_counts[i];
-        }
-        std::vector<NodeId> head(recv_displs[conf.PEs - 1] + recv_counts[conf.PEs - 1]);
-        stats.message_statistics.send_volume += G.edge_heads.size();
-        stats.message_statistics.receive_volume += head.size();
-        MPI_Alltoallv(G.edge_heads.data(), send_counts.data(), send_displs.data(), MPI_NODE, head.data(),
-                      recv_counts.data(), recv_displs.data(), MPI_NODE, MPI_COMM_WORLD);
-        G.edge_heads.resize(0);
-        G.edge_heads.shrink_to_fit();
-
-        LocalGraphView G_balanced;
-        G_balanced.node_info = std::move(node_info_recv);
-        G_balanced.edge_heads = std::move(head);
-
+        auto G_balanced = GraphCommunicator::relocate(std::move(G), to_send, stats.message_statistics, conf.rank, conf.PEs);
         stats.redistribution_time = timer.elapsed_time();
         return G_balanced;
     }
 
 private:
     template <typename CostFunction>
-    static std::vector<std::pair<NodeId, EdgeId>> reassign_nodes(const graph::LocalGraphView& G,
+    static google::dense_hash_map<PEID, GraphCommunicator::NodeRange> reassign_nodes(const graph::LocalGraphView& G,
                                                                  CostFunction& cost_function,
                                                                  const Config& conf) {
         using namespace cetric::graph;
@@ -118,12 +58,16 @@ private:
         }
         MPI_Bcast(&total_cost, 1, MPI_NODE, conf.PEs - 1, MPI_COMM_WORLD);
         size_t per_pe_cost = (total_cost + conf.PEs - 1) / conf.PEs;
-        std::vector<std::pair<NodeId, EdgeId>> to_send(conf.PEs);
+        google::dense_hash_map<PEID, GraphCommunicator::NodeRange> to_send(conf.PEs);
+        to_send.set_empty_key(conf.PEs);
         for (size_t node = 0; node < cost.size(); ++node) {
             cost[node] += global_prefix;
             PEID new_pe = std::min(static_cast<int>(cost[node] / per_pe_cost), conf.PEs - 1);
-            to_send[new_pe].first++;
-            to_send[new_pe].second += G.node_info[node].degree;
+            if (to_send.find(new_pe) == to_send.end()) {
+                to_send[new_pe] = GraphCommunicator::NodeRange {node, node};
+            } else {
+                to_send[new_pe].to = node;
+            }
         }
 
         cost.resize(0);

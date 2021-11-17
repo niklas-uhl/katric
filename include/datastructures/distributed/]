@@ -6,12 +6,11 @@
 #define PARALLEL_TRIANGLE_COUNTER_GRAPH_COMMUNICATOR_H
 
 #include <statistics.h>
+#include <tuple>
 #include <util.h>
-#include <cstddef>
 #include <google/dense_hash_map>
 #include <google/dense_hash_set>
 #include <optional>
-#include <tuple>
 #include <vector>
 #include "../../communicator.h"
 #include "../graph_definitions.h"
@@ -138,26 +137,7 @@ public:
     };
 
     template <class Map>
-    static LocalGraphView relocate(LocalGraphView&& G,
-                                   const Map& nodes_to_send,
-                                   cetric::profiling::MessageStatistics& stats,
-                                   [[maybe_unused]] PEID rank,
-                                   PEID size,
-                                   bool sparse = false) {
-        if (sparse) {
-            return relocate_sparse_impl(std::forward<LocalGraphView>(G), nodes_to_send, stats, rank, size);
-        } else {
-            return relocate_full_impl(std::forward<LocalGraphView>(G), nodes_to_send, stats, rank, size);
-        }
-    }
-
-private:
-    template <class Map>
-    static LocalGraphView relocate_full_impl(LocalGraphView&& G,
-                                             const Map& nodes_to_send,
-                                             cetric::profiling::MessageStatistics& stats,
-                                             [[maybe_unused]] PEID rank,
-                                             PEID size) {
+    static LocalGraphView relocate(LocalGraphView&& G, const Map& nodes_to_send, cetric::profiling::MessageStatistics& stats, [[maybe_unused]] PEID rank , PEID size, bool sparse = false) {
         std::vector<std::pair<NodeId, EdgeId>> to_send(size);
         for (const auto& kv : nodes_to_send) {
             PEID pe = kv.first;
@@ -227,30 +207,76 @@ private:
 
         return G_balanced;
     }
-
+private:
     template <class Map>
-    static LocalGraphView relocate_sparse_impl(LocalGraphView&& G,
-                                               const Map& nodes_to_send,
-                                               cetric::profiling::MessageStatistics& stats,
-                                               [[maybe_unused]] PEID rank,
-                                               PEID size) {
-        std::vector<std::pair<PEID, VectorView<LocalGraphView::NodeInfo>>> to_send_node_info;
-        std::vector<std::pair<PEID, VectorView<NodeId>>> to_send_head;
-        auto idx = G.build_indexer();
+    static LocalGraphView relocate_full_impl(LocalGraphView&& G, const Map& nodes_to_send, cetric::profiling::MessageStatistics& stats, [[maybe_unused]] PEID rank , PEID size) {
+        std::vector<std::pair<NodeId, EdgeId>> to_send(size);
         for (const auto& kv : nodes_to_send) {
             PEID pe = kv.first;
             const NodeRange& range = kv.second;
-            to_send_node_info.emplace_back(pe, slice(G.node_info, range.from, range.to - range.from + 1));
-            auto edge_begin = idx.neighborhood_index_range(range.from).first;
-            auto edge_end = idx.neighborhood_index_range(range.to).second;
-            to_send_head.emplace_back(pe, slice(G.edge_heads, edge_begin, edge_end - edge_begin));
+            to_send[pe].first = range.to - range.from + 1;
+            for (NodeId node = range.from; node <= range.to; ++node) {
+                to_send[pe].second += G.node_info[node].degree;
+            }
+        }
+        std::vector<std::pair<NodeId, NodeId>> to_receive(size);
+        stats.send_volume += 2;
+        stats.receive_volume += 2;
+        MPI_Alltoall(to_send.data(), 2, MPI_NODE, to_receive.data(), 2, MPI_NODE, MPI_COMM_WORLD);
+
+        std::vector<int> send_counts(size);
+        std::vector<int> send_displs(size);
+        std::vector<int> recv_counts(size);
+        std::vector<int> recv_displs(size);
+
+        int send_running_sum = 0;
+        int recv_running_sum = 0;
+        for (size_t i = 0; i < send_counts.size(); ++i) {
+            send_counts[i] = to_send[i].first;
+            send_displs[i] = send_running_sum;
+            send_running_sum += send_counts[i];
+
+            recv_counts[i] = to_receive[i].first;
+            recv_displs[i] = recv_running_sum;
+            recv_running_sum += recv_counts[i];
         }
 
+        MPI_Datatype mpi_node_info;
+        MPI_Type_contiguous(2, MPI_NODE, &mpi_node_info);
+        MPI_Type_commit(&mpi_node_info);
+
+        std::vector<LocalGraphView::NodeInfo> node_info_recv(recv_displs[size - 1] + recv_counts[size - 1]);
+
+        stats.send_volume += G.node_info.size() * 2;
+        stats.receive_volume += node_info_recv.size() * 2;
+        MPI_Alltoallv(G.node_info.data(), send_counts.data(), send_displs.data(), mpi_node_info, node_info_recv.data(),
+                      recv_counts.data(), recv_displs.data(), mpi_node_info, MPI_COMM_WORLD);
+        G.node_info.resize(0);
+        G.node_info.shrink_to_fit();
+
+        send_running_sum = 0;
+        recv_running_sum = 0;
+        for (size_t i = 0; i < send_counts.size(); ++i) {
+            send_counts[i] = to_send[i].second;
+            send_displs[i] = send_running_sum;
+            send_running_sum += send_counts[i];
+
+            recv_counts[i] = to_receive[i].second;
+            recv_displs[i] = recv_running_sum;
+            recv_running_sum += recv_counts[i];
+        }
+        std::vector<NodeId> head(recv_displs[size - 1] + recv_counts[size - 1]);
+        stats.send_volume += G.edge_heads.size();
+        stats.receive_volume += head.size();
+        MPI_Alltoallv(G.edge_heads.data(), send_counts.data(), send_displs.data(), MPI_NODE, head.data(),
+                      recv_counts.data(), recv_displs.data(), MPI_NODE, MPI_COMM_WORLD);
+        G.edge_heads.resize(0);
+        G.edge_heads.shrink_to_fit();
+
         LocalGraphView G_balanced;
-        CompactBuffer node_recv_buffer(G_balanced.node_info, rank, size);
-        CommunicationUtility::sparse_all_to_all<LocalGraphView::NodeInfo>(to_send_node_info, node_recv_buffer, rank, size,
-                                                as_int(MessageTag::LoadBalancing), stats);
+        G_balanced.node_info = std::move(node_info_recv);
+        G_balanced.edge_heads = std::move(head);
+
         return G_balanced;
-    }
 };
 #endif  // PARALLEL_TRIANGLE_COUNTER_GRAPH_COMMUNICATOR_H
