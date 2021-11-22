@@ -1,0 +1,14 @@
+#/bin/bash
+#SBATCH --nodes=${nodes}
+#SBATCH --ntasks=${p}
+#SBATCH -o ${output_log}
+#SBATCH -e ${error_log}
+#SBATCH -J ${job_name}
+#SBATCH --partition=${job_queue}
+#SBATCH --time=${time_string}
+#SBATCH --get-user-env
+#SBATCH --account=${account}
+module load slurm_setup
+
+mpiexec -n $$SLURM_NTASKS ${cmd}
+
