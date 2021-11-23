@@ -2,12 +2,16 @@ graphs:
   - name: metis-sample
     path: metis-sample.metis
     format: metis
+    triangles: 4
   - name: triangle
     path: triangle.metis
     format: metis
+    triangles: 1
   - name: hiv
     path: hiv.metis
     format: metis
+    triangles: 45
   - name: com-amazon
     path: com-amazon.metis
     format: metis
+    triangles: 667129

@@ -8,8 +8,11 @@ import time
 
 
 class SharedMemoryRunner:
-    def __init__(self, output_directory):
+    def __init__(self, output_directory, verify_results = False):
         self.output_directory = Path(output_directory)
+        self.verify_results = verify_results
+        self.failed = 0
+        self.incorrect = 0
 
     def execute(self, experiment_suite: ExperimentSuite):
         print(f"Running suite {experiment_suite.name} ...")
@@ -40,8 +43,19 @@ class SharedMemoryRunner:
                                                  stdout=log_file,
                                                  stderr=err_file)
                     if ret.returncode == 0:
-                        print('finished.')
+                        if self.verify_results and input.triangles:
+                            print('finished.', end='')
+                            with open(log_path) as output:
+                                triangles = int(json.load(output)["stats"]["counted_triangles"])
+                            if triangles == input.triangles:
+                                print(' correct.')
+                            else:
+                                self.incorrect += 1
+                                print(' incorrect.')
+                        else:
+                            print('finished.')
                     else:
+                        self.failed += 1
                         print('failed.')
         print(f"Finished suite {experiment_suite.name}.")
 

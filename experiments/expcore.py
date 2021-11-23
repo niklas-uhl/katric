@@ -6,25 +6,27 @@ import yaml
 
 
 class InputGraph:
-    def __init__(self, name):
+    def __init__(self, name, triangles = None):
         self.name = name
+        self.triangles = triangles
 
     def args(self):
         raise NotImplementedError()
 
 
 class FileInputGraph(InputGraph):
-    def __init__(self, name, path, format='metis'):
+    def __init__(self, name, path, format='metis', triangles = None):
         self.name = name
         self.path = path
         self.format = format
+        self.triangles = triangles
 
     def args(self):
         file_args = [str(self.path), "--input-format", self.format]
         return file_args
 
     def __repr__(self):
-        return f"FileInputGraph({self.name, self.path, self.format})"
+        return f"FileInputGraph({self.name, self.triangles, self.path, self.format})"
 
 
 class GenInputGraph(InputGraph):
@@ -39,7 +41,8 @@ def load_inputs_from_yaml(yaml_path):
         name = rec['name']
         path = Path(yaml_path).parent / rec['path']
         format = rec['format']
-        inputs[name] = FileInputGraph(name, path, format)
+        triangles = rec.get('triangles')
+        inputs[name] = FileInputGraph(name, path, format, triangles)
     if "includes" in data:
         for rec in data["includes"]:
             inputs |= load_inputs_from_yaml(Path(yaml_path).parent / rec)

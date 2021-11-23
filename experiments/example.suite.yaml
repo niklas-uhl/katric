@@ -3,7 +3,7 @@ ncores: [1, 2, 4]
 graphs:
   - hiv
   - metis-sample
-tasks_per_node: 1
+  - com-amazon
 time_limit: 10
 config: {
   "orient-locally": [False, True],

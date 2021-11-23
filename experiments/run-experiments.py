@@ -53,6 +53,7 @@ def main():
     parser.add_argument('-o', '--output-dir', default=default_output_dir)
 
     parser.add_argument('-l', '--list', action='store_true')
+    parser.add_argument('-v', '--verify', action='store_true')
 
     parser.add_argument('-g', '--list-graphs', action='store_true')
 
@@ -81,13 +82,16 @@ def main():
         args.suite = suites.keys()
 
     if args.machine == 'shared':
-        runner = SharedMemoryRunner(args.output_dir)
+        runner = SharedMemoryRunner(args.output_dir, verify_results=args.verify)
     else:
         runner = SBatchRunner(args.output_dir, args.job_output_dir, args.tasks_per_node, args.time_limit)
     for suitename in args.suite:
         suite = suites.get(suitename)
         if suite:
             runner.execute(suite)
+
+    if args.machine == 'shared':
+        print(f"Summary: {runner.failed} jobs failed, {runner.incorrect} jobs returned an incorrect result.")
 
 if __name__ == "__main__":
     main()
