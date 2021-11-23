@@ -450,6 +450,9 @@ public:
             }
             degree_[node] = remaining_edges;
         });
+        if constexpr(payload_has_degree<GhostPayloadType>::value) {
+            get_graph_payload().ghost_degree_available = false;
+        }
     }
 
     void expand_ghosts() {
