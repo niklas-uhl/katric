@@ -16,7 +16,9 @@ target_link_libraries(cetric-lib PUBLIC sparsehash)
 target_link_libraries(cetric-lib PUBLIC cereal::cereal)
 target_link_libraries(cetric-lib PUBLIC debug_assert)
 target_link_libraries(cetric-lib PUBLIC fmt::fmt)
-target_link_libraries(cetric-lib PUBLIC Backward::Backward)
+target_include_directories(cetric-lib PUBLIC ${BACKWARD_INCLUDE_DIRS})
+#target_link_libraries(cetric-lib PUBLIC ${BACKWARD_ENABLE})
+target_link_libraries(cetric-lib PUBLIC -ldw -ldl)
 
 
 target_compile_options(cetric-lib PUBLIC -Wall -Wextra -pedantic)

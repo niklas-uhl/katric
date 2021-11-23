@@ -15,12 +15,12 @@
 #include <sstream>
 #include "cereal/cereal.hpp"
 #include "parse_parameters.h"
+#include "backward.hpp"
 
 Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
     (void)size;
 
     CLI::App app("Parallel Triangle Counter");
-
     Config conf;
 
     // conf.hostname = std::getenv("HOST");
@@ -82,7 +82,7 @@ int main(int argc, char* argv[]) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     DEBUG_BARRIER(rank);
-
+    backward::SignalHandling sh;
     Config conf = parse_config(argc, argv, rank, size);
 
     MPI_Barrier(MPI_COMM_WORLD);

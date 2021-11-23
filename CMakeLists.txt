@@ -68,8 +68,7 @@ if(NOT USE_SUBMODULES)
     FetchContent_GetProperties(backward-cpp)
     if (NOT backward-cpp_POPULATED)
       FetchContent_Populate(backward-cpp)
-      set(Backward_DIR ${backward-cpp_SOURCE_DIR})
-      find_package(Backward)
+      add_subdirectory(${backward-cpp_SOURCE_DIR} EXCLUDE_FROM_ALL)
     endif()
 
     FetchContent_Declare(
