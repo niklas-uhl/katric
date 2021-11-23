@@ -52,14 +52,22 @@ class ExperimentSuite:
                  PEs: list[int] = [],
                  inputs=[],
                  configs: list[dict] = [],
-                 tasks_per_node = None,
-                 time_limit = None):
+                 tasks_per_node=None,
+                 time_limit=None,
+                 input_time_limit={}):
         self.name = name
         self.PEs = PEs
         self.inputs = inputs
         self.configs = configs
         self.tasks_per_node = tasks_per_node
         self.time_limit = time_limit
+        self.input_time_limit = input_time_limit
+
+    def set_input_time_limit(self, input_name, time_limit):
+        self.input_time_limit[input_name] = time_limit
+
+    def get_input_time_limit(self, input_name):
+        return self.input_time_limit.get(input_name, self.time_limit)
 
     def load_inputs(self, input_dict):
         inputs_new = []
@@ -71,7 +79,7 @@ class ExperimentSuite:
         self.inputs = inputs_new
 
     def __repr__(self):
-        return f"ExperimentSuite({self.name}, {self.PEs}, {self.inputs}, {self.configs}, {self.time_limit})"
+        return f"ExperimentSuite({self.name}, {self.PEs}, {self.inputs}, {self.configs}, {self.time_limit}, {self.input_time_limit})"
 
 
 def load_suite_from_yaml(path):
@@ -83,8 +91,23 @@ def load_suite_from_yaml(path):
             configs = configs + explode(config)
     else:
         configs = explode(data["config"])
-    return ExperimentSuite(data["name"], data["ncores"], data["graphs"],
-                           configs, tasks_per_node=data.get("tasks_per_node"), time_limit=data.get("time_limit"))
+    graph_names = []
+    time_limits = {}
+    for graph in data["graphs"]:
+        if type(graph) == str:
+            graph_names.append(graph)
+        else:
+            graph_names.append(graph["name"])
+            time_limit = graph.get("time_limit")
+            if time_limit:
+                time_limits[graph["name"]] = time_limit
+    return ExperimentSuite(data["name"],
+                           data["ncores"],
+                           graph_names,
+                           configs,
+                           tasks_per_node=data.get("tasks_per_node"),
+                           time_limit=data.get("time_limit"),
+                           input_time_limit=time_limits)
 
 
 def explode(config):
@@ -102,12 +125,12 @@ def explode(config):
     return configs
 
 
-def cetric_command(ncores, input, **kwargs):
+def cetric_command(input, **kwargs):
     script_path = os.path.dirname(__file__)
     build_dir = Path(
         os.environ.get("BUILD_DIR", os.path.join(script_path,
-                                                 "../build/apps")))
-    app = build_dir / "cetric"
+                                                 "../build/")))
+    app = build_dir / "apps" / "cetric"
     command = [str(app)]
     if input:
         if isinstance(input, InputGraph):

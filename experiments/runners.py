@@ -29,7 +29,7 @@ class SharedMemoryRunner:
                     err_path = output_path / f"{input_name}-np{ncores}-c{i}-err.txt"
                     mpiexec = os.environ.get("MPI_EXEC", "mpiexec")
                     cmd = [mpiexec, "-np", str(ncores)]
-                    cmd += expcore.cetric_command(ncores, input, **config)
+                    cmd += expcore.cetric_command(input, **config)
                     print(
                         f"Running config {i} on {input_name} using {ncores} cores ... ",
                         end='')
@@ -59,7 +59,8 @@ def required_nodes(cores, tasks_per_node):
 
 
 class SBatchRunner:
-    def __init__(self, output_directory, job_output_directory, tasks_per_node, time_limit):
+    def __init__(self, output_directory, job_output_directory, tasks_per_node,
+                 time_limit):
         self.output_directory = Path(output_directory)
         self.job_output_directory = Path(job_output_directory)
         self.tasks_per_node = tasks_per_node
@@ -71,6 +72,7 @@ class SBatchRunner:
         output_path.mkdir(exist_ok=True, parents=True)
         with open(output_path / "config.json", 'w') as file:
             json.dump(experiment_suite.configs, file, indent=4)
+        njobs = 0
         for i, config in enumerate(experiment_suite.configs):
             for input in experiment_suite.inputs:
                 for ncores in experiment_suite.PEs:
@@ -81,7 +83,7 @@ class SBatchRunner:
                         input_name = str(input)
                     log_path = output_path / f"{input_name}-np{ncores}-c{i}-log.txt"
                     err_path = output_path / f"{input_name}-np{ncores}-c{i}-err.txt"
-                    cmd = expcore.cetric_command(ncores, input, **config)
+                    cmd = expcore.cetric_command(input, **config)
                     jobname = f"{experiment_suite.name}-{input_name}-np{ncores}-c{i}"
                     script_path = Path(os.path.dirname(__file__))
                     with open(script_path /
@@ -99,16 +101,17 @@ class SBatchRunner:
                     subs["error_log"] = str(err_path)
                     subs["job_name"] = jobname
                     subs["job_queue"] = get_queue(ncores, tasks_per_node)
-                    if experiment_suite.time_limit:
-                        time_limit = experiment_suite.time_limit
-                    else:
+                    time_limit = experiment_suite.get_input_time_limit(
+                        input.name)
+                    if not time_limit:
                         time_limit = self.time_limit
                     subs["time_string"] = time.strftime(
-                        "%H:%M:%S",
-                        time.gmtime(time_limit * 60))
+                        "%H:%M:%S", time.gmtime(time_limit * 60))
                     subs["account"] = project
                     subs["cmd"] = ' '.join(cmd)
                     job_script = template.substitute(subs)
                     job_file = self.job_output_directory / jobname
                     with open(job_file, "w") as job:
                         job.write(job_script)
+                    njobs += 1
+        print(f"Created {njobs} job files in directory {self.job_output_directory}.")
