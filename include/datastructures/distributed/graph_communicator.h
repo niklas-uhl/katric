@@ -108,7 +108,7 @@ public:
             }
         }
         CommunicationUtility::sparse_all_to_all(send_buffers, receive_buffers, MPI_NODE, rank_, size_, stats,
-                                                message_tag_);
+                                                message_tag_ + 1);
         for (const auto& elem : receive_buffers) {
             const std::vector<NodeId>& buffer = elem.second;
             assert(buffer.size() % 2 == 0);
