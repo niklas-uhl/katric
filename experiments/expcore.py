@@ -52,9 +52,9 @@ def load_inputs_from_yaml(yaml_path):
 class ExperimentSuite:
     def __init__(self,
                  name: str,
-                 PEs: list[int] = [],
+                 PEs = [],
                  inputs=[],
-                 configs: list[dict] = [],
+                 configs = [],
                  tasks_per_node=None,
                  time_limit=None,
                  input_time_limit={}):
