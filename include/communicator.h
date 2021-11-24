@@ -200,8 +200,7 @@ public:
             auto& local_buffer = kv.second;
             if (!local_buffer.empty()) {
                 if (pe != rank) {
-                    int tag = message_tag * size + pe;
-                    MPI_Issend(local_buffer.data(), local_buffer.size(), mpi_type, pe, tag, MPI_COMM_WORLD,
+                    MPI_Issend(local_buffer.data(), local_buffer.size(), mpi_type, pe, message_tag, MPI_COMM_WORLD,
                                &requests[request++]);
                     stats.send_volume += local_buffer.size();
                     stats.sent_messages++;
@@ -214,8 +213,7 @@ public:
             while (iprobe_success > 0) {
                 iprobe_success = 0;
                 MPI_Status status;
-                int tag = message_tag * size + rank;
-                MPI_Iprobe(MPI_ANY_SOURCE, tag, MPI_COMM_WORLD, &iprobe_success, &status);
+                MPI_Iprobe(MPI_ANY_SOURCE, message_tag, MPI_COMM_WORLD, &iprobe_success, &status);
                 if (iprobe_success > 0) {
                     int message_length;
                     MPI_Get_count(&status, mpi_type, &message_length);
@@ -255,7 +253,7 @@ public:
                                   google::dense_hash_map<PEID, std::vector<T>>& recv_buffers,
                                   MPI_Datatype mpi_type,
                                   PEID rank,
-                                  PEID size,
+                                  PEID size [[maybe_unused]],
                                   cetric::profiling::MessageStatistics& stats,
                                   int message_tag) {
         PEID request_count = 0;
@@ -279,8 +277,7 @@ public:
             const std::vector<T>& buffer = kv.second;
             if (!buffer.empty()) {
                 if (pe != rank) {
-                    int tag = message_tag * size + pe;
-                    MPI_Issend(buffer.data(), buffer.size(), mpi_type, pe, tag, MPI_COMM_WORLD, &requests[request++]);
+                    MPI_Issend(buffer.data(), buffer.size(), mpi_type, pe, message_tag, MPI_COMM_WORLD, &requests[request++]);
                     stats.send_volume += buffer.size();
                     stats.sent_messages++;
                 }
@@ -294,8 +291,7 @@ public:
             while (iprobe_success > 0) {
                 iprobe_success = 0;
                 MPI_Status status;
-                int tag = message_tag * size + rank;
-                MPI_Iprobe(MPI_ANY_SOURCE, tag, MPI_COMM_WORLD, &iprobe_success, &status);
+                MPI_Iprobe(MPI_ANY_SOURCE, message_tag, MPI_COMM_WORLD, &iprobe_success, &status);
                 if (iprobe_success > 0) {
                     int message_length;
                     MPI_Get_count(&status, mpi_type, &message_length);
@@ -323,8 +319,7 @@ public:
             while (iprobe_success > 0) {
                 iprobe_success = 0;
                 MPI_Status status;
-                int tag = message_tag * size + rank;
-                MPI_Iprobe(MPI_ANY_SOURCE, tag, MPI_COMM_WORLD, &iprobe_success, &status);
+                MPI_Iprobe(MPI_ANY_SOURCE, message_tag, MPI_COMM_WORLD, &iprobe_success, &status);
                 if (iprobe_success > 0) {
                     int message_length;
                     MPI_Get_count(&status, mpi_type, &message_length);
@@ -528,10 +523,9 @@ public:
             assert(overflow_buffers_[recv].empty());
             send_buffers_[recv].swap(overflow_buffers_[recv]);
             const std::vector<T>& buffer = overflow_buffers_[recv];
-            int tag = message_tag_ * size_ + recv;
             stats.sent_messages++;
             stats.send_volume += buffer.size();
-            MPI_Issend(buffer.data(), buffer.size(), mpi_type, recv, tag, MPI_COMM_WORLD, &requests_[recv]);
+            MPI_Issend(buffer.data(), buffer.size(), mpi_type, recv, message_tag_, MPI_COMM_WORLD, &requests_[recv]);
         }
     }
 
@@ -575,8 +569,7 @@ public:
             while (iprobe_success > 0) {
                 iprobe_success = 0;
                 MPI_Status status;
-                int tag = message_tag_ * size_ + rank_;
-                MPI_Iprobe(MPI_ANY_SOURCE, tag, MPI_COMM_WORLD, &iprobe_success, &status);
+                MPI_Iprobe(MPI_ANY_SOURCE, message_tag_, MPI_COMM_WORLD, &iprobe_success, &status);
                 if (iprobe_success > 0) {
                     int message_length;
                     MPI_Get_count(&status, mpi_type, &message_length);
@@ -604,8 +597,7 @@ public:
         while (iprobe_success > 0) {
             iprobe_success = 0;
             MPI_Status status;
-            int tag = message_tag_ * size_ + rank_;
-            MPI_Iprobe(MPI_ANY_SOURCE, tag, MPI_COMM_WORLD, &iprobe_success, &status);
+            MPI_Iprobe(MPI_ANY_SOURCE, message_tag_, MPI_COMM_WORLD, &iprobe_success, &status);
             if (iprobe_success > 0) {
                 int message_length;
                 MPI_Get_count(&status, mpi_type, &message_length);
