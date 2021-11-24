@@ -1,34 +1,5 @@
-FetchContent_Declare(
-  catch
-  GIT_REPOSITORY https://github.com/catchorg/Catch2.git
-  GIT_TAG v2.13.7)
-
-FetchContent_MakeAvailable(catch)
-
-if (NOT TARGET gtest)
-    MESSAGE(STATUS "googletest not included yet, we therefore download it for you")
-    FetchContent_Declare(
-        googletest
-        URL https://github.com/google/googletest/archive/refs/tags/release-1.11.0.zip
-        )
-
-    FetchContent_MakeAvailable(googletest)
-endif()
-
-FetchContent_Declare(
-    gtest-mpi-listener
-    GIT_REPOSITORY https://github.com/LLNL/gtest-mpi-listener
-    )
-
-if(NOT gtest-mpi-listener_POPULATED)
-    FetchContent_Populate(gtest-mpi-listener)
-    add_library(gtest-mpi-listener INTERFACE EXCLUDE_FROM_ALL)
-    target_include_directories(gtest-mpi-listener INTERFACE "${gtest-mpi-listener_SOURCE_DIR}/include")
-    target_link_libraries(gtest-mpi-listener INTERFACE MPI::MPI_CXX gtest gmock)
-
-    add_library(mpi-gtest-main EXCLUDE_FROM_ALL mpi-gtest-main.cpp)
-    target_link_libraries(mpi-gtest-main PUBLIC gtest-mpi-listener)
-endif()
+add_library(mpi-gtest-main EXCLUDE_FROM_ALL mpi-gtest-main.cpp)
+target_link_libraries(mpi-gtest-main gtest gtest-mpi-listener gmock)
 
 set(TEST_MAIN_MPI mpi-catch2-main.cpp)
 add_library(mpi-catch2-main EXCLUDE_FROM_ALL ${TEST_MAIN_MPI})

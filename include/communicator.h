@@ -143,7 +143,7 @@ public:
     static void sparse_all_to_all(SendBuf& to_send,
                            RecvBuf& recv_buffers,
                            PEID rank,
-                           PEID size,
+                           PEID size [[maybe_unused]],
                            int message_tag,
                            cetric::profiling::MessageStatistics& stats) {
         static_assert(std::is_same_v<RecvBuf, HashedBuffer<T>> || std::is_same_v<RecvBuf, CompactBuffer<T>>);

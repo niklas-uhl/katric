@@ -1,5 +1,5 @@
 name: mysuite
-ncores: [1, 2, 4]
+ncores: [1, 2, 4, 8, 16]
 graphs:
   - hiv
   - metis-sample
@@ -7,6 +7,8 @@ graphs:
 time_limit: 10
 config: {
   "orient-locally": [False, True],
-  "primary-cost-function": [IDPD, DPD]
+  "primary-cost-function": [N, D, IDPD],
+  "secondary-cost-function": [N, IDPD, DPD],
+
 }
 

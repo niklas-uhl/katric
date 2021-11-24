@@ -22,3 +22,9 @@
 [submodule "extern/cereal"]
 	path = extern/cereal
 	url = https://github.com/USCiLab/cereal.git
+[submodule "extern/googletest"]
+	path = extern/googletest
+	url = https://github.com/google/googletest.git
+[submodule "extern/gtest-mpi-listener"]
+	path = extern/gtest-mpi-listener
+	url = https://github.com/LLNL/gtest-mpi-listener
