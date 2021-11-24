@@ -42,6 +42,7 @@ struct Config {
     bool degree_filtering = false;
     bool orient_locally = false;
     bool pseudo2core = false;
+    bool dense_load_balancing = false;
 
     int verbosity_level = 0;
     std::string json_output = "";

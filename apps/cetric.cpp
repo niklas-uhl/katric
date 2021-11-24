@@ -51,6 +51,8 @@ Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
 
     app.add_flag("--pseudo2core", conf.pseudo2core);
 
+    app.add_flag("--dense-load-balancing", conf.dense_load_balancing);
+
     parse_gen_parameters(app, conf);
 
     CLI::Option* input_option = app.get_option("input");

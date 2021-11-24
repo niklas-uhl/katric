@@ -28,7 +28,7 @@ public:
     static graph::LocalGraphView run(graph::LocalGraphView&& G, CostFunction& cost_function, const Config& conf, profiling::LoadBalancingStatistics& stats) {
         cetric::profiling::Timer timer;
         auto to_send = reassign_nodes(G, cost_function, conf);
-        auto G_balanced = GraphCommunicator::relocate(std::move(G), to_send, stats.message_statistics, conf.rank, conf.PEs);
+        auto G_balanced = GraphCommunicator::relocate(std::move(G), to_send, stats.message_statistics, conf.rank, conf.PEs, !conf.dense_load_balancing);
         stats.redistribution_time = timer.elapsed_time();
         return G_balanced;
     }
