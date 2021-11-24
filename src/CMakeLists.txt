@@ -18,7 +18,8 @@ target_link_libraries(cetric-lib PUBLIC debug_assert)
 target_link_libraries(cetric-lib PUBLIC fmt::fmt)
 target_include_directories(cetric-lib PUBLIC ${BACKWARD_INCLUDE_DIRS})
 #target_link_libraries(cetric-lib PUBLIC ${BACKWARD_ENABLE})
-target_link_libraries(cetric-lib PUBLIC -ldw -ldl)
+target_link_libraries(cetric-lib PUBLIC ${BACKWARD_LIBRARIES})
+target_compile_definitions(cetric-lib PUBLIC ${BACKWARD_DEFINITIONS})
 
 
 target_compile_options(cetric-lib PUBLIC -Wall -Wextra -pedantic)
