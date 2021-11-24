@@ -7,3 +7,18 @@
 [submodule "extern/tlx"]
 	path = extern/tlx
 	url = https://github.com/tlx/tlx
+[submodule "extern/catch"]
+	path = extern/catch
+	url = https://github.com/catchorg/Catch2.git
+[submodule "extern/debug_assert"]
+	path = extern/debug_assert
+	url = https://github.com/foonathan/debug_assert.git
+[submodule "extern/backward-cpp"]
+	path = extern/backward-cpp
+	url = https://github.com/bombela/backward-cpp.git
+[submodule "extern/fmt"]
+	path = extern/fmt
+	url = https://github.com/fmtlib/fmt.git
+[submodule "extern/cereal"]
+	path = extern/cereal
+	url = https://github.com/USCiLab/cereal.git
