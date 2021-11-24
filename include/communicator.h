@@ -242,6 +242,7 @@ public:
 
         int ibarrier_done = 0;
         while (ibarrier_done == 0) {
+            //TODO We should test after each received message, else we get may get message from the next a2a
             probe();
             MPI_Status test_status;
             MPI_Test(&barrier_request, &ibarrier_done, &test_status);
