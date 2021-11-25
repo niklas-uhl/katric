@@ -45,7 +45,7 @@ def load_inputs_from_yaml(yaml_path):
         inputs[name] = FileInputGraph(name, path, format, triangles)
     if "includes" in data:
         for rec in data["includes"]:
-            inputs |= load_inputs_from_yaml(Path(yaml_path).parent / rec)
+            inputs.update(load_inputs_from_yaml(Path(yaml_path).parent / rec))
     return inputs
 
 
