@@ -28,3 +28,6 @@
 [submodule "extern/gtest-mpi-listener"]
 	path = extern/gtest-mpi-listener
 	url = https://github.com/LLNL/gtest-mpi-listener
+[submodule "experiments/extern/pyyaml"]
+	path = experiments/extern/pyyaml
+	url = https://github.com/yaml/pyyaml.git
