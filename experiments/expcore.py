@@ -6,7 +6,7 @@ import yaml
 
 
 class InputGraph:
-    def __init__(self, name, triangles = None):
+    def __init__(self, name, triangles=None):
         self.name = name
         self.triangles = triangles
 
@@ -15,7 +15,7 @@ class InputGraph:
 
 
 class FileInputGraph(InputGraph):
-    def __init__(self, name, path, format='metis', triangles = None):
+    def __init__(self, name, path, format='metis', triangles=None):
         self.name = name
         self.path = path
         self.format = format
@@ -24,6 +24,15 @@ class FileInputGraph(InputGraph):
     def args(self):
         file_args = [str(self.path), "--input-format", self.format]
         return file_args
+
+    def exists(self):
+        if self.format == "metis":
+            return self.path.exists()
+        elif self.format == "binary":
+            root = self.path.parent
+            first_out = root / (self.path.stem + ".first_out")
+            head = root / (self.path.stem + ".head")
+            return first_out.exists() and head.exists()
 
     def __repr__(self):
         return f"FileInputGraph({self.name, self.triangles, self.path, self.format})"
@@ -42,7 +51,11 @@ def load_inputs_from_yaml(yaml_path):
         path = Path(yaml_path).parent / rec['path']
         format = rec['format']
         triangles = rec.get('triangles')
-        inputs[name] = FileInputGraph(name, path, format, triangles)
+        graph = FileInputGraph(name, path, format, triangles)
+        if not graph.exists():
+            logging.warn(f"Could not load graph {graph.name}")
+        else:
+            inputs[graph.name] = graph
     if "includes" in data:
         for rec in data["includes"]:
             inputs.update(load_inputs_from_yaml(Path(yaml_path).parent / rec))
@@ -52,9 +65,9 @@ def load_inputs_from_yaml(yaml_path):
 class ExperimentSuite:
     def __init__(self,
                  name: str,
-                 PEs = [],
+                 PEs=[],
                  inputs=[],
-                 configs = [],
+                 configs=[],
                  tasks_per_node=None,
                  time_limit=None,
                  input_time_limit={}):
@@ -131,8 +144,7 @@ def explode(config):
 def cetric_command(input, **kwargs):
     script_path = os.path.dirname(__file__)
     build_dir = Path(
-        os.environ.get("BUILD_DIR", os.path.join(script_path,
-                                                 "../build/")))
+        os.environ.get("BUILD_DIR", os.path.join(script_path, "../build/")))
     app = build_dir / "apps" / "cetric"
     command = [str(app)]
     if input:
