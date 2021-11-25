@@ -7,6 +7,7 @@ T. N. Uhl. Communication Efficient Triangle Counting. Karlsruhe Institute of Tec
 # Building
 
 ```shell
+git submodule update --init --recursive
 mkdir build && cd build
 cmake ..
 make

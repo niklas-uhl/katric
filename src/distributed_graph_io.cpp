@@ -2,12 +2,15 @@
 #include <limits>
 #pragma GCC diagnostic push
 #define BOOST_BIND_GLOBAL_PLACEHOLDERS
+#pragma push_macro("PTR")
+#undef PTR
 #pragma GCC diagnostic ignored "-Wunused-variable"
 #pragma GCC diagnostic ignored "-Wtype-limits"
 #pragma GCC diagnostic ignored "-Wunused-local-typedefs"
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #include "kagen_interface.h"
 #undef BOOST_BIND_GLOBAL_PLACEHOLDERS
+#pragma pop_macro("PTR")
 #pragma GCC diagnostic pop
 
 

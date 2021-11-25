@@ -33,11 +33,11 @@ function(nuhl_add_mpi_test NUHL_ADD_TEST_TARGET)
         "CORES"
         ${ARGN}
         )
-    if(NOT NUHL_MPI_TEST_CORES) 
+    if(NOT NUHL_MPI_TEST_CORES)
         set(NUHL_MPI_TEST_CORES ${MPIEXEC_MAX_NUMPROCS})
     endif()
     foreach(p ${NUHL_ADD_TEST_CORES})
-        if(${p} LESS_EQUAL ${MPIEXEC_MAX_NUMPROCS})     
+        if(${p} LESS_EQUAL ${MPIEXEC_MAX_NUMPROCS})
             set(TEST_NAME "${NUHL_ADD_TEST_TARGET}_${p}cores")
             add_test(NAME "${TEST_NAME}" COMMAND ${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} ${p} $<TARGET_FILE:${NUHL_ADD_TEST_TARGET}> WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
         endif()

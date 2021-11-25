@@ -8,7 +8,7 @@ add_subdirectory(catch EXCLUDE_FROM_ALL)
 add_subdirectory(googletest EXCLUDE_FROM_ALL)
 
 set(gtest-mpi-listener_SOURCE_DIR ${CMAKE_SOURCE_DIR}/extern/gtest-mpi-listener)
-add_library(gtest-mpi-listener INTERFACE EXCLUDE_FROM_ALL)
+add_library(gtest-mpi-listener INTERFACE)
 target_include_directories(gtest-mpi-listener INTERFACE "${gtest-mpi-listener_SOURCE_DIR}/include")
 target_link_libraries(gtest-mpi-listener INTERFACE MPI::MPI_CXX gtest gmock)
 
