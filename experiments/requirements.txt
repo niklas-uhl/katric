@@ -1,1 +1,1 @@
--e ./extern/pyyaml
+PyYAML==6.0
