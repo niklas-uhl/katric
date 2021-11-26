@@ -74,11 +74,12 @@ def required_nodes(cores, tasks_per_node):
 
 class SBatchRunner:
     def __init__(self, output_directory, job_output_directory, tasks_per_node,
-                 time_limit):
+                 time_limit, use_test_partition = False):
         self.output_directory = Path(output_directory)
         self.job_output_directory = Path(job_output_directory)
         self.tasks_per_node = tasks_per_node
         self.time_limit = time_limit
+        self.use_test_partition = use_test_partition
 
     def execute(self, experiment_suite: ExperimentSuite):
         project = os.environ["PROJECT"]
@@ -114,7 +115,10 @@ class SBatchRunner:
                     subs["output_log"] = str(log_path)
                     subs["error_log"] = str(err_path)
                     subs["job_name"] = jobname
-                    subs["job_queue"] = get_queue(ncores, tasks_per_node)
+                    if self.use_test_partition:
+                        subs["job_queue"] = "test"
+                    else:
+                        subs["job_queue"] = get_queue(ncores, tasks_per_node)
                     time_limit = experiment_suite.get_input_time_limit(
                         input.name)
                     if not time_limit:

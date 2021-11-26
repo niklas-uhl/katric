@@ -12,7 +12,7 @@ def load_suites(suite_files, search_paths):
     for path in search_paths:
         for file in os.listdir(path):
             if file.endswith('.suite.yaml'):
-                suite = expcore.load_suite_from_yaml(file)
+                suite = expcore.load_suite_from_yaml(os.path.join(path, file))
                 suites[suite.name] = suite
     return suites
 
@@ -31,6 +31,7 @@ def main():
 
     default_search_dirs = os.environ.get("SUITE_SEARCH_PATH",
                                          default=os.getcwd()).split(":")
+    default_search_dirs.append(os.path.dirname(__file__))
     parser.add_argument('-d',
                         '--search-dirs',
                         nargs='*',
@@ -59,11 +60,15 @@ def main():
 
     parser.add_argument('-j', '--job-output-dir', default="jobs")
 
-    parser.add_argument('-m', '--machine', choices=['shared', 'supermuc'], default = 'shared')
+    default_machine_type = os.environ.get("MACHINE", 'shared')
+    parser.add_argument('-m', '--machine', choices=['shared', 'supermuc'], default = default_machine_type)
     parser.add_argument('--tasks-per-node', default = os.environ.get("TASKS_PER_NODE", 48), type=int)
     parser.add_argument('-t', '--time-limit', default = os.environ.get("TIME_LIMIT", 20), type=int)
 
+    parser.add_argument('--test', action='store_true')
+
     args = parser.parse_args()
+    print(args.search_dirs)
     suites = load_suites(args.suite_files, args.search_dirs)
     inputs = load_inputs(args.input_descriptions + default_inputs)
     for suite in suites.values():
@@ -84,7 +89,7 @@ def main():
     if args.machine == 'shared':
         runner = SharedMemoryRunner(args.output_dir, verify_results=args.verify)
     else:
-        runner = SBatchRunner(args.output_dir, args.job_output_dir, args.tasks_per_node, args.time_limit)
+        runner = SBatchRunner(args.output_dir, args.job_output_dir, args.tasks_per_node, args.time_limit, args.test)
     for suitename in args.suite:
         suite = suites.get(suitename)
         if suite:

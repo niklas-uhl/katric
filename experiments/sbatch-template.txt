@@ -1,4 +1,4 @@
-#/bin/bash
+#!/bin/bash
 #SBATCH --nodes=${nodes}
 #SBATCH --ntasks=${p}
 #SBATCH -o ${output_log}
@@ -10,5 +10,13 @@
 #SBATCH --account=${account}
 module load slurm_setup
 
+logfile=$$(dirname ${error_log})/log.csv
+echo ${job_name}, $$(date -Iseconds), started >> $$logfile
 mpiexec -n $$SLURM_NTASKS ${cmd}
+if [ $$? -eq 0 ]
+then
+	echo ${job_name}, $$(date -Iseconds), finished >> $$logfile
+else
+	echo ${job_name}, $$(date -Iseconds), failed >> $$logfile
+fi
 

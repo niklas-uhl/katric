@@ -1,0 +1,14 @@
+name: orient-locally
+ncores: [64, 128, 256, 1024, 2048, 4096]
+graphs:
+        - live-journal
+        - name: uk-2007-05
+          time_limit: 20
+        - europe
+time_limit: 10
+config: {
+  "orient-locally": [False, True],
+  "primary-cost-function": [N],
+  "secondary-cost-function": [IDPD],
+}
+
