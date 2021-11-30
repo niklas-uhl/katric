@@ -82,7 +82,7 @@ inline size_t run_cetric(DistributedGraph<>& G,
     G.remove_internal_edges();
     stats.local.contraction_time += timer.elapsed_time();
     timer.restart();
-    if (!conf.secondary_cost_function.empty()) {
+    if (conf.secondary_cost_function != "none") {
         auto cost_function = CostFunctionRegistry<DistributedGraph<>>::get(conf.secondary_cost_function, G, conf,
                                                                            stats.local.secondary_load_balancing);
         auto tmp = G.to_local_graph_view(true, false);

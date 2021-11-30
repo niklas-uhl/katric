@@ -11,6 +11,7 @@
 #include <backward.hpp>
 #include <cstdlib>
 #include <debug_assert.hpp>
+#include <exception>
 #include <iostream>
 #include <istream>
 #include <iterator>
@@ -87,6 +88,31 @@ struct debug_module : debug_assert::default_handler, debug_assert::set_level<MOD
 #define DEBUG_BARRIER(rank)
 #endif
 #endif
+
+struct MPIException : public std::exception {
+    MPIException(const std::string& msg) : msg_() {
+        PEID rank;
+        MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+        msg_ = fmt::format("[R{}] {}", rank, msg);
+    }
+    const char* what() const throw() {
+        return msg_.c_str();
+    }
+
+private:
+    std::string msg_;
+};
+
+inline void
+check_mpi_error(int errcode) {
+    if (errcode != MPI_SUCCESS) {
+        std::array<char, MPI_MAX_ERROR_STRING> buf;
+        int resultlen;
+        MPI_Error_string(errcode, buf.data(), &resultlen);
+        std::string msg(buf.begin(), buf.end());
+        throw MPIException(msg);
+    }
+}
 
 template <class MessageType>
 inline void atomic_debug(MessageType message, std::ostream& out = std::cout, bool newline = true) {

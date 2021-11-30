@@ -5,12 +5,16 @@
 #ifndef PARALLEL_TRIANGLE_COUNTER_CONFIG_H
 #define PARALLEL_TRIANGLE_COUNTER_CONFIG_H
 
+#include <datastructures/graph_definitions.h>
+#include <io/definitions.h>
+#include <util.h>
+#include <cereal/cereal.hpp>
 #include <limits>
 #include <optional>
-#include <datastructures/graph_definitions.h>
-#include <util.h>
-#include <io/definitions.h>
-#include <cereal/cereal.hpp>
+
+enum class CacheInput {
+    Filesystem, InMemory, None
+};
 
 struct Config {
     Config() = default;
@@ -24,6 +28,7 @@ struct Config {
     bool use_hash_coloring = false;
     bool shrink_neighborhood = false;
     std::string input_file;
+    std::string cache_file;
     std::string output_file;
     InputFormat input_format;
     size_t seed = 28475421;
@@ -34,7 +39,7 @@ struct Config {
     bool empty_pending_buffers_on_overflow = false;
     size_t iterations = 1;
     std::string primary_cost_function = "N";
-    std::string secondary_cost_function = "";
+    std::string secondary_cost_function = "none";
 
     bool full_all_to_all = false;
     bool use_two_phases = false;
@@ -45,6 +50,7 @@ struct Config {
     bool dense_load_balancing = false;
 
     int verbosity_level = 0;
+    CacheInput cache_input = CacheInput::None;
     std::string json_output = "";
     std::string hostname;
     PEID PEs;
@@ -52,26 +58,29 @@ struct Config {
 
     // Generator parameters
     std::string gen;
-    cetric::graph::NodeId gen_n = 100;
+    cetric::graph::NodeId gen_n = 10;
     cetric::graph::EdgeId gen_m = 0;
     float gen_r = 0.125;
     float gen_r_coeff = 0.55;
     float gen_p = 0.0;
     bool gen_periodic = false;
     size_t gen_k = 0;
-    float gen_gamma = 0;
-    float gen_d =0;
+    float gen_gamma = 2.8;
+    float gen_d = 16;
     bool gen_scale_weak = false;
     bool rhg_fix = false;
     double false_positive_rate = 0.01;
 
     template <class Archive>
     void serialize(Archive& archive) {
-        archive(CEREAL_NVP(input_file), CEREAL_NVP(hostname), CEREAL_NVP(PEs), CEREAL_NVP(gen), CEREAL_NVP(gen_n),
-           CEREAL_NVP(gen_m), CEREAL_NVP(gen_r), CEREAL_NVP(gen_r_coeff), CEREAL_NVP(gen_p), CEREAL_NVP(gen_gamma),
-           CEREAL_NVP(gen_d), CEREAL_NVP(gen_scale_weak), CEREAL_NVP(primary_cost_function),
-                CEREAL_NVP(secondary_cost_function));
+        archive(CEREAL_NVP(input_file), CEREAL_NVP(hostname), CEREAL_NVP(PEs), CEREAL_NVP(cache_input),
+                CEREAL_NVP(primary_cost_function), CEREAL_NVP(secondary_cost_function), CEREAL_NVP(orient_locally),
+                CEREAL_NVP(pseudo2core), CEREAL_NVP(dense_load_balancing));
+        if (input_file.empty()) {
+            archive(CEREAL_NVP(gen), CEREAL_NVP(gen_n), CEREAL_NVP(gen_m), CEREAL_NVP(gen_r), CEREAL_NVP(gen_r_coeff),
+                    CEREAL_NVP(gen_p), CEREAL_NVP(gen_gamma), CEREAL_NVP(gen_d), CEREAL_NVP(gen_scale_weak));
+        }
     }
 };
 
-#endif //PARALLEL_TRIANGLE_COUNTER_CONFIG_H
+#endif  // PARALLEL_TRIANGLE_COUNTER_CONFIG_H

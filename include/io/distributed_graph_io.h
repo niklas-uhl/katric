@@ -7,27 +7,26 @@
 
 #include <filesystem>
 
-#include <datastructures/graph_definitions.h>
+#include <communicator.h>
 #include <datastructures/distributed/local_graph_view.h>
+#include <datastructures/graph_definitions.h>
+#include <io/definitions.h>
+#include <statistics.h>
+#include <google/dense_hash_set>
 #include <limits>
 #include <locale>
-#include <communicator.h>
 #include <sparsehash/dense_hash_set>
 #include <string>
 #include <type_traits>
-#include <io/definitions.h>
-#include <statistics.h>
-#include "util.h"
 #include "graph_io.h"
-#include <google/dense_hash_set>
+#include "util.h"
 
 namespace cetric {
-    using namespace cetric::graph;
+using namespace cetric::graph;
 
-    using node_set = google::dense_hash_set<NodeId>;
+using node_set = google::dense_hash_set<NodeId>;
 
 struct GraphInfo {
-
     NodeId total_node_count;
     NodeId local_from;
     NodeId local_to;
@@ -35,8 +34,10 @@ struct GraphInfo {
     static GraphInfo even_distribution(NodeId total_node_count, PEID rank, PEID size) {
         GraphInfo graph_info;
         NodeId remaining_nodes = total_node_count % size;
-        NodeId local_node_count = (total_node_count / size) + static_cast<NodeId>(static_cast<size_t>(rank) < remaining_nodes);
-        NodeId local_from = (rank * local_node_count) + static_cast<NodeId>(static_cast<size_t>(rank) >= remaining_nodes ? remaining_nodes : 0);
+        NodeId local_node_count =
+            (total_node_count / size) + static_cast<NodeId>(static_cast<size_t>(rank) < remaining_nodes);
+        NodeId local_from = (rank * local_node_count) +
+                            static_cast<NodeId>(static_cast<size_t>(rank) >= remaining_nodes ? remaining_nodes : 0);
         NodeId local_to = local_from + local_node_count;
         graph_info.total_node_count = total_node_count;
         graph_info.local_from = local_from;
@@ -49,27 +50,47 @@ struct GraphInfo {
     }
 };
 
-void read_metis_distributed(const std::string& input, const GraphInfo& graph_info, std::vector<Edge>& edge_list, node_set& ghosts, PEID rank, PEID size);
+void read_metis_distributed(const std::string& input,
+                            const GraphInfo& graph_info,
+                            std::vector<Edge>& edge_list,
+                            node_set& ghosts,
+                            PEID rank,
+                            PEID size);
 
-void read_metis_distributed(const std::string& input, const GraphInfo& graph_info, std::vector<EdgeId>& first_out, std::vector<NodeId>& head, PEID rank, PEID size);
+void read_metis_distributed(const std::string& input,
+                            const GraphInfo& graph_info,
+                            std::vector<EdgeId>& first_out,
+                            std::vector<NodeId>& head,
+                            PEID rank,
+                            PEID size);
 
-void gather_PE_ranges(NodeId local_from, NodeId local_to, std::vector<std::pair<NodeId, NodeId>>& ranges, const MPI_Comm& comm, PEID rank, PEID size);
+void gather_PE_ranges(NodeId local_from,
+                      NodeId local_to,
+                      std::vector<std::pair<NodeId, NodeId>>& ranges,
+                      const MPI_Comm& comm,
+                      PEID rank,
+                      PEID size);
 
 PEID get_PE_from_node_ranges(NodeId node, const std::vector<std::pair<NodeId, NodeId>>& ranges);
 
-template<class EdgeList>
-void fix_broken_edge_list(EdgeList& edge_list, const std::vector<std::pair<NodeId, NodeId>>& ranges, node_set& ghosts, PEID rank, PEID size) {
+template <class EdgeList>
+void fix_broken_edge_list(EdgeList& edge_list,
+                          const std::vector<std::pair<NodeId, NodeId>>& ranges,
+                          node_set& ghosts,
+                          PEID rank,
+                          PEID size) {
     NodeId local_from = ranges[rank].first;
     NodeId local_to = ranges[rank].second;
-    BufferedCommunicator<NodeId> communicator(std::numeric_limits<size_t>::max(), MPI_NODE, rank, size, as_int(MessageTag::RHGFix));
+    BufferedCommunicator<NodeId> communicator(std::numeric_limits<size_t>::max(), MPI_NODE, rank, size,
+                                              as_int(MessageTag::RHGFix));
     cetric::profiling::MessageStatistics dummy_stats;
-    auto handle_message = [&](PEID, const std::vector<NodeId> &message) {
+    auto handle_message = [&](PEID, const std::vector<NodeId>& message) {
         for (size_t i = 0; i < message.size(); i += 2) {
             edge_list.emplace_back(message[i + 1], message[i]);
             ghosts.insert(message[i]);
         }
     };
-    for (auto &edge : edge_list) {
+    for (auto& edge : edge_list) {
         NodeId tail;
         NodeId head;
         if constexpr (!std::is_same<EdgeList, std::vector<Edge>>::value) {
@@ -96,7 +117,7 @@ void fix_broken_edge_list(EdgeList& edge_list, const std::vector<std::pair<NodeI
         });
     }
 
-    //kagen sometimes produces duplicate edges
+    // kagen sometimes produces duplicate edges
     auto it = std::unique(edge_list.begin(), edge_list.end());
     edge_list.erase(it, edge_list.end());
 }
@@ -115,5 +136,10 @@ LocalGraphView read_local_graph(const std::string& input, InputFormat format, PE
 
 std::pair<NodeId, NodeId> get_node_range(const std::string& input, PEID rank, PEID size);
 
-}
-#endif //PARALLEL_TRIANGLE_COUNTER_DISTRIBUTED_GRAPH_IO_H
+void write_graph_view(const LocalGraphView& G, const std::string& output, PEID rank, PEID size);
+
+LocalGraphView read_graph_view(const std::string& input, PEID rank, PEID size);
+
+std::string dump_to_tmp(const LocalGraphView& G, PEID rank, PEID size);  // namespace cetric
+}  // namespace cetric
+#endif  // PARALLEL_TRIANGLE_COUNTER_DISTRIBUTED_GRAPH_IO_H

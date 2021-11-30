@@ -7,15 +7,22 @@
 #include <CLI/CLI.hpp>
 #include <algorithm>
 #include <cereal/archives/json.hpp>
+#include <cstddef>
+#include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <iomanip>
 #include <iostream>
 #include <istream>
 #include <memory>
 #include <sstream>
-#include "cereal/cereal.hpp"
-#include "parse_parameters.h"
+#include "CLI/Validators.hpp"
 #include "backward.hpp"
+#include "cereal/cereal.hpp"
+#include "datastructures/distributed/distributed_graph.h"
+#include "datastructures/distributed/local_graph_view.h"
+#include "parse_parameters.h"
+#include "statistics.h"
 
 Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
     (void)size;
@@ -38,11 +45,16 @@ Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
     app.add_set("--primary-cost-function", conf.primary_cost_function,
                 {"N", "D", "DH", "DDH", "DH2", "DPD", "IDPD", "D*"});
     app.add_set("--secondary-cost-function", conf.secondary_cost_function,
-                {"N", "D", "DH", "DDH", "DH2", "DPD", "IDPD", "D*"});
+                {"none", "N", "D", "DH", "DDH", "DH2", "DPD", "IDPD", "D*"});
 
     app.add_flag("-v", conf.verbosity_level, "verbosity level");
 
-    // app.add_option("--iterations", conf.iterations);
+    std::map<std::string, CacheInput> map{
+        {"none", CacheInput::None}, {"fs", CacheInput::Filesystem}, {"mem", CacheInput::InMemory}};
+    app.add_option("--cache-input", conf.cache_input)->transform(CLI::CheckedTransformer(map, CLI::ignore_case));
+
+    app.add_flag("--rhg-fix", conf.rhg_fix);
+
     app.add_option("--json-output", conf.json_output);
 
     app.add_flag("--degree-filtering", conf.degree_filtering);
@@ -87,33 +99,66 @@ int main(int argc, char* argv[]) {
     backward::SignalHandling sh;
     Config conf = parse_config(argc, argv, rank, size);
 
-    MPI_Barrier(MPI_COMM_WORLD);
-    cetric::profiling::Timer global_time;
-
-    DistributedGraph<> G;
-    cetric::profiling::Statistics stats(rank, size);
-    cetric::profiling::Timer timer;
-    if (conf.gen == "") {
-        G = DistributedGraph<>(cetric::read_local_graph(conf.input_file, conf.input_format, rank, size), rank, size);
-    } else {
-        G = DistributedGraph<>(cetric::gen_local_graph(conf, rank, size), rank, size);
+    auto load_graph = [&]() {
+        LocalGraphView G;
+        if (conf.gen == "") {
+            G = cetric::read_local_graph(conf.input_file, conf.input_format, rank, size);
+        } else {
+            G = cetric::gen_local_graph(conf, rank, size);
+        }
+        return G;
+    };
+    std::optional<LocalGraphView> input_cache;
+    if (conf.cache_input != CacheInput::None) {
+        LocalGraphView G = load_graph();
+        if (conf.cache_input == CacheInput::Filesystem) {
+            auto tmp_file = cetric::dump_to_tmp(G, rank, size);
+            conf.cache_file = tmp_file;
+        } else if (conf.cache_input == CacheInput::InMemory) {
+            input_cache = G;
+        }
     }
-    stats.local.io_time = timer.elapsed_time();
+    std::vector<cetric::profiling::Statistics> all_stats;
+    for (size_t iter = 0; iter < conf.iterations; ++iter) {
+        MPI_Barrier(MPI_COMM_WORLD);
 
-    run_cetric(G, stats, conf, rank, size);
+        DistributedGraph<> G;
+        cetric::profiling::Statistics stats(rank, size);
+        cetric::profiling::Timer timer;
+        switch (conf.cache_input) {
+            case CacheInput::None:
+                G = DistributedGraph<>(load_graph(), rank, size);
+                break;
+            case CacheInput::Filesystem:
+                G = DistributedGraph<>(cetric::read_graph_view(conf.cache_file, rank, size), rank, size);
+                break;
+            case CacheInput::InMemory:
+                LocalGraphView G_local = input_cache.value();
+                G = DistributedGraph<>(std::move(G_local), rank, size);
+        }
+        MPI_Barrier(MPI_COMM_WORLD);
+        stats.local.io_time = timer.elapsed_time();
+        cetric::profiling::Timer global_time;
 
-    MPI_Barrier(MPI_COMM_WORLD);
-    stats.global_wall_time = global_time.elapsed_time();
+        run_cetric(G, stats, conf, rank, size);
 
-    stats.reduce();
+        MPI_Barrier(MPI_COMM_WORLD);
+        stats.global_wall_time = global_time.elapsed_time();
+
+        stats.reduce();
+        all_stats.emplace_back(std::move(stats));
+    }
+    if (conf.cache_input == CacheInput::Filesystem) {
+        std::filesystem::remove(conf.cache_file);
+    }
     if (!conf.json_output.empty()) {
         if (rank == 0) {
-            assert(stats.triangles == stats.counted_triangles);
+            assert(all_stats[0].triangles == all_stats[0].counted_triangles);
             if (conf.json_output == "stdout") {
                 std::stringstream out;
                 {
                     cereal::JSONOutputArchive ar(out);
-                    ar(cereal::make_nvp("stats", stats));
+                    ar(cereal::make_nvp("stats", all_stats));
                     ar(cereal::make_nvp("config", conf));
                 }
 
@@ -122,7 +167,7 @@ int main(int argc, char* argv[]) {
                 std::ofstream out(conf.json_output);
                 {
                     cereal::JSONOutputArchive ar(out);
-                    ar(cereal::make_nvp("stats", stats));
+                    ar(cereal::make_nvp("stats", all_stats));
                     ar(cereal::make_nvp("config", conf));
                 }
             }
@@ -130,9 +175,9 @@ int main(int argc, char* argv[]) {
     } else {
         if (rank == 0) {
             std::cout << std::left << std::setw(15) << "triangles: " << std::right << std::setw(10)
-                      << stats.counted_triangles << std::endl;
-            std::cout << std::left << std::setw(15) << "time: " << std::right << std::setw(10) << stats.global_wall_time
-                      << " s" << std::endl;
+                      << all_stats[0].counted_triangles << std::endl;
+            std::cout << std::left << std::setw(15) << "time: " << std::right << std::setw(10)
+                      << all_stats[0].global_wall_time << " s" << std::endl;
         }
     }
     return MPI_Finalize();
