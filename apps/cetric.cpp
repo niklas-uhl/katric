@@ -90,6 +90,7 @@ Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
 }
 
 int main(int argc, char* argv[]) {
+    bool debug = true;
     MPI_Init(&argc, &argv);
     PEID rank;
     PEID size;
@@ -100,12 +101,16 @@ int main(int argc, char* argv[]) {
     Config conf = parse_config(argc, argv, rank, size);
 
     auto load_graph = [&]() {
+        LOG << "[R" << rank << "] "
+            << "Loading Graph";
         LocalGraphView G;
         if (conf.gen == "") {
             G = cetric::read_local_graph(conf.input_file, conf.input_format, rank, size);
         } else {
             G = cetric::gen_local_graph(conf, rank, size);
         }
+        LOG << "[R" << rank << "] "
+            << "Finished loading Graph";
         return G;
     };
     std::optional<LocalGraphView> input_cache;
@@ -125,17 +130,24 @@ int main(int argc, char* argv[]) {
         DistributedGraph<> G;
         cetric::profiling::Statistics stats(rank, size);
         cetric::profiling::Timer timer;
+        LOG << "[R" << rank << "] "
+            << "Loading from cache";
+        LocalGraphView G_local;
         switch (conf.cache_input) {
             case CacheInput::None:
-                G = DistributedGraph<>(load_graph(), rank, size);
+                G_local = load_graph();
                 break;
             case CacheInput::Filesystem:
-                G = DistributedGraph<>(cetric::read_graph_view(conf.cache_file, rank, size), rank, size);
+                G_local = cetric::read_graph_view(conf.cache_file, rank, size);
                 break;
             case CacheInput::InMemory:
                 LocalGraphView G_local = input_cache.value();
-                G = DistributedGraph<>(std::move(G_local), rank, size);
         }
+        LOG << "[R" << rank << "] "
+            << "Finished loading from cache";
+        G = DistributedGraph<>(std::move(G_local), rank, size);
+        LOG << "[R" << rank << "] "
+            << "Finished conversion";
         MPI_Barrier(MPI_COMM_WORLD);
         stats.local.io_time = timer.elapsed_time();
         cetric::profiling::Timer global_time;

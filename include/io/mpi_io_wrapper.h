@@ -1,7 +1,6 @@
 #ifndef MPI_IO_WRAPPER_H
 #define MPI_IO_WRAPPER_H
 #include <mpi.h>
-#include <mpio.h>
 #include <cstddef>
 #include <numeric>
 #include <string>

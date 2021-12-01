@@ -10,6 +10,8 @@ def load_suites(suite_files, search_paths):
         suite = expcore.load_suite_from_yaml(path)
         suites[suite.name] = suite
     for path in search_paths:
+        if not path:
+            continue
         for file in os.listdir(path):
             if file.endswith('.suite.yaml'):
                 suite = expcore.load_suite_from_yaml(os.path.join(path, file))

@@ -450,7 +450,7 @@ public:
             }
             degree_[node] = remaining_edges;
         });
-        if constexpr(payload_has_degree<GhostPayloadType>::value) {
+        if constexpr (payload_has_degree<GhostPayloadType>::value) {
             get_graph_payload().ghost_degree_available = false;
         }
     }
@@ -500,6 +500,7 @@ public:
           node_range_(std::numeric_limits<NodeId>::max(), std::numeric_limits<NodeId>::min()),
           rank_(rank),
           size_(size) {
+        bool debug = true;
         global_to_local_.set_empty_key(-1);
         global_to_local_.set_deleted_key(-2);
         auto degree_sum = 0;
@@ -526,6 +527,8 @@ public:
         }
         assert(first_out_[first_out_.size() - 1] == G.edge_heads.size());
         head_ = std::move(G.edge_heads);
+        LOG << "[R" << rank << "] "
+            << "Finished non-ghost stuff";
         auto ghost_count = 0;
         for (NodeId node = 0; node < local_node_count_; ++node) {
             for (EdgeId edge_id = first_out_[node]; edge_id < first_out_[node + 1]; ++edge_id) {
@@ -535,15 +538,18 @@ public:
                     if (global_to_local_.find(head) == global_to_local_.end()) {
                         NodeId local_id = local_node_count_ + ghost_count;
                         global_to_local_[head] = local_id;
-                        GhostData<GhostPayloadType> ghost_data;
-                        ghost_data.global_id = head;
-                        ghost_data.rank = -1;
-                        ghost_data_.emplace_back(std::move(ghost_data));
                         ghost_count++;
                     }
                 }
                 head_[edge_id] = to_local_id(head);
             }
+        }
+        ghost_data_.resize(ghost_count);
+        for (const auto& kv : global_to_local_) {
+            NodeId global_id = kv.first;
+            NodeId local_id = kv.second;
+            ghost_data_[local_id - local_node_count_].global_id = global_id;
+            ghost_data_[local_id - local_node_count_].rank = -1;
         }
     }
 
