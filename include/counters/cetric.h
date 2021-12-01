@@ -15,6 +15,7 @@
 #include "debug_assert.hpp"
 #include "tlx/algorithm/multiway_merge.hpp"
 #include "tlx/multi_timer.hpp"
+#include "tlx/logger.hpp"
 
 enum class Phase { Local, Global };
 
@@ -53,6 +54,7 @@ inline size_t run_cetric(DistributedGraph<>& G,
                          const Config& conf,
                          PEID rank,
                          PEID size) {
+    bool debug = true;
     G.find_ghost_ranks();
     cetric::profiling::Timer timer;
     if (conf.primary_cost_function != "N") {
@@ -65,8 +67,13 @@ inline size_t run_cetric(DistributedGraph<>& G,
         G.find_ghost_ranks();
     }
     stats.local.primary_load_balancing.phase_time += timer.elapsed_time();
+    LOG << "[R" << rank << "] "
+        << "Primary load balancing finished "
+        << stats.local.primary_load_balancing.phase_time << " s";
     G.expand_ghosts();
     preprocessing(G, stats, conf, Phase::Local);
+    LOG << "[R" << rank << "] "
+        << "Preprocessing finished";
     timer.restart();
     cetric::CetricEdgeIterator<DistributedGraph<>, true, true> ctr(G, conf, rank, size);
     size_t triangle_count = 0;
@@ -78,9 +85,14 @@ inline size_t run_cetric(DistributedGraph<>& G,
         },
         stats);
     stats.local.local_phase_time += timer.elapsed_time();
+    LOG << "[R" << rank << "] "
+        << "Local phase finished "
+    << stats.local.local_phase_time << " s";
     timer.restart();
     G.remove_internal_edges();
     stats.local.contraction_time += timer.elapsed_time();
+    LOG << "[R" << rank << "] "
+        << "Contraction finished" << stats.local.contraction_time << " s";
     timer.restart();
     if (conf.secondary_cost_function != "none") {
         auto cost_function = CostFunctionRegistry<DistributedGraph<>>::get(conf.secondary_cost_function, G, conf,
@@ -98,6 +110,9 @@ inline size_t run_cetric(DistributedGraph<>& G,
         }
     }
     stats.local.secondary_load_balancing.phase_time += timer.elapsed_time();
+    LOG << "[R" << rank << "] "
+        << "Secondary load balancing finished "
+    << stats.local.secondary_load_balancing.phase_time << " s";
     timer.restart();
     if (!conf.secondary_cost_function.empty()) {
         cetric::CetricEdgeIterator<DistributedGraph<>, true, true> ctr_dist(G, conf, rank, size);
@@ -118,6 +133,9 @@ inline size_t run_cetric(DistributedGraph<>& G,
             stats);
     }
     stats.local.global_phase_time = timer.elapsed_time();
+    LOG << "[R" << rank << "] "
+        << "Global phase finished"
+    << stats.local.global_phase_time << " s";
     timer.restart();
     MPI_Reduce(&triangle_count, &stats.counted_triangles, 1, MPI_NODE, MPI_SUM, 0, MPI_COMM_WORLD);
     stats.local.reduce_time = timer.elapsed_time();
