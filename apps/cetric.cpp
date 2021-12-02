@@ -90,8 +90,8 @@ Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
 }
 
 int main(int argc, char* argv[]) {
-    bool debug = true;
     MPI_Init(&argc, &argv);
+    bool debug = false;
     PEID rank;
     PEID size;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);

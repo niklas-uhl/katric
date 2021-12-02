@@ -1,31 +1,35 @@
 #ifndef GRAPH_DEFINITIONS_H_8XAL43DH
 #define GRAPH_DEFINITIONS_H_8XAL43DH
 
+#include <algorithm>
 #include <cassert>
 #include <cinttypes>
 #include <ostream>
-#include <algorithm>
 
 namespace cetric {
-    namespace graph {
+namespace graph {
 
 using NodeId = std::uint64_t;
 using EdgeId = std::uint64_t;
 using Degree = NodeId;
 //#ifdef MPI_VERSION
+#ifdef MPI_UNINT64_T
 #define MPI_NODE MPI_UINT64_T
+#else
+static_assert(sizeof(unsigned long long) == 8, "We expect an unsigned long long to have 64 bit");
+#define MPI_NODE MPI_UNSIGNED_LONG_LONG
+#endif
 //#endif
 
-
 struct Edge {
-    Edge(): tail(0), head(0) { }
-    Edge(NodeId tail, NodeId head): tail(tail), head(head) { }
+    Edge() : tail(0), head(0) {}
+    Edge(NodeId tail, NodeId head) : tail(tail), head(head) {}
     Edge reverse() const {
-        return Edge {head, tail};
+        return Edge{head, tail};
     }
-    template<typename VertexMap>
+    template <typename VertexMap>
     Edge map(VertexMap map) {
-        return Edge {map(tail), map(head)};
+        return Edge{map(tail), map(head)};
     }
 
     NodeId tail;
@@ -64,12 +68,11 @@ inline bool operator==(const Triangle& t1, const Triangle& t2) {
     return t1.x == t2.x && t1.y == t2.y && t1.z == t2.z;
 }
 
-inline std::ostream &operator<<(std::ostream &out, const Triangle &t) {
-    out << "(" << t.x << ", " << t.y <<  ", " << t.z << ")";
-  return out;
+inline std::ostream& operator<<(std::ostream& out, const Triangle& t) {
+    out << "(" << t.x << ", " << t.y << ", " << t.z << ")";
+    return out;
 }
-}
-}
-
+}  // namespace graph
+}  // namespace cetric
 
 #endif /* end of include guard: GRAPH_DEFINITIONS_H_8XAL43DH */

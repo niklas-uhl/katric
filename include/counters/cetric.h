@@ -54,13 +54,13 @@ inline size_t run_cetric(DistributedGraph<>& G,
                          const Config& conf,
                          PEID rank,
                          PEID size) {
-    bool debug = true;
+    bool debug = false;
     G.find_ghost_ranks();
     cetric::profiling::Timer timer;
     if (conf.primary_cost_function != "N") {
         auto cost_function = CostFunctionRegistry<DistributedGraph<>>::get(conf.primary_cost_function, G, conf,
                                                                            stats.local.primary_load_balancing);
-        LocalGraphView tmp = G.to_local_graph_view(false, false);
+        LocalGraphView tmp = G.to_local_graph_view(true, false);
         tmp = cetric::load_balancing::LoadBalancer::run(std::move(tmp), cost_function, conf,
                                                         stats.local.primary_load_balancing);
         G = DistributedGraph(std::move(tmp), rank, size);
