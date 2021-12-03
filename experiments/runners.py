@@ -38,7 +38,6 @@ class SharedMemoryRunner:
                         f"Running config {i} on {input_name} using {ncores} cores ... ",
                         end='')
                     sys.stdout.flush()
-                    print(" ".join(cmd))
                     with open(log_path, 'w') as log_file:
                         with open(err_path, 'w') as err_file:
                             ret = subprocess.run(cmd,

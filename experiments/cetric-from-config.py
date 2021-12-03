@@ -6,7 +6,7 @@ import os, json
 def load_inputs(input_descriptions):
     inputs = {}
     for path in input_descriptions:
-        inputs |= expcore.load_inputs_from_yaml(path)
+        inputs.update(expcore.load_inputs_from_yaml(path))
     return inputs
 
 def main():
