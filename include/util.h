@@ -17,8 +17,8 @@
 #include <iterator>
 #include <ostream>
 #include <sstream>
-#include <vector>
 #include <tlx/logger.hpp>
+#include <vector>
 
 using PEID = int;
 
@@ -104,13 +104,13 @@ private:
     std::string msg_;
 };
 
-inline void
-check_mpi_error(int errcode) {
+inline void check_mpi_error(int errcode, const std::string& file, int line) {
     if (errcode != MPI_SUCCESS) {
         std::array<char, MPI_MAX_ERROR_STRING> buf;
         int resultlen;
         MPI_Error_string(errcode, buf.data(), &resultlen);
-        std::string msg(buf.begin(), buf.end());
+        std::string msg(buf.begin(), buf.begin() + resultlen);
+        msg = msg + " in " + file + ":" + std::to_string(line);
         throw MPIException(msg);
     }
 }
