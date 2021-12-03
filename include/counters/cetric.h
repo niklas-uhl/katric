@@ -92,7 +92,7 @@ inline size_t run_cetric(DistributedGraph<>& G,
     G.remove_internal_edges();
     stats.local.contraction_time += timer.elapsed_time();
     LOG << "[R" << rank << "] "
-        << "Contraction finished" << stats.local.contraction_time << " s";
+        << "Contraction finished " << stats.local.contraction_time << " s";
     timer.restart();
     if (conf.secondary_cost_function != "none") {
         auto cost_function = CostFunctionRegistry<DistributedGraph<>>::get(conf.secondary_cost_function, G, conf,
@@ -134,7 +134,7 @@ inline size_t run_cetric(DistributedGraph<>& G,
     }
     stats.local.global_phase_time = timer.elapsed_time();
     LOG << "[R" << rank << "] "
-        << "Global phase finished"
+        << "Global phase finished "
     << stats.local.global_phase_time << " s";
     timer.restart();
     MPI_Reduce(&triangle_count, &stats.counted_triangles, 1, MPI_NODE, MPI_SUM, 0, MPI_COMM_WORLD);
