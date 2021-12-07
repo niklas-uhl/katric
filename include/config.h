@@ -12,9 +12,25 @@
 #include <limits>
 #include <optional>
 
-enum class CacheInput {
-    Filesystem, InMemory, None
-};
+enum class CacheInput { Filesystem, InMemory, None };
+static const std::map<std::string, CacheInput> cache_input_map{{"none", CacheInput::None},
+                                                  {"fs", CacheInput::Filesystem},
+                                                  {"mem", CacheInput::InMemory}};
+
+template <class Archive>
+void load_minimal(const Archive& ar [[maybe_unused]], CacheInput& cache_input, const std::string& value) {
+    cache_input = cache_input_map.at(value);
+}
+
+template <class Archive>
+std::string save_minimal(const Archive& ar [[maybe_unused]], const CacheInput& cache_input) {
+    for (const auto& kv: cache_input_map) {
+        if (kv.second == cache_input) {
+            return kv.first;
+        }
+    }
+    return "";
+}
 
 struct Config {
     Config() = default;

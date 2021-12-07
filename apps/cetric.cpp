@@ -14,6 +14,7 @@
 #include <iomanip>
 #include <iostream>
 #include <istream>
+#include <limits>
 #include <memory>
 #include <sstream>
 #include "CLI/Validators.hpp"
@@ -23,6 +24,7 @@
 #include "datastructures/distributed/local_graph_view.h"
 #include "parse_parameters.h"
 #include "statistics.h"
+#include "timer.h"
 
 Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
     (void)size;
@@ -49,9 +51,8 @@ Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
 
     app.add_flag("-v", conf.verbosity_level, "verbosity level");
 
-    std::map<std::string, CacheInput> map{
-        {"none", CacheInput::None}, {"fs", CacheInput::Filesystem}, {"mem", CacheInput::InMemory}};
-    app.add_option("--cache-input", conf.cache_input)->transform(CLI::CheckedTransformer(map, CLI::ignore_case));
+    app.add_option("--cache-input", conf.cache_input)
+        ->transform(CLI::CheckedTransformer(cache_input_map, CLI::ignore_case));
 
     app.add_flag("--rhg-fix", conf.rhg_fix);
 
@@ -114,7 +115,9 @@ int main(int argc, char* argv[]) {
         return G;
     };
     std::optional<LocalGraphView> input_cache;
+    std::optional<double> io_time;
     if (conf.cache_input != CacheInput::None) {
+        cetric::profiling::Timer t;
         LocalGraphView G = load_graph();
         if (conf.cache_input == CacheInput::Filesystem) {
             auto tmp_file = cetric::dump_to_tmp(G, rank, size);
@@ -122,6 +125,7 @@ int main(int argc, char* argv[]) {
         } else if (conf.cache_input == CacheInput::InMemory) {
             input_cache = G;
         }
+        io_time = t.elapsed_time();
     }
     std::vector<cetric::profiling::Statistics> all_stats;
     for (size_t iter = 0; iter < conf.iterations; ++iter) {
@@ -141,7 +145,7 @@ int main(int argc, char* argv[]) {
                 G_local = cetric::read_graph_view(conf.cache_file, rank, size);
                 break;
             case CacheInput::InMemory:
-                LocalGraphView G_local = input_cache.value();
+                G_local = input_cache.value();
         }
         LOG << "[R" << rank << "] "
             << "Finished loading from cache";
@@ -166,30 +170,35 @@ int main(int argc, char* argv[]) {
     if (!conf.json_output.empty()) {
         if (rank == 0) {
             assert(all_stats[0].triangles == all_stats[0].counted_triangles);
+            auto write_json_to_stream = [&](auto& stream) {
+                cereal::JSONOutputArchive ar(stream);
+                ar(cereal::make_nvp("stats", all_stats));
+                if (io_time.has_value()) {
+                    ar(cereal::make_nvp("io_time", io_time.value()));
+                }
+                ar(cereal::make_nvp("config", conf));
+            };
             if (conf.json_output == "stdout") {
                 std::stringstream out;
-                {
-                    cereal::JSONOutputArchive ar(out);
-                    ar(cereal::make_nvp("stats", all_stats));
-                    ar(cereal::make_nvp("config", conf));
-                }
-
+                write_json_to_stream(out);
                 std::cout << out.str();
             } else {
                 std::ofstream out(conf.json_output);
-                {
-                    cereal::JSONOutputArchive ar(out);
-                    ar(cereal::make_nvp("stats", all_stats));
-                    ar(cereal::make_nvp("config", conf));
-                }
+                write_json_to_stream(out);
             }
         }
     } else {
         if (rank == 0) {
             std::cout << std::left << std::setw(15) << "triangles: " << std::right << std::setw(10)
                       << all_stats[0].counted_triangles << std::endl;
-            std::cout << std::left << std::setw(15) << "time: " << std::right << std::setw(10)
-                      << all_stats[0].global_wall_time << " s" << std::endl;
+            double min_time = std::numeric_limits<double>::max();
+            for (size_t i = 0; i < all_stats.size(); ++i) {
+                std::cout << std::left << std::setw(15) << fmt::format("[{}] time: ", i + 1) << std::right
+                          << std::setw(10) << all_stats[i].global_wall_time << " s" << std::endl;
+                min_time = std::min(all_stats[i].global_wall_time, min_time);
+            }
+            std::cout << std::left << std::setw(15) << "min time: " << std::right << std::setw(10)
+                      << min_time << " s" << std::endl;
         }
     }
     return MPI_Finalize();
