@@ -88,7 +88,7 @@ private:
     double start;
     double execution_time;
     PEID rank;
-    PEID size;
+    PEID size [[maybe_unused]];
 };
 
 template<typename Task>

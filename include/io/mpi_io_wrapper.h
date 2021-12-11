@@ -81,7 +81,7 @@ public:
             total_bytes_read = bytes_read;
         } else {
             size_t pages_to_read = bytes_to_read / blocksize;
-            if (pages_to_read > std::numeric_limits<int>::max()) {
+            if (pages_to_read > static_cast<size_t>(std::numeric_limits<int>::max())) {
                 throw MPIException("To many blocks in read");
             }
             int err = MPI_File_read_at(handle, position, buffer.data(), pages_to_read, page_type, &status);
@@ -119,7 +119,7 @@ public:
         size_t bytes_to_read = elements_to_read * sizeof(T);
         size_t total_bytes_read;
         size_t pages_to_read = bytes_to_read / blocksize;
-        if (pages_to_read > std::numeric_limits<int>::max()) {
+        if (pages_to_read > static_cast<size_t>(std::numeric_limits<int>::max())) {
             throw MPIException("To many blocks in read");
         }
         int err = MPI_File_read_at_all(handle, position, buffer.data(), pages_to_read, page_type, &status);
@@ -187,7 +187,7 @@ public:
         size_t bytes_to_write = buffer.size() * sizeof(T);
         size_t total_bytes_written;
         size_t pages_to_write = bytes_to_write / blocksize;
-        if (pages_to_write > std::numeric_limits<int>::max()) {
+        if (pages_to_write > static_cast<size_t>(std::numeric_limits<int>::max())) {
             throw MPIException("To many blocks in write");
         }
         int err = MPI_File_write_at_all(handle, position, buffer.data(), pages_to_write, page_type, &status);

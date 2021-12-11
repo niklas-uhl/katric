@@ -19,6 +19,7 @@
 #include <sstream>
 #include <tlx/logger.hpp>
 #include <vector>
+#include <array>
 
 using PEID = int;
 
