@@ -29,9 +29,19 @@ using namespace cetric::graph;
 
 class OutDegreeCache {
 public:
-    OutDegreeCache() : G(nullptr), data_() {}
+    OutDegreeCache()
+        :
+#ifndef NDEBUG
+          G(nullptr),
+#endif
+          data_() {
+    }
     OutDegreeCache(const DistributedGraph<>& G)
-        : G(&G), data_(G.local_node_count() + G.ghost_count(), std::numeric_limits<Degree>::max()) {
+        :
+#ifndef NDEBUG
+          G(&G),
+#endif
+          data_(G.local_node_count() + G.ghost_count(), std::numeric_limits<Degree>::max()) {
         G.for_each_local_node([&](NodeId local_node_id) {
             Degree out_deg = 0;
             G.for_each_edge(local_node_id, [&](Edge e) {
@@ -54,7 +64,9 @@ public:
     }
 
 private:
+#ifndef NDEBUG
     const DistributedGraph<>* G;
+#endif
     std::vector<Degree> data_;
 };
 

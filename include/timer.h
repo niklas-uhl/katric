@@ -43,7 +43,7 @@ private:
 
 class MPITimer {
 public:
-    explicit MPITimer(std::string  name, PEID rank, PEID size, bool report = true): name(std::move(name)), start(MPI_Wtime()), rank(rank), size(size) {
+    explicit MPITimer(std::string  name, PEID rank, PEID size [[maybe_unused]], bool report = true): name(std::move(name)), start(MPI_Wtime()), rank(rank) {
         restart(report);
     }
     void restart(bool report = true) {
@@ -88,7 +88,6 @@ private:
     double start;
     double execution_time;
     PEID rank;
-    PEID size [[maybe_unused]];
 };
 
 template<typename Task>
