@@ -69,7 +69,6 @@ Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
 
     app.add_option("--algorithm", conf.algorithm);
 
-
     parse_gen_parameters(app, conf);
 
     CLI::Option* input_option = app.get_option("input");

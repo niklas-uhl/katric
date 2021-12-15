@@ -49,7 +49,6 @@ public:
     }
 
     inline Degree get(NodeId local_node_id) {
-        atomic_debug(local_node_id);
         return data_[local_node_id];
     }
 

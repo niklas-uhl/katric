@@ -70,7 +70,7 @@ inline size_t run_patric(DistributedGraph<>& G,
     LOG << "[R" << rank << "] "
         << "Primary load balancing finished " << stats.local.primary_load_balancing.phase_time << " s";
     G.expand_ghosts();
-    preprocessing(G, stats, conf, Phase::Local);
+    preprocessing(G, stats, conf, Phase::Global);
     LOG << "[R" << rank << "] "
         << "Preprocessing finished";
     timer.restart();
@@ -88,10 +88,6 @@ inline size_t run_patric(DistributedGraph<>& G,
         << "Local phase finished " << stats.local.local_phase_time << " s";
     LOG << "[R" << rank << "] "
         << "Contraction finished " << stats.local.contraction_time << " s";
-    timer.restart();
-    if (conf.orient_locally) {
-        preprocessing(G, stats, conf, Phase::Global);
-    }
     timer.restart();
     ctr.run_distributed(
         [&](Triangle t) {
