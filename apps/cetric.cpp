@@ -27,11 +27,11 @@
 #include "statistics.h"
 #include "timer.h"
 
-Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
+cetric::Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
     (void)size;
 
     CLI::App app("Parallel Triangle Counter");
-    Config conf;
+    cetric::Config conf;
 
     // conf.hostname = std::getenv("HOST");
     char hostname[256];
@@ -53,7 +53,7 @@ Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
     app.add_flag("-v", conf.verbosity_level, "verbosity level");
 
     app.add_option("--cache-input", conf.cache_input)
-        ->transform(CLI::CheckedTransformer(cache_input_map, CLI::ignore_case));
+        ->transform(CLI::CheckedTransformer(cetric::cache_input_map, CLI::ignore_case));
 
     app.add_flag("--rhg-fix", conf.rhg_fix);
 
@@ -67,7 +67,8 @@ Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
 
     app.add_flag("--dense-load-balancing", conf.dense_load_balancing);
 
-    app.add_option("--algorithm", conf.algorithm);
+    app.add_option("--algorithm", conf.algorithm)
+        ->transform(CLI::CheckedTransformer(cetric::algorithm_map, CLI::ignore_case));
 
     parse_gen_parameters(app, conf);
 
@@ -95,11 +96,11 @@ Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
 
 class InputCache {
 public:
-    InputCache(const Config& conf) : conf_(conf), cache_file_(), G_() {
-        if (conf_.cache_input != CacheInput::None) {
+    InputCache(const cetric::Config& conf) : conf_(conf), cache_file_(), G_() {
+        if (conf_.cache_input != cetric::CacheInput::None) {
             G_ = load_graph();
         }
-        if (conf_.cache_input == CacheInput::Filesystem) {
+        if (conf_.cache_input == cetric::CacheInput::Filesystem) {
             auto tmp_file = cetric::dump_to_tmp(G_.value(), conf_.rank, conf_.PEs);
             cache_file_ = tmp_file;
             G_ = std::nullopt;
@@ -107,11 +108,11 @@ public:
     }
     LocalGraphView get() {
         switch (conf_.cache_input) {
-            case CacheInput::None:
+            case cetric::CacheInput::None:
                 return load_graph();
-            case CacheInput::Filesystem:
+            case cetric::CacheInput::Filesystem:
                 return cetric::read_graph_view(cache_file_, conf_.rank, conf_.PEs);
-            case CacheInput::InMemory:
+            case cetric::CacheInput::InMemory:
                 return G_.value();
             default:
                 // unreachable
@@ -119,7 +120,7 @@ public:
         }
     }
     virtual ~InputCache() {
-        if (conf_.cache_input == CacheInput::Filesystem) {
+        if (conf_.cache_input == cetric::CacheInput::Filesystem) {
             std::filesystem::remove(cache_file_);
         }
     }
@@ -132,12 +133,12 @@ private:
             return cetric::gen_local_graph(conf_, conf_.rank, conf_.PEs);
         }
     }
-    const Config& conf_;
+    const cetric::Config& conf_;
     std::string cache_file_;
     std::optional<LocalGraphView> G_;
 };
 
-void print_summary(const Config& conf,
+void print_summary(const cetric::Config& conf,
                    std::vector<cetric::profiling::Statistics>& all_stats,
                    std::optional<double> io_time = std::nullopt) {
     if (!conf.json_output.empty()) {
@@ -185,12 +186,12 @@ int main(int argc, char* argv[]) {
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     DEBUG_BARRIER(rank);
     backward::SignalHandling sh;
-    Config conf = parse_config(argc, argv, rank, size);
+    cetric::Config conf = parse_config(argc, argv, rank, size);
 
     std::optional<double> io_time;
     cetric::profiling::Timer t;
     InputCache input_cache(conf);
-    if (conf.cache_input != CacheInput::None) {
+    if (conf.cache_input != cetric::CacheInput::None) {
         io_time = t.elapsed_time();
     }
     std::vector<cetric::profiling::Statistics> all_stats;
@@ -212,7 +213,7 @@ int main(int argc, char* argv[]) {
         stats.local.io_time = timer.elapsed_time();
         cetric::profiling::Timer global_time;
 
-        if (conf.algorithm == "cetric") {
+        if (conf.algorithm == cetric::Algorithm::Cetric) {
             run_cetric(G, stats, conf, rank, size);
         } else {
             run_patric(G, stats, conf, rank, size);

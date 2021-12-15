@@ -158,7 +158,7 @@ public:
             } else {
                 G.for_each_local_out_edge(v, [&](Edge edge) {
                     NodeId u = edge.head;
-                    if (G.is_ghost(u)) { // TODO: for CETRIC this is not needed ..
+                    if (G.is_ghost(u)) {  // TODO: for CETRIC this is not needed ..
                         assert(G.is_local_from_local(v));
                         assert(G.is_local(G.to_global_id(v)));
                         assert(!G.is_local(G.to_global_id(u)));
@@ -203,7 +203,7 @@ private:
         buffer.emplace_back(G.to_global_id(v));
         // size_t send_count = 0;
         G.for_each_local_out_edge(v, [&](Edge e) {
-            assert(conf_.algorithm == "patric" || G.is_ghost(e.head));
+            assert(conf_.algorithm == Algorithm::Patric || G.is_ghost(e.head));
             using payload_type = typename GraphType::payload_type;
             if constexpr (std::is_convertible_v<decltype(payload_type{}.degree), Degree>) {
                 if (conf_.degree_filtering) {
@@ -214,7 +214,7 @@ private:
                 }
             }
             if constexpr (compress_more) {
-                if (conf_.algorithm == "cetric") {
+                if (conf_.algorithm == Algorithm::Patric) {
                     if (G.get_ghost_data(e.head).rank != u_rank) {
                         buffer.emplace_back(G.to_global_id(e.head));
                     }
@@ -268,10 +268,8 @@ private:
                 }
             }
             // for CETRIC we don't have to consider the local neighbors of v, because these are no ghost vertices
-            if (conf_.algorithm == "patric" && compress_more) {
-                G.for_each_local_out_edge(G.to_local_id(v), [&](Edge edge) {
-                    is_v_neighbor_[edge.head] = true;
-                });
+            if (conf_.algorithm == Algorithm::Patric && compress_more) {
+                G.for_each_local_out_edge(G.to_local_id(v), [&](Edge edge) { is_v_neighbor_[edge.head] = true; });
             }
         }
         if constexpr (compress_more) {
@@ -292,7 +290,7 @@ private:
                         emit(Triangle{v, u, x});
                         stats.local.type3_triangles++;
                     });
-                    if (conf_.algorithm == "patric") {
+                    if (conf_.algorithm == Algorithm::Patric) {
                         G.intersect_neighborhoods(G.to_local_id(u), G.to_local_id(v), [&](NodeId x) {
                             emit(Triangle{v, u, G.to_global_id(x)});
                             stats.local.type3_triangles++;
@@ -329,7 +327,7 @@ private:
                 }
             }
             // for CETRIC we don't have to consider the local neighbors of v, because these are no ghost vertices
-            if (conf_.algorithm == "patric" && compress_more) {
+            if (conf_.algorithm == Algorithm::Patric && compress_more) {
                 G.for_each_local_out_edge(G.to_local_id(v), [&](Edge edge) { is_v_neighbor_[edge.head] = false; });
             }
         }

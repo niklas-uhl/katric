@@ -27,6 +27,7 @@
 
 using namespace cetric::graph;
 
+namespace cetric {
 class OutDegreeCache {
 public:
     OutDegreeCache() : data_() {}
@@ -221,5 +222,6 @@ struct CostFunctionRegistry {
         return CostFunction<Graph>(G, name, cache, cost, stats);
     }
 };
+}  // namespace cetric
 
 #endif  // PARALLEL_TRIANGLE_COUNTER_COST_FUNCTION_H

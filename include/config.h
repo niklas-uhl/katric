@@ -12,11 +12,11 @@
 #include <limits>
 #include <optional>
 
+namespace cetric {
 enum class CacheInput { Filesystem, InMemory, None };
 static const std::map<std::string, CacheInput> cache_input_map{{"none", CacheInput::None},
-                                                  {"fs", CacheInput::Filesystem},
-                                                  {"mem", CacheInput::InMemory}};
-
+                                                               {"fs", CacheInput::Filesystem},
+                                                               {"mem", CacheInput::InMemory}};
 template <class Archive>
 void load_minimal(const Archive& ar [[maybe_unused]], CacheInput& cache_input, const std::string& value) {
     cache_input = cache_input_map.at(value);
@@ -24,8 +24,26 @@ void load_minimal(const Archive& ar [[maybe_unused]], CacheInput& cache_input, c
 
 template <class Archive>
 std::string save_minimal(const Archive& ar [[maybe_unused]], const CacheInput& cache_input) {
-    for (const auto& kv: cache_input_map) {
+    for (const auto& kv : cache_input_map) {
         if (kv.second == cache_input) {
+            return kv.first;
+        }
+    }
+    return "";
+}
+enum class Algorithm { Patric, Cetric };
+static const std::map<std::string, Algorithm> algorithm_map{{"patric", Algorithm::Patric},
+                                                            {"cetric", Algorithm::Cetric}};
+
+template <class Archive>
+void load_minimal(const Archive& ar [[maybe_unused]], Algorithm& algorithm, const std::string& value) {
+    algorithm = algorithm_map.at(value);
+}
+
+template <class Archive>
+std::string save_minimal(const Archive& ar [[maybe_unused]], const Algorithm& algorithm) {
+    for (const auto& kv : algorithm_map) {
+        if (kv.second == algorithm) {
             return kv.first;
         }
     }
@@ -55,7 +73,7 @@ struct Config {
     size_t iterations = 1;
     std::string primary_cost_function = "N";
     std::string secondary_cost_function = "none";
-    std::string algorithm = "cetric";
+    Algorithm algorithm = Algorithm::Cetric;
 
     bool full_all_to_all = false;
     bool use_two_phases = false;
@@ -90,13 +108,14 @@ struct Config {
     template <class Archive>
     void serialize(Archive& archive) {
         archive(CEREAL_NVP(input_file), CEREAL_NVP(hostname), CEREAL_NVP(PEs), CEREAL_NVP(cache_input),
-                CEREAL_NVP(primary_cost_function), CEREAL_NVP(secondary_cost_function), CEREAL_NVP(orient_locally),
-                CEREAL_NVP(pseudo2core), CEREAL_NVP(dense_load_balancing));
+                CEREAL_NVP(algorithm), CEREAL_NVP(primary_cost_function), CEREAL_NVP(secondary_cost_function),
+                CEREAL_NVP(orient_locally), CEREAL_NVP(pseudo2core), CEREAL_NVP(dense_load_balancing));
         if (input_file.empty()) {
             archive(CEREAL_NVP(gen), CEREAL_NVP(gen_n), CEREAL_NVP(gen_m), CEREAL_NVP(gen_r), CEREAL_NVP(gen_r_coeff),
                     CEREAL_NVP(gen_p), CEREAL_NVP(gen_gamma), CEREAL_NVP(gen_d), CEREAL_NVP(gen_scale_weak));
         }
     }
 };
+}  // namespace cetric
 
 #endif  // PARALLEL_TRIANGLE_COUNTER_CONFIG_H

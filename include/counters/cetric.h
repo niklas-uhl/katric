@@ -17,6 +17,7 @@
 #include "tlx/logger.hpp"
 #include "tlx/multi_timer.hpp"
 
+namespace cetric {
 enum class Phase { Local, Global };
 
 inline void preprocessing(DistributedGraph<>& G,
@@ -193,5 +194,6 @@ inline size_t run_cetric(DistributedGraph<>& G,
     stats.local.reduce_time = timer.elapsed_time();
     return stats.counted_triangles;
 }
+}  // namespace cetric
 
 #endif /* end of include guard: CETRIC_H_1MZUS6LP */
