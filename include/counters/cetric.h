@@ -77,10 +77,9 @@ inline size_t run_patric(DistributedGraph<>& G,
     timer.restart();
     cetric::CetricEdgeIterator<DistributedGraph<>, true /* TODO Change */, true> ctr(G, conf, rank, size);
     size_t triangle_count = 0;
-    ctr.run_plain_local(
+    ctr.run_local(
         [&](Triangle t) {
             (void)t;
-            // atomic_debug(t);
             triangle_count++;
         },
         stats);
@@ -93,7 +92,6 @@ inline size_t run_patric(DistributedGraph<>& G,
     ctr.run_distributed(
         [&](Triangle t) {
             (void)t;
-            // atomic_debug(t);
             triangle_count++;
         },
         stats);
