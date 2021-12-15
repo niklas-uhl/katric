@@ -50,31 +50,6 @@ public:
         run_local(emit, stats, interface_nodes_);
     }
 
-    void pre_intersection(NodeId v) {
-        if constexpr (use_flags) {
-            G.for_each_local_out_edge(v, [&](Edge edge) { is_v_neighbor_[edge.head] = true; });
-        }
-    }
-
-    void post_intersection(NodeId v) {
-        if constexpr (use_flags) {
-            G.for_each_local_out_edge(v, [&](Edge edge) { is_v_neighbor_[edge.head] = false; });
-        }
-    }
-
-    template<typename IntersectFunc>
-    void intersect(NodeId v, NodeId u, IntersectFunc on_intersection) {
-        if constexpr (use_flags) {
-            G.for_each_local_out_edge(u, [&](Edge uw) {
-                NodeId w = uw.head;
-                if (is_v_neighbor_[w]) {
-                    on_intersection(w);
-                }
-            });
-        } else {
-            G.intersect_neighborhoods(v, u, on_intersection);
-        }
-    }
 
     template <typename TriangleFunc>
     inline void run_local(TriangleFunc emit,
@@ -106,12 +81,12 @@ public:
             post_intersection(v);
         };
         switch (conf_.algorithm) {
-        case Algorithm::Cetric:
-            G.for_each_local_node_and_ghost(find_intersections);
-            break;
-        case Algorithm::Patric:
-            G.for_each_local_node(find_intersections);
-            break;
+            case Algorithm::Cetric:
+                G.for_each_local_node_and_ghost(find_intersections);
+                break;
+            case Algorithm::Patric:
+                G.for_each_local_node(find_intersections);
+                break;
         }
         stats.local.local_phase_time += phase_time.elapsed_time();
     }
@@ -133,7 +108,8 @@ public:
             } else {
                 G.for_each_local_out_edge(v, [&](Edge edge) {
                     NodeId u = edge.head;
-                    if (conf_.algorithm == Algorithm::Cetric || G.is_ghost(u)) {  // TODO: for CETRIC this is not needed ..
+                    if (conf_.algorithm == Algorithm::Cetric ||
+                        G.is_ghost(u)) {
                         assert(G.is_local_from_local(v));
                         assert(G.is_local(G.to_global_id(v)));
                         assert(!G.is_local(G.to_global_id(u)));
@@ -172,8 +148,34 @@ public:
     }
 
 private:
+    void pre_intersection(NodeId v) {
+        if constexpr (use_flags) {
+            G.for_each_local_out_edge(v, [&](Edge edge) { is_v_neighbor_[edge.head] = true; });
+        }
+    }
+
+    void post_intersection(NodeId v) {
+        if constexpr (use_flags) {
+            G.for_each_local_out_edge(v, [&](Edge edge) { is_v_neighbor_[edge.head] = false; });
+        }
+    }
+
+    template <typename IntersectFunc>
+    void intersect(NodeId v, NodeId u, IntersectFunc on_intersection) {
+        if constexpr (use_flags) {
+            G.for_each_local_out_edge(u, [&](Edge uw) {
+                NodeId w = uw.head;
+                if (is_v_neighbor_[w]) {
+                    on_intersection(w);
+                }
+            });
+        } else {
+            G.intersect_neighborhoods(v, u, on_intersection);
+        }
+    }
+
     bool send_neighbor(NodeId u, PEID rank) {
-        if constexpr(compress_more) {
+        if constexpr (compress_more) {
             if (conf_.algorithm == Algorithm::Cetric) {
                 // we omit all vertices located on the receiving PE (all vertices are ghosts)
                 return G.get_ghost_data(u).rank != rank;
@@ -185,6 +187,7 @@ private:
             return true;
         }
     }
+
     template <typename TriangleFunc>
     void enqueue_for_sending(NodeId v, PEID u_rank, TriangleFunc emit, cetric::profiling::Statistics& stats) {
         std::vector<NodeId> buffer;
@@ -230,13 +233,8 @@ private:
         }
     }
 
-    template <typename TriangleFunc, typename NodeBufferIter>
-    void process_neighborhood(NodeId v,
-                              NodeBufferIter begin,
-                              NodeBufferIter end,
-                              TriangleFunc emit,
-                              cetric::profiling::Statistics& stats) {
-        assert(!G.is_local(v));
+    template <typename NodeBufferIter>
+    void distributed_pre_intersect(NodeId v, NodeBufferIter begin, NodeBufferIter end) {
         if constexpr (use_flags) {
             for (auto it = begin; it != end; it++) {
                 NodeId node = *it;
@@ -249,53 +247,10 @@ private:
                 G.for_each_local_out_edge(G.to_local_id(v), [&](Edge edge) { is_v_neighbor_[edge.head] = true; });
             }
         }
-        if constexpr (compress_more) {
-            G.for_each_local_out_edge(G.to_local_id(v), [&](Edge edge) {
-                NodeId u_local = edge.head;
-                NodeId u = G.to_global_id(u_local);
-                assert(G.is_local_from_local(u_local));
-                if constexpr (use_flags) {
-                    G.for_each_local_out_edge(u_local, [&](Edge uw) {
-                        NodeId w = uw.head;
-                        if (is_v_neighbor_[w]) {
-                            emit(Triangle{v, u, G.to_global_id(w)});
-                            stats.local.type3_triangles++;
-                        }
-                    });
-                } else {
-                    G.intersect_neighborhoods(u_local, begin, end, [&](NodeId x) {
-                        emit(Triangle{v, u, x});
-                        stats.local.type3_triangles++;
-                    });
-                    if (conf_.algorithm == Algorithm::Patric) {
-                        G.intersect_neighborhoods(G.to_local_id(u), G.to_local_id(v), [&](NodeId x) {
-                            emit(Triangle{v, u, G.to_global_id(x)});
-                            stats.local.type3_triangles++;
-                        });
-                    }
-                }
-            });
-        } else {
-            for (auto current = begin; current != end; current++) {
-                NodeId u = *current;
-                if (G.is_local(u)) {
-                    if constexpr (use_flags) {
-                        G.for_each_local_out_edge(G.to_local_id(u), [&](Edge uw) {
-                            NodeId w = uw.head;
-                            if (is_v_neighbor_[w]) {
-                                emit(Triangle{v, u, G.to_global_id(w)});
-                                stats.local.type3_triangles++;
-                            }
-                        });
-                    } else {
-                        G.intersect_neighborhoods(G.to_local_id(u), begin, end, [&](NodeId x) {
-                            emit(Triangle{v, u, x});
-                            stats.local.type3_triangles++;
-                        });
-                    }
-                }
-            }
-        }
+    }
+
+    template <typename NodeBufferIter>
+    void distributed_post_intersect(NodeId v, NodeBufferIter begin, NodeBufferIter end) {
         if constexpr (use_flags) {
             for (auto it = begin; it != end; it++) {
                 NodeId node = *it;
@@ -308,6 +263,58 @@ private:
                 G.for_each_local_out_edge(G.to_local_id(v), [&](Edge edge) { is_v_neighbor_[edge.head] = false; });
             }
         }
+    }
+
+    template <typename IntersectFunc, typename NodeBufferIter>
+    void intersect_from_message(NodeId u_local,
+                                NodeId v_local,
+                                NodeBufferIter begin,
+                                NodeBufferIter end,
+                                IntersectFunc on_intersection) {
+        if constexpr (use_flags) {
+            G.for_each_local_out_edge(u_local, [&](Edge uw) {
+                NodeId w = uw.head;
+                if (is_v_neighbor_[w]) {
+                    on_intersection(w);
+                }
+            });
+        } else {
+            G.intersect_neighborhoods(u_local, begin, end, [&](NodeId x) { on_intersection(G.to_local_id(x)); });
+            if (conf_.algorithm == Algorithm::Patric) {
+                G.intersect_neighborhoods(u_local, v_local, on_intersection);
+            }
+        }
+    }
+
+    template <typename TriangleFunc, typename NodeBufferIter>
+    void process_neighborhood(NodeId v,
+                              NodeBufferIter begin,
+                              NodeBufferIter end,
+                              TriangleFunc emit,
+                              cetric::profiling::Statistics& stats) {
+        assert(!G.is_local(v));
+        distributed_pre_intersect(v, begin, end);
+        auto for_each_local_receiver = [&](auto on_node) {
+            if constexpr (compress_more) {
+                G.for_each_local_out_edge(G.to_local_id(v), [&](Edge edge) { on_node(edge.head); });
+            } else {
+                for (auto current = begin; current != end; current++) {
+                    NodeId u = *current;
+                    if (G.is_local(u)) {
+                        on_node(G.to_local_id(u));
+                    }
+                }
+            }
+        };
+        for_each_local_receiver([&](NodeId u_local) {
+            NodeId u = G.to_global_id(u_local);
+            assert(G.is_local_from_local(u_local));
+            intersect_from_message(u_local, G.to_local_id(v), begin, end, [&](NodeId local_intersection) {
+                emit(Triangle{v, u, G.to_global_id(local_intersection)});
+                stats.local.type3_triangles++;
+            });
+        });
+        distributed_post_intersect(v, begin, end);
     }
 
     NodeId sentinel_node = -1;
