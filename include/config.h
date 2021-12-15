@@ -44,7 +44,6 @@ struct Config {
     bool use_hash_coloring = false;
     bool shrink_neighborhood = false;
     std::string input_file;
-    std::string cache_file;
     std::string output_file;
     InputFormat input_format;
     size_t seed = 28475421;
@@ -56,6 +55,7 @@ struct Config {
     size_t iterations = 1;
     std::string primary_cost_function = "N";
     std::string secondary_cost_function = "none";
+    std::string algorithm = "cetric";
 
     bool full_all_to_all = false;
     bool use_two_phases = false;

@@ -16,6 +16,7 @@
 #include <istream>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <sstream>
 #include "CLI/Validators.hpp"
 #include "backward.hpp"
@@ -66,6 +67,9 @@ Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
 
     app.add_flag("--dense-load-balancing", conf.dense_load_balancing);
 
+    app.add_option("--algorithm", conf.algorithm);
+
+
     parse_gen_parameters(app, conf);
 
     CLI::Option* input_option = app.get_option("input");
@@ -90,85 +94,55 @@ Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
     return conf;
 }
 
-int main(int argc, char* argv[]) {
-    MPI_Init(&argc, &argv);
-    bool debug = false;
-    PEID rank;
-    PEID size;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
-    DEBUG_BARRIER(rank);
-    backward::SignalHandling sh;
-    Config conf = parse_config(argc, argv, rank, size);
-
-    auto load_graph = [&]() {
-        LOG << "[R" << rank << "] "
-            << "Loading Graph";
-        LocalGraphView G;
-        if (conf.gen == "") {
-            G = cetric::read_local_graph(conf.input_file, conf.input_format, rank, size);
-        } else {
-            G = cetric::gen_local_graph(conf, rank, size);
+class InputCache {
+public:
+    InputCache(const Config& conf) : conf_(conf), cache_file_(), G_() {
+        if (conf_.cache_input != CacheInput::None) {
+            G_ = load_graph();
         }
-        LOG << "[R" << rank << "] "
-            << "Finished loading Graph";
-        return G;
-    };
-    std::optional<LocalGraphView> input_cache;
-    std::optional<double> io_time;
-    if (conf.cache_input != CacheInput::None) {
-        cetric::profiling::Timer t;
-        LocalGraphView G = load_graph();
-        if (conf.cache_input == CacheInput::Filesystem) {
-            auto tmp_file = cetric::dump_to_tmp(G, rank, size);
-            conf.cache_file = tmp_file;
-        } else if (conf.cache_input == CacheInput::InMemory) {
-            input_cache = G;
+        if (conf_.cache_input == CacheInput::Filesystem) {
+            auto tmp_file = cetric::dump_to_tmp(G_.value(), conf_.rank, conf_.PEs);
+            cache_file_ = tmp_file;
+            G_ = std::nullopt;
         }
-        io_time = t.elapsed_time();
     }
-    std::vector<cetric::profiling::Statistics> all_stats;
-    for (size_t iter = 0; iter < conf.iterations; ++iter) {
-        MPI_Barrier(MPI_COMM_WORLD);
-
-        DistributedGraph<> G;
-        cetric::profiling::Statistics stats(rank, size);
-        cetric::profiling::Timer timer;
-        LOG << "[R" << rank << "] "
-            << "Loading from cache";
-        LocalGraphView G_local;
-        switch (conf.cache_input) {
+    LocalGraphView get() {
+        switch (conf_.cache_input) {
             case CacheInput::None:
-                G_local = load_graph();
-                break;
+                return load_graph();
             case CacheInput::Filesystem:
-                G_local = cetric::read_graph_view(conf.cache_file, rank, size);
-                break;
+                return cetric::read_graph_view(cache_file_, conf_.rank, conf_.PEs);
             case CacheInput::InMemory:
-                G_local = input_cache.value();
+                return G_.value();
+            default:
+                // unreachable
+                return LocalGraphView();
         }
-        LOG << "[R" << rank << "] "
-            << "Finished loading from cache";
-        G = DistributedGraph<>(std::move(G_local), rank, size);
-        LOG << "[R" << rank << "] "
-            << "Finished conversion";
-        MPI_Barrier(MPI_COMM_WORLD);
-        stats.local.io_time = timer.elapsed_time();
-        cetric::profiling::Timer global_time;
-
-        run_cetric(G, stats, conf, rank, size);
-
-        MPI_Barrier(MPI_COMM_WORLD);
-        stats.global_wall_time = global_time.elapsed_time();
-
-        stats.reduce();
-        all_stats.emplace_back(std::move(stats));
     }
-    if (conf.cache_input == CacheInput::Filesystem) {
-        std::filesystem::remove(conf.cache_file);
+    virtual ~InputCache() {
+        if (conf_.cache_input == CacheInput::Filesystem) {
+            std::filesystem::remove(cache_file_);
+        }
     }
+
+private:
+    LocalGraphView load_graph() {
+        if (conf_.gen == "") {
+            return cetric::read_local_graph(conf_.input_file, conf_.input_format, conf_.rank, conf_.PEs);
+        } else {
+            return cetric::gen_local_graph(conf_, conf_.rank, conf_.PEs);
+        }
+    }
+    const Config& conf_;
+    std::string cache_file_;
+    std::optional<LocalGraphView> G_;
+};
+
+void print_summary(const Config& conf,
+                   std::vector<cetric::profiling::Statistics>& all_stats,
+                   std::optional<double> io_time = std::nullopt) {
     if (!conf.json_output.empty()) {
-        if (rank == 0) {
+        if (conf.rank == 0) {
             assert(all_stats[0].triangles == all_stats[0].counted_triangles);
             auto write_json_to_stream = [&](auto& stream) {
                 cereal::JSONOutputArchive ar(stream);
@@ -188,7 +162,7 @@ int main(int argc, char* argv[]) {
             }
         }
     } else {
-        if (rank == 0) {
+        if (conf.rank == 0) {
             std::cout << std::left << std::setw(15) << "triangles: " << std::right << std::setw(10)
                       << all_stats[0].counted_triangles << std::endl;
             double min_time = std::numeric_limits<double>::max();
@@ -197,9 +171,60 @@ int main(int argc, char* argv[]) {
                           << std::setw(10) << all_stats[i].global_wall_time << " s" << std::endl;
                 min_time = std::min(all_stats[i].global_wall_time, min_time);
             }
-            std::cout << std::left << std::setw(15) << "min time: " << std::right << std::setw(10)
-                      << min_time << " s" << std::endl;
+            std::cout << std::left << std::setw(15) << "min time: " << std::right << std::setw(10) << min_time << " s"
+                      << std::endl;
         }
     }
+}
+
+int main(int argc, char* argv[]) {
+    MPI_Init(&argc, &argv);
+    bool debug = false;
+    PEID rank;
+    PEID size;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    DEBUG_BARRIER(rank);
+    backward::SignalHandling sh;
+    Config conf = parse_config(argc, argv, rank, size);
+
+    std::optional<double> io_time;
+    cetric::profiling::Timer t;
+    InputCache input_cache(conf);
+    if (conf.cache_input != CacheInput::None) {
+        io_time = t.elapsed_time();
+    }
+    std::vector<cetric::profiling::Statistics> all_stats;
+    for (size_t iter = 0; iter < conf.iterations; ++iter) {
+        MPI_Barrier(MPI_COMM_WORLD);
+
+        DistributedGraph<> G;
+        cetric::profiling::Statistics stats(rank, size);
+        cetric::profiling::Timer timer;
+        LOG << "[R" << rank << "] "
+            << "Loading from cache";
+        LocalGraphView G_local = input_cache.get();
+        LOG << "[R" << rank << "] "
+            << "Finished loading from cache";
+        G = DistributedGraph<>(std::move(G_local), rank, size);
+        LOG << "[R" << rank << "] "
+            << "Finished conversion";
+        MPI_Barrier(MPI_COMM_WORLD);
+        stats.local.io_time = timer.elapsed_time();
+        cetric::profiling::Timer global_time;
+
+        if (conf.algorithm == "cetric") {
+            run_cetric(G, stats, conf, rank, size);
+        } else {
+            run_patric(G, stats, conf, rank, size);
+        }
+
+        MPI_Barrier(MPI_COMM_WORLD);
+        stats.global_wall_time = global_time.elapsed_time();
+
+        stats.reduce();
+        all_stats.emplace_back(std::move(stats));
+    }
+    print_summary(conf, all_stats, io_time);
     return MPI_Finalize();
 }
