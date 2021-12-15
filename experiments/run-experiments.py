@@ -73,8 +73,10 @@ def main():
     print(args.search_dirs)
     suites = load_suites(args.suite_files, args.search_dirs)
     inputs = load_inputs(args.input_descriptions + default_inputs)
-    for suite in suites.values():
-        suite.load_inputs(inputs)
+    for suitename in args.suite:
+        suite = suites.get(suitename)
+        if suite:
+            suite.load_inputs(inputs)
 
     if args.list:
         for name in suites.keys():

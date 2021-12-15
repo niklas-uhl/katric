@@ -47,7 +47,7 @@ class SharedMemoryRunner:
                         if self.verify_results and input.triangles:
                             print('finished.', end='')
                             with open(log_path) as output:
-                                triangles = int(json.load(output)["stats"]["counted_triangles"])
+                                triangles = int(json.load(output)["stats"][0]["counted_triangles"])
                             if triangles == input.triangles:
                                 print(' correct.')
                             else:
