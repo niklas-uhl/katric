@@ -29,19 +29,10 @@ using namespace cetric::graph;
 
 class OutDegreeCache {
 public:
-    OutDegreeCache()
-        :
-#ifndef NDEBUG
-          G(nullptr),
-#endif
-          data_() {
-    }
+    OutDegreeCache() : data_() {}
     OutDegreeCache(const DistributedGraph<>& G)
-        :
-#ifndef NDEBUG
-          G(&G),
-#endif
-          data_(G.local_node_count() + G.ghost_count(), std::numeric_limits<Degree>::max()) {
+        : data_(G.local_node_count() + G.ghost_count(), std::numeric_limits<Degree>::max()) {
+        assert(G.get_graph_payload().ghost_degree_available);
         G.for_each_local_node([&](NodeId local_node_id) {
             Degree out_deg = 0;
             G.for_each_edge(local_node_id, [&](Edge e) {
@@ -54,19 +45,15 @@ public:
     }
 
     inline void set(NodeId local_node_id, Degree degree) {
-        assert(G->is_local_from_local(local_node_id) || G->is_ghost(local_node_id));
         data_[local_node_id] = degree;
     }
 
     inline Degree get(NodeId local_node_id) {
-        assert(G->is_local_from_local(local_node_id) || G->is_ghost(local_node_id));
+        atomic_debug(local_node_id);
         return data_[local_node_id];
     }
 
 private:
-#ifndef NDEBUG
-    const DistributedGraph<>* G;
-#endif
     std::vector<Degree> data_;
 };
 
@@ -78,6 +65,15 @@ public:
         (void)cache;
         (void)stats;
     }
+
+    static inline void init_local_outdegree(Graph& G,
+                                            OutDegreeCache& cache,
+                                            cetric::profiling::MessageStatistics& stats) {
+        (void)stats;
+        init_degree(G, cache, stats);
+        cache = OutDegreeCache(G);
+    }
+
     static inline void init_degree(Graph& G, OutDegreeCache& cache, cetric::profiling::MessageStatistics& stats) {
         (void)cache;
         DegreeCommunicator comm(G, G.rank(), G.size(), as_int(MessageTag::CostFunction));
@@ -90,7 +86,6 @@ public:
     }
 
     static inline void init_all(Graph& G, OutDegreeCache& cache, cetric::profiling::MessageStatistics& stats) {
-        cache = OutDegreeCache(G);
         DegreeCommunicator<Graph> comm(G, G.rank(), G.size(), as_int(MessageTag::CostFunction));
         if (!G.get_graph_payload().ghost_degree_available) {
             comm.get_ghost_degree(
@@ -98,6 +93,7 @@ public:
                 stats);
             G.get_graph_payload().ghost_degree_available = true;
         }
+        cache = OutDegreeCache(G);
         comm.get_ghost_outdegree(
             [&](Edge e) { return G.is_outgoing(e); },
             [&](NodeId global_id, Degree outdegree) { cache.set(G.to_local_id(global_id), outdegree); }, stats);
@@ -177,17 +173,17 @@ struct CostFunctionRegistry {
                                     return ctx.degree(node);
                                 }}},
                               {"DH",
-                               {CostFunction<Graph>::init_nop,
+                               {CostFunction<Graph>::init_local_outdegree,
                                 [](RefType ctx, GraphType, NodeId node) {
                                     return ctx.out_degree(node);
                                 }}},
                               {"DDH",
-                               {CostFunction<Graph>::init_nop,
+                               {CostFunction<Graph>::init_local_outdegree,
                                 [](RefType ctx, GraphType, NodeId node) {
                                     return ctx.degree(node) * ctx.out_degree(node);
                                 }}},
                               {"DH2",
-                               {CostFunction<Graph>::init_nop,
+                               {CostFunction<Graph>::init_local_outdegree,
                                 [](RefType ctx, GraphType, NodeId node) {
                                     Degree out_deg = ctx.out_degree(node);
                                     return out_deg * out_deg;
