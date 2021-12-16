@@ -1,14 +1,15 @@
 name: mysuite
-ncores: [1, 2, 4, 8, 16]
+ncores: [1, 2, 4, 8]
 graphs:
   - hiv
   - metis-sample
   - com-amazon
 time_limit: 10
 config: {
-  "orient-locally": [False, True],
-  "primary-cost-function": [N, D, IDPD],
-  "secondary-cost-function": [N, IDPD, DPD],
-
+  algorithm: [cetric, patric],
+  flag-intersection: [True, False],
+  skip-local-neighborhood: [True, False],
+  primary-cost-function: [N, D, DPD, IDPD],
+  secondary-cost-function: ["none", N, D]
 }
 
