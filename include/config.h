@@ -52,21 +52,10 @@ std::string save_minimal(const Archive& ar [[maybe_unused]], const Algorithm& al
 
 struct Config {
     Config() = default;
-    bool sort_neighborhood = false;
-    bool prune_intersection = false;
-    size_t colors = 2;
-    bool prune_kernelization = false;
-    double kernelization_treshold = 0.1;
-    bool use_hashtable = false;
-    bool use_binary_search = false;
-    bool use_hash_coloring = false;
-    bool shrink_neighborhood = false;
     std::string input_file;
     std::string output_file;
     InputFormat input_format;
     size_t seed = 28475421;
-    bool lcc = false;
-    size_t bloom_k = 0;
     size_t buffer_threshold = std::numeric_limits<size_t>::max();
     double max_degree_threshold_alpha = 1.0;
     bool empty_pending_buffers_on_overflow = false;
@@ -76,12 +65,13 @@ struct Config {
     Algorithm algorithm = Algorithm::Cetric;
 
     bool full_all_to_all = false;
-    bool use_two_phases = false;
 
     bool degree_filtering = false;
     bool orient_locally = false;
     bool pseudo2core = false;
     bool dense_load_balancing = false;
+    bool flag_intersection = false;
+    bool skip_local_neighborhood = false;
 
     int verbosity_level = 0;
     CacheInput cache_input = CacheInput::None;
@@ -109,7 +99,8 @@ struct Config {
     void serialize(Archive& archive) {
         archive(CEREAL_NVP(input_file), CEREAL_NVP(hostname), CEREAL_NVP(PEs), CEREAL_NVP(cache_input),
                 CEREAL_NVP(algorithm), CEREAL_NVP(primary_cost_function), CEREAL_NVP(secondary_cost_function),
-                CEREAL_NVP(orient_locally), CEREAL_NVP(pseudo2core), CEREAL_NVP(dense_load_balancing));
+                CEREAL_NVP(orient_locally), CEREAL_NVP(pseudo2core), CEREAL_NVP(dense_load_balancing),
+                CEREAL_NVP(flag_intersection), CEREAL_NVP(skip_local_neighborhood));
         if (input_file.empty()) {
             archive(CEREAL_NVP(gen), CEREAL_NVP(gen_n), CEREAL_NVP(gen_m), CEREAL_NVP(gen_r), CEREAL_NVP(gen_r_coeff),
                     CEREAL_NVP(gen_p), CEREAL_NVP(gen_gamma), CEREAL_NVP(gen_d), CEREAL_NVP(gen_scale_weak));

@@ -15,7 +15,7 @@
 
 namespace cetric {
 using namespace graph;
-template <class GraphType, bool compress_more, bool use_flags = false>
+template <class GraphType>
 class CetricEdgeIterator {
 public:
     CetricEdgeIterator(GraphType& G, const Config& conf, PEID rank, PEID size)
@@ -149,20 +149,20 @@ public:
 
 private:
     void pre_intersection(NodeId v) {
-        if constexpr (use_flags) {
+        if (conf_.flag_intersection) {
             G.for_each_local_out_edge(v, [&](Edge edge) { is_v_neighbor_[edge.head] = true; });
         }
     }
 
     void post_intersection(NodeId v) {
-        if constexpr (use_flags) {
+        if (conf_.flag_intersection) {
             G.for_each_local_out_edge(v, [&](Edge edge) { is_v_neighbor_[edge.head] = false; });
         }
     }
 
     template <typename IntersectFunc>
     void intersect(NodeId v, NodeId u, IntersectFunc on_intersection) {
-        if constexpr (use_flags) {
+        if (conf_.flag_intersection) {
             G.for_each_local_out_edge(u, [&](Edge uw) {
                 NodeId w = uw.head;
                 if (is_v_neighbor_[w]) {
@@ -175,7 +175,7 @@ private:
     }
 
     bool send_neighbor(NodeId u, PEID rank) {
-        if constexpr (compress_more) {
+        if (conf_.skip_local_neighborhood) {
             if (conf_.algorithm == Algorithm::Cetric) {
                 // we omit all vertices located on the receiving PE (all vertices are ghosts)
                 return G.get_ghost_data(u).rank != rank;
@@ -235,7 +235,7 @@ private:
 
     template <typename NodeBufferIter>
     void distributed_pre_intersect(NodeId v, NodeBufferIter begin, NodeBufferIter end) {
-        if constexpr (use_flags) {
+        if (conf_.flag_intersection) {
             for (auto it = begin; it != end; it++) {
                 NodeId node = *it;
                 if (G.is_local(node) || G.is_ghost_from_global(node)) {
@@ -243,7 +243,7 @@ private:
                 }
             }
             // for CETRIC we don't have to consider the local neighbors of v, because these are no ghost vertices
-            if (conf_.algorithm == Algorithm::Patric && compress_more) {
+            if (conf_.algorithm == Algorithm::Patric && conf_.skip_local_neighborhood) {
                 G.for_each_local_out_edge(G.to_local_id(v), [&](Edge edge) { is_v_neighbor_[edge.head] = true; });
             }
         }
@@ -251,7 +251,7 @@ private:
 
     template <typename NodeBufferIter>
     void distributed_post_intersect(NodeId v, NodeBufferIter begin, NodeBufferIter end) {
-        if constexpr (use_flags) {
+        if (conf_.flag_intersection) {
             for (auto it = begin; it != end; it++) {
                 NodeId node = *it;
                 if (G.is_local(node) || G.is_ghost_from_global(node)) {
@@ -259,7 +259,7 @@ private:
                 }
             }
             // for CETRIC we don't have to consider the local neighbors of v, because these are no ghost vertices
-            if (conf_.algorithm == Algorithm::Patric && compress_more) {
+            if (conf_.algorithm == Algorithm::Patric && conf_.skip_local_neighborhood) {
                 G.for_each_local_out_edge(G.to_local_id(v), [&](Edge edge) { is_v_neighbor_[edge.head] = false; });
             }
         }
@@ -271,7 +271,7 @@ private:
                                 NodeBufferIter begin,
                                 NodeBufferIter end,
                                 IntersectFunc on_intersection) {
-        if constexpr (use_flags) {
+        if (conf_.flag_intersection) {
             G.for_each_local_out_edge(u_local, [&](Edge uw) {
                 NodeId w = uw.head;
                 if (is_v_neighbor_[w]) {
@@ -280,7 +280,7 @@ private:
             });
         } else {
             G.intersect_neighborhoods(u_local, begin, end, [&](NodeId x) { on_intersection(G.to_local_id(x)); });
-            if (conf_.algorithm == Algorithm::Patric) {
+            if (conf_.skip_local_neighborhood && conf_.algorithm == Algorithm::Patric) {
                 G.intersect_neighborhoods(u_local, v_local, on_intersection);
             }
         }
@@ -295,7 +295,7 @@ private:
         assert(!G.is_local(v));
         distributed_pre_intersect(v, begin, end);
         auto for_each_local_receiver = [&](auto on_node) {
-            if constexpr (compress_more) {
+            if (conf_.skip_local_neighborhood) {
                 G.for_each_local_out_edge(G.to_local_id(v), [&](Edge edge) { on_node(edge.head); });
             } else {
                 for (auto current = begin; current != end; current++) {

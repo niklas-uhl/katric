@@ -70,6 +70,10 @@ cetric::Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
     app.add_option("--algorithm", conf.algorithm)
         ->transform(CLI::CheckedTransformer(cetric::algorithm_map, CLI::ignore_case));
 
+    app.add_flag("--flag-intersection", conf.flag_intersection);
+
+    app.add_flag("--skip-local-neighborhood", conf.skip_local_neighborhood);
+
     parse_gen_parameters(app, conf);
 
     CLI::Option* input_option = app.get_option("input");

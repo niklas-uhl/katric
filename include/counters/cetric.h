@@ -70,12 +70,14 @@ inline size_t run_patric(DistributedGraph<>& G,
     stats.local.primary_load_balancing.phase_time += timer.elapsed_time();
     LOG << "[R" << rank << "] "
         << "Primary load balancing finished " << stats.local.primary_load_balancing.phase_time << " s";
-    G.expand_ghosts();
+    if (conf.skip_local_neighborhood) {
+        G.expand_ghosts();
+    }
     preprocessing(G, stats, conf, Phase::Global);
     LOG << "[R" << rank << "] "
         << "Preprocessing finished";
     timer.restart();
-    cetric::CetricEdgeIterator<DistributedGraph<>, true /* TODO Change */, true> ctr(G, conf, rank, size);
+    cetric::CetricEdgeIterator<DistributedGraph<>> ctr(G, conf, rank, size);
     size_t triangle_count = 0;
     ctr.run_local(
         [&](Triangle t) {
@@ -129,7 +131,7 @@ inline size_t run_cetric(DistributedGraph<>& G,
     LOG << "[R" << rank << "] "
         << "Preprocessing finished";
     timer.restart();
-    cetric::CetricEdgeIterator<DistributedGraph<>, true, true> ctr(G, conf, rank, size);
+    cetric::CetricEdgeIterator<DistributedGraph<>> ctr(G, conf, rank, size);
     size_t triangle_count = 0;
     ctr.run_local(
         [&](Triangle t) {
@@ -167,7 +169,7 @@ inline size_t run_cetric(DistributedGraph<>& G,
         << "Secondary load balancing finished " << stats.local.secondary_load_balancing.phase_time << " s";
     timer.restart();
     if (!conf.secondary_cost_function.empty()) {
-        cetric::CetricEdgeIterator<DistributedGraph<>, true, true> ctr_dist(G, conf, rank, size);
+        cetric::CetricEdgeIterator<DistributedGraph<>> ctr_dist(G, conf, rank, size);
         ctr_dist.run(
             [&](Triangle t) {
                 (void)t;

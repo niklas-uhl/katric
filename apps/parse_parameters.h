@@ -9,14 +9,10 @@
 #include <memory>
 #include "config.h"
 
-std::shared_ptr<CLI::App> parse_parameters(const std::string& app_name, cetric::Config& conf) {
+inline std::shared_ptr<CLI::App> parse_parameters(const std::string& app_name, cetric::Config& conf) {
     auto app = std::make_shared<CLI::App>(app_name);
 
     app->add_option("input", conf.input_file, "The input graph")->required()->check(CLI::ExistingFile);
-    app->add_option("--lcc", conf.output_file, "Output local clustering coefficients to file");
-    if (!conf.output_file.empty()) {
-        conf.lcc = true;
-    }
     return app;
 }
 
