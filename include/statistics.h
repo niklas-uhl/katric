@@ -68,13 +68,14 @@ struct Statistics {
         size_t skipped_nodes = 0;
         size_t local_triangles = 0;
         size_t type3_triangles = 0;
+        double local_wall_time = 0;
 
         template <class Archive>
         void serialize(Archive& archive) {
             archive(CEREAL_NVP(io_time), CEREAL_NVP(preprocessing), CEREAL_NVP(primary_load_balancing),
                     CEREAL_NVP(secondary_load_balancing), CEREAL_NVP(local_phase_time), CEREAL_NVP(contraction_time),
                     CEREAL_NVP(global_phase_time), CEREAL_NVP(reduce_time), CEREAL_NVP(message_statistics),
-                    CEREAL_NVP(skipped_nodes), CEREAL_NVP(local_triangles), CEREAL_NVP(type3_triangles));
+                    CEREAL_NVP(skipped_nodes), CEREAL_NVP(local_triangles), CEREAL_NVP(type3_triangles), CEREAL_NVP(local_wall_time));
         }
     };
     LocalStatistics local;
@@ -103,6 +104,7 @@ struct Statistics {
         const auto send_buffer = stream.str();
         auto [recv_buffer, displs] = CommunicationUtility::gather(send_buffer, MPI_CHAR, MPI_COMM_WORLD, 0, rank, size);
         if (rank == root) {
+            global_wall_time = 0;
             for (PEID i = 0; i < size; i++) {
                 std::stringstream ss;
                 auto buffer_size = displs[i + 1] - displs[i];
@@ -113,6 +115,7 @@ struct Statistics {
                 }
                 triangles += local_statistics[i].local_triangles;
                 triangles += local_statistics[i].type3_triangles;
+                global_wall_time = std::max(local_statistics[i].local_wall_time, global_wall_time);
             }
         }
     }

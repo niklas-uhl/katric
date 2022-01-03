@@ -224,7 +224,7 @@ int main(int argc, char* argv[]) {
         }
 
         MPI_Barrier(MPI_COMM_WORLD);
-        stats.global_wall_time = global_time.elapsed_time();
+        stats.local.local_wall_time = global_time.elapsed_time();
 
         stats.reduce();
         all_stats.emplace_back(std::move(stats));
