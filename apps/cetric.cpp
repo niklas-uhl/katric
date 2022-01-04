@@ -45,10 +45,10 @@ cetric::Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
 
     app.add_option("--iterations", conf.iterations);
 
-    app.add_set("--primary-cost-function", conf.primary_cost_function,
-                {"N", "D", "DH", "DDH", "DH2", "DPD", "IDPD", "D*"});
-    app.add_set("--secondary-cost-function", conf.secondary_cost_function,
-                {"none", "N", "D", "DH", "DDH", "DH2", "DPD", "IDPD", "D*"});
+    app.add_option("--primary-cost-function", conf.primary_cost_function)
+        ->transform(CLI::IsMember({"none", "N", "D", "DH", "DDH", "DH2", "DPD", "IDPD", "D*"}));
+    app.add_option("--secondary-cost-function", conf.secondary_cost_function)
+        ->transform(CLI::IsMember({"none", "N", "D", "DH", "DDH", "DH2", "DPD", "IDPD", "D*"}));
 
     app.add_flag("-v", conf.verbosity_level, "verbosity level");
 
@@ -85,7 +85,19 @@ cetric::Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
     if (conf.input_file.empty() && conf.gen.empty()) {
         int retval;
         if (rank == 0) {
-            CLI::RequiredError e("Providing an input file via 'input' or using the generator via '--gen'");
+            CLI::RequiredError e("Provide an input file via 'input' or using the generator via '--gen'");
+            retval = app.exit(e);
+        } else {
+            retval = 1;
+        }
+        MPI_Finalize();
+        exit(retval);
+    }
+    atomic_debug(conf.primary_cost_function);
+    if (conf.primary_cost_function == "none" && conf.gen.empty()) {
+        int retval;
+        if (rank == 0) {
+            CLI::RequiredError e("Primary cost function 'none' is only allowed for generated graphs.");
             retval = app.exit(e);
         } else {
             retval = 1;
