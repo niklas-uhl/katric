@@ -10,18 +10,7 @@
 #include <utility>
 #include "datastructures/distributed/local_graph_view.h"
 #include "util.h"
-#pragma GCC diagnostic push
-#define BOOST_BIND_GLOBAL_PLACEHOLDERS
-#pragma push_macro("PTR")
-#undef PTR
-#pragma GCC diagnostic ignored "-Wunused-variable"
-#pragma GCC diagnostic ignored "-Wtype-limits"
-#pragma GCC diagnostic ignored "-Wunused-local-typedefs"
-#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #include "kagen_interface.h"
-#undef BOOST_BIND_GLOBAL_PLACEHOLDERS
-#pragma pop_macro("PTR")
-#pragma GCC diagnostic pop
 #include "io/mpi_io_wrapper.h"
 
 namespace cetric {
@@ -216,6 +205,9 @@ LocalGraphView gen_local_graph(const Config& conf_, PEID rank, PEID size) {
         fix_broken_edge_list(edge_list, ranges, ghosts, rank, size);
     }
 
+    if (edge_list.empty()) {
+        return LocalGraphView();
+    }
     NodeId current_node = std::numeric_limits<NodeId>::max();
     Degree degree_counter = 0;
     std::vector<LocalGraphView::NodeInfo> node_info;

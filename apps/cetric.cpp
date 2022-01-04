@@ -93,7 +93,6 @@ cetric::Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
         MPI_Finalize();
         exit(retval);
     }
-    atomic_debug(conf.primary_cost_function);
     if (conf.primary_cost_function == "none" && conf.gen.empty()) {
         int retval;
         if (rank == 0) {
