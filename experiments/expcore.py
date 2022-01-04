@@ -39,7 +39,48 @@ class FileInputGraph(InputGraph):
 
 
 class GenInputGraph(InputGraph):
-    pass
+
+    parameter_list = {"rhg": ["avg_degree", "gamma"], "rgg": ["radius"]}
+
+    def __init__(self, generator, **kwargs):
+        if generator not in ["rgg", 'rhg']:
+            raise ValueError(f"Generator {generator} is not supported.")
+        self.generator = generator
+        self.params = kwargs
+        required_parameters = set(
+            GenInputGraph.parameter_list[self.generator] + ['n'])
+        if not required_parameters.issubset(self.params.keys()):
+            raise ValueError(
+                f"Generator {self.generator} requires the following parameters: {required_parameters}"
+            )
+
+    def args(self):
+        arg_list = ["--gen"]
+        if self.generator == 'rgg':
+            arg_list.append('rgg_2d')
+        elif self.generator == 'rhg':
+            arg_list.append('rhg')
+        arg_list.append("--gen_n")
+        arg_list.append(str(self.params["n"]))
+        if self.generator == 'rgg':
+            arg_list.append("--gen_r_coeff")
+            arg_list.append(str(self.params["radius"]))
+        elif self.generator == 'rhg':
+            arg_list.append("--gen_gamma")
+            arg_list.append(str(self.params["gamma"]))
+            arg_list.append("--gen_d")
+            arg_list.append(str(self.params["avg_degree"]))
+        return arg_list
+
+    @property
+    def name(self):
+        n = self.params["n"]
+        name = f"{self.generator.upper()}(2**{n}"
+        for key in GenInputGraph.parameter_list[self.generator]:
+            val = self.params[key]
+            name += f", {val}"
+        name += ")"
+        return name
 
 
 def load_inputs_from_yaml(yaml_path):
@@ -87,11 +128,14 @@ class ExperimentSuite:
 
     def load_inputs(self, input_dict):
         inputs_new = []
-        for name in self.inputs:
-            input = input_dict.get(name)
-            if not input:
-                logging.warn(f"Could not load input for {name}")
-            inputs_new.append(input)
+        for graph in self.inputs:
+            if isinstance(graph, str):
+                input = input_dict.get(graph)
+                if not input:
+                    logging.warn(f"Could not load input for {graph}")
+                inputs_new.append(input)
+            else:
+                inputs_new.append(graph)
         self.inputs = inputs_new
 
     def __repr__(self):
@@ -107,19 +151,23 @@ def load_suite_from_yaml(path):
             configs = configs + explode(config)
     else:
         configs = explode(data["config"])
-    graph_names = []
+    inputs = []
     time_limits = {}
     for graph in data["graphs"]:
         if type(graph) == str:
-            graph_names.append(graph)
+            inputs.append(graph)
         else:
-            graph_names.append(graph["name"])
+            if "name" in graph:
+                inputs.append(graph["name"])
+            elif "generator" in graph:
+                generator = graph.pop("generator")
+                inputs.append(GenInputGraph(generator, **graph))
             time_limit = graph.get("time_limit")
             if time_limit:
                 time_limits[graph["name"]] = time_limit
     return ExperimentSuite(data["name"],
                            data["ncores"],
-                           graph_names,
+                           inputs,
                            configs,
                            tasks_per_node=data.get("tasks_per_node"),
                            time_limit=data.get("time_limit"),

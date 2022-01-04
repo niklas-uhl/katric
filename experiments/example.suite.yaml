@@ -1,9 +1,19 @@
 name: mysuite
-ncores: [1, 2, 4, 8]
+ncores: [1, 2, 4, 8, 16]
 graphs:
   - hiv
   - metis-sample
   - com-amazon
+  - generator: rgg
+    n: 12
+    radius: 0.55
+   - generator: rgg
+     n: 10
+     radius: 0.55
+  - generator: rhg
+    n: 12
+    avg_degree: 16
+    gamma: 2.8
 time_limit: 10
 config: {
   algorithm: [cetric, patric],
