@@ -10,7 +10,10 @@
 #include <utility>
 #include "datastructures/distributed/local_graph_view.h"
 #include "util.h"
+#pragma push_macro("PTR")
+#undef PTR
 #include "kagen_interface.h"
+#pragma pop_macro("PTR")
 #include "io/mpi_io_wrapper.h"
 
 namespace cetric {
