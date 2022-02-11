@@ -7,6 +7,7 @@ add_subdirectory(cereal EXCLUDE_FROM_ALL)
 add_subdirectory(catch EXCLUDE_FROM_ALL)
 add_subdirectory(googletest EXCLUDE_FROM_ALL)
 add_subdirectory(kagen)
+add_subdirectory(message-queue)
 
 set(gtest-mpi-listener_SOURCE_DIR ${CMAKE_SOURCE_DIR}/extern/gtest-mpi-listener)
 add_library(gtest-mpi-listener INTERFACE)

@@ -28,3 +28,6 @@
 [submodule "extern/gtest-mpi-listener"]
 	path = extern/gtest-mpi-listener
 	url = https://github.com/LLNL/gtest-mpi-listener
+[submodule "extern/message-queue"]
+	path = extern/message-queue
+	url = https://github.com/niklas-uhl/message-queue

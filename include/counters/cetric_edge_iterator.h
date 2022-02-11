@@ -8,6 +8,7 @@
 #include <communicator.h>
 #include <config.h>
 #include <datastructures/graph_definitions.h>
+#include <message-queue/queue.h>
 #include <statistics.h>
 #include <timer.h>
 #include <type_traits>
@@ -25,12 +26,7 @@ public:
           size_(size),
           last_proc_(G.local_node_count(), -1),
           is_v_neighbor_(G.local_node_count() + G.ghost_count(), false),
-          comm(conf.buffer_threshold,
-               MPI_NODE,
-               rank_,
-               size_,
-               as_int(MessageTag::Neighborhood),
-               conf.empty_pending_buffers_on_overflow),
+          queue(),
           interface_nodes_(),
           pe_min_degree() {
         if constexpr (payload_has_degree<typename GraphType::payload_type>::value) {
@@ -49,7 +45,6 @@ public:
     inline void run_local(TriangleFunc emit, cetric::profiling::Statistics& stats) {
         run_local(emit, stats, interface_nodes_);
     }
-
 
     template <typename TriangleFunc>
     inline void run_local(TriangleFunc emit,
@@ -108,8 +103,7 @@ public:
             } else {
                 G.for_each_local_out_edge(v, [&](Edge edge) {
                     NodeId u = edge.head;
-                    if (conf_.algorithm == Algorithm::Cetric ||
-                        G.is_ghost(u)) {
+                    if (conf_.algorithm == Algorithm::Cetric || G.is_ghost(u)) {
                         assert(G.is_local_from_local(v));
                         assert(G.is_local(G.to_global_id(v)));
                         assert(!G.is_local(G.to_global_id(u)));
@@ -117,18 +111,15 @@ public:
                         PEID u_rank = G.get_ghost_data(u).rank;
                         assert(u_rank != rank_);
                         if (last_proc_[v] != u_rank) {
-                            enqueue_for_sending(v, u_rank, emit, stats);
+                            enqueue_for_sending(v, u_rank);
                         }
                     }
                 });
             }
             // timer.start("Communication");
-            comm.check_for_message(
-                [&](PEID, const std::vector<NodeId>& message) { handle_buffer(message, emit, stats); },
-                stats.local.message_statistics);
+            queue.poll([&](PEID sender [[maybe_unused]], std::vector<NodeId> message) { handle_buffer(message, emit, stats); });
         }
-        comm.all_to_all([&](PEID, const std::vector<NodeId>& message) { handle_buffer(message, emit, stats); },
-                        stats.local.message_statistics, conf_.full_all_to_all);
+        queue.terminate([&](PEID sender [[maybe_unused]], std::vector<NodeId> message) { handle_buffer(message, emit, stats); });
         stats.local.global_phase_time += phase_time.elapsed_time();
     }
 
@@ -188,8 +179,7 @@ private:
         }
     }
 
-    template <typename TriangleFunc>
-    void enqueue_for_sending(NodeId v, PEID u_rank, TriangleFunc emit, cetric::profiling::Statistics& stats) {
+    void enqueue_for_sending(NodeId v, PEID u_rank) {
         std::vector<NodeId> buffer;
         buffer.emplace_back(G.to_global_id(v));
         // size_t send_count = 0;
@@ -210,9 +200,7 @@ private:
         });
         if (!buffer.empty()) {
             buffer.emplace_back(sentinel_node);
-            comm.add_message(
-                buffer, u_rank, [&](PEID, const std::vector<NodeId>& message) { handle_buffer(message, emit, stats); },
-                stats.local.message_statistics);
+            queue.post_message(std::move(buffer), u_rank);
         }
         last_proc_[v] = u_rank;
     }
@@ -325,7 +313,7 @@ private:
     PEID size_;
     std::vector<PEID> last_proc_;
     std::vector<bool> is_v_neighbor_;
-    BufferedCommunicator<NodeId> comm;
+    MessageQueue<NodeId> queue;
     std::vector<NodeId> interface_nodes_;
     std::vector<Degree> pe_min_degree;
 };
