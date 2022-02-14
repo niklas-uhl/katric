@@ -1,6 +1,6 @@
 # Build directory
 build/
-build-debug/
+build-*/
 
 # Clion Files
 .idea/

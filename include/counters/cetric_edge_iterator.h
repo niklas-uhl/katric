@@ -5,10 +5,9 @@
 #ifndef PARALLEL_TRIANGLE_COUNTER_PARALLEL_GHOST_NODE_ITERATOR_H
 #define PARALLEL_TRIANGLE_COUNTER_PARALLEL_GHOST_NODE_ITERATOR_H
 
-#include <communicator.h>
 #include <config.h>
 #include <datastructures/graph_definitions.h>
-#include <message-queue/queue.h>
+#include <message-queue/buffered_queue.h>
 #include <statistics.h>
 #include <timer.h>
 #include <type_traits>
@@ -16,6 +15,7 @@
 
 namespace cetric {
 using namespace graph;
+static const NodeId sentinel_node = -1;
 template <class GraphType>
 class CetricEdgeIterator {
 public:
@@ -26,7 +26,7 @@ public:
           size_(size),
           last_proc_(G.local_node_count(), -1),
           is_v_neighbor_(G.local_node_count() + G.ghost_count(), false),
-          queue(),
+          queue_(Merger{}, Splitter{}),
           interface_nodes_(),
           pe_min_degree() {
         if constexpr (payload_has_degree<typename GraphType::payload_type>::value) {
@@ -39,6 +39,7 @@ public:
                 });
             }
         }
+        queue_.set_threshold(G.local_node_count());
     }
 
     template <typename TriangleFunc>
@@ -117,10 +118,14 @@ public:
                 });
             }
             // timer.start("Communication");
-            queue.poll([&](PEID sender [[maybe_unused]], std::vector<NodeId> message) { handle_buffer(message, emit, stats); });
+            queue_.poll(
+                [&](auto begin, auto end, PEID sender [[maybe_unused]]) { handle_buffer(begin, end, emit, stats); });
         }
-        queue.terminate([&](PEID sender [[maybe_unused]], std::vector<NodeId> message) { handle_buffer(message, emit, stats); });
+        queue_.terminate(
+            [&](auto begin, auto end, PEID sender [[maybe_unused]]) { handle_buffer(begin, end, emit, stats); });
         stats.local.global_phase_time += phase_time.elapsed_time();
+        stats.local.message_statistics.add(queue_.stats());
+        queue_.reset();
     }
 
     template <typename TriangleFunc>
@@ -198,27 +203,14 @@ private:
                 buffer.emplace_back(G.to_global_id(e.head));
             }
         });
-        if (!buffer.empty()) {
-            buffer.emplace_back(sentinel_node);
-            queue.post_message(std::move(buffer), u_rank);
-        }
+        queue_.post_message(std::move(buffer), u_rank);
         last_proc_[v] = u_rank;
     }
 
-    template <typename TriangleFunc>
-    void handle_buffer(const std::vector<NodeId>& buffer, TriangleFunc emit, cetric::profiling::Statistics& stats) {
-        size_t i = 0;
-        while (i < buffer.size()) {
-            int begin = i;
-            while (buffer[i] != sentinel_node) {
-                i++;
-            }
-            int end = i;
-            NodeId v = buffer[begin];
-            begin++;
-            process_neighborhood(v, buffer.begin() + begin, buffer.begin() + end, emit, stats);
-            i++;
-        }
+    template <typename IterType, typename TriangleFunc>
+    void handle_buffer(IterType begin, IterType end, TriangleFunc emit, cetric::profiling::Statistics& stats) {
+        NodeId v = *begin;
+        process_neighborhood(v, begin + 1, end, emit, stats);
     }
 
     template <typename NodeBufferIter>
@@ -304,8 +296,25 @@ private:
         });
         distributed_post_intersect(v, begin, end);
     }
-
-    NodeId sentinel_node = -1;
+    struct Merger {
+        void operator()(std::vector<NodeId>& buffer, std::vector<NodeId> msg, int tag [[maybe_unused]]) {
+            for (auto elem : msg) {
+                buffer.emplace_back(elem);
+            }
+            buffer.emplace_back(sentinel_node);
+        }
+    };
+    struct Splitter {
+        template <typename MessageFunc>
+        void operator()(std::vector<NodeId>& buffer, MessageFunc&& on_message, PEID sender) {
+            std::vector<NodeId>::iterator slice_begin = buffer.begin();
+            while (slice_begin != buffer.end()) {
+                auto slice_end = std::find(slice_begin, buffer.end(), sentinel_node);
+                on_message(slice_begin, slice_end, sender);
+                slice_begin = slice_end + 1;
+            }
+        }
+    };
     using NodeBuffer = google::dense_hash_map<PEID, std::vector<NodeId>>;
     GraphType& G;
     const Config& conf_;
@@ -313,7 +322,7 @@ private:
     PEID size_;
     std::vector<PEID> last_proc_;
     std::vector<bool> is_v_neighbor_;
-    MessageQueue<NodeId> queue;
+    message_queue::BufferedMessageQueue<NodeId, Merger, Splitter> queue_;
     std::vector<NodeId> interface_nodes_;
     std::vector<Degree> pe_min_degree;
 };

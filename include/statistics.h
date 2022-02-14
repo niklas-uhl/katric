@@ -2,7 +2,7 @@
 #define STATISTICS_H_PLFYJDX0
 
 #include <communicator.h>
-#include <message_statistics.h>
+#include <message-queue/message_statistics.h>
 #include <mpi.h>
 #include <util.h>
 #include <cereal/archives/binary.hpp>
@@ -13,6 +13,16 @@
 #include <string>
 #include <vector>
 #include "cereal/cereal.hpp"
+
+namespace cereal {
+template <class Archive>
+void serialize(Archive& archive, message_queue::MessageStatistics& stats) {
+    archive(cereal::make_nvp("sent_messages", stats.sent_messages),
+            cereal::make_nvp("received_messages", stats.received_messages),
+            cereal::make_nvp("send_volume", stats.send_volume),
+            cereal::make_nvp("receive_volume", stats.receive_volume));
+}
+}  // namespace cereal
 
 namespace cetric {
 namespace profiling {
@@ -64,7 +74,7 @@ struct Statistics {
         double contraction_time = 0;
         double global_phase_time = 0;
         double reduce_time = 0;
-        MessageStatistics message_statistics;
+        message_queue::MessageStatistics message_statistics;
         size_t skipped_nodes = 0;
         size_t local_triangles = 0;
         size_t type3_triangles = 0;
@@ -75,7 +85,8 @@ struct Statistics {
             archive(CEREAL_NVP(io_time), CEREAL_NVP(preprocessing), CEREAL_NVP(primary_load_balancing),
                     CEREAL_NVP(secondary_load_balancing), CEREAL_NVP(local_phase_time), CEREAL_NVP(contraction_time),
                     CEREAL_NVP(global_phase_time), CEREAL_NVP(reduce_time), CEREAL_NVP(message_statistics),
-                    CEREAL_NVP(skipped_nodes), CEREAL_NVP(local_triangles), CEREAL_NVP(type3_triangles), CEREAL_NVP(local_wall_time));
+                    CEREAL_NVP(skipped_nodes), CEREAL_NVP(local_triangles), CEREAL_NVP(type3_triangles),
+                    CEREAL_NVP(local_wall_time));
         }
     };
     LocalStatistics local;
