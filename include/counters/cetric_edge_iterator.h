@@ -16,17 +16,64 @@
 namespace cetric {
 using namespace graph;
 static const NodeId sentinel_node = -1;
-template <class GraphType>
-class CetricEdgeIterator {
+struct Merger {
+    void operator()(std::vector<NodeId>& buffer, std::vector<NodeId> msg, int tag [[maybe_unused]]) {
+        for (auto elem : msg) {
+            buffer.emplace_back(elem);
+        }
+        buffer.emplace_back(sentinel_node);
+    }
+};
+struct Splitter {
+    template <typename MessageFunc>
+    void operator()(std::vector<NodeId>& buffer, MessageFunc&& on_message, PEID sender) {
+        std::vector<NodeId>::iterator slice_begin = buffer.begin();
+        while (slice_begin != buffer.end()) {
+            auto slice_end = std::find(slice_begin, buffer.end(), sentinel_node);
+            on_message(slice_begin, slice_end, sender);
+            slice_begin = slice_end + 1;
+        }
+    }
+};
+struct OldCommBase {
+protected:
+    OldCommBase(const Config& conf, PEID rank, PEID size)
+        : comm_(conf.buffer_threshold,
+                MPI_NODE,
+                rank,
+                size,
+                as_int(MessageTag::Neighborhood),
+                conf.empty_pending_buffers_on_overflow) {}
+    BufferedCommunicator<NodeId> comm_;
+};
+template <class Merger, class Splitter>
+struct MessageQueueBase {
+protected:
+    MessageQueueBase(const Config&, PEID, PEID) : queue_(Merger{}, Splitter{}) {}
+    message_queue::BufferedMessageQueue<NodeId, Merger, Splitter> queue_;
+};
+struct BufferedCommunicatorPolicy {};
+struct MessageQueuePolicy {};
+template <class GraphType, class CommunicationPolicy>
+class CetricEdgeIterator : std::conditional_t<std::is_same_v<CommunicationPolicy, BufferedCommunicatorPolicy>,
+                                              OldCommBase,
+                                              MessageQueueBase<Merger, Splitter>> {
 public:
-    CetricEdgeIterator(GraphType& G, const Config& conf, PEID rank, PEID size)
-        : G(G),
+    using base_type = std::conditional_t<std::is_same_v<CommunicationPolicy, BufferedCommunicatorPolicy>,
+                                         OldCommBase,
+                                         MessageQueueBase<Merger, Splitter>>;
+    CetricEdgeIterator(GraphType& G,
+                       const Config& conf,
+                       PEID rank,
+                       PEID size,
+                       CommunicationPolicy&& = CommunicationPolicy{})
+        : base_type(conf, rank, size),
+          G(G),
           conf_(conf),
           rank_(rank),
           size_(size),
           last_proc_(G.local_node_count(), -1),
           is_v_neighbor_(G.local_node_count() + G.ghost_count(), false),
-          queue_(Merger{}, Splitter{}),
           interface_nodes_(),
           pe_min_degree() {
         if constexpr (payload_has_degree<typename GraphType::payload_type>::value) {
@@ -39,7 +86,9 @@ public:
                 });
             }
         }
-        queue_.set_threshold(G.local_node_count());
+        if constexpr (std::is_same_v<CommunicationPolicy, MessageQueuePolicy>) {
+            this->queue_.set_threshold(G.local_node_count());
+        }
     }
 
     template <typename TriangleFunc>
@@ -112,20 +161,39 @@ public:
                         PEID u_rank = G.get_ghost_data(u).rank;
                         assert(u_rank != rank_);
                         if (last_proc_[v] != u_rank) {
-                            enqueue_for_sending(v, u_rank);
+                            enqueue_for_sending(v, u_rank, emit, stats);
                         }
                     }
                 });
             }
             // timer.start("Communication");
-            queue_.poll(
-                [&](auto begin, auto end, PEID sender [[maybe_unused]]) { handle_buffer(begin, end, emit, stats); });
+            if constexpr (std::is_same_v<CommunicationPolicy, MessageQueuePolicy>) {
+                this->queue_.poll([&](auto begin, auto end, PEID sender [[maybe_unused]]) {
+                    handle_buffer(begin, end, emit, stats);
+                });
+            } else {
+                this->comm_.check_for_message(
+                    [&](PEID, const std::vector<NodeId>& message) {
+                        handle_buffer(message.begin(), message.end(), emit, stats);
+                    },
+                    stats.local.message_statistics);
+            }
         }
-        queue_.terminate(
-            [&](auto begin, auto end, PEID sender [[maybe_unused]]) { handle_buffer(begin, end, emit, stats); });
+        if constexpr (std::is_same_v<CommunicationPolicy, MessageQueuePolicy>) {
+            this->queue_.terminate(
+                [&](auto begin, auto end, PEID sender [[maybe_unused]]) { handle_buffer(begin, end, emit, stats); });
+        } else {
+            this->comm_.all_to_all(
+                [&](PEID, const std::vector<NodeId>& message) {
+                    handle_buffer(message.begin(), message.end(), emit, stats);
+                },
+                stats.local.message_statistics, conf_.full_all_to_all);
+        }
         stats.local.global_phase_time += phase_time.elapsed_time();
-        stats.local.message_statistics.add(queue_.stats());
-        queue_.reset();
+        if constexpr (std::is_same_v<CommunicationPolicy, MessageQueuePolicy>) {
+            stats.local.message_statistics.add(this->queue_.stats());
+            this->queue_.reset();
+        }
     }
 
     template <typename TriangleFunc>
@@ -184,7 +252,11 @@ private:
         }
     }
 
-    void enqueue_for_sending(NodeId v, PEID u_rank) {
+    template <typename TriangleFunc>
+    void enqueue_for_sending(NodeId v,
+                             PEID u_rank,
+                             TriangleFunc emit [[maybe_unused]],
+                             cetric::profiling::Statistics& stats [[maybe_unused]]) {
         std::vector<NodeId> buffer;
         buffer.emplace_back(G.to_global_id(v));
         // size_t send_count = 0;
@@ -203,14 +275,41 @@ private:
                 buffer.emplace_back(G.to_global_id(e.head));
             }
         });
-        queue_.post_message(std::move(buffer), u_rank);
+        if constexpr (std::is_same_v<CommunicationPolicy, MessageQueuePolicy>) {
+            this->queue_.post_message(std::move(buffer), u_rank);
+        } else {
+            if (!buffer.empty()) {
+                buffer.emplace_back(sentinel_node);
+                this->comm_.add_message(
+                    buffer, u_rank,
+                    [&](PEID, const std::vector<NodeId>& message) {
+                        handle_buffer(message.begin(), message.end(), emit, stats);
+                    },
+                    stats.local.message_statistics);
+            }
+        }
         last_proc_[v] = u_rank;
     }
 
     template <typename IterType, typename TriangleFunc>
     void handle_buffer(IterType begin, IterType end, TriangleFunc emit, cetric::profiling::Statistics& stats) {
-        NodeId v = *begin;
-        process_neighborhood(v, begin + 1, end, emit, stats);
+        if constexpr (std::is_same_v<CommunicationPolicy, MessageQueuePolicy>) {
+            NodeId v = *begin;
+            process_neighborhood(v, begin + 1, end, emit, stats);
+        } else {
+            auto current = begin;
+            while (current != end) {
+                auto chunk_begin = current;
+                while (*current != sentinel_node) {
+                    current++;
+                }
+                auto chunk_end = current;
+                NodeId v = *chunk_begin;
+                chunk_begin++;
+                process_neighborhood(v, chunk_begin, chunk_end, emit, stats);
+                current++;
+            }
+        }
     }
 
     template <typename NodeBufferIter>
@@ -296,25 +395,6 @@ private:
         });
         distributed_post_intersect(v, begin, end);
     }
-    struct Merger {
-        void operator()(std::vector<NodeId>& buffer, std::vector<NodeId> msg, int tag [[maybe_unused]]) {
-            for (auto elem : msg) {
-                buffer.emplace_back(elem);
-            }
-            buffer.emplace_back(sentinel_node);
-        }
-    };
-    struct Splitter {
-        template <typename MessageFunc>
-        void operator()(std::vector<NodeId>& buffer, MessageFunc&& on_message, PEID sender) {
-            std::vector<NodeId>::iterator slice_begin = buffer.begin();
-            while (slice_begin != buffer.end()) {
-                auto slice_end = std::find(slice_begin, buffer.end(), sentinel_node);
-                on_message(slice_begin, slice_end, sender);
-                slice_begin = slice_end + 1;
-            }
-        }
-    };
     using NodeBuffer = google::dense_hash_map<PEID, std::vector<NodeId>>;
     GraphType& G;
     const Config& conf_;
@@ -322,7 +402,7 @@ private:
     PEID size_;
     std::vector<PEID> last_proc_;
     std::vector<bool> is_v_neighbor_;
-    message_queue::BufferedMessageQueue<NodeId, Merger, Splitter> queue_;
+    // message_queue::BufferedMessageQueue<NodeId, Merger, Splitter> queue_;
     std::vector<NodeId> interface_nodes_;
     std::vector<Degree> pe_min_degree;
 };

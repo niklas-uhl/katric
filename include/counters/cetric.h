@@ -50,11 +50,13 @@ inline void preprocessing(DistributedGraph<>& G,
     stats.local.preprocessing.sorting_time += timer.elapsed_time();
 }
 
+template <class CommunicationPolicy>
 inline size_t run_patric(DistributedGraph<>& G,
                          cetric::profiling::Statistics& stats,
                          const Config& conf,
                          PEID rank,
-                         PEID size) {
+                         PEID size,
+                         CommunicationPolicy&&) {
     bool debug = false;
     G.find_ghost_ranks();
     cetric::profiling::Timer timer;
@@ -78,7 +80,7 @@ inline size_t run_patric(DistributedGraph<>& G,
     LOG << "[R" << rank << "] "
         << "Preprocessing finished";
     timer.restart();
-    cetric::CetricEdgeIterator<DistributedGraph<>> ctr(G, conf, rank, size);
+    auto ctr = CetricEdgeIterator(G, conf, rank, size, CommunicationPolicy{});
     size_t triangle_count = 0;
     ctr.run_local(
         [&](Triangle t) {
@@ -107,11 +109,13 @@ inline size_t run_patric(DistributedGraph<>& G,
     return stats.counted_triangles;
 }
 
+template <typename CommunicationPolicy>
 inline size_t run_cetric(DistributedGraph<>& G,
                          cetric::profiling::Statistics& stats,
                          const Config& conf,
                          PEID rank,
-                         PEID size) {
+                         PEID size,
+                         CommunicationPolicy&&) {
     bool debug = false;
     G.find_ghost_ranks();
     cetric::profiling::Timer timer;
@@ -133,7 +137,7 @@ inline size_t run_cetric(DistributedGraph<>& G,
     LOG << "[R" << rank << "] "
         << "Preprocessing finished";
     timer.restart();
-    cetric::CetricEdgeIterator<DistributedGraph<>> ctr(G, conf, rank, size);
+    auto ctr = cetric::CetricEdgeIterator(G, conf, rank, size, CommunicationPolicy{});
     size_t triangle_count = 0;
     ctr.run_local(
         [&](Triangle t) {
@@ -171,7 +175,7 @@ inline size_t run_cetric(DistributedGraph<>& G,
         << "Secondary load balancing finished " << stats.local.secondary_load_balancing.phase_time << " s";
     timer.restart();
     if (!conf.secondary_cost_function.empty()) {
-        cetric::CetricEdgeIterator<DistributedGraph<>> ctr_dist(G, conf, rank, size);
+        auto ctr_dist = cetric::CetricEdgeIterator(G, conf, rank, size, CommunicationPolicy{});
         ctr_dist.run(
             [&](Triangle t) {
                 (void)t;

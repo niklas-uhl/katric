@@ -74,6 +74,8 @@ cetric::Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
 
     app.add_flag("--skip-local-neighborhood", conf.skip_local_neighborhood);
 
+    app.add_option("--communication-policy", conf.communication_policy)->transform(CLI::IsMember({"old", "new"}));
+
     parse_gen_parameters(app, conf);
 
     CLI::Option* input_option = app.get_option("input");
@@ -229,9 +231,9 @@ int main(int argc, char* argv[]) {
         cetric::profiling::Timer global_time;
 
         if (conf.algorithm == cetric::Algorithm::Cetric) {
-            run_cetric(G, stats, conf, rank, size);
+            run_cetric(G, stats, conf, rank, size, cetric::MessageQueuePolicy{});
         } else {
-            run_patric(G, stats, conf, rank, size);
+            run_patric(G, stats, conf, rank, size, cetric::MessageQueuePolicy{});
         }
 
         MPI_Barrier(MPI_COMM_WORLD);

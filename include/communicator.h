@@ -249,13 +249,13 @@ public:
         }
     }
 
-    template <class T>
+    template <class T, typename StatsType>
     static void sparse_all_to_all(const google::dense_hash_map<PEID, std::vector<T>>& send_buffers,
                                   google::dense_hash_map<PEID, std::vector<T>>& recv_buffers,
                                   MPI_Datatype mpi_type,
                                   PEID rank,
                                   PEID size [[maybe_unused]],
-                                  cetric::profiling::MessageStatistics& stats,
+                                  StatsType& stats,
                                   int message_tag) {
         PEID request_count = 0;
         for (const auto& kv : send_buffers) {
@@ -352,13 +352,13 @@ public:
         sparse_all_to_all(send_buffers, recv_buffers, mpi_type, rank, size, stats, message_tag);
     }
 
-    template <typename T>
+    template <typename T, typename StatsType>
     static void all_to_all(google::dense_hash_map<PEID, std::vector<T>>& send_buffers,
                            google::dense_hash_map<PEID, std::vector<T>>& recv_buffers,
                            MPI_Datatype mpi_type,
                            PEID rank,
                            PEID size,
-                           cetric::profiling::MessageStatistics& stats,
+                           StatsType& stats,
                            int message_tag) {
         (void)rank;
         (void)message_tag;
@@ -500,11 +500,11 @@ public:
         recv_buffers_.set_empty_key(-1);
     }
 
-    template <typename MessageFunc>
+    template <typename MessageFunc, typename StatsType>
     inline void add_message(const std::vector<T>& message,
                             PEID recv,
                             MessageFunc on_message,
-                            cetric::profiling::MessageStatistics& stats) {
+                            StatsType& stats) {
         if (!empty_pending_buffers_on_overflow) {
             if (!overflow_buffers_[recv].empty()) {
                 // we haven't finished sending yet
@@ -530,8 +530,8 @@ public:
         }
     }
 
-    template <typename MessageFunc>
-    inline void wait_and_receive(PEID recv, MessageFunc on_message, cetric::profiling::MessageStatistics& stats) {
+    template <typename MessageFunc, typename StatsType>
+    inline void wait_and_receive(PEID recv, MessageFunc on_message, StatsType& stats) {
         assert(requests_[recv] != MPI_REQUEST_NULL);
         int buffer_sent = 0;
         while (buffer_sent == 0) {
@@ -542,8 +542,8 @@ public:
         overflow_buffers_[recv].clear();
         assert(requests_[recv] == MPI_REQUEST_NULL);
     }
-    template <typename MessageFunc>
-    inline void finish_overflow_sending(MessageFunc on_message, cetric::profiling::MessageStatistics& stats) {
+    template <typename MessageFunc, typename StatsType>
+    inline void finish_overflow_sending(MessageFunc on_message, StatsType& stats) {
         if (threshold_ == std::numeric_limits<size_t>::max()) {
             return;
         }
@@ -559,8 +559,8 @@ public:
         }
     }
 
-    template <typename MessageFunc>
-    inline void busy_waiting_for_receival(MessageFunc on_message, cetric::profiling::MessageStatistics& stats) {
+    template <typename MessageFunc, typename StatsType>
+    inline void busy_waiting_for_receival(MessageFunc on_message, StatsType& stats) {
         MPI_Request barrier_request;
         MPI_Ibarrier(MPI_COMM_WORLD, &barrier_request);
 
@@ -589,8 +589,8 @@ public:
         }
     }
 
-    template <typename MessageFunc>
-    inline void check_for_message(MessageFunc on_message, cetric::profiling::MessageStatistics& stats) {
+    template <typename MessageFunc, typename StatsType>
+    inline void check_for_message(MessageFunc on_message, StatsType& stats) {
         if (threshold_ == std::numeric_limits<size_t>::max()) {
             return;
         }
@@ -614,9 +614,9 @@ public:
         }
     }
 
-    template <typename MessageFunc>
+    template <typename MessageFunc, typename StatsType>
     inline void all_to_all(MessageFunc on_message,
-                           cetric::profiling::MessageStatistics& stats,
+                           StatsType& stats,
                            bool full_all_to_all = false) {
         // TODO: ensure that old buffers have been sent
 
