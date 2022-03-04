@@ -1,0 +1,6 @@
+echo "[LOG] Starting ${jobname}"
+start=$$(date +%s.%N)
+mpiexec -n $$SLURM_NTASKS ${cmd}
+end=$$(date +%s.%N)
+diff=$$(echo "$END - $START" | bc)
+echo "[LOG] Finished ${jobname} in $${diff} seconds"

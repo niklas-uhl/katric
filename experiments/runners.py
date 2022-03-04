@@ -88,49 +88,58 @@ class SBatchRunner:
         output_path.mkdir(exist_ok=True, parents=True)
         with open(output_path / "config.json", 'w') as file:
             json.dump(experiment_suite.configs, file, indent=4)
+        script_path = Path(os.path.dirname(__file__))
+        with open(script_path /
+                  "sbatch-template.txt") as template_file:
+            template = template_file.read()
+        template = Template(template)
+        with open(script_path /
+                  "command-template.txt") as template_file:
+            command_template = template_file.read()
+        command_template = Template(command_template)
         njobs = 0
-        for i, config in enumerate(experiment_suite.configs):
-            for input in experiment_suite.inputs:
-                for ncores in experiment_suite.PEs:
-                    config['json-output'] = 'stdout'
-                    if isinstance(input, expcore.InputGraph):
-                        input_name = input.name
-                    else:
-                        input_name = str(input)
-                    log_path = output_path / f"{input_name}-np{ncores}-c{i}-log.txt"
-                    err_path = output_path / f"{input_name}-np{ncores}-c{i}-err.txt"
-                    cmd = expcore.cetric_command(input, **config)
-                    jobname = f"{experiment_suite.name}-{input_name}-np{ncores}-c{i}"
-                    script_path = Path(os.path.dirname(__file__))
-                    with open(script_path /
-                              "sbatch-template.txt") as template_file:
-                        template = template_file.read()
-                    template = Template(template)
-                    if experiment_suite.tasks_per_node:
-                        tasks_per_node = experiment_suite.tasks_per_node
-                    else:
-                        tasks_per_node = self.tasks_per_node
-                    subs = {}
-                    subs["nodes"] = required_nodes(ncores, tasks_per_node)
-                    subs["p"] = ncores
-                    subs["output_log"] = str(log_path)
-                    subs["error_log"] = str(err_path)
-                    subs["job_name"] = jobname
-                    if self.use_test_partition:
-                        subs["job_queue"] = "test"
-                    else:
-                        subs["job_queue"] = get_queue(ncores, tasks_per_node)
-                    time_limit = experiment_suite.get_input_time_limit(
+        for input in experiment_suite.inputs:
+            for ncores in experiment_suite.PEs:
+                if isinstance(input, expcore.InputGraph):
+                    input_name = input.name
+                else:
+                    input_name = str(input)
+                log_path = output_path / f"{input_name}-np{ncores}-log.txt"
+                jobname = f"{experiment_suite.name}-{input_name}-np{ncores}"
+                if experiment_suite.tasks_per_node:
+                    tasks_per_node = experiment_suite.tasks_per_node
+                else:
+                    tasks_per_node = self.tasks_per_node
+                subs = {}
+                subs["nodes"] = required_nodes(ncores, tasks_per_node)
+                subs["p"] = ncores
+                subs["output_log"] = str(log_path)
+                subs["job_name"] = jobname
+                if self.use_test_partition:
+                    subs["job_queue"] = "test"
+                else:
+                    subs["job_queue"] = get_queue(ncores, tasks_per_node)
+                subs["account"] = project
+                time_limit = 0
+                commands = []
+                for i, config in enumerate(experiment_suite.configs):
+                    json_path = output_path / f"{input_name}-np{ncores}-log-c{i}.json"
+                    config['json-output'] = str(json_path)
+                    job_time_limit = experiment_suite.get_input_time_limit(
                         input.name)
-                    if not time_limit:
-                        time_limit = self.time_limit
-                    subs["time_string"] = time.strftime(
-                        "%H:%M:%S", time.gmtime(time_limit * 60))
-                    subs["account"] = project
-                    subs["cmd"] = ' '.join(cmd)
-                    job_script = template.substitute(subs)
-                    job_file = self.job_output_directory / jobname
-                    with open(job_file, "w") as job:
-                        job.write(job_script)
-                    njobs += 1
+                    if not job_time_limit:
+                        job_time_limit = self.time_limit
+                    time_limit += job_time_limit
+                    cmd = expcore.cetric_command(input, **config)
+                    config_jobname = jobname + "-c" + str(i)
+                    cmd_string = command_template.safe_substitute(cmd=" ".join(cmd), jobname=config_jobname);
+                    commands.append(cmd_string)
+                subs["commands"] = '\n'.join(commands)
+                subs["time_string"] = time.strftime(
+                    "%H:%M:%S", time.gmtime(time_limit * 60))
+                job_script = template.substitute(subs)
+                job_file = self.job_output_directory / jobname
+                with open(job_file, "w") as job:
+                    job.write(job_script)
+                njobs += 1
         print(f"Created {njobs} job files in directory {self.job_output_directory}.")
