@@ -12,12 +12,15 @@
 #include <timer.h>
 #include <type_traits>
 #include "datastructures/distributed/distributed_graph.h"
+#include "indirect_message_queue.h"
 
 namespace cetric {
 using namespace graph;
 static const NodeId sentinel_node = -1;
 struct Merger {
-    void operator()(std::vector<NodeId>& buffer, std::vector<NodeId> msg, int tag [[maybe_unused]]) {
+    void operator()(std::vector<NodeId>& buffer,
+                    std::vector<NodeId> msg,
+                    int tag [[maybe_unused]]) {
         for (auto elem : msg) {
             buffer.emplace_back(elem);
         }
@@ -46,22 +49,32 @@ protected:
                 conf.empty_pending_buffers_on_overflow) {}
     BufferedCommunicator<NodeId> comm_;
 };
-template <class Merger, class Splitter>
+template <template <typename, typename, typename> class MessageQueueType>
 struct MessageQueueBase {
 protected:
     MessageQueueBase(const Config&, PEID, PEID) : queue_(Merger{}, Splitter{}) {}
-    message_queue::BufferedMessageQueue<NodeId, Merger, Splitter> queue_;
+    MessageQueueType<NodeId, Merger, Splitter> queue_;
 };
-struct BufferedCommunicatorPolicy {};
-struct MessageQueuePolicy {};
+enum class InterfaceType { comm, queue };
+struct BufferedCommunicatorPolicy {
+    static constexpr InterfaceType interface = InterfaceType::comm;
+};
+struct MessageQueuePolicy {
+    static constexpr InterfaceType interface = InterfaceType::queue;
+};
+struct GridPolicy {
+    static constexpr InterfaceType interface = InterfaceType::queue;
+};
+template <class CommunicationPolicy>
+using commnicator_base = std::conditional_t<std::is_same_v<CommunicationPolicy, BufferedCommunicatorPolicy>,
+                                            OldCommBase,
+                                            std::conditional_t<std::is_same_v<CommunicationPolicy, MessageQueuePolicy>,
+                                                               MessageQueueBase<message_queue::BufferedMessageQueue>,
+                                                               MessageQueueBase<IndirectMessageQueue>>>;
 template <class GraphType, class CommunicationPolicy>
-class CetricEdgeIterator : std::conditional_t<std::is_same_v<CommunicationPolicy, BufferedCommunicatorPolicy>,
-                                              OldCommBase,
-                                              MessageQueueBase<Merger, Splitter>> {
+class CetricEdgeIterator : commnicator_base<CommunicationPolicy> {
 public:
-    using base_type = std::conditional_t<std::is_same_v<CommunicationPolicy, BufferedCommunicatorPolicy>,
-                                         OldCommBase,
-                                         MessageQueueBase<Merger, Splitter>>;
+    using base_type = commnicator_base<CommunicationPolicy>;
     CetricEdgeIterator(GraphType& G,
                        const Config& conf,
                        PEID rank,
@@ -167,7 +180,7 @@ public:
                 });
             }
             // timer.start("Communication");
-            if constexpr (std::is_same_v<CommunicationPolicy, MessageQueuePolicy>) {
+            if constexpr (CommunicationPolicy::interface == InterfaceType::queue) {
                 this->queue_.poll([&](auto begin, auto end, PEID sender [[maybe_unused]]) {
                     handle_buffer(begin, end, emit, stats);
                 });
@@ -179,7 +192,7 @@ public:
                     stats.local.message_statistics);
             }
         }
-        if constexpr (std::is_same_v<CommunicationPolicy, MessageQueuePolicy>) {
+        if constexpr (CommunicationPolicy::interface == InterfaceType::queue) {
             this->queue_.terminate(
                 [&](auto begin, auto end, PEID sender [[maybe_unused]]) { handle_buffer(begin, end, emit, stats); });
         } else {
@@ -190,7 +203,7 @@ public:
                 stats.local.message_statistics, conf_.full_all_to_all);
         }
         stats.local.global_phase_time += phase_time.elapsed_time();
-        if constexpr (std::is_same_v<CommunicationPolicy, MessageQueuePolicy>) {
+        if constexpr (CommunicationPolicy::interface == InterfaceType::queue) {
             stats.local.message_statistics.add(this->queue_.stats());
             this->queue_.reset();
         }
@@ -275,7 +288,7 @@ private:
                 buffer.emplace_back(G.to_global_id(e.head));
             }
         });
-        if constexpr (std::is_same_v<CommunicationPolicy, MessageQueuePolicy>) {
+        if constexpr (CommunicationPolicy::interface == InterfaceType::queue) {
             this->queue_.post_message(std::move(buffer), u_rank);
         } else {
             if (!buffer.empty()) {
@@ -293,7 +306,7 @@ private:
 
     template <typename IterType, typename TriangleFunc>
     void handle_buffer(IterType begin, IterType end, TriangleFunc emit, cetric::profiling::Statistics& stats) {
-        if constexpr (std::is_same_v<CommunicationPolicy, MessageQueuePolicy>) {
+        if constexpr (CommunicationPolicy::interface == InterfaceType::queue) {
             NodeId v = *begin;
             process_neighborhood(v, begin + 1, end, emit, stats);
         } else {

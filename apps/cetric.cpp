@@ -21,6 +21,7 @@
 #include "CLI/Validators.hpp"
 #include "backward.hpp"
 #include "cereal/cereal.hpp"
+#include "counters/cetric_edge_iterator.h"
 #include "datastructures/distributed/distributed_graph.h"
 #include "datastructures/distributed/local_graph_view.h"
 #include "parse_parameters.h"
@@ -74,7 +75,7 @@ cetric::Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
 
     app.add_flag("--skip-local-neighborhood", conf.skip_local_neighborhood);
 
-    app.add_option("--communication-policy", conf.communication_policy)->transform(CLI::IsMember({"old", "new"}));
+    app.add_option("--communication-policy", conf.communication_policy)->transform(CLI::IsMember({"old", "new", "grid"}));
 
     parse_gen_parameters(app, conf);
 
@@ -231,9 +232,21 @@ int main(int argc, char* argv[]) {
         cetric::profiling::Timer global_time;
 
         if (conf.algorithm == cetric::Algorithm::Cetric) {
-            run_cetric(G, stats, conf, rank, size, cetric::MessageQueuePolicy{});
+            if (conf.communication_policy == "old") {
+                run_cetric(G, stats, conf, rank, size, cetric::BufferedCommunicatorPolicy{});
+            } else if (conf.communication_policy == "new"){
+                run_cetric(G, stats, conf, rank, size, cetric::MessageQueuePolicy{});
+            } else if (conf.communication_policy == "grid") {
+                run_cetric(G, stats, conf, rank, size, cetric::GridPolicy{});
+            }
         } else {
-            run_patric(G, stats, conf, rank, size, cetric::MessageQueuePolicy{});
+            if (conf.communication_policy == "old") {
+                run_patric(G, stats, conf, rank, size, cetric::BufferedCommunicatorPolicy{});
+            } else if (conf.communication_policy == "new") {
+                run_patric(G, stats, conf, rank, size, cetric::MessageQueuePolicy{});
+            } else if (conf.communication_policy == "grid") {
+                run_patric(G, stats, conf, rank, size, cetric::GridPolicy{});
+            }
         }
 
         MPI_Barrier(MPI_COMM_WORLD);
