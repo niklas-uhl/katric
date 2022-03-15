@@ -75,6 +75,76 @@ class DistributedGraph {
     friend class CompactGraph;
 
 public:
+    class NodeIterator {
+    public:
+        explicit NodeIterator(NodeId node) : node_(node) {}
+        bool operator==(const NodeIterator& rhs) const {
+            return this->node_ == rhs.node_;
+        }
+        NodeId operator*() const {
+            return node_;
+        }
+        NodeIterator& operator++() {
+            this->node_++;
+            return *this;
+        }
+
+    private:
+        NodeId node_;
+    };
+
+    class NodeRange {
+    public:
+        explicit NodeRange(NodeId from, NodeId to) : from_(from), to_(to) {}
+        NodeIterator begin() const {
+            return NodeIterator(from_);
+        };
+        NodeIterator end() const {
+            return NodeIterator(to_);
+        };
+
+    private:
+        NodeId from_;
+        NodeId to_;
+    };
+
+    class EdgeIterator {
+    public:
+        explicit EdgeIterator(NodeId tail, std::vector<NodeId>::iterator&& iter)
+            : tail_(tail), iter_(std::move(iter)) {}
+        bool operator==(const EdgeIterator& rhs) const {
+            return this->tail_ == rhs.tail_ && this->iter_ == rhs.iter_;
+        }
+        Edge operator*() const {
+            return Edge(tail_, *iter_);
+        }
+        EdgeIterator& operator++() {
+            iter_++;
+            return *this;
+        }
+
+    private:
+        NodeId tail_;
+        std::vector<NodeId>::iterator iter_;
+    };
+
+    class EdgeRange {
+    public:
+        explicit EdgeRange(NodeId tail, std::vector<NodeId>::iterator&& begin, std::vector<NodeId>::iterator&& end)
+            : tail_(tail), begin_(std::move(begin)), end_(std::move(end)) {}
+        EdgeIterator begin() const {
+            return EdgeIterator(tail_, begin_);
+        };
+        EdgeIterator end() const {
+            return NodeIterator(tail_, end_);
+        };
+
+    private:
+        NodeId tail_;
+        std::vector<NodeId>::iterator begin_;
+        std::vector<NodeId>::iterator end_;
+    };
+
     using payload_type = GhostPayloadType;
 
     template <typename Payload>
@@ -105,6 +175,10 @@ public:
         }
     }
 
+    NodeRange local_nodes() const {
+        return NodeRange(0, local_node_count());
+    }
+
     template <typename NodeFunc>
     inline void for_each_ghost_node(NodeFunc on_node) const {
         for (size_t node = local_node_count_; node < local_node_count_ + ghost_data_.size(); ++node) {
@@ -112,11 +186,19 @@ public:
         }
     }
 
+    NodeRange ghost_nodes() const {
+        return NodeRange(local_node_count(), local_node_count() + ghost_count());
+    }
+
     template <typename NodeFunc>
     inline void for_each_local_node_and_ghost(NodeFunc on_node) const {
         for (size_t node = 0; node < first_out_.size() - 1; ++node) {
             on_node(node);
         }
+    }
+
+    NodeRange local_and_ghost_nodes() const {
+        return NodeRange(0, local_node_count() + ghost_count());
     }
 
     template <typename NodeFunc>
@@ -183,6 +265,12 @@ public:
         }
     }
 
+    EdgeRange edges(NodeId node) {
+        EdgeId begin = first_out_[node];
+        EdgeId end = first_out_[node] + degree_[node];
+        return EdgeRange(node, head_.begin() + begin, head_.begin() + end);
+    }
+
     template <typename EdgeFunc>
     inline void for_each_local_out_edge(NodeId node, EdgeFunc on_edge) const {
         assert(is_local_from_local(node) || is_ghost(node));
@@ -193,6 +281,13 @@ public:
             on_edge(Edge(node, head));
         }
     }
+
+    EdgeRange out_edges(NodeId node) {
+        auto begin = first_out_[node] + first_out_offset_[node];
+        auto end = first_out_[node] + degree_[node];
+        return EdgeRange(node, head_.begin() + begin, head_.begin() + end);
+    }
+
     template <typename EdgeFunc>
     inline void for_each_local_in_edge(NodeId node, EdgeFunc on_edge) const {
         assert(is_local_from_local(node) || is_ghost(node));
@@ -202,6 +297,12 @@ public:
             NodeId head = head_[edge_id];
             on_edge(Edge(head, node));
         }
+    }
+
+    EdgeRange in_edges(NodeId node) {
+        auto begin = first_out_[node];
+        auto end = first_out_[node] + first_out_offset_[node];
+        return EdgeRange(node, head_.begin() + begin, head_.begin() + end);
     }
 
     template <typename NodeCmp>
@@ -548,7 +649,7 @@ public:
             if (local_id < local_node_count_) {
                 continue;
             }
-            //assert(local_id  - local_node_count_ < ghost_data_.size());
+            // assert(local_id  - local_node_count_ < ghost_data_.size());
             ghost_data_[local_id - local_node_count_].global_id = global_id;
             ghost_data_[local_id - local_node_count_].rank = -1;
         }
