@@ -15,7 +15,7 @@
 	url = https://github.com/foonathan/debug_assert.git
 [submodule "extern/backward-cpp"]
 	path = extern/backward-cpp
-	url = https://github.com/bombela/backward-cpp.git
+	url = https://github.com/niklas-uhl/backward-cpp-mpi.git
 [submodule "extern/fmt"]
 	path = extern/fmt
 	url = https://github.com/fmtlib/fmt.git

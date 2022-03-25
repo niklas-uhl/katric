@@ -6,8 +6,11 @@
 #define PARALLEL_TRIANGLE_COUNTER_UTIL_H
 
 #include <fmt/core.h>
+#include <fmt/ostream.h>
+#include <fmt/ranges.h>
 #include <mpi.h>
 #include <unistd.h>
+#include <array>
 #include <backward.hpp>
 #include <cstdlib>
 #include <debug_assert.hpp>
@@ -19,7 +22,6 @@
 #include <sstream>
 #include <tlx/logger.hpp>
 #include <vector>
-#include <array>
 
 using PEID = int;
 
