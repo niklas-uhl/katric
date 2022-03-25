@@ -7,29 +7,51 @@
 
 #include <config.h>
 #include <datastructures/graph_definitions.h>
-#include <message-queue/buffered_queue.h>
+#include "concurrent_buffered_queue.h"
 #include <statistics.h>
+#include <tbb/concurrent_vector.h>
+#include <tbb/enumerable_thread_specific.h>
+#include <tbb/parallel_for_each.h>
+#include <tbb/task_arena.h>
+#include <tbb/task_group.h>
 #include <timer.h>
+#include <tlx/meta/has_member.hpp>
 #include <type_traits>
 #include "datastructures/distributed/distributed_graph.h"
 #include "indirect_message_queue.h"
+#include "tlx/meta/has_method.hpp"
+#include "util.h"
 
 namespace cetric {
 using namespace graph;
 static const NodeId sentinel_node = -1;
+
+TLX_MAKE_HAS_METHOD(grow_by);
+
+template <typename VectorType>
+static constexpr bool has_grow_by_v =
+    has_method_grow_by<VectorType, typename VectorType::iterator(typename VectorType::size_type)>::value;
+static_assert(has_grow_by_v<tbb::concurrent_vector<NodeId>>);
+
 struct Merger {
-    void operator()(std::vector<NodeId>& buffer,
-                    std::vector<NodeId> msg,
-                    int tag [[maybe_unused]]) {
-        for (auto elem : msg) {
-            buffer.emplace_back(elem);
+    template <template <typename> typename VectorType>
+    size_t operator()(VectorType<NodeId>& buffer, std::vector<NodeId> msg, int tag [[maybe_unused]]) {
+        if constexpr (has_grow_by_v<VectorType<NodeId>>) {
+            auto insert_position = buffer.grow_by(msg.size() + 1);
+            std::copy(msg.begin(), msg.end(), insert_position);
+            *(insert_position + msg.size()) = sentinel_node;
+        } else {
+            for (auto elem : msg) {
+                buffer.push_back(elem);
+            }
+            buffer.push_back(sentinel_node);
         }
-        buffer.emplace_back(sentinel_node);
+        return msg.size() + 1;
     }
 };
 struct Splitter {
-    template <typename MessageFunc>
-    void operator()(std::vector<NodeId>& buffer, MessageFunc&& on_message, PEID sender) {
+    template <typename MessageFunc, template <typename> typename VectorType>
+    void operator()(VectorType<NodeId>& buffer, MessageFunc&& on_message, PEID sender) {
         std::vector<NodeId>::iterator slice_begin = buffer.begin();
         while (slice_begin != buffer.end()) {
             auto slice_end = std::find(slice_begin, buffer.end(), sentinel_node);
@@ -66,11 +88,12 @@ struct GridPolicy {
     static constexpr InterfaceType interface = InterfaceType::queue;
 };
 template <class CommunicationPolicy>
-using commnicator_base = std::conditional_t<std::is_same_v<CommunicationPolicy, BufferedCommunicatorPolicy>,
-                                            OldCommBase,
-                                            std::conditional_t<std::is_same_v<CommunicationPolicy, MessageQueuePolicy>,
-                                                               MessageQueueBase<message_queue::BufferedMessageQueue>,
-                                                               MessageQueueBase<IndirectMessageQueue>>>;
+using commnicator_base =
+    std::conditional_t<std::is_same_v<CommunicationPolicy, BufferedCommunicatorPolicy>,
+                       OldCommBase,
+                       std::conditional_t<std::is_same_v<CommunicationPolicy, MessageQueuePolicy>,
+                                          MessageQueueBase<message_queue::ConcurrentBufferedMessageQueue>,
+                                          MessageQueueBase<message_queue::ConcurrentBufferedMessageQueue>>>;
 template <class GraphType, class CommunicationPolicy>
 class CetricEdgeIterator : commnicator_base<CommunicationPolicy> {
 public:
@@ -100,6 +123,7 @@ public:
             }
         }
         if constexpr (std::is_same_v<CommunicationPolicy, MessageQueuePolicy>) {
+            // this->queue_.set_threshold(10);
             this->queue_.set_threshold(G.local_node_count());
         }
     }
@@ -112,7 +136,7 @@ public:
     template <typename TriangleFunc>
     inline void run_local(TriangleFunc emit,
                           cetric::profiling::Statistics& stats,
-                          std::vector<NodeId>& interface_nodes) {
+                          tbb::concurrent_vector<NodeId>& interface_nodes) {
         cetric::profiling::Timer phase_time;
         interface_nodes.clear();
         // std::vector<NodeId> interface_nodes;
@@ -125,25 +149,24 @@ public:
                 interface_nodes.emplace_back(v);
             }
             pre_intersection(v);
-            G.for_each_local_out_edge(v, [&](Edge edge) {
+            tbb::parallel_for_each(G.out_edges(v), [&](Edge edge) {
                 NodeId u = edge.head;
                 auto on_intersection = [&](NodeId node) {
                     stats.local.local_triangles++;
                     emit(Triangle{G.to_global_id(v), G.to_global_id(u), G.to_global_id(node)});
                 };
-                if (conf_.algorithm == Algorithm::Patric && G.is_ghost(u)) {
-                    return;
+                if (conf_.algorithm != Algorithm::Patric || !G.is_ghost(u)) {
+                    intersect(v, u, on_intersection);
                 }
-                intersect(v, u, on_intersection);
             });
             post_intersection(v);
         };
         switch (conf_.algorithm) {
             case Algorithm::Cetric:
-                G.for_each_local_node_and_ghost(find_intersections);
+                tbb::parallel_for_each(G.local_and_ghost_nodes(), find_intersections);
                 break;
             case Algorithm::Patric:
-                G.for_each_local_node(find_intersections);
+                tbb::parallel_for_each(G.local_nodes(), find_intersections);
                 break;
         }
         stats.local.local_phase_time += phase_time.elapsed_time();
@@ -157,32 +180,55 @@ public:
     template <typename TriangleFunc>
     inline void run_distributed(TriangleFunc emit,
                                 cetric::profiling::Statistics& stats,
-                                std::vector<NodeId>& interface_nodes) {
+                                tbb::concurrent_vector<NodeId>& interface_nodes) {
         cetric::profiling::Timer phase_time;
-        for (NodeId v : interface_nodes) {
-            // iterate over neighborhood and delegate to other PEs if necessary
-            if (conf_.pseudo2core && G.outdegree(v) < 2) {
-                stats.local.skipped_nodes++;
-            } else {
-                G.for_each_local_out_edge(v, [&](Edge edge) {
-                    NodeId u = edge.head;
-                    if (conf_.algorithm == Algorithm::Cetric || G.is_ghost(u)) {
-                        assert(G.is_local_from_local(v));
-                        assert(G.is_local(G.to_global_id(v)));
-                        assert(!G.is_local(G.to_global_id(u)));
-                        assert(!G.is_local_from_local(u));
-                        PEID u_rank = G.get_ghost_data(u).rank;
-                        assert(u_rank != rank_);
-                        if (last_proc_[v] != u_rank) {
-                            enqueue_for_sending(v, u_rank, emit, stats);
+        bool finished = false;
+        tbb::task_group g;
+        g.run([&]() {
+            tbb::parallel_for_each(interface_nodes, [&](NodeId v) {
+                // iterate over neighborhood and delegate to other PEs if necessary
+                if (conf_.pseudo2core && G.outdegree(v) < 2) {
+                    stats.local.skipped_nodes++;
+                } else {
+                    G.for_each_local_out_edge(v, [&](Edge edge) {
+                        NodeId u = edge.head;
+                        if (conf_.algorithm == Algorithm::Cetric || G.is_ghost(u)) {
+                            assert(G.is_local_from_local(v));
+                            assert(G.is_local(G.to_global_id(v)));
+                            assert(!G.is_local(G.to_global_id(u)));
+                            assert(!G.is_local_from_local(u));
+                            PEID u_rank = G.get_ghost_data(u).rank;
+                            assert(u_rank != rank_);
+                            if (last_proc_[v] != u_rank) {
+                                enqueue_for_sending(v, u_rank, g, emit, stats);
+                            }
                         }
-                    }
-                });
-            }
-            // timer.start("Communication");
+                    });
+                }
+                // timer.start("Communication");
+                // if constexpr (CommunicationPolicy::interface == InterfaceType::queue) {
+                //     // this->queue_.poll([&](auto begin, auto end, PEID sender [[maybe_unused]]) {
+                //     //     handle_buffer(begin, end, emit, stats);
+                //     // });
+                // } else {
+                //     this->comm_.check_for_message(
+                //         [&](PEID, const std::vector<NodeId>& message) {
+                //             handle_buffer(message.begin(), message.end(), emit, stats);
+                //         },
+                //         stats.local.message_statistics);
+                // }
+            });
+            finished = true;
+        });
+        while (!finished) {
             if constexpr (CommunicationPolicy::interface == InterfaceType::queue) {
+                this->queue_.check_for_overflow_and_flush();
+                // atomic_debug(fmt::format("Polling on {}", tbb::this_task_arena::current_thread_index()));
                 this->queue_.poll([&](auto begin, auto end, PEID sender [[maybe_unused]]) {
-                    handle_buffer(begin, end, emit, stats);
+                    // atomic_debug(fmt::format("Got something on {}", tbb::this_task_arena::current_thread_index()));
+                    std::vector<NodeId> buffer{begin, end};
+                    atomic_debug(fmt::format("Delegating {}", buffer));
+                    handle_buffer_hybrid(begin, end, g, emit, stats);
                 });
             } else {
                 this->comm_.check_for_message(
@@ -192,9 +238,14 @@ public:
                     stats.local.message_statistics);
             }
         }
+        atomic_debug("Wait 1");
+        //g.wait();
         if constexpr (CommunicationPolicy::interface == InterfaceType::queue) {
-            this->queue_.terminate(
-                [&](auto begin, auto end, PEID sender [[maybe_unused]]) { handle_buffer(begin, end, emit, stats); });
+            this->queue_.terminate([&](auto begin, auto end, PEID sender [[maybe_unused]]) {
+                std::vector<NodeId> buffer{begin, end};
+                atomic_debug(fmt::format("Delegating {}", buffer));
+                handle_buffer_hybrid(begin, end, g, emit, stats);
+            });
         } else {
             this->comm_.all_to_all(
                 [&](PEID, const std::vector<NodeId>& message) {
@@ -202,11 +253,14 @@ public:
                 },
                 stats.local.message_statistics, conf_.full_all_to_all);
         }
+        // g2.wait();
         stats.local.global_phase_time += phase_time.elapsed_time();
         if constexpr (CommunicationPolicy::interface == InterfaceType::queue) {
             stats.local.message_statistics.add(this->queue_.stats());
             this->queue_.reset();
         }
+        atomic_debug("Wait 2");
+        g.wait();
     }
 
     template <typename TriangleFunc>
@@ -227,13 +281,19 @@ public:
 private:
     void pre_intersection(NodeId v) {
         if (conf_.flag_intersection) {
-            G.for_each_local_out_edge(v, [&](Edge edge) { is_v_neighbor_[edge.head] = true; });
+            G.for_each_local_out_edge(v, [&](Edge edge) {
+                assert(is_v_neighbor_[edge.head] == false);
+                is_v_neighbor_[edge.head] = true;
+            });
         }
     }
 
     void post_intersection(NodeId v) {
         if (conf_.flag_intersection) {
-            G.for_each_local_out_edge(v, [&](Edge edge) { is_v_neighbor_[edge.head] = false; });
+            G.for_each_local_out_edge(v, [&](Edge edge) {
+                assert(is_v_neighbor_[edge.head] == true);
+                is_v_neighbor_[edge.head] = false;
+            });
         }
     }
 
@@ -268,39 +328,48 @@ private:
     template <typename TriangleFunc>
     void enqueue_for_sending(NodeId v,
                              PEID u_rank,
+                             tbb::task_group& tg,
                              TriangleFunc emit [[maybe_unused]],
                              cetric::profiling::Statistics& stats [[maybe_unused]]) {
-        std::vector<NodeId> buffer;
-        buffer.emplace_back(G.to_global_id(v));
-        // size_t send_count = 0;
-        G.for_each_local_out_edge(v, [&](Edge e) {
-            assert(conf_.algorithm == Algorithm::Patric || G.is_ghost(e.head));
-            using payload_type = typename GraphType::payload_type;
-            if constexpr (std::is_convertible_v<decltype(payload_type{}.degree), Degree>) {
-                if (conf_.degree_filtering) {
-                    const auto& ghost_data = G.get_ghost_data(e.head);
-                    if (ghost_data.payload.degree < pe_min_degree[u_rank]) {
-                        return;
+        // atomic_debug(fmt::format("rank {}", u_rank));
+        // atomic_debug(u_rank);
+        tg.run([&stats, emit, this, v, u_rank]() {
+            std::vector<NodeId> buffer;
+            buffer.emplace_back(G.to_global_id(v));
+            // size_t send_count = 0;
+            // atomic_debug(u_rank);
+            G.for_each_local_out_edge(v, [&](Edge e) {
+                assert(conf_.algorithm == Algorithm::Patric || G.is_ghost(e.head));
+                using payload_type = typename GraphType::payload_type;
+                if constexpr (std::is_convertible_v<decltype(payload_type{}.degree), Degree>) {
+                    if (conf_.degree_filtering) {
+                        const auto& ghost_data = G.get_ghost_data(e.head);
+                        if (ghost_data.payload.degree < pe_min_degree[u_rank]) {
+                            return;
+                        }
                     }
                 }
-            }
-            if (send_neighbor(e.head, u_rank)) {
-                buffer.emplace_back(G.to_global_id(e.head));
+                if (send_neighbor(e.head, u_rank)) {
+                    buffer.emplace_back(G.to_global_id(e.head));
+                }
+            });
+            // atomic_debug(u_rank);
+            if constexpr (CommunicationPolicy::interface == InterfaceType::queue) {
+                atomic_debug(fmt::format("Posting message to {} from thread {}", u_rank,
+                                         tbb::this_task_arena::current_thread_index()));
+                this->queue_.post_message(std::move(buffer), u_rank);
+            } else {
+                if (!buffer.empty()) {
+                    buffer.emplace_back(sentinel_node);
+                    this->comm_.add_message(
+                        buffer, u_rank,
+                        [&](PEID, const std::vector<NodeId>& message) {
+                            handle_buffer(message.begin(), message.end(), emit, stats);
+                        },
+                        stats.local.message_statistics);
+                }
             }
         });
-        if constexpr (CommunicationPolicy::interface == InterfaceType::queue) {
-            this->queue_.post_message(std::move(buffer), u_rank);
-        } else {
-            if (!buffer.empty()) {
-                buffer.emplace_back(sentinel_node);
-                this->comm_.add_message(
-                    buffer, u_rank,
-                    [&](PEID, const std::vector<NodeId>& message) {
-                        handle_buffer(message.begin(), message.end(), emit, stats);
-                    },
-                    stats.local.message_statistics);
-            }
-        }
         last_proc_[v] = u_rank;
     }
 
@@ -325,6 +394,20 @@ private:
         }
     }
 
+    template <typename IterType, typename TriangleFunc>
+    void handle_buffer_hybrid(IterType begin, IterType end, tbb::task_group& tg, TriangleFunc emit, cetric::profiling::Statistics& stats) {
+        if constexpr (CommunicationPolicy::interface == InterfaceType::queue) {
+            NodeId v = *begin;
+            std::vector<NodeId> neighborhood {begin + 1, end};
+            atomic_debug(fmt::format("Submit task for {} on thread {}", v, tbb::this_task_arena::current_thread_index()));
+            tg.run([&, v, emit, neighborhood = std::move(neighborhood)] {
+                atomic_debug(
+                    fmt::format("Spawn task for {} on thread {}", v, tbb::this_task_arena::current_thread_index()));
+                process_neighborhood(v, neighborhood.begin(), neighborhood.end(), emit, stats);
+            });
+            //tg.wait();
+        }
+    }
     template <typename NodeBufferIter>
     void distributed_pre_intersect(NodeId v, NodeBufferIter begin, NodeBufferIter end) {
         if (conf_.flag_intersection) {
@@ -334,7 +417,8 @@ private:
                     is_v_neighbor_[G.to_local_id(node)] = true;
                 }
             }
-            // for CETRIC we don't have to consider the local neighbors of v, because these are no ghost vertices
+            // for CETRIC we don't have to consider the local neighbors of v, because these are no ghost
+            // vertices
             if (conf_.algorithm == Algorithm::Patric && conf_.skip_local_neighborhood) {
                 G.for_each_local_out_edge(G.to_local_id(v), [&](Edge edge) { is_v_neighbor_[edge.head] = true; });
             }
@@ -350,7 +434,8 @@ private:
                     is_v_neighbor_[G.to_local_id(node)] = false;
                 }
             }
-            // for CETRIC we don't have to consider the local neighbors of v, because these are no ghost vertices
+            // for CETRIC we don't have to consider the local neighbors of v, because these are no ghost
+            // vertices
             if (conf_.algorithm == Algorithm::Patric && conf_.skip_local_neighborhood) {
                 G.for_each_local_out_edge(G.to_local_id(v), [&](Edge edge) { is_v_neighbor_[edge.head] = false; });
             }
@@ -384,6 +469,8 @@ private:
                               NodeBufferIter end,
                               TriangleFunc emit,
                               cetric::profiling::Statistics& stats) {
+        std::vector<NodeId> buffer{begin, end};
+        atomic_debug(fmt::format("Handling message {}", buffer));
         assert(!G.is_local(v));
         distributed_pre_intersect(v, begin, end);
         auto for_each_local_receiver = [&](auto on_node) {
@@ -416,7 +503,7 @@ private:
     std::vector<PEID> last_proc_;
     std::vector<bool> is_v_neighbor_;
     // message_queue::BufferedMessageQueue<NodeId, Merger, Splitter> queue_;
-    std::vector<NodeId> interface_nodes_;
+    tbb::concurrent_vector<NodeId> interface_nodes_;
     std::vector<Degree> pe_min_degree;
 };
 

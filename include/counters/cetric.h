@@ -6,8 +6,12 @@
 #include <datastructures/distributed/graph_communicator.h>
 #include <load_balancing.h>
 #include <statistics.h>
+#include <tbb/combinable.h>
+#include <tbb/concurrent_vector.h>
+#include <tbb/task_arena.h>
 #include <timer.h>
 #include <util.h>
+#include <cstddef>
 #include "cost_function.h"
 #include "datastructures/distributed/distributed_graph.h"
 #include "datastructures/distributed/local_graph_view.h"
@@ -82,12 +86,14 @@ inline size_t run_patric(DistributedGraph<>& G,
     timer.restart();
     auto ctr = CetricEdgeIterator(G, conf, rank, size, CommunicationPolicy{});
     size_t triangle_count = 0;
+    tbb::combinable<size_t> triangle_count_local_phase{0};
     ctr.run_local(
         [&](Triangle t) {
             (void)t;
-            triangle_count++;
+            triangle_count_local_phase.local()++;
         },
         stats);
+    triangle_count += triangle_count_local_phase.combine(std::plus<>{});
     stats.local.local_phase_time += timer.elapsed_time();
     LOG << "[R" << rank << "] "
         << "Local phase finished " << stats.local.local_phase_time << " s";
@@ -138,14 +144,20 @@ inline size_t run_cetric(DistributedGraph<>& G,
         << "Preprocessing finished";
     timer.restart();
     auto ctr = cetric::CetricEdgeIterator(G, conf, rank, size, CommunicationPolicy{});
-    size_t triangle_count = 0;
+    std::atomic<size_t> triangle_count = 0;
+    tbb::concurrent_vector<Triangle> triangles;
+    // tbb::combinable<size_t> triangle_count_local_phase {0};
     ctr.run_local(
         [&](Triangle t) {
             (void)t;
             // atomic_debug(t);
+            // triangles.push_back(t);
+            // atomic_debug(tbb::this_task_arena::current_thread_index());
             triangle_count++;
+            // triangle_count_local_phase.local()++;
         },
         stats);
+    // triangle_count += triangle_count_local_phase.combine(std::plus<> {});
     stats.local.local_phase_time += timer.elapsed_time();
     LOG << "[R" << rank << "] "
         << "Local phase finished " << stats.local.local_phase_time << " s";
@@ -174,24 +186,30 @@ inline size_t run_cetric(DistributedGraph<>& G,
     LOG << "[R" << rank << "] "
         << "Secondary load balancing finished " << stats.local.secondary_load_balancing.phase_time << " s";
     timer.restart();
+    // tbb::combinable<size_t> triangle_count_global_phase{0};
     if (!conf.secondary_cost_function.empty()) {
         auto ctr_dist = cetric::CetricEdgeIterator(G, conf, rank, size, CommunicationPolicy{});
         ctr_dist.run(
             [&](Triangle t) {
                 (void)t;
+                // triangles.push_back(t);
                 // atomic_debug(t);
                 triangle_count++;
+                // triangle_count_global_phase.local()++;
             },
             stats);
     } else {
         ctr.run_distributed(
             [&](Triangle t) {
                 (void)t;
+                // triangles.push_back(t);
                 // atomic_debug(t);
                 triangle_count++;
+                // triangle_count_global_phase.local()++;
             },
             stats);
     }
+    //triangle_count += triangles.size();
     stats.local.global_phase_time = timer.elapsed_time();
     LOG << "[R" << rank << "] "
         << "Global phase finished " << stats.local.global_phase_time << " s";

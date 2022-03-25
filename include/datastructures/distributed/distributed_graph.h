@@ -10,6 +10,7 @@
 #include <datastructures/graph_definitions.h>
 #include <util.h>
 #include <algorithm>
+#include <cassert>
 #include <cstddef>
 #include <google/dense_hash_map>
 #include <google/dense_hash_set>
@@ -77,9 +78,17 @@ class DistributedGraph {
 public:
     class NodeIterator {
     public:
+        using iterator_category = std::forward_iterator_tag;
+        using difference_type = std::ptrdiff_t;
+        using value_type = NodeId;
+        using pointer = NodeId*;
+        using reference = NodeId&;
         explicit NodeIterator(NodeId node) : node_(node) {}
         bool operator==(const NodeIterator& rhs) const {
             return this->node_ == rhs.node_;
+        }
+        bool operator!=(const NodeIterator& rhs) const {
+            return !(*this == rhs);
         }
         NodeId operator*() const {
             return node_;
@@ -110,39 +119,49 @@ public:
 
     class EdgeIterator {
     public:
-        explicit EdgeIterator(NodeId tail, std::vector<NodeId>::iterator&& iter)
+        explicit EdgeIterator(NodeId tail, std::vector<NodeId>::const_iterator iter)
             : tail_(tail), iter_(std::move(iter)) {}
+        using iterator_category = std::forward_iterator_tag;
+        using difference_type = std::ptrdiff_t;
+        using value_type = Edge;
+        using pointer = Edge*;
+        using reference = Edge&;
         bool operator==(const EdgeIterator& rhs) const {
             return this->tail_ == rhs.tail_ && this->iter_ == rhs.iter_;
+        }
+        bool operator!=(const EdgeIterator& rhs) const {
+            return !(this == rhs);
         }
         Edge operator*() const {
             return Edge(tail_, *iter_);
         }
         EdgeIterator& operator++() {
-            iter_++;
+            this->iter_++;
             return *this;
         }
 
     private:
         NodeId tail_;
-        std::vector<NodeId>::iterator iter_;
+        std::vector<NodeId>::const_iterator iter_;
     };
 
     class EdgeRange {
     public:
-        explicit EdgeRange(NodeId tail, std::vector<NodeId>::iterator&& begin, std::vector<NodeId>::iterator&& end)
+        explicit EdgeRange(NodeId tail,
+                           std::vector<NodeId>::const_iterator&& begin,
+                           std::vector<NodeId>::const_iterator&& end)
             : tail_(tail), begin_(std::move(begin)), end_(std::move(end)) {}
         EdgeIterator begin() const {
             return EdgeIterator(tail_, begin_);
         };
         EdgeIterator end() const {
-            return NodeIterator(tail_, end_);
+            return EdgeIterator(tail_, end_);
         };
 
     private:
         NodeId tail_;
-        std::vector<NodeId>::iterator begin_;
-        std::vector<NodeId>::iterator end_;
+        std::vector<NodeId>::const_iterator begin_;
+        std::vector<NodeId>::const_iterator end_;
     };
 
     using payload_type = GhostPayloadType;
@@ -265,10 +284,10 @@ public:
         }
     }
 
-    EdgeRange edges(NodeId node) {
+    EdgeRange edges(NodeId node) const {
         EdgeId begin = first_out_[node];
         EdgeId end = first_out_[node] + degree_[node];
-        return EdgeRange(node, head_.begin() + begin, head_.begin() + end);
+        return EdgeRange(node, head_.cbegin() + begin, head_.cbegin() + end);
     }
 
     template <typename EdgeFunc>
@@ -282,10 +301,10 @@ public:
         }
     }
 
-    EdgeRange out_edges(NodeId node) {
+    EdgeRange out_edges(NodeId node) const {
         auto begin = first_out_[node] + first_out_offset_[node];
         auto end = first_out_[node] + degree_[node];
-        return EdgeRange(node, head_.begin() + begin, head_.begin() + end);
+        return EdgeRange(node, head_.cbegin() + begin, head_.cbegin() + end);
     }
 
     template <typename EdgeFunc>
@@ -299,10 +318,10 @@ public:
         }
     }
 
-    EdgeRange in_edges(NodeId node) {
+    EdgeRange in_edges(NodeId node) const {
         auto begin = first_out_[node];
         auto end = first_out_[node] + first_out_offset_[node];
-        return EdgeRange(node, head_.begin() + begin, head_.begin() + end);
+        return EdgeRange(node, head_.cbegin() + begin, head_.cbegin() + end);
     }
 
     template <typename NodeCmp>

@@ -27,6 +27,7 @@
 #include "parse_parameters.h"
 #include "statistics.h"
 #include "timer.h"
+#include <tbb/global_control.h>
 
 cetric::Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
     (void)size;
@@ -196,16 +197,21 @@ void print_summary(const cetric::Config& conf,
 }
 
 int main(int argc, char* argv[]) {
-    MPI_Init(&argc, &argv);
+    int thread_support_level;
+    MPI_Init_thread(&argc, &argv, MPI_THREAD_FUNNELED, &thread_support_level);
+    if (thread_support_level != MPI_THREAD_FUNNELED) {
+        std::cerr << "The MPI implementation must support MPI_THREAD_FUNNELED" << std::endl;
+        std::exit(1);
+    }
     bool debug = false;
     PEID rank;
     PEID size;
+    backward::SignalHandling sh;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     DEBUG_BARRIER(rank);
-    backward::SignalHandling sh;
     cetric::Config conf = parse_config(argc, argv, rank, size);
-
+    //tbb::global_control global_limit(tbb::global_control::max_allowed_parallelism, 32);
     std::optional<double> io_time;
     cetric::profiling::Timer t;
     InputCache input_cache(conf);
