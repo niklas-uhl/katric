@@ -33,7 +33,7 @@ class SharedMemoryRunner:
                     mpiexec = os.environ.get("MPI_EXEC", "mpiexec")
                     cmd = mpiexec.split(" ")
                     cmd += ["-np", str(ncores)]
-                    cmd += expcore.cetric_command(input, **config)
+                    cmd += expcore.cetric_command(input, ncores, **config)
                     print(
                         f"Running config {i} on {input_name} using {ncores} cores ... ",
                         end='')
@@ -130,7 +130,7 @@ class SBatchRunner:
                     if not job_time_limit:
                         job_time_limit = self.time_limit
                     time_limit += job_time_limit
-                    cmd = expcore.cetric_command(input, **config)
+                    cmd = expcore.cetric_command(input, ncores, **config)
                     config_jobname = jobname + "-c" + str(i)
                     cmd_string = command_template.safe_substitute(cmd=" ".join(cmd), jobname=config_jobname);
                     commands.append(cmd_string)

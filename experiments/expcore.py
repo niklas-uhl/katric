@@ -3,6 +3,8 @@ import logging
 import os
 from pathlib import Path
 import yaml
+import sys
+import math
 
 
 class InputGraph:
@@ -10,7 +12,7 @@ class InputGraph:
         self.name = name
         self.triangles = triangles
 
-    def args(self):
+    def args(self, p):
         raise NotImplementedError()
 
 
@@ -21,7 +23,7 @@ class FileInputGraph(InputGraph):
         self.format = format
         self.triangles = triangles
 
-    def args(self):
+    def args(self, p):
         file_args = [str(self.path), "--input-format", self.format]
         return file_args
 
@@ -47,6 +49,7 @@ class GenInputGraph(InputGraph):
             raise ValueError(f"Generator {generator} is not supported.")
         self.generator = generator
         self.params = kwargs
+        self.scale_weak = self.params.get("scale_weak", False);
         required_parameters = set(
             GenInputGraph.parameter_list[self.generator] + ['n'])
         if not required_parameters.issubset(self.params.keys()):
@@ -54,14 +57,21 @@ class GenInputGraph(InputGraph):
                 f"Generator {self.generator} requires the following parameters: {required_parameters}"
             )
 
-    def args(self):
+    def args(self, p):
         arg_list = ["--gen"]
         if self.generator == 'rgg':
             arg_list.append('rgg_2d')
         elif self.generator == 'rhg':
             arg_list.append('rhg')
         arg_list.append("--gen_n")
-        arg_list.append(str(self.params["n"]))
+        if self.scale_weak:
+            if not math.log2(p).is_integer():
+                sys.exit("Number of PEs must be a power of two")
+            scaled_n = self.params["n"] + int(math.log2(p));
+            arg_list.append(str(scaled_n))
+            arg_list.append("--gen_scale_weak")
+        else:
+            arg_list.append(str(self.params["n"]))
         if self.generator == 'rgg':
             arg_list.append("--gen_r_coeff")
             arg_list.append(str(self.params["radius"]))
@@ -80,8 +90,9 @@ class GenInputGraph(InputGraph):
             val = self.params[key]
             name += f", {val}"
         name += ")"
+        if self.scale_weak:
+            name += "_weak"
         return name
-
 
 def load_inputs_from_yaml(yaml_path):
     with open(yaml_path, "r") as file:
@@ -189,7 +200,7 @@ def explode(config):
     return configs
 
 
-def cetric_command(input, **kwargs):
+def cetric_command(input, p, **kwargs):
     script_path = os.path.dirname(__file__)
     build_dir = Path(
         os.environ.get("BUILD_DIR", os.path.join(script_path, "../build/")))
@@ -197,7 +208,7 @@ def cetric_command(input, **kwargs):
     command = [str(app)]
     if input:
         if isinstance(input, InputGraph):
-            command = command + input.args()
+            command = command + input.args(p)
         else:
             command.append(str(input))
     flags = []

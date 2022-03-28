@@ -7,9 +7,9 @@ graphs:
   - generator: rgg
     n: 12
     radius: 0.55
-   - generator: rgg
-     n: 10
-     radius: 0.55
+  - generator: rgg
+    n: 10
+    radius: 0.55
   - generator: rhg
     n: 12
     avg_degree: 16
