@@ -42,10 +42,15 @@ class FileInputGraph(InputGraph):
 
 class GenInputGraph(InputGraph):
 
-    parameter_list = {"rhg": ["avg_degree", "gamma"], "rgg": ["radius"]}
+    parameter_list = {
+        "rhg": ["avg_degree", "gamma"],
+        "rgg": ["radius"],
+        "rdg_2d": [],
+        "rdg_3d": [],
+    }
 
     def __init__(self, generator, **kwargs):
-        if generator not in ["rgg", 'rhg']:
+        if generator not in GenInputGraph.parameter_list.keys():
             raise ValueError(f"Generator {generator} is not supported.")
         self.generator = generator
         self.params = kwargs
@@ -63,6 +68,10 @@ class GenInputGraph(InputGraph):
             arg_list.append('rgg_2d')
         elif self.generator == 'rhg':
             arg_list.append('rhg')
+        elif self.generator == 'rdg_2d':
+            arg_list.append('rgg_2d')
+        elif self.generator == 'rdg_3d':
+            arg_list.append('rgg_3d')
         arg_list.append("--gen_n")
         if self.scale_weak:
             if not math.log2(p).is_integer():
@@ -80,6 +89,9 @@ class GenInputGraph(InputGraph):
             arg_list.append(str(self.params["gamma"]))
             arg_list.append("--gen_d")
             arg_list.append(str(self.params["avg_degree"]))
+            arg_list.append("--rhg-fix")
+        else:
+            arg_list.append("--rhg-fix")
         return arg_list
 
     @property
