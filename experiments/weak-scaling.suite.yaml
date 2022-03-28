@@ -1,0 +1,15 @@
+name: weak-scaling
+ncores: [2, 4, 16]
+graphs:
+  - generator: rhg
+    n: 10
+    gamma: 2.8
+    avg_degree: 16
+    scale_weak: True
+time_limit: 10
+config: {
+  "algorithm": cetric,
+  "primary-cost-function": [N],
+  "secondary-cost-function": [IDPD],
+}
+

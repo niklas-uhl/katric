@@ -33,7 +33,7 @@ class SharedMemoryRunner:
                     mpiexec = os.environ.get("MPI_EXEC", "mpiexec")
                     cmd = mpiexec.split(" ")
                     cmd += ["-np", str(ncores)]
-                    cmd += expcore.cetric_command(input, **config)
+                    cmd += expcore.cetric_command(input, ncores, **config)
                     print(
                         f"Running config {i} on {input_name} using {ncores} cores ... ",
                         end='')
@@ -99,7 +99,7 @@ class SBatchRunner:
                         input_name = str(input)
                     log_path = output_path / f"{input_name}-np{ncores}-c{i}-log.txt"
                     err_path = output_path / f"{input_name}-np{ncores}-c{i}-err.txt"
-                    cmd = expcore.cetric_command(input, **config)
+                    cmd = expcore.cetric_command(input, ncores, **config)
                     jobname = f"{experiment_suite.name}-{input_name}-np{ncores}-c{i}"
                     script_path = Path(os.path.dirname(__file__))
                     with open(script_path /
