@@ -18,13 +18,14 @@ namespace cetric {
 using namespace graph;
 static const NodeId sentinel_node = -1;
 struct Merger {
-    void operator()(std::vector<NodeId>& buffer,
+    size_t operator()(std::vector<NodeId>& buffer,
                     std::vector<NodeId> msg,
                     int tag [[maybe_unused]]) {
         for (auto elem : msg) {
             buffer.emplace_back(elem);
         }
         buffer.emplace_back(sentinel_node);
+        return msg.size() + 1;
     }
 };
 struct Splitter {
