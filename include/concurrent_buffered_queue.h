@@ -46,7 +46,7 @@ public:
             std::stringstream out;
             out << "message from thread " << tbb::this_task_arena::current_thread_index() << " for rank " << receiver
                 << ": " << message;
-            atomic_debug(out.str());
+            //atomic_debug(out.str());
             added_elements = merge(buffer, std::forward<std::vector<T>>(message), tag);
             buffer_ocupacy_ += added_elements;
         }
@@ -59,7 +59,7 @@ public:
 
     void check_for_overflow_and_flush() {
         if (buffer_ocupacy_ > threshold_) {
-            atomic_debug("Overflow");
+            //atomic_debug("Overflow");
             overflows_++;
             flush_all();
         }
@@ -80,11 +80,11 @@ public:
             {
                 tbb::spin_rw_mutex::scoped_lock flush_lock(mutexes_[receiver], true);
                 message = {buffer.begin(), buffer.end()};
-                atomic_debug(fmt::format("Flushing buffer for {} with message {}", receiver, message));
+                //atomic_debug(fmt::format("Flushing buffer for {} with message {}", receiver, message));
                 buffer.clear();
                 buffer_ocupacy_ -= message.size();
             }
-            atomic_debug(receiver);
+            //atomic_debug(receiver);
             queue_.post_message(std::move(message), receiver);
         }
     }
@@ -99,14 +99,15 @@ public:
     void poll(MessageHandler&& on_message) {
         static_assert(std::is_invocable_v<MessageHandler, typename std::vector<T>::iterator,
                                           typename std::vector<T>::iterator, PEID>);
-        queue_.poll([&](PEID sender, std::vector<T> message) { split(message, on_message, sender); });
+        queue_.poll(
+            [&](std::vector<T> message, PEID sender) { split(message, on_message, sender); });
     }
 
     template <typename MessageHandler>
     void terminate(MessageHandler&& on_message) {
         static_assert(std::is_invocable_v<MessageHandler, typename std::vector<T>::iterator,
                                           typename std::vector<T>::iterator, PEID>);
-        queue_.terminate_impl([&](PEID sender, std::vector<T> message) { split(message, on_message, sender); },
+        queue_.terminate_impl([&](std::vector<T> message, PEID sender) { split(message, on_message, sender); },
                               [&]() { flush_all(); });
         /* for (auto buffer : buffers_) { */
         /*     atomic_debug(buffer); */

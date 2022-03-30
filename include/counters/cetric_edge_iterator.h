@@ -227,7 +227,7 @@ public:
                 this->queue_.poll([&](auto begin, auto end, PEID sender [[maybe_unused]]) {
                     // atomic_debug(fmt::format("Got something on {}", tbb::this_task_arena::current_thread_index()));
                     std::vector<NodeId> buffer{begin, end};
-                    atomic_debug(fmt::format("Delegating {}", buffer));
+                    //atomic_debug(fmt::format("Delegating {}", buffer));
                     handle_buffer_hybrid(begin, end, g, emit, stats);
                 });
             } else {
@@ -238,12 +238,12 @@ public:
                     stats.local.message_statistics);
             }
         }
-        atomic_debug("Wait 1");
+        //atomic_debug("Wait 1");
         //g.wait();
         if constexpr (CommunicationPolicy::interface == InterfaceType::queue) {
             this->queue_.terminate([&](auto begin, auto end, PEID sender [[maybe_unused]]) {
                 std::vector<NodeId> buffer{begin, end};
-                atomic_debug(fmt::format("Delegating {}", buffer));
+                //atomic_debug(fmt::format("Delegating {}", buffer));
                 handle_buffer_hybrid(begin, end, g, emit, stats);
             });
         } else {
@@ -259,7 +259,7 @@ public:
             stats.local.message_statistics.add(this->queue_.stats());
             this->queue_.reset();
         }
-        atomic_debug("Wait 2");
+        //atomic_debug("Wait 2");
         g.wait();
     }
 
@@ -355,8 +355,8 @@ private:
             });
             // atomic_debug(u_rank);
             if constexpr (CommunicationPolicy::interface == InterfaceType::queue) {
-                atomic_debug(fmt::format("Posting message to {} from thread {}", u_rank,
-                                         tbb::this_task_arena::current_thread_index()));
+                // atomic_debug(fmt::format("Posting message to {} from thread {}", u_rank,
+                //                          tbb::this_task_arena::current_thread_index()));
                 this->queue_.post_message(std::move(buffer), u_rank);
             } else {
                 if (!buffer.empty()) {
@@ -399,10 +399,10 @@ private:
         if constexpr (CommunicationPolicy::interface == InterfaceType::queue) {
             NodeId v = *begin;
             std::vector<NodeId> neighborhood {begin + 1, end};
-            atomic_debug(fmt::format("Submit task for {} on thread {}", v, tbb::this_task_arena::current_thread_index()));
+            // atomic_debug(fmt::format("Submit task for {} on thread {}", v, tbb::this_task_arena::current_thread_index()));
             tg.run([&, v, emit, neighborhood = std::move(neighborhood)] {
-                atomic_debug(
-                    fmt::format("Spawn task for {} on thread {}", v, tbb::this_task_arena::current_thread_index()));
+                // atomic_debug(
+                //     fmt::format("Spawn task for {} on thread {}", v, tbb::this_task_arena::current_thread_index()));
                 process_neighborhood(v, neighborhood.begin(), neighborhood.end(), emit, stats);
             });
             //tg.wait();
@@ -470,7 +470,7 @@ private:
                               TriangleFunc emit,
                               cetric::profiling::Statistics& stats) {
         std::vector<NodeId> buffer{begin, end};
-        atomic_debug(fmt::format("Handling message {}", buffer));
+        //atomic_debug(fmt::format("Handling message {}", buffer));
         assert(!G.is_local(v));
         distributed_pre_intersect(v, begin, end);
         auto for_each_local_receiver = [&](auto on_node) {
