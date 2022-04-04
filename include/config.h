@@ -9,6 +9,7 @@
 #include <io/definitions.h>
 #include <util.h>
 #include <cereal/cereal.hpp>
+#include <cereal/types/optional.hpp>
 #include <limits>
 #include <optional>
 
@@ -80,6 +81,7 @@ struct Config {
     std::string hostname;
     PEID PEs;
     PEID rank;
+    size_t num_threads = 0;
 
     // Generator parameters
     std::string gen;
@@ -98,10 +100,11 @@ struct Config {
 
     template <class Archive>
     void serialize(Archive& archive) {
-        archive(CEREAL_NVP(input_file), CEREAL_NVP(hostname), CEREAL_NVP(PEs), CEREAL_NVP(cache_input),
-                CEREAL_NVP(algorithm), CEREAL_NVP(communication_policy), CEREAL_NVP(primary_cost_function), CEREAL_NVP(secondary_cost_function),
-                CEREAL_NVP(orient_locally), CEREAL_NVP(pseudo2core), CEREAL_NVP(dense_load_balancing),
-                CEREAL_NVP(flag_intersection), CEREAL_NVP(skip_local_neighborhood));
+        archive(CEREAL_NVP(input_file), CEREAL_NVP(hostname), CEREAL_NVP(PEs), CEREAL_NVP(num_threads),
+                CEREAL_NVP(cache_input), CEREAL_NVP(algorithm), CEREAL_NVP(communication_policy),
+                CEREAL_NVP(primary_cost_function), CEREAL_NVP(secondary_cost_function), CEREAL_NVP(orient_locally),
+                CEREAL_NVP(pseudo2core), CEREAL_NVP(dense_load_balancing), CEREAL_NVP(flag_intersection),
+                CEREAL_NVP(skip_local_neighborhood));
         if (input_file.empty()) {
             archive(CEREAL_NVP(gen), CEREAL_NVP(gen_n), CEREAL_NVP(gen_m), CEREAL_NVP(gen_r), CEREAL_NVP(gen_r_coeff),
                     CEREAL_NVP(gen_p), CEREAL_NVP(gen_gamma), CEREAL_NVP(gen_d), CEREAL_NVP(gen_scale_weak));

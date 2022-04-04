@@ -28,6 +28,7 @@
 #include "statistics.h"
 #include "timer.h"
 #include <tbb/global_control.h>
+#include <tbb/info.h>
 
 cetric::Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
     (void)size;
@@ -64,6 +65,8 @@ cetric::Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
     app.add_flag("--degree-filtering", conf.degree_filtering);
 
     app.add_flag("--orient-locally", conf.orient_locally);
+
+    app.add_option("--num-threads", conf.num_threads);
 
     app.add_flag("--pseudo2core", conf.pseudo2core);
 
@@ -110,6 +113,9 @@ cetric::Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
     }
     conf.rank = rank;
     conf.PEs = size;
+    if(conf.num_threads == 0) {
+        conf.num_threads = tbb::info::default_concurrency();
+    }
     return conf;
 }
 
@@ -211,7 +217,7 @@ int main(int argc, char* argv[]) {
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     DEBUG_BARRIER(rank);
     cetric::Config conf = parse_config(argc, argv, rank, size);
-    //tbb::global_control global_limit(tbb::global_control::max_allowed_parallelism, 32);
+    tbb::global_control global_limit(tbb::global_control::max_allowed_parallelism, conf.num_threads);
     std::optional<double> io_time;
     cetric::profiling::Timer t;
     InputCache input_cache(conf);
