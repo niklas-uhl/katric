@@ -27,8 +27,7 @@
 #include "parse_parameters.h"
 #include "statistics.h"
 #include "timer.h"
-#include <tbb/global_control.h>
-#include <tbb/info.h>
+#include <omp.h>
 
 cetric::Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
     (void)size;
@@ -113,9 +112,6 @@ cetric::Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
     }
     conf.rank = rank;
     conf.PEs = size;
-    if(conf.num_threads == 0) {
-        conf.num_threads = tbb::info::default_concurrency();
-    }
     return conf;
 }
 
@@ -168,7 +164,7 @@ void print_summary(const cetric::Config& conf,
                    std::optional<double> io_time = std::nullopt) {
     if (!conf.json_output.empty()) {
         if (conf.rank == 0) {
-            assert(all_stats[0].triangles == all_stats[0].counted_triangles);
+            // assert(all_stats[0].triangles == all_stats[0].counted_triangles);
             auto write_json_to_stream = [&](auto& stream) {
                 cereal::JSONOutputArchive ar(stream);
                 ar(cereal::make_nvp("stats", all_stats));
@@ -217,7 +213,15 @@ int main(int argc, char* argv[]) {
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     DEBUG_BARRIER(rank);
     cetric::Config conf = parse_config(argc, argv, rank, size);
-    tbb::global_control global_limit(tbb::global_control::max_allowed_parallelism, conf.num_threads);
+    if (conf.num_threads == 0) {
+        conf.num_threads = omp_get_max_threads();
+    } else {
+        omp_set_num_threads(conf.num_threads);
+    }
+
+    #pragma omp parallel
+    #pragma omp single
+    atomic_debug(omp_get_num_threads());
     std::optional<double> io_time;
     cetric::profiling::Timer t;
     InputCache input_cache(conf);

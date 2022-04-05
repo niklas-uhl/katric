@@ -2,7 +2,6 @@
 
 #include <tbb/concurrent_vector.h>
 #include <tbb/spin_rw_mutex.h>
-#include <tbb/task_arena.h>
 #include <atomic>
 #include <cstddef>
 #include <functional>
@@ -44,8 +43,8 @@ public:
         {
             tbb::spin_rw_mutex::scoped_lock merge_lock(mutexes_[receiver], false);
             std::stringstream out;
-            out << "message from thread " << tbb::this_task_arena::current_thread_index() << " for rank " << receiver
-                << ": " << message;
+            //out << "message from thread " << tbb::this_task_arena::current_thread_index() << " for rank " << receiver
+            //    << ": " << message;
             //atomic_debug(out.str());
             added_elements = merge(buffer, std::forward<std::vector<T>>(message), tag);
             buffer_ocupacy_ += added_elements;

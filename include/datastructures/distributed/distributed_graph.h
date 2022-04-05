@@ -98,6 +98,15 @@ public:
             return *this;
         }
 
+        NodeIterator& operator+=(difference_type n) {
+            this->node_ += n;
+            return *this;
+        }
+
+        difference_type operator-(const NodeIterator& rhs) {
+            return this->node_ - rhs.node_;
+        }
+
     private:
         NodeId node_;
     };
@@ -130,13 +139,22 @@ public:
             return this->tail_ == rhs.tail_ && this->iter_ == rhs.iter_;
         }
         bool operator!=(const EdgeIterator& rhs) const {
-            return !(this == rhs);
+            return !(*this == rhs);
         }
         Edge operator*() const {
             return Edge(tail_, *iter_);
         }
         EdgeIterator& operator++() {
             this->iter_++;
+            return *this;
+        }
+
+        difference_type operator-(const EdgeIterator& rhs) {
+            return this->iter_ - rhs.iter_;
+        }
+
+        EdgeIterator& operator+=(difference_type n) {
+            this->iter_ += n;
             return *this;
         }
 

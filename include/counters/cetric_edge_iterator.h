@@ -7,16 +7,16 @@
 
 #include <config.h>
 #include <datastructures/graph_definitions.h>
-#include "concurrent_buffered_queue.h"
+#include <omp.h>
 #include <statistics.h>
 #include <tbb/concurrent_vector.h>
 #include <tbb/enumerable_thread_specific.h>
 #include <tbb/parallel_for_each.h>
-#include <tbb/task_arena.h>
 #include <tbb/task_group.h>
 #include <timer.h>
 #include <tlx/meta/has_member.hpp>
 #include <type_traits>
+#include "concurrent_buffered_queue.h"
 #include "datastructures/distributed/distributed_graph.h"
 #include "indirect_message_queue.h"
 #include "tlx/meta/has_method.hpp"
@@ -149,7 +149,8 @@ public:
                 interface_nodes.emplace_back(v);
             }
             pre_intersection(v);
-            tbb::parallel_for_each(G.out_edges(v), [&](Edge edge) {
+#pragma omp parallel for
+            for (Edge edge : G.out_edges(v)) {
                 NodeId u = edge.head;
                 auto on_intersection = [&](NodeId node) {
                     stats.local.local_triangles++;
@@ -158,16 +159,23 @@ public:
                 if (conf_.algorithm != Algorithm::Patric || !G.is_ghost(u)) {
                     intersect(v, u, on_intersection);
                 }
-            });
+            }
             post_intersection(v);
         };
         switch (conf_.algorithm) {
             case Algorithm::Cetric:
-                tbb::parallel_for_each(G.local_and_ghost_nodes(), find_intersections);
+#pragma omp parallel for
+                for (NodeId node : G.local_and_ghost_nodes()) {
+                    find_intersections(node);
+                }
                 break;
-            case Algorithm::Patric:
-                tbb::parallel_for_each(G.local_nodes(), find_intersections);
+            case Algorithm::Patric: {
+#pragma omp parallel for
+                for (NodeId node : G.local_nodes()) {
+                    find_intersections(node);
+                }
                 break;
+            }
         }
         stats.local.local_phase_time += phase_time.elapsed_time();
     }
@@ -183,9 +191,13 @@ public:
                                 tbb::concurrent_vector<NodeId>& interface_nodes) {
         cetric::profiling::Timer phase_time;
         bool finished = false;
-        tbb::task_group g;
-        g.run([&]() {
+        std::thread message_aggregation([&]() {
+            //#pragma omp parallel for num_threads(conf_.num_threads)
             tbb::parallel_for_each(interface_nodes, [&](NodeId v) {
+                // for (NodeId v : interface_nodes) {
+                // atomic_debug(omp_get_num_threads());
+                atomic_debug(tbb::this_task_arena::max_concurrency());
+                atomic_debug(tbb::this_task_arena::current_thread_index());
                 // iterate over neighborhood and delegate to other PEs if necessary
                 if (conf_.pseudo2core && G.outdegree(v) < 2) {
                     stats.local.skipped_nodes++;
@@ -200,7 +212,7 @@ public:
                             PEID u_rank = G.get_ghost_data(u).rank;
                             assert(u_rank != rank_);
                             if (last_proc_[v] != u_rank) {
-                                enqueue_for_sending(v, u_rank, g, emit, stats);
+                                enqueue_for_sending(v, u_rank, emit, stats);
                             }
                         }
                     });
@@ -220,15 +232,17 @@ public:
             });
             finished = true;
         });
+        tbb::task_group tg;
         while (!finished) {
             if constexpr (CommunicationPolicy::interface == InterfaceType::queue) {
                 this->queue_.check_for_overflow_and_flush();
                 // atomic_debug(fmt::format("Polling on {}", tbb::this_task_arena::current_thread_index()));
                 this->queue_.poll([&](auto begin, auto end, PEID sender [[maybe_unused]]) {
-                    // atomic_debug(fmt::format("Got something on {}", tbb::this_task_arena::current_thread_index()));
+                    // atomic_debug(fmt::format("Got something on {}",
+                    // tbb::this_task_arena::current_thread_index()));
                     std::vector<NodeId> buffer{begin, end};
-                    //atomic_debug(fmt::format("Delegating {}", buffer));
-                    handle_buffer_hybrid(begin, end, g, emit, stats);
+                    // atomic_debug(fmt::format("Delegating {}", buffer));
+                    handle_buffer_hybrid(begin, end, tg, emit, stats);
                 });
             } else {
                 this->comm_.check_for_message(
@@ -238,13 +252,14 @@ public:
                     stats.local.message_statistics);
             }
         }
-        //atomic_debug("Wait 1");
-        //g.wait();
+        message_aggregation.join();
+        // atomic_debug("Wait 1");
+        // g.wait();
         if constexpr (CommunicationPolicy::interface == InterfaceType::queue) {
             this->queue_.terminate([&](auto begin, auto end, PEID sender [[maybe_unused]]) {
                 std::vector<NodeId> buffer{begin, end};
-                //atomic_debug(fmt::format("Delegating {}", buffer));
-                handle_buffer_hybrid(begin, end, g, emit, stats);
+                // atomic_debug(fmt::format("Delegating {}", buffer));
+                handle_buffer_hybrid(begin, end, tg, emit, stats);
             });
         } else {
             this->comm_.all_to_all(
@@ -253,14 +268,15 @@ public:
                 },
                 stats.local.message_statistics, conf_.full_all_to_all);
         }
+        tg.wait();
         // g2.wait();
         stats.local.global_phase_time += phase_time.elapsed_time();
         if constexpr (CommunicationPolicy::interface == InterfaceType::queue) {
             stats.local.message_statistics.add(this->queue_.stats());
             this->queue_.reset();
         }
-        //atomic_debug("Wait 2");
-        g.wait();
+        // atomic_debug("Wait 2");
+        // g.wait();
     }
 
     template <typename TriangleFunc>
@@ -328,48 +344,48 @@ private:
     template <typename TriangleFunc>
     void enqueue_for_sending(NodeId v,
                              PEID u_rank,
-                             tbb::task_group& tg,
+                             // tbb::task_group& tg,
                              TriangleFunc emit [[maybe_unused]],
                              cetric::profiling::Statistics& stats [[maybe_unused]]) {
         // atomic_debug(fmt::format("rank {}", u_rank));
         // atomic_debug(u_rank);
-        tg.run([&stats, emit, this, v, u_rank]() {
-            std::vector<NodeId> buffer;
-            buffer.emplace_back(G.to_global_id(v));
-            // size_t send_count = 0;
-            // atomic_debug(u_rank);
-            G.for_each_local_out_edge(v, [&](Edge e) {
-                assert(conf_.algorithm == Algorithm::Patric || G.is_ghost(e.head));
-                using payload_type = typename GraphType::payload_type;
-                if constexpr (std::is_convertible_v<decltype(payload_type{}.degree), Degree>) {
-                    if (conf_.degree_filtering) {
-                        const auto& ghost_data = G.get_ghost_data(e.head);
-                        if (ghost_data.payload.degree < pe_min_degree[u_rank]) {
-                            return;
-                        }
+        // tg.run([&stats, emit, this, v, u_rank]() {
+        std::vector<NodeId> buffer;
+        buffer.emplace_back(G.to_global_id(v));
+        // size_t send_count = 0;
+        // atomic_debug(u_rank);
+        G.for_each_local_out_edge(v, [&](Edge e) {
+            assert(conf_.algorithm == Algorithm::Patric || G.is_ghost(e.head));
+            using payload_type = typename GraphType::payload_type;
+            if constexpr (std::is_convertible_v<decltype(payload_type{}.degree), Degree>) {
+                if (conf_.degree_filtering) {
+                    const auto& ghost_data = G.get_ghost_data(e.head);
+                    if (ghost_data.payload.degree < pe_min_degree[u_rank]) {
+                        return;
                     }
                 }
-                if (send_neighbor(e.head, u_rank)) {
-                    buffer.emplace_back(G.to_global_id(e.head));
-                }
-            });
-            // atomic_debug(u_rank);
-            if constexpr (CommunicationPolicy::interface == InterfaceType::queue) {
-                // atomic_debug(fmt::format("Posting message to {} from thread {}", u_rank,
-                //                          tbb::this_task_arena::current_thread_index()));
-                this->queue_.post_message(std::move(buffer), u_rank);
-            } else {
-                if (!buffer.empty()) {
-                    buffer.emplace_back(sentinel_node);
-                    this->comm_.add_message(
-                        buffer, u_rank,
-                        [&](PEID, const std::vector<NodeId>& message) {
-                            handle_buffer(message.begin(), message.end(), emit, stats);
-                        },
-                        stats.local.message_statistics);
-                }
+            }
+            if (send_neighbor(e.head, u_rank)) {
+                buffer.emplace_back(G.to_global_id(e.head));
             }
         });
+        // atomic_debug(u_rank);
+        if constexpr (CommunicationPolicy::interface == InterfaceType::queue) {
+            // atomic_debug(fmt::format("Posting message to {} from thread {}", u_rank,
+            //                          tbb::this_task_arena::current_thread_index()));
+            this->queue_.post_message(std::move(buffer), u_rank);
+        } else {
+            if (!buffer.empty()) {
+                buffer.emplace_back(sentinel_node);
+                this->comm_.add_message(
+                    buffer, u_rank,
+                    [&](PEID, const std::vector<NodeId>& message) {
+                        handle_buffer(message.begin(), message.end(), emit, stats);
+                    },
+                    stats.local.message_statistics);
+            }
+        }
+        //});
         last_proc_[v] = u_rank;
     }
 
@@ -395,17 +411,22 @@ private:
     }
 
     template <typename IterType, typename TriangleFunc>
-    void handle_buffer_hybrid(IterType begin, IterType end, tbb::task_group& tg, TriangleFunc emit, cetric::profiling::Statistics& stats) {
+    void handle_buffer_hybrid(IterType begin,
+                              IterType end,
+                              tbb::task_group& tg,
+                              TriangleFunc emit,
+                              cetric::profiling::Statistics& stats) {
         if constexpr (CommunicationPolicy::interface == InterfaceType::queue) {
             NodeId v = *begin;
-            std::vector<NodeId> neighborhood {begin + 1, end};
-            // atomic_debug(fmt::format("Submit task for {} on thread {}", v, tbb::this_task_arena::current_thread_index()));
+            std::vector<NodeId> neighborhood{begin + 1, end};
+            // atomic_debug(fmt::format("Submit task for {} on thread {}", v,
+            // tbb::this_task_arena::current_thread_index()));
             tg.run([&, v, emit, neighborhood = std::move(neighborhood)] {
                 // atomic_debug(
                 //     fmt::format("Spawn task for {} on thread {}", v, tbb::this_task_arena::current_thread_index()));
                 process_neighborhood(v, neighborhood.begin(), neighborhood.end(), emit, stats);
             });
-            //tg.wait();
+            // tg.wait();
         }
     }
     template <typename NodeBufferIter>
@@ -470,7 +491,7 @@ private:
                               TriangleFunc emit,
                               cetric::profiling::Statistics& stats) {
         std::vector<NodeId> buffer{begin, end};
-        //atomic_debug(fmt::format("Handling message {}", buffer));
+        // atomic_debug(fmt::format("Handling message {}", buffer));
         assert(!G.is_local(v));
         distributed_pre_intersect(v, begin, end);
         auto for_each_local_receiver = [&](auto on_node) {
