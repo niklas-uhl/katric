@@ -2,6 +2,7 @@
 
 #include <tbb/concurrent_vector.h>
 #include <tbb/spin_rw_mutex.h>
+#include <tbb/spin_mutex.h>
 #include <atomic>
 #include <cstddef>
 #include <functional>
@@ -36,6 +37,7 @@ public:
           split(split) {}
 
     void post_message(std::vector<T>&& message, PEID receiver, int tag = 0) {
+	tbb::spin_mutex::scoped_lock lock(mutex_);
         //assert (receiver < queue_.size()) ;
         auto& buffer = buffers_[receiver];
         // atomic_debug(fmt::format("receiver {}", receiver));
@@ -73,13 +75,14 @@ public:
     }
 
     void flush(PEID receiver) {
+	tbb::spin_mutex::scoped_lock lock(mutex_);
         auto& buffer = buffers_[receiver];
         if (!buffer.empty()) {
             std::vector<T> message;
             {
                 tbb::spin_rw_mutex::scoped_lock flush_lock(mutexes_[receiver], true);
                 message = {buffer.begin(), buffer.end()};
-                //atomic_debug(fmt::format("Flushing buffer for {} with message {}", receiver, message));
+                atomic_debug(fmt::format("Flushing buffer for {}", receiver));
                 buffer.clear();
                 buffer_ocupacy_ -= message.size();
             }
@@ -99,14 +102,18 @@ public:
         static_assert(std::is_invocable_v<MessageHandler, typename std::vector<T>::iterator,
                                           typename std::vector<T>::iterator, PEID>);
         queue_.poll(
-            [&](std::vector<T> message, PEID sender) { split(message, on_message, sender); });
+            [&](std::vector<T> message, PEID sender) { 
+	    atomic_debug(fmt::format("Got message from {}", sender));
+	    split(message, on_message, sender); });
     }
 
     template <typename MessageHandler>
     void terminate(MessageHandler&& on_message) {
         static_assert(std::is_invocable_v<MessageHandler, typename std::vector<T>::iterator,
                                           typename std::vector<T>::iterator, PEID>);
-        queue_.terminate_impl([&](std::vector<T> message, PEID sender) { split(message, on_message, sender); },
+        queue_.terminate_impl([&](std::vector<T> message, PEID sender) { 
+	    		atomic_debug(fmt::format("Got message from {}", sender));
+			split(message, on_message, sender); },
                               [&]() { flush_all(); });
         /* for (auto buffer : buffers_) { */
         /*     atomic_debug(buffer); */
@@ -132,6 +139,7 @@ private:
     MessageQueue<T> queue_;
     std::unordered_map<PEID, tbb::concurrent_vector<T>> buffers_;
     std::unordered_map<PEID, tbb::spin_rw_mutex> mutexes_;
+    tbb::spin_mutex mutex_;
     std::atomic<size_t> buffer_ocupacy_;
     size_t threshold_;
     size_t overflows_;

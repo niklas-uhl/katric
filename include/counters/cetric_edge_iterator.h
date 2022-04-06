@@ -8,6 +8,7 @@
 #include <config.h>
 #include <datastructures/graph_definitions.h>
 #include <omp.h>
+#include <thread>
 #include <statistics.h>
 #include <tbb/concurrent_vector.h>
 #include <tbb/enumerable_thread_specific.h>
@@ -124,7 +125,7 @@ public:
         }
         if constexpr (std::is_same_v<CommunicationPolicy, MessageQueuePolicy>) {
             // this->queue_.set_threshold(10);
-            this->queue_.set_threshold(G.local_node_count());
+            //this->queue_.set_threshold(G.local_node_count());
         }
     }
 
@@ -191,13 +192,15 @@ public:
                                 tbb::concurrent_vector<NodeId>& interface_nodes) {
         cetric::profiling::Timer phase_time;
         bool finished = false;
-        std::thread message_aggregation([&]() {
+	tbb::task_group tg;
+	tg.run([&]() {
+        //std::thread message_aggregation([&]() {
             //#pragma omp parallel for num_threads(conf_.num_threads)
             tbb::parallel_for_each(interface_nodes, [&](NodeId v) {
                 // for (NodeId v : interface_nodes) {
                 // atomic_debug(omp_get_num_threads());
-                atomic_debug(tbb::this_task_arena::max_concurrency());
-                atomic_debug(tbb::this_task_arena::current_thread_index());
+                //atomic_debug(tbb::this_task_arena::max_concurrency());
+                //atomic_debug(tbb::this_task_arena::current_thread_index());
                 // iterate over neighborhood and delegate to other PEs if necessary
                 if (conf_.pseudo2core && G.outdegree(v) < 2) {
                     stats.local.skipped_nodes++;
@@ -232,7 +235,7 @@ public:
             });
             finished = true;
         });
-        tbb::task_group tg;
+        //tbb::task_group tg;
         while (!finished) {
             if constexpr (CommunicationPolicy::interface == InterfaceType::queue) {
                 this->queue_.check_for_overflow_and_flush();
@@ -243,6 +246,7 @@ public:
                     std::vector<NodeId> buffer{begin, end};
                     // atomic_debug(fmt::format("Delegating {}", buffer));
                     handle_buffer_hybrid(begin, end, tg, emit, stats);
+		    //tg.wait();
                 });
             } else {
                 this->comm_.check_for_message(
@@ -252,7 +256,8 @@ public:
                     stats.local.message_statistics);
             }
         }
-        message_aggregation.join();
+	tg.wait();
+        //message_aggregation.join();
         // atomic_debug("Wait 1");
         // g.wait();
         if constexpr (CommunicationPolicy::interface == InterfaceType::queue) {
@@ -426,7 +431,7 @@ private:
                 //     fmt::format("Spawn task for {} on thread {}", v, tbb::this_task_arena::current_thread_index()));
                 process_neighborhood(v, neighborhood.begin(), neighborhood.end(), emit, stats);
             });
-            // tg.wait();
+            //tg.wait();
         }
     }
     template <typename NodeBufferIter>
