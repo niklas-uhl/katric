@@ -1,6 +1,5 @@
 #pragma once
 
-#include <oneapi/tbb/spin_rw_mutex.h>
 #include <tbb/concurrent_unordered_map.h>
 #include <tbb/concurrent_hash_map.h>
 #include <tbb/concurrent_vector.h>
