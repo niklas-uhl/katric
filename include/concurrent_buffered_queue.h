@@ -1,5 +1,8 @@
 #pragma once
 
+#include <oneapi/tbb/spin_rw_mutex.h>
+#include <tbb/concurrent_unordered_map.h>
+#include <tbb/concurrent_hash_map.h>
 #include <tbb/concurrent_vector.h>
 #include <tbb/spin_rw_mutex.h>
 #include <atomic>
@@ -28,18 +31,22 @@ class ConcurrentBufferedMessageQueue {
 public:
     ConcurrentBufferedMessageQueue(Merger&& merge, Splitter&& split)
         : queue_(),
-          buffers_(),
+          buffers_(queue_.size()),
           buffer_ocupacy_(0),
           threshold_(std::numeric_limits<size_t>::max()),
           overflows_(0),
           merge(merge),
-          split(split) {}
+          mutexes_(queue_.size()),
+          split(split) {
+    }
 
     void post_message(std::vector<T>&& message, PEID receiver, int tag = 0) {
         // tbb::spin_mutex::scoped_lock lock(mutex_);
         //  assert (receiver < queue_.size()) ;
         //  atomic_debug(fmt::format("receiver {}", receiver));
         {
+            //mutex_map::accessor accessor;
+            //mutexes_.find(accessor, receiver);
             tbb::spin_rw_mutex::scoped_lock merge_lock(mutexes_[receiver], false);
             auto& buffer = buffers_[receiver];
             std::stringstream out;
@@ -75,22 +82,23 @@ public:
     void flush(PEID receiver) {
         // tbb::spin_mutex::scoped_lock lock(mutex_);
         tbb::spin_rw_mutex::scoped_lock flush_lock(mutexes_[receiver], true);
+
         auto& buffer = buffers_[receiver];
         if (!buffer.empty()) {
             std::vector<T> message;
             message = {buffer.begin(), buffer.end()};
-            //atomic_debug(fmt::format("Flushing buffer for {}", receiver));
+            // atomic_debug(fmt::format("Flushing buffer for {}", receiver));
             buffer.clear();
             buffer_ocupacy_ -= message.size();
             flush_lock.release();
-            // atomic_debug(receiver);
+            //  atomic_debug(receiver);
             queue_.post_message(std::move(message), receiver);
         }
     }
 
     void flush_all() {
-        for (auto& kv : buffers_) {
-            flush(kv.first);
+        for (size_t i = 0; i < buffers_.size(); ++i) {
+            flush(i);
         }
     }
 
@@ -99,7 +107,7 @@ public:
         static_assert(std::is_invocable_v<MessageHandler, typename std::vector<T>::iterator,
                                           typename std::vector<T>::iterator, PEID>);
         queue_.poll([&](std::vector<T> message, PEID sender) {
-            //atomic_debug(fmt::format("Got message from {}", sender));
+            // atomic_debug(fmt::format("Got message from {}", sender));
             split(message, on_message, sender);
         });
     }
@@ -110,7 +118,7 @@ public:
                                           typename std::vector<T>::iterator, PEID>);
         queue_.terminate_impl(
             [&](std::vector<T> message, PEID sender) {
-                //atomic_debug(fmt::format("Got message from {}", sender));
+                // atomic_debug(fmt::format("Got message from {}", sender));
                 split(message, on_message, sender);
             },
             [&]() { flush_all(); });
@@ -136,8 +144,9 @@ public:
 
 private:
     MessageQueue<T> queue_;
-    std::unordered_map<PEID, tbb::concurrent_vector<T>> buffers_;
-    std::unordered_map<PEID, tbb::spin_rw_mutex> mutexes_;
+    std::vector<tbb::concurrent_vector<T>> buffers_;
+    using mutex_map = std::vector<tbb::spin_rw_mutex>;
+    mutex_map mutexes_;
     std::atomic<size_t> buffer_ocupacy_;
     size_t threshold_;
     size_t overflows_;
