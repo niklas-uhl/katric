@@ -2,6 +2,8 @@
 #include <counters/cetric.h>
 #include <io/distributed_graph_io.h>
 #include <mpi.h>
+#include <tbb/global_control.h>
+#include <tbb/task_arena.h>
 #include <unistd.h>
 #include <util.h>
 #include <CLI/CLI.hpp>
@@ -27,7 +29,6 @@
 #include "parse_parameters.h"
 #include "statistics.h"
 #include "timer.h"
-#include <omp.h>
 
 cetric::Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
     (void)size;
@@ -78,7 +79,8 @@ cetric::Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
 
     app.add_flag("--skip-local-neighborhood", conf.skip_local_neighborhood);
 
-    app.add_option("--communication-policy", conf.communication_policy)->transform(CLI::IsMember({"old", "new", "grid"}));
+    app.add_option("--communication-policy", conf.communication_policy)
+        ->transform(CLI::IsMember({"old", "new", "grid"}));
 
     parse_gen_parameters(app, conf);
 
@@ -164,7 +166,7 @@ void print_summary(const cetric::Config& conf,
                    std::optional<double> io_time = std::nullopt) {
     if (!conf.json_output.empty()) {
         if (conf.rank == 0) {
-            // assert(all_stats[0].triangles == all_stats[0].counted_triangles);
+            assert(all_stats[0].triangles == all_stats[0].counted_triangles);
             auto write_json_to_stream = [&](auto& stream) {
                 cereal::JSONOutputArchive ar(stream);
                 ar(cereal::make_nvp("stats", all_stats));
@@ -213,15 +215,14 @@ int main(int argc, char* argv[]) {
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     DEBUG_BARRIER(rank);
     cetric::Config conf = parse_config(argc, argv, rank, size);
+    size_t max_concurrency = tbb::this_task_arena::max_concurrency();
     if (conf.num_threads == 0) {
-        conf.num_threads = omp_get_max_threads();
-    } else {
-        omp_set_num_threads(conf.num_threads);
+        conf.num_threads = max_concurrency;
     }
-
-    #pragma omp parallel
-    #pragma omp single
-    atomic_debug(omp_get_num_threads());
+    if (conf.num_threads > max_concurrency) {
+        atomic_debug(fmt::format("Warning, using only {} instead of {} threads!", max_concurrency, conf.num_threads));
+    }
+    tbb::global_control global_limit(tbb::global_control::max_allowed_parallelism, conf.num_threads);
     std::optional<double> io_time;
     cetric::profiling::Timer t;
     InputCache input_cache(conf);
@@ -250,7 +251,7 @@ int main(int argc, char* argv[]) {
         if (conf.algorithm == cetric::Algorithm::Cetric) {
             if (conf.communication_policy == "old") {
                 run_cetric(G, stats, conf, rank, size, cetric::BufferedCommunicatorPolicy{});
-            } else if (conf.communication_policy == "new"){
+            } else if (conf.communication_policy == "new") {
                 run_cetric(G, stats, conf, rank, size, cetric::MessageQueuePolicy{});
             } else if (conf.communication_policy == "grid") {
                 run_cetric(G, stats, conf, rank, size, cetric::GridPolicy{});
