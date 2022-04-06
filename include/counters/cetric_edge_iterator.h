@@ -219,7 +219,7 @@ public:
                             PEID u_rank = G.get_ghost_data(u).rank;
                             assert(u_rank != rank_);
                             if (last_proc_[v] != u_rank) {
-                                enqueue_for_sending(v, u_rank, emit, stats);
+                                enqueue_for_sending(v, u_rank, tg, emit, stats);
                             }
                         }
                     });
@@ -353,48 +353,48 @@ private:
     template <typename TriangleFunc>
     void enqueue_for_sending(NodeId v,
                              PEID u_rank,
-                             // tbb::task_group& tg,
+                             tbb::task_group& tg,
                              TriangleFunc emit [[maybe_unused]],
                              cetric::profiling::Statistics& stats [[maybe_unused]]) {
         // atomic_debug(fmt::format("rank {}", u_rank));
         // atomic_debug(u_rank);
-        // tg.run([&stats, emit, this, v, u_rank]() {
-        std::vector<NodeId> buffer;
-        buffer.emplace_back(G.to_global_id(v));
-        // size_t send_count = 0;
-        // atomic_debug(u_rank);
-        G.for_each_local_out_edge(v, [&](Edge e) {
-            assert(conf_.algorithm == Algorithm::Patric || G.is_ghost(e.head));
-            using payload_type = typename GraphType::payload_type;
-            if constexpr (std::is_convertible_v<decltype(payload_type{}.degree), Degree>) {
-                if (conf_.degree_filtering) {
-                    const auto& ghost_data = G.get_ghost_data(e.head);
-                    if (ghost_data.payload.degree < pe_min_degree[u_rank]) {
-                        return;
+        tg.run([&stats, emit, this, v, u_rank]() {
+            std::vector<NodeId> buffer;
+            buffer.emplace_back(G.to_global_id(v));
+            // size_t send_count = 0;
+            // atomic_debug(u_rank);
+            G.for_each_local_out_edge(v, [&](Edge e) {
+                assert(conf_.algorithm == Algorithm::Patric || G.is_ghost(e.head));
+                using payload_type = typename GraphType::payload_type;
+                if constexpr (std::is_convertible_v<decltype(payload_type{}.degree), Degree>) {
+                    if (conf_.degree_filtering) {
+                        const auto& ghost_data = G.get_ghost_data(e.head);
+                        if (ghost_data.payload.degree < pe_min_degree[u_rank]) {
+                            return;
+                        }
                     }
                 }
-            }
-            if (send_neighbor(e.head, u_rank)) {
-                buffer.emplace_back(G.to_global_id(e.head));
+                if (send_neighbor(e.head, u_rank)) {
+                    buffer.emplace_back(G.to_global_id(e.head));
+                }
+            });
+            // atomic_debug(u_rank);
+            if constexpr (CommunicationPolicy::interface == InterfaceType::queue) {
+                // atomic_debug(fmt::format("Posting message to {} from thread {}", u_rank,
+                //                          tbb::this_task_arena::current_thread_index()));
+                this->queue_.post_message(std::move(buffer), u_rank);
+            } else {
+                if (!buffer.empty()) {
+                    buffer.emplace_back(sentinel_node);
+                    this->comm_.add_message(
+                        buffer, u_rank,
+                        [&](PEID, const std::vector<NodeId>& message) {
+                            handle_buffer(message.begin(), message.end(), emit, stats);
+                        },
+                        stats.local.message_statistics);
+                }
             }
         });
-        // atomic_debug(u_rank);
-        if constexpr (CommunicationPolicy::interface == InterfaceType::queue) {
-            // atomic_debug(fmt::format("Posting message to {} from thread {}", u_rank,
-            //                          tbb::this_task_arena::current_thread_index()));
-            this->queue_.post_message(std::move(buffer), u_rank);
-        } else {
-            if (!buffer.empty()) {
-                buffer.emplace_back(sentinel_node);
-                this->comm_.add_message(
-                    buffer, u_rank,
-                    [&](PEID, const std::vector<NodeId>& message) {
-                        handle_buffer(message.begin(), message.end(), emit, stats);
-                    },
-                    stats.local.message_statistics);
-            }
-        }
-        //});
         last_proc_[v] = u_rank;
     }
 
