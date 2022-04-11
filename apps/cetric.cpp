@@ -84,6 +84,9 @@ cetric::Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
 
     app.add_flag("--local-parallel", conf.local_parallel);
     app.add_flag("--global-parallel", conf.global_parallel);
+    app.add_option("--threshold", conf.threshold)
+        ->transform(CLI::CheckedTransformer(cetric::threshold_map, CLI::ignore_case));
+    app.add_option("--threshold-scale", conf.threshold_scale);
 
     parse_gen_parameters(app, conf);
 
@@ -167,6 +170,7 @@ private:
 void print_summary(const cetric::Config& conf,
                    std::vector<cetric::profiling::Statistics>& all_stats,
                    std::optional<double> io_time = std::nullopt) {
+    MPI_Barrier(MPI_COMM_WORLD);
     if (!conf.json_output.empty()) {
         if (conf.rank == 0) {
             assert(all_stats[0].triangles == all_stats[0].counted_triangles);

@@ -201,7 +201,11 @@ public:
         return local_node_count_;
     }
 
-    inline NodeId ghost_count() const {
+    inline EdgeId local_edge_count() const {
+        return local_edge_count_;
+    }
+
+        inline NodeId ghost_count() const {
         return ghost_data_.size();
     }
 
@@ -575,6 +579,7 @@ public:
             Degree remaining_edges = 0;
             EdgeId begin = first_out_[node];
             EdgeId end = first_out_[node] + degree_[node];
+            Degree initial_edges = end - begin;
             EdgeId offset = first_out_offset_[node];
             for (EdgeId edge_id = begin; edge_id < end; edge_id++) {
                 NodeId head = head_[edge_id];
@@ -587,6 +592,7 @@ public:
                 }
             }
             degree_[node] = remaining_edges;
+            local_edge_count_ -= initial_edges - remaining_edges;
         });
         if constexpr (payload_has_degree<GhostPayloadType>::value) {
             get_graph_payload().ghost_degree_available = false;
@@ -594,6 +600,9 @@ public:
     }
 
     void expand_ghosts() {
+        if (ghosts_expanded_) {
+            return;
+        }
         std::vector<std::vector<NodeId>> ghost_neighbors(ghost_count());
         size_t ghost_edges = 0;
         for_each_local_node([&](NodeId node) {
@@ -606,6 +615,7 @@ public:
         });
         size_t edge_index = head_.size();
         head_.resize(head_.size() + ghost_edges);
+        local_edge_count_ = head_.size() + ghost_edges;
         first_out_.resize(first_out_.size() + ghost_count());
         first_out_offset_.resize(first_out_offset_.size() + ghost_count(), 0);
         degree_.resize(degree_.size() + ghost_count());

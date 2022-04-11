@@ -51,6 +51,26 @@ std::string save_minimal(const Archive& ar [[maybe_unused]], const Algorithm& al
     return "";
 }
 
+enum class Threshold { local_nodes, local_edges, none };
+static const std::map<std::string, Threshold> threshold_map{{"local-nodes", Threshold::local_nodes},
+                                                            {"local-edges", Threshold::local_edges},
+                                                            {"none", Threshold::none}};
+
+template <class Archive>
+void load_minimal(const Archive& ar [[maybe_unused]], Threshold& threshold, const std::string& value) {
+    threshold = threshold_map.at(value);
+}
+
+template <class Archive>
+std::string save_minimal(const Archive& ar [[maybe_unused]], const Threshold& threshold) {
+    for (const auto& kv : threshold_map) {
+        if (kv.second == threshold) {
+            return kv.first;
+        }
+    }
+    return "";
+}
+
 struct Config {
     Config() = default;
     std::string input_file;
@@ -64,6 +84,8 @@ struct Config {
     std::string primary_cost_function = "N";
     std::string secondary_cost_function = "none";
     Algorithm algorithm = Algorithm::Cetric;
+    Threshold threshold = Threshold::local_nodes;
+    double threshold_scale = 1.0;
     std::string communication_policy = "new";
     bool local_parallel = false;
     bool global_parallel = false;
@@ -76,6 +98,7 @@ struct Config {
     bool dense_load_balancing = false;
     bool flag_intersection = false;
     bool skip_local_neighborhood = false;
+    bool synchronized = false;
 
     int verbosity_level = 0;
     CacheInput cache_input = CacheInput::None;
@@ -104,9 +127,10 @@ struct Config {
     void serialize(Archive& archive) {
         archive(CEREAL_NVP(input_file), CEREAL_NVP(hostname), CEREAL_NVP(PEs), CEREAL_NVP(num_threads),
                 CEREAL_NVP(cache_input), CEREAL_NVP(algorithm), CEREAL_NVP(communication_policy),
-                CEREAL_NVP(global_parallel), CEREAL_NVP(local_parallel), CEREAL_NVP(primary_cost_function),
-                CEREAL_NVP(secondary_cost_function), CEREAL_NVP(orient_locally), CEREAL_NVP(pseudo2core),
-                CEREAL_NVP(dense_load_balancing), CEREAL_NVP(flag_intersection), CEREAL_NVP(skip_local_neighborhood));
+                CEREAL_NVP(global_parallel), CEREAL_NVP(local_parallel), CEREAL_NVP(threshold),
+                CEREAL_NVP(threshold_scale), CEREAL_NVP(primary_cost_function), CEREAL_NVP(secondary_cost_function),
+                CEREAL_NVP(orient_locally), CEREAL_NVP(pseudo2core), CEREAL_NVP(dense_load_balancing),
+                CEREAL_NVP(flag_intersection), CEREAL_NVP(skip_local_neighborhood));
         if (input_file.empty()) {
             archive(CEREAL_NVP(gen), CEREAL_NVP(gen_n), CEREAL_NVP(gen_m), CEREAL_NVP(gen_r), CEREAL_NVP(gen_r_coeff),
                     CEREAL_NVP(gen_p), CEREAL_NVP(gen_gamma), CEREAL_NVP(gen_d), CEREAL_NVP(gen_scale_weak));

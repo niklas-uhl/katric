@@ -107,7 +107,8 @@ public:
           last_proc_(G.local_node_count(), -1),
           is_v_neighbor_(G.local_node_count() + G.ghost_count(), false),
           interface_nodes_(),
-          pe_min_degree() {
+          pe_min_degree(),
+          threshold_() {
         if constexpr (payload_has_degree<typename GraphType::payload_type>::value) {
             if (conf_.degree_filtering) {
                 pe_min_degree.resize(size);
@@ -117,6 +118,17 @@ public:
                         std::min(pe_min_degree[ghost_data.rank], ghost_data.payload.degree);
                 });
             }
+        }
+        switch(conf.threshold) {
+            case Threshold::local_nodes:
+                threshold_ = conf.threshold_scale * G.local_node_count();
+                break;
+            case Threshold::local_edges:
+                threshold_ = conf.threshold_scale * G.local_edge_count();
+                break;
+            case Threshold::none:
+                threshold_ = std::numeric_limits<size_t>::max();
+                break;
         }
     }
 
@@ -226,7 +238,7 @@ public:
                                            NodeIterator interface_nodes_begin,
                                            NodeIterator interface_nodes_end) {
         auto queue = message_queue::make_buffered_queue<NodeId>(Merger{}, Splitter{});
-        queue.set_threshold(G.local_node_count());
+        queue.set_threshold(threshold_);
         cetric::profiling::Timer phase_time;
         for (auto current = interface_nodes_begin; current != interface_nodes_end; current++) {
             NodeId v = *current;
@@ -269,7 +281,7 @@ public:
                                          NodeIterator interface_nodes_end) {
         assert(conf_.num_threads > 1);
         auto queue = message_queue::make_concurrent_buffered_queue<NodeId>(conf_.num_threads, Merger{}, Splitter{});
-        queue.set_threshold(G.local_node_count());
+        queue.set_threshold(threshold_);
         cetric::profiling::Timer phase_time;
         std::atomic<size_t> nodes_queued = 0;
         std::atomic<size_t> write_jobs = 0;
@@ -567,6 +579,7 @@ private:
     std::vector<bool> is_v_neighbor_;
     tbb::enumerable_thread_specific<std::vector<NodeId>> interface_nodes_;
     std::vector<Degree> pe_min_degree;
+    size_t threshold_;
 };
 
 }  // namespace cetric

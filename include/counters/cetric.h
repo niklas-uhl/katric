@@ -186,8 +186,7 @@ inline size_t run_cetric(DistributedGraph<>& G,
     LOG << "[R" << rank << "] "
         << "Secondary load balancing finished " << stats.local.secondary_load_balancing.phase_time << " s";
     timer.restart();
-    // tbb::combinable<size_t> triangle_count_global_phase{0};
-    if (!conf.secondary_cost_function.empty()) {
+    if (conf.secondary_cost_function != "none") {
         auto ctr_dist = cetric::CetricEdgeIterator(G, conf, rank, size, CommunicationPolicy{});
         ctr_dist.run(
             [&](Triangle t) {
