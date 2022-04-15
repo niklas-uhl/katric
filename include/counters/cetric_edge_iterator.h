@@ -14,12 +14,14 @@
 #include <tbb/parallel_for_each.h>
 #include <tbb/task_group.h>
 #include <timer.h>
+#include <cstddef>
 #include <thread>
 #include <tlx/meta/has_member.hpp>
 #include <type_traits>
 #include "concurrent_buffered_queue.h"
 #include "datastructures/distributed/distributed_graph.h"
 #include "indirect_message_queue.h"
+#include "thread_pool.h"
 #include "tlx/meta/has_method.hpp"
 #include "util.h"
 
@@ -75,7 +77,7 @@ protected:
 template <template <typename, typename, typename> class MessageQueueType>
 struct MessageQueueBase {
 protected:
-    MessageQueueBase(const Config&, PEID, PEID) : queue_(Merger{}, Splitter{}) {}
+    MessageQueueBase(const Config& conf, PEID, PEID) : queue_(conf.num_threads, Merger{}, Splitter{}) {}
     MessageQueueType<NodeId, Merger, Splitter> queue_;
 };
 enum class InterfaceType { comm, queue };
@@ -124,8 +126,8 @@ public:
             }
         }
         if constexpr (std::is_same_v<CommunicationPolicy, MessageQueuePolicy>) {
-            this->queue_.set_threshold(10);
-            // this->queue_.set_threshold(G.local_node_count());
+            //this->queue_.set_threshold(1);
+            this->queue_.set_threshold(G.local_node_count());
         }
     }
 
@@ -195,80 +197,57 @@ public:
                                 cetric::profiling::Statistics& stats,
                                 tbb::concurrent_vector<NodeId>& interface_nodes) {
         cetric::profiling::Timer phase_time;
-        bool finished = false;
-        tbb::task_group tg;
-        tg.run([&]() {
-            // std::thread message_aggregation([&]() {
-            //#pragma omp parallel for num_threads(conf_.num_threads)
-            tbb::parallel_for_each(interface_nodes, [&](NodeId v) {
-                // for (NodeId v : interface_nodes) {
-                // atomic_debug(omp_get_num_threads());
-                // atomic_debug(tbb::this_task_arena::max_concurrency());
-                // atomic_debug(tbb::this_task_arena::current_thread_index());
-                // iterate over neighborhood and delegate to other PEs if necessary
+        ThreadPool pool(conf_.num_threads - 1);
+        for (NodeId v : interface_nodes) {
+            nodes_queued++;
+            pool.enqueue([v, this, &stats, emit, &pool]() {
                 if (conf_.pseudo2core && G.outdegree(v) < 2) {
                     stats.local.skipped_nodes++;
-                } else {
-                    G.for_each_local_out_edge(v, [&](Edge edge) {
-                        NodeId u = edge.head;
-                        if (conf_.algorithm == Algorithm::Cetric || G.is_ghost(u)) {
-                            assert(G.is_local_from_local(v));
-                            assert(G.is_local(G.to_global_id(v)));
-                            assert(!G.is_local(G.to_global_id(u)));
-                            assert(!G.is_local_from_local(u));
-                            PEID u_rank = G.get_ghost_data(u).rank;
-                            assert(u_rank != rank_);
-                            if (last_proc_[v] != u_rank) {
-                                enqueue_for_sending(v, u_rank, tg, emit, stats);
-                            }
-                        }
-                    });
+                    return;
                 }
-                // timer.start("Communication");
-                // if constexpr (CommunicationPolicy::interface == InterfaceType::queue) {
-                //     // this->queue_.poll([&](auto begin, auto end, PEID sender [[maybe_unused]]) {
-                //     //     handle_buffer(begin, end, emit, stats);
-                //     // });
-                // } else {
-                //     this->comm_.check_for_message(
-                //         [&](PEID, const std::vector<NodeId>& message) {
-                //             handle_buffer(message.begin(), message.end(), emit, stats);
-                //         },
-                //         stats.local.message_statistics);
-                // }
+                G.for_each_local_out_edge(v, [&](Edge edge) {
+                    NodeId u = edge.head;
+                    if (conf_.algorithm == Algorithm::Cetric || G.is_ghost(u)) {
+                        assert(G.is_local_from_local(v));
+                        assert(G.is_local(G.to_global_id(v)));
+                        assert(!G.is_local(G.to_global_id(u)));
+                        assert(!G.is_local_from_local(u));
+                        PEID u_rank = G.get_ghost_data(u).rank;
+                        assert(u_rank != rank_);
+                        if (last_proc_[v] != u_rank) {
+                            //atomic_debug(fmt::format("Send N({}) to {}", G.to_global_id(v), u_rank));
+                            enqueue_for_sending(v, u_rank, pool, emit, stats);
+                        }
+                    }
+                });
+                nodes_queued--;
             });
-            finished = true;
-        });
-        // tbb::task_group tg;
-        while (!finished) {
+        }
+        while (true) {
             if constexpr (CommunicationPolicy::interface == InterfaceType::queue) {
+                if (write_jobs == 0 && nodes_queued == 0) {
+                    atomic_debug(fmt::format("No more polling, enqueued: {}, done: {}", pool.enqueued(), pool.done()));
+                    break;
+                }
                 this->queue_.check_for_overflow_and_flush();
-                // atomic_debug(fmt::format("Polling on {}", tbb::this_task_arena::current_thread_index()));
                 this->queue_.poll([&](auto begin, auto end, PEID sender [[maybe_unused]]) {
                     // atomic_debug(fmt::format("Got something on {}",
                     // tbb::this_task_arena::current_thread_index()));
                     std::vector<NodeId> buffer{begin, end};
                     // atomic_debug(fmt::format("Delegating {}", buffer));
-                    handle_buffer_hybrid(begin, end, tg, emit, stats);
+                    //atomic_debug("Got an aysnc message");
+                    handle_buffer_hybrid(begin, end, pool, emit, stats);
                     // tg.wait();
                 });
-            } else {
-                this->comm_.check_for_message(
-                    [&](PEID, const std::vector<NodeId>& message) {
-                        handle_buffer(message.begin(), message.end(), emit, stats);
-                    },
-                    stats.local.message_statistics);
             }
         }
-        tg.wait();
-        // message_aggregation.join();
-        //  atomic_debug("Wait 1");
-        //  g.wait();
+        //pool.loop_until_empty();
+        // pool.terminate();
         if constexpr (CommunicationPolicy::interface == InterfaceType::queue) {
             this->queue_.terminate([&](auto begin, auto end, PEID sender [[maybe_unused]]) {
                 std::vector<NodeId> buffer{begin, end};
                 // atomic_debug(fmt::format("Delegating {}", buffer));
-                handle_buffer_hybrid(begin, end, tg, emit, stats);
+                handle_buffer_hybrid(begin, end, pool, emit, stats);
             });
         } else {
             this->comm_.all_to_all(
@@ -277,8 +256,10 @@ public:
                 },
                 stats.local.message_statistics, conf_.full_all_to_all);
         }
-        tg.wait();
         // g2.wait();
+        pool.loop_until_empty();
+        pool.terminate();
+        atomic_debug(fmt::format("Finished Pool, enqueued: {}, done: {}", pool.enqueued(), pool.done()));
         stats.local.global_phase_time += phase_time.elapsed_time();
         if constexpr (CommunicationPolicy::interface == InterfaceType::queue) {
             stats.local.message_statistics.add(this->queue_.stats());
@@ -353,12 +334,14 @@ private:
     template <typename TriangleFunc>
     void enqueue_for_sending(NodeId v,
                              PEID u_rank,
-                             tbb::task_group& tg,
+                             ThreadPool& thread_pool [[maybe_unused]],
                              TriangleFunc emit [[maybe_unused]],
                              cetric::profiling::Statistics& stats [[maybe_unused]]) {
         // atomic_debug(fmt::format("rank {}", u_rank));
         // atomic_debug(u_rank);
-        tg.run([&stats, emit, this, v, u_rank]() {
+        write_jobs++;
+        thread_pool.enqueue([&stats, emit, this, v, u_rank] {
+            // tg.run([&stats, emit, this, v, u_rank]() {
             std::vector<NodeId> buffer;
             buffer.emplace_back(G.to_global_id(v));
             // size_t send_count = 0;
@@ -394,6 +377,7 @@ private:
                         stats.local.message_statistics);
                 }
             }
+            write_jobs--;
         });
         last_proc_[v] = u_rank;
     }
@@ -422,7 +406,7 @@ private:
     template <typename IterType, typename TriangleFunc>
     void handle_buffer_hybrid(IterType begin,
                               IterType end,
-                              tbb::task_group& tg,
+                              ThreadPool& thread_pool,
                               TriangleFunc emit,
                               cetric::profiling::Statistics& stats) {
         if constexpr (CommunicationPolicy::interface == InterfaceType::queue) {
@@ -430,11 +414,14 @@ private:
             std::vector<NodeId> neighborhood{begin + 1, end};
             // atomic_debug(fmt::format("Submit task for {} on thread {}", v,
             // tbb::this_task_arena::current_thread_index()));
-            tg.run([&, v, emit, neighborhood = std::move(neighborhood)] {
-                // atomic_debug(
-                //     fmt::format("Spawn task for {} on thread {}", v, tbb::this_task_arena::current_thread_index()));
-                process_neighborhood(v, neighborhood.begin(), neighborhood.end(), emit, stats);
-            });
+            thread_pool.enqueue(
+                [this, v, emit, neighborhood = std::move(neighborhood), &stats] {
+                    // atomic_debug(
+                    //     fmt::format("Spawn task for {} on thread {}", v,
+                    //     tbb::this_task_arena::current_thread_index()));
+                    process_neighborhood(v, neighborhood.begin(), neighborhood.end(), emit, stats);
+                },
+                ThreadPool::Priority::high);
             // tg.wait();
         }
     }
@@ -530,6 +517,8 @@ private:
     const Config& conf_;
     PEID rank_;
     PEID size_;
+    std::atomic<size_t> nodes_queued = 0;
+    std::atomic<size_t> write_jobs = 0;
     std::vector<PEID> last_proc_;
     std::vector<bool> is_v_neighbor_;
     // message_queue::BufferedMessageQueue<NodeId, Merger, Splitter> queue_;
