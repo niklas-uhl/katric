@@ -8,6 +8,8 @@
 #include <condition_variable>
 #include <cstddef>
 #include <functional>
+#include <limits>
+#include <memory>
 #include <mutex>
 #include <type_traits>
 #include <unordered_map>
@@ -22,33 +24,18 @@ namespace message_queue {
 template <class T, typename Merger, typename Splitter>
 class ConcurrentBufferedMessageQueue {
     static_assert(std::is_invocable_v<Splitter,
-                                      std::vector<T>&,
-                                      std::function<void(typename tbb::concurrent_vector<T>::iterator,
-                                                         typename tbb::concurrent_vector<T>::iterator,
-                                                         PEID)>,
+                                      std::vector<T>,
+                                      std::function<void()>,
                                       PEID>);
     static_assert(std::is_invocable_v<Merger, std::vector<T>&, std::vector<T>, int>);
 
 public:
     ConcurrentBufferedMessageQueue(size_t num_threads, Merger&& merge, Splitter&& split)
-        : queue_(),
-          buffers_(queue_.size()),
-          buffer_ocupacy_(0),
-          threshold_(std::numeric_limits<size_t>::max()),
-          overflows_(0),
-          merge(merge),
-          mutexes_(queue_.size()),
-          num_worker_threads_(num_threads - 1),
-          split(split) {}
+        : queue_(), buffers_(queue_.size()), merge(merge), split(split), num_worker_threads_(num_threads - 1) {}
 
     void post_message(std::vector<T>&& message, PEID receiver, int tag = 0) {
-        // tbb::spin_mutex::scoped_lock lock(mutex_);
-        //  assert (receiver < queue_.size()) ;
-        //  atomic_debug(fmt::format("receiver {}", receiver));
         num_writing_threads_++;
         {
-            // mutex_map::accessor accessor;
-            // mutexes_.find(accessor, receiver);
             if (buffer_ocupacy_ >= threshold_) {
                 waiting_threads_++;
                 // atomic_debug("Waiting");
@@ -68,21 +55,12 @@ public:
             buffer_ocupacy_ += added_elements;
         }
         num_writing_threads_--;
-        // if (buffer_ocupacy_ > threshold_) {
-        //     overflows_++;
-        //     flush_all();
-        // }
-        // atomic_debug(buffer);
-    }
-
-    void signal_posting_finished() {
-        waiting_threads_++;
     }
 
     void check_for_overflow_and_flush() {
         if (buffer_ocupacy_ >= threshold_ && waiting_threads_ != 0 && waiting_threads_ == num_writing_threads_) {
-            //assert(buffer_ocupacy_ > threshold_);
-            //atomic_debug("Overflow");
+            // assert(buffer_ocupacy_ > threshold_);
+            // atomic_debug("Overflow");
             overflows_++;
             flush_all();
         }
@@ -98,9 +76,6 @@ public:
     }
 
     size_t flush_impl(PEID receiver) {
-        // tbb::spin_mutex::scoped_lock lock(mutex_);
-        // tbb::spin_rw_mutex::scoped_lock flush_lock(mutexes_[receiver], true);
-
         auto& buffer = buffers_[receiver];
         size_t removed_elements = 0;
         if (!buffer.empty()) {
@@ -109,8 +84,6 @@ public:
             // atomic_debug(fmt::format("Flushing buffer for {}", receiver));
             buffer.clear();
             removed_elements = message.size();
-            // flush_lock.release();
-            //   atomic_debug(receiver);
             queue_.post_message(std::move(message), receiver);
         }
         return removed_elements;
@@ -130,28 +103,21 @@ public:
 
     template <typename MessageHandler>
     void poll(MessageHandler&& on_message) {
-        static_assert(std::is_invocable_v<MessageHandler, typename std::vector<T>::iterator,
-                                          typename std::vector<T>::iterator, PEID>);
-        queue_.poll([&](std::vector<T> message, PEID sender) {
-            // atomic_debug(fmt::format("Got message from {}", sender));
-            split(message, on_message, sender);
-        });
+        queue_.poll([&](std::vector<T> message, PEID sender) { split(std::move(message), on_message, sender); });
     }
 
     template <typename MessageHandler>
     void terminate(MessageHandler&& on_message) {
-        static_assert(std::is_invocable_v<MessageHandler, typename std::vector<T>::iterator,
-                                          typename std::vector<T>::iterator, PEID>);
         queue_.terminate_impl(
             [&](std::vector<T> message, PEID sender) {
                 // atomic_debug(fmt::format("Got message from {}", sender));
-                split(message, on_message, sender);
+                split(std::move(message), on_message, sender);
             },
-            [&]() { flush_all();cv_buffer_full_.notify_all(); });
-        /* for (auto buffer : buffers_) { */
-        /*     atomic_debug(buffer); */
-        /* } */
-        cv_buffer_full_.notify_all();
+            [&]() {
+                flush_all();
+                cv_buffer_full_.notify_all();
+            });
+        // cv_buffer_full_.notify_all();
     }
 
     size_t overflows() const {
@@ -172,18 +138,16 @@ public:
 private:
     MessageQueue<T> queue_;
     std::vector<tbb::concurrent_vector<T>> buffers_;
-    using mutex_map = std::vector<tbb::spin_rw_mutex>;
-    mutex_map mutexes_;
     std::mutex mutex_;
+    Merger merge;
+    Splitter split;
     size_t num_worker_threads_;
+    size_t threshold_ = std::numeric_limits<size_t>::max();
+    size_t overflows_ = 0;
     std::atomic<size_t> num_writing_threads_ = 0;
     std::atomic<size_t> buffer_ocupacy_ = 0;
     std::atomic<size_t> waiting_threads_ = 0;
     std::condition_variable cv_buffer_full_;
-    size_t threshold_;
-    size_t overflows_;
-    Merger merge;
-    Splitter split;
 };
 
 template <class T, typename Merger, typename Splitter>

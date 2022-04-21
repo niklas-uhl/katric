@@ -166,7 +166,7 @@ void print_summary(const cetric::Config& conf,
                    std::optional<double> io_time = std::nullopt) {
     if (!conf.json_output.empty()) {
         if (conf.rank == 0) {
-            assert(all_stats[0].triangles == all_stats[0].counted_triangles);
+            //assert(all_stats[0].triangles == all_stats[0].counted_triangles);
             auto write_json_to_stream = [&](auto& stream) {
                 cereal::JSONOutputArchive ar(stream);
                 ar(cereal::make_nvp("stats", all_stats));

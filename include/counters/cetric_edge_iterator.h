@@ -15,6 +15,7 @@
 #include <tbb/task_group.h>
 #include <timer.h>
 #include <cstddef>
+#include <memory>
 #include <thread>
 #include <tlx/meta/has_member.hpp>
 #include <type_traits>
@@ -36,6 +37,27 @@ static constexpr bool has_grow_by_v =
     has_method_grow_by<VectorType, typename VectorType::iterator(typename VectorType::size_type)>::value;
 static_assert(has_grow_by_v<tbb::concurrent_vector<NodeId>>);
 
+template <typename T>
+class SharedVectorSpan {
+public:
+    using iterator = typename std::vector<T>::iterator;
+    SharedVectorSpan(std::shared_ptr<std::vector<T>> ptr, size_t begin, size_t end)
+        : ptr_(std::move(ptr)), begin_(begin), end_(end) {}
+
+    iterator begin() const {
+        return ptr_->begin() + begin_;
+    }
+
+    iterator end() const {
+        return ptr_->begin() + end_;
+    }
+
+private:
+    std::shared_ptr<std::vector<T>> ptr_;
+    size_t begin_;
+    size_t end_;
+};
+
 struct Merger {
     template <template <typename> typename VectorType>
     size_t operator()(VectorType<NodeId>& buffer, std::vector<NodeId> msg, int tag [[maybe_unused]]) {
@@ -52,13 +74,15 @@ struct Merger {
         return msg.size() + 1;
     }
 };
+
 struct Splitter {
     template <typename MessageFunc, template <typename> typename VectorType>
-    void operator()(VectorType<NodeId>& buffer, MessageFunc&& on_message, PEID sender) {
-        std::vector<NodeId>::iterator slice_begin = buffer.begin();
-        while (slice_begin != buffer.end()) {
-            auto slice_end = std::find(slice_begin, buffer.end(), sentinel_node);
-            on_message(slice_begin, slice_end, sender);
+    void operator()(VectorType<NodeId> buffer, MessageFunc&& on_message, PEID sender) {
+        auto buffer_ptr = std::make_shared<VectorType<NodeId>>(std::move(buffer));
+        std::vector<NodeId>::iterator slice_begin = buffer_ptr->begin();
+        while (slice_begin != buffer_ptr->end()) {
+            auto slice_end = std::find(slice_begin, buffer_ptr->end(), sentinel_node);
+            on_message(SharedVectorSpan(buffer_ptr, std::distance(buffer_ptr->begin(), slice_begin), std::distance(buffer_ptr->begin(), slice_end)), sender);
             slice_begin = slice_end + 1;
         }
     }
@@ -126,7 +150,7 @@ public:
             }
         }
         if constexpr (std::is_same_v<CommunicationPolicy, MessageQueuePolicy>) {
-            //this->queue_.set_threshold(1);
+            // this->queue_.set_threshold(1);
             this->queue_.set_threshold(G.local_node_count());
         }
     }
@@ -215,7 +239,7 @@ public:
                         PEID u_rank = G.get_ghost_data(u).rank;
                         assert(u_rank != rank_);
                         if (last_proc_[v] != u_rank) {
-                            //atomic_debug(fmt::format("Send N({}) to {}", G.to_global_id(v), u_rank));
+                            // atomic_debug(fmt::format("Send N({}) to {}", G.to_global_id(v), u_rank));
                             enqueue_for_sending(v, u_rank, pool, emit, stats);
                         }
                     }
@@ -230,24 +254,16 @@ public:
                     break;
                 }
                 this->queue_.check_for_overflow_and_flush();
-                this->queue_.poll([&](auto begin, auto end, PEID sender [[maybe_unused]]) {
-                    // atomic_debug(fmt::format("Got something on {}",
-                    // tbb::this_task_arena::current_thread_index()));
-                    std::vector<NodeId> buffer{begin, end};
-                    // atomic_debug(fmt::format("Delegating {}", buffer));
-                    //atomic_debug("Got an aysnc message");
-                    handle_buffer_hybrid(begin, end, pool, emit, stats);
-                    // tg.wait();
+                this->queue_.poll([&](SharedVectorSpan<NodeId> span, PEID sender [[maybe_unused]]) {
+                    handle_buffer_hybrid(std::move(span), pool, emit, stats);
                 });
             }
         }
-        //pool.loop_until_empty();
-        // pool.terminate();
+        // pool.loop_until_empty();
+        //  pool.terminate();
         if constexpr (CommunicationPolicy::interface == InterfaceType::queue) {
-            this->queue_.terminate([&](auto begin, auto end, PEID sender [[maybe_unused]]) {
-                std::vector<NodeId> buffer{begin, end};
-                // atomic_debug(fmt::format("Delegating {}", buffer));
-                handle_buffer_hybrid(begin, end, pool, emit, stats);
+            this->queue_.terminate([&](SharedVectorSpan<NodeId> span, PEID sender [[maybe_unused]]) {
+                handle_buffer_hybrid(std::move(span), pool, emit, stats);
             });
         } else {
             this->comm_.all_to_all(
@@ -256,7 +272,6 @@ public:
                 },
                 stats.local.message_statistics, conf_.full_all_to_all);
         }
-        // g2.wait();
         pool.loop_until_empty();
         pool.terminate();
         atomic_debug(fmt::format("Finished Pool, enqueued: {}, done: {}", pool.enqueued(), pool.done()));
@@ -403,23 +418,21 @@ private:
         }
     }
 
-    template <typename IterType, typename TriangleFunc>
-    void handle_buffer_hybrid(IterType begin,
-                              IterType end,
+    template <typename TriangleFunc>
+    void handle_buffer_hybrid(SharedVectorSpan<NodeId> span,
                               ThreadPool& thread_pool,
                               TriangleFunc emit,
                               cetric::profiling::Statistics& stats) {
         if constexpr (CommunicationPolicy::interface == InterfaceType::queue) {
-            NodeId v = *begin;
-            std::vector<NodeId> neighborhood{begin + 1, end};
             // atomic_debug(fmt::format("Submit task for {} on thread {}", v,
             // tbb::this_task_arena::current_thread_index()));
             thread_pool.enqueue(
-                [this, v, emit, neighborhood = std::move(neighborhood), &stats] {
+                [this, emit, span = std::move(span), &stats] {
+                    NodeId v = *span.begin();
                     // atomic_debug(
                     //     fmt::format("Spawn task for {} on thread {}", v,
                     //     tbb::this_task_arena::current_thread_index()));
-                    process_neighborhood(v, neighborhood.begin(), neighborhood.end(), emit, stats);
+                    process_neighborhood(v, span.begin() + 1, span.end(), emit, stats);
                 },
                 ThreadPool::Priority::high);
             // tg.wait();
