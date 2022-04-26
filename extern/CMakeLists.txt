@@ -7,6 +7,7 @@ add_subdirectory(cereal EXCLUDE_FROM_ALL)
 add_subdirectory(catch EXCLUDE_FROM_ALL)
 add_subdirectory(googletest EXCLUDE_FROM_ALL)
 add_subdirectory(kagen)
+set(MESSAGE_QUEUE_BLOCKING_RECEIVE ON CACHE BOOL "Receive messages blocking")
 add_subdirectory(message-queue)
 
 set(gtest-mpi-listener_SOURCE_DIR ${CMAKE_SOURCE_DIR}/extern/gtest-mpi-listener)

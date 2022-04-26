@@ -122,6 +122,7 @@ void gather_PE_ranges(NodeId local_from,
         }
     }
 #endif
+    MPI_Type_free(&MPI_RANGE);
 }
 
 PEID get_PE_from_node_ranges(NodeId node, const std::vector<std::pair<NodeId, NodeId>>& ranges) {
