@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 #include "cereal/cereal.hpp"
+#include "cereal/types/atomic.hpp"
 
 namespace cereal {
 template <class Archive>
@@ -66,6 +67,38 @@ struct LoadBalancingStatistics {
 
 struct Statistics {
     struct LocalStatistics {
+        LocalStatistics() {}
+        explicit LocalStatistics(const LocalStatistics& rhs) {
+            io_time = rhs.io_time;
+            preprocessing = rhs.preprocessing;
+            primary_load_balancing = rhs.primary_load_balancing;
+            secondary_load_balancing = rhs.secondary_load_balancing;
+            local_phase_time = rhs.local_phase_time;
+            contraction_time = rhs.contraction_time;
+            global_phase_time = rhs.global_phase_time;
+            reduce_time = rhs.reduce_time;
+            message_statistics = rhs.message_statistics;
+            skipped_nodes = rhs.skipped_nodes.load();
+            local_triangles = rhs.local_triangles.load();
+            type3_triangles = rhs.type3_triangles.load();
+            local_wall_time = rhs.local_wall_time;
+        }
+        LocalStatistics& operator=(const LocalStatistics& rhs) {
+            io_time = rhs.io_time;
+            preprocessing = rhs.preprocessing;
+            primary_load_balancing = rhs.primary_load_balancing;
+            secondary_load_balancing = rhs.secondary_load_balancing;
+            local_phase_time = rhs.local_phase_time;
+            contraction_time = rhs.contraction_time;
+            global_phase_time = rhs.global_phase_time;
+            reduce_time = rhs.reduce_time;
+            message_statistics = rhs.message_statistics;
+            skipped_nodes = rhs.skipped_nodes.load();
+            local_triangles = rhs.local_triangles.load();
+            type3_triangles = rhs.type3_triangles.load();
+            local_wall_time = rhs.local_wall_time;
+            return *this;
+        }
         double io_time = 0;
         PreprocessingStatistics preprocessing;
         LoadBalancingStatistics primary_load_balancing;
@@ -75,9 +108,9 @@ struct Statistics {
         double global_phase_time = 0;
         double reduce_time = 0;
         message_queue::MessageStatistics message_statistics;
-        size_t skipped_nodes = 0;
-        size_t local_triangles = 0;
-        size_t type3_triangles = 0;
+        std::atomic<size_t> skipped_nodes = 0;
+        std::atomic<size_t> local_triangles = 0;
+        std::atomic<size_t> type3_triangles = 0;
         double local_wall_time = 0;
 
         template <class Archive>

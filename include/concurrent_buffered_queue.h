@@ -151,8 +151,8 @@ private:
 };
 
 template <class T, typename Merger, typename Splitter>
-auto make_concurrent_buffered_queue(Merger&& merger, Splitter&& splitter) {
-    return ConcurrentBufferedMessageQueue<T, Merger, Splitter>(std::forward<Merger>(merger),
+auto make_concurrent_buffered_queue(size_t num_threads, Merger&& merger, Splitter&& splitter) {
+    return ConcurrentBufferedMessageQueue<T, Merger, Splitter>(num_threads, std::forward<Merger>(merger),
                                                                std::forward<Splitter>(splitter));
 }
 

@@ -65,6 +65,8 @@ struct Config {
     std::string secondary_cost_function = "none";
     Algorithm algorithm = Algorithm::Cetric;
     std::string communication_policy = "new";
+    bool local_parallel = false;
+    bool global_parallel = false;
 
     bool full_all_to_all = false;
 
@@ -102,9 +104,9 @@ struct Config {
     void serialize(Archive& archive) {
         archive(CEREAL_NVP(input_file), CEREAL_NVP(hostname), CEREAL_NVP(PEs), CEREAL_NVP(num_threads),
                 CEREAL_NVP(cache_input), CEREAL_NVP(algorithm), CEREAL_NVP(communication_policy),
-                CEREAL_NVP(primary_cost_function), CEREAL_NVP(secondary_cost_function), CEREAL_NVP(orient_locally),
-                CEREAL_NVP(pseudo2core), CEREAL_NVP(dense_load_balancing), CEREAL_NVP(flag_intersection),
-                CEREAL_NVP(skip_local_neighborhood));
+                CEREAL_NVP(global_parallel), CEREAL_NVP(local_parallel), CEREAL_NVP(primary_cost_function),
+                CEREAL_NVP(secondary_cost_function), CEREAL_NVP(orient_locally), CEREAL_NVP(pseudo2core),
+                CEREAL_NVP(dense_load_balancing), CEREAL_NVP(flag_intersection), CEREAL_NVP(skip_local_neighborhood));
         if (input_file.empty()) {
             archive(CEREAL_NVP(gen), CEREAL_NVP(gen_n), CEREAL_NVP(gen_m), CEREAL_NVP(gen_r), CEREAL_NVP(gen_r_coeff),
                     CEREAL_NVP(gen_p), CEREAL_NVP(gen_gamma), CEREAL_NVP(gen_d), CEREAL_NVP(gen_scale_weak));

@@ -80,7 +80,10 @@ cetric::Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
     app.add_flag("--skip-local-neighborhood", conf.skip_local_neighborhood);
 
     app.add_option("--communication-policy", conf.communication_policy)
-        ->transform(CLI::IsMember({"old", "new", "grid"}));
+        ->transform(CLI::IsMember({"new", "grid"}));
+
+    app.add_flag("--local-parallel", conf.local_parallel);
+    app.add_flag("--global-parallel", conf.global_parallel);
 
     parse_gen_parameters(app, conf);
 
@@ -166,7 +169,7 @@ void print_summary(const cetric::Config& conf,
                    std::optional<double> io_time = std::nullopt) {
     if (!conf.json_output.empty()) {
         if (conf.rank == 0) {
-            //assert(all_stats[0].triangles == all_stats[0].counted_triangles);
+            assert(all_stats[0].triangles == all_stats[0].counted_triangles);
             auto write_json_to_stream = [&](auto& stream) {
                 cereal::JSONOutputArchive ar(stream);
                 ar(cereal::make_nvp("stats", all_stats));
@@ -203,7 +206,7 @@ void print_summary(const cetric::Config& conf,
 int main(int argc, char* argv[]) {
     int thread_support_level;
     MPI_Init_thread(&argc, &argv, MPI_THREAD_FUNNELED, &thread_support_level);
-    if (thread_support_level != MPI_THREAD_FUNNELED) {
+    if (thread_support_level < MPI_THREAD_FUNNELED) {
         std::cerr << "The MPI implementation must support MPI_THREAD_FUNNELED" << std::endl;
         std::exit(1);
     }
@@ -220,7 +223,7 @@ int main(int argc, char* argv[]) {
         conf.num_threads = max_concurrency;
     }
     if (conf.num_threads > max_concurrency) {
-        atomic_debug(fmt::format("Warning, using only {} instead of {} threads!", max_concurrency, conf.num_threads));
+        atomic_debug(fmt::format("Warning, TBB uses only {} instead of {} threads!", max_concurrency, conf.num_threads));
     }
     tbb::global_control global_limit(tbb::global_control::max_allowed_parallelism, conf.num_threads);
     std::optional<double> io_time;
@@ -249,17 +252,13 @@ int main(int argc, char* argv[]) {
         cetric::profiling::Timer global_time;
 
         if (conf.algorithm == cetric::Algorithm::Cetric) {
-            if (conf.communication_policy == "old") {
-                run_cetric(G, stats, conf, rank, size, cetric::BufferedCommunicatorPolicy{});
-            } else if (conf.communication_policy == "new") {
+            if (conf.communication_policy == "new") {
                 run_cetric(G, stats, conf, rank, size, cetric::MessageQueuePolicy{});
             } else if (conf.communication_policy == "grid") {
                 run_cetric(G, stats, conf, rank, size, cetric::GridPolicy{});
             }
         } else {
-            if (conf.communication_policy == "old") {
-                run_patric(G, stats, conf, rank, size, cetric::BufferedCommunicatorPolicy{});
-            } else if (conf.communication_policy == "new") {
+            if (conf.communication_policy == "new") {
                 run_patric(G, stats, conf, rank, size, cetric::MessageQueuePolicy{});
             } else if (conf.communication_policy == "grid") {
                 run_patric(G, stats, conf, rank, size, cetric::GridPolicy{});
