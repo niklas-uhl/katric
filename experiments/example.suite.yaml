@@ -1,25 +1,28 @@
 name: mysuite
-ncores: [1, 2, 4, 8, 16]
+ncores: [16]
+threads_per_rank: [1, 2, 4, 8, 16]
 graphs:
   - hiv
-  - metis-sample
+  #- metis-sample
   - com-amazon
-  - generator: rgg
-    n: 12
-    radius: 0.55
-  - generator: rgg
-    n: 10
-    radius: 0.55
-  - generator: rhg
-    n: 12
-    avg_degree: 16
-    gamma: 2.8
+  #- generator: rgg
+  #  n: 12
+  #  radius: 0.55
+  #- generator: rgg
+  #  n: 10
+  #  radius: 0.55
+  #- generator: rhg
+  #  n: 12
+  #  avg_degree: 16
+  #  gamma: 2.8
 time_limit: 10
 config: {
-  algorithm: [cetric, patric],
-  flag-intersection: [True, False],
-  skip-local-neighborhood: [True, False],
-  primary-cost-function: [N, D, DPD, IDPD],
-  secondary-cost-function: ["none", N, D]
+  algorithm: [cetric],
+  local-parallel: True,
+  global-parallel: [False, True],
+  #flag-intersection: [True, False],
+  #skip-local-neighborhood: [True, False],
+  #primary-cost-function: [N, D, DPD, IDPD],
+  #secondary-cost-function: ["none", N, D]
 }
 

@@ -134,7 +134,7 @@ public:
 
     template <typename TriangleFunc>
     inline void run_local(TriangleFunc emit, cetric::profiling::Statistics& stats) {
-        if (conf_.local_parallel) {
+        if (conf_.local_parallel && conf_.num_threads > 1) {
             run_local_parallel(emit, stats, interface_nodes_);
         } else {
             run_local_sequential(emit, stats, interface_nodes_.local());
@@ -225,7 +225,7 @@ public:
     template <typename TriangleFunc>
     inline void run_distributed(TriangleFunc emit, cetric::profiling::Statistics& stats) {
         auto all_interface_nodes = tbb::flatten2d(interface_nodes_);
-        if (conf_.global_parallel) {
+        if (conf_.global_parallel && conf_.num_threads > 1) {
             run_distributed_parallel(emit, stats, all_interface_nodes.begin(), all_interface_nodes.end());
         } else {
             run_distributed_sequential(emit, stats, all_interface_nodes.begin(), all_interface_nodes.end());

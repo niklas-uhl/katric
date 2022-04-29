@@ -1,6 +1,5 @@
 #!/bin/bash
 #SBATCH --nodes=${nodes}
-#SBATCH --ntasks=${p}
 #SBATCH -o ${output_log}
 #SBATCH -J ${job_name}
 #SBATCH --partition=${job_queue}

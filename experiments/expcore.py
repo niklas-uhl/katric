@@ -129,14 +129,16 @@ def load_inputs_from_yaml(yaml_path):
 class ExperimentSuite:
     def __init__(self,
                  name: str,
-                 PEs=[],
+                 cores=[],
+                 threads_per_rank=[1],
                  inputs=[],
                  configs=[],
                  tasks_per_node=None,
                  time_limit=None,
                  input_time_limit={}):
         self.name = name
-        self.PEs = PEs
+        self.cores = cores
+        self.threads_per_rank = threads_per_rank
         self.inputs = inputs
         self.configs = configs
         self.tasks_per_node = tasks_per_node
@@ -162,7 +164,7 @@ class ExperimentSuite:
         self.inputs = inputs_new
 
     def __repr__(self):
-        return f"ExperimentSuite({self.name}, {self.PEs}, {self.inputs}, {self.configs}, {self.time_limit}, {self.input_time_limit})"
+        return f"ExperimentSuite({self.name}, {self.cores}, {self.inputs}, {self.configs}, {self.time_limit}, {self.input_time_limit})"
 
 
 def load_suite_from_yaml(path):
@@ -190,6 +192,7 @@ def load_suite_from_yaml(path):
                 time_limits[graph["name"]] = time_limit
     return ExperimentSuite(data["name"],
                            data["ncores"],
+                           data.get("threads_per_rank", [1]),
                            inputs,
                            configs,
                            tasks_per_node=data.get("tasks_per_node"),
@@ -212,7 +215,7 @@ def explode(config):
     return configs
 
 
-def cetric_command(input, p, **kwargs):
+def cetric_command(input, mpi_ranks, threads_per_rank, **kwargs):
     script_path = os.path.dirname(__file__)
     build_dir = Path(
         os.environ.get("BUILD_DIR", os.path.join(script_path, "../build/")))
@@ -220,10 +223,10 @@ def cetric_command(input, p, **kwargs):
     command = [str(app)]
     if input:
         if isinstance(input, InputGraph):
-            command = command + input.args(p)
+            command = command + input.args(mpi_ranks)
         else:
             command.append(str(input))
-    flags = []
+    flags = ["--num-threads", str(threads_per_rank)]
     for flag, value in kwargs.items():
         if isinstance(value, bool):
             if value:
