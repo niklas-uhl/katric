@@ -17,11 +17,27 @@
 
 namespace cereal {
 template <class Archive>
-void serialize(Archive& archive, message_queue::MessageStatistics& stats) {
-    archive(cereal::make_nvp("sent_messages", stats.sent_messages),
-            cereal::make_nvp("received_messages", stats.received_messages),
-            cereal::make_nvp("send_volume", stats.send_volume),
-            cereal::make_nvp("receive_volume", stats.receive_volume));
+void save(Archive& archive, message_queue::MessageStatistics const& stats) {
+    archive(cereal::make_nvp("sent_messages", stats.sent_messages.load()),
+            cereal::make_nvp("received_messages", stats.received_messages.load()),
+            cereal::make_nvp("send_volume", stats.send_volume.load()),
+            cereal::make_nvp("receive_volume", stats.receive_volume.load()));
+}
+
+template <class Archive>
+void load(Archive& archive, message_queue::MessageStatistics& stats) {
+    size_t sent_messages;
+    size_t received_messages;
+    size_t send_volume;
+    size_t receive_volume;
+    archive(cereal::make_nvp("sent_messages", sent_messages),
+            cereal::make_nvp("received_messages", received_messages),
+            cereal::make_nvp("send_volume", send_volume),
+            cereal::make_nvp("receive_volume", receive_volume));
+    stats.sent_messages.store(sent_messages);
+    stats.received_messages.store(received_messages);
+    stats.send_volume.store(send_volume);
+    stats.receive_volume.store(receive_volume);
 }
 }  // namespace cereal
 
@@ -114,12 +130,30 @@ struct Statistics {
         double local_wall_time = 0;
 
         template <class Archive>
-        void serialize(Archive& archive) {
+        void save(Archive& archive) const {
             archive(CEREAL_NVP(io_time), CEREAL_NVP(preprocessing), CEREAL_NVP(primary_load_balancing),
                     CEREAL_NVP(secondary_load_balancing), CEREAL_NVP(local_phase_time), CEREAL_NVP(contraction_time),
                     CEREAL_NVP(global_phase_time), CEREAL_NVP(reduce_time), CEREAL_NVP(message_statistics),
-                    CEREAL_NVP(skipped_nodes), CEREAL_NVP(local_triangles), CEREAL_NVP(type3_triangles),
                     CEREAL_NVP(local_wall_time));
+            archive(cereal::make_nvp("skipped_nodes", skipped_nodes.load()), cereal::make_nvp("local_triangles", local_triangles.load()), cereal::make_nvp("type3_triangles", type3_triangles.load()));
+        }
+
+        template <class Archive>
+        void load(Archive& archive) {
+            archive(CEREAL_NVP(io_time), CEREAL_NVP(preprocessing), CEREAL_NVP(primary_load_balancing),
+                    CEREAL_NVP(secondary_load_balancing), CEREAL_NVP(local_phase_time), CEREAL_NVP(contraction_time),
+                    CEREAL_NVP(global_phase_time), CEREAL_NVP(reduce_time), CEREAL_NVP(message_statistics),
+                    CEREAL_NVP(local_wall_time));
+            size_t skipped_nodes_tmp;
+            size_t local_triangles_tmp;
+            size_t type3_triangles_tmp;
+            archive(cereal::make_nvp("skipped_nodes", skipped_nodes_tmp),
+                    cereal::make_nvp("local_triangles", local_triangles_tmp),
+                    cereal::make_nvp("type3_triangles", type3_triangles_tmp));
+            skipped_nodes.store(skipped_nodes_tmp);
+            local_triangles.store(local_triangles_tmp);
+            type3_triangles.store(type3_triangles_tmp);
+
         }
     };
     LocalStatistics local;
