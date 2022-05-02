@@ -68,6 +68,7 @@ cetric::Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
 
     app.add_option("--num-threads", conf.num_threads);
     app.add_option("--grainsize", conf.grainsize);
+    app.add_option("--degree-of-parallelism", conf.degree_of_parallelism);
 
     app.add_flag("--pseudo2core", conf.pseudo2core);
 

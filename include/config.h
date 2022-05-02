@@ -89,6 +89,7 @@ struct Config {
     std::string communication_policy = "new";
     bool local_parallel = false;
     bool global_parallel = false;
+    size_t degree_of_parallelism = 1;
 
     bool full_all_to_all = false;
 

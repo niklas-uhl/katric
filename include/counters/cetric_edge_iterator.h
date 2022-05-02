@@ -291,7 +291,7 @@ public:
         for (auto current = interface_nodes_begin; current != interface_nodes_end; current++) {
             NodeId v = *current;
             nodes_queued++;
-            pool.enqueue([v, this, &stats, emit, &queue, &pool, &nodes_queued, &write_jobs]() {
+            auto task = [v, this, &stats, emit, &queue, &pool, &nodes_queued, &write_jobs]() {
                 if (conf_.pseudo2core && G.outdegree(v) < 2) {
                     stats.local.skipped_nodes++;
                     return;
@@ -312,7 +312,12 @@ public:
                     }
                 });
                 nodes_queued--;
-            });
+            };
+            if (conf_.degree_of_parallelism > 1) {
+                pool.enqueue(task);
+            } else {
+                task();
+            }
         }
         while (true) {
             if (write_jobs == 0 && nodes_queued == 0) {
