@@ -197,7 +197,8 @@ public:
                 interface_nodes.local().emplace_back(v);
             }
             pre_intersection(v);
-            tbb::parallel_for_each(G.out_edges(v), [&](Edge edge) {
+            G.parallel_for_each_local_out_edge(v, [&stats, this, emit](Edge edge) {
+                NodeId v = edge.tail;
                 NodeId u = edge.head;
                 auto on_intersection = [&](NodeId node) {
                     stats.local.local_triangles++;
@@ -212,9 +213,10 @@ public:
         };
         switch (conf_.algorithm) {
             case Algorithm::Cetric:
-                tbb::parallel_for_each(G.local_and_ghost_nodes(), find_intersections);
+                G.parallel_for_each_local_node_and_ghost(find_intersections);
                 break;
             case Algorithm::Patric: {
+                G.parallel_for_each_local_node(find_intersections);
                 tbb::parallel_for_each(G.local_nodes(), find_intersections);
                 break;
             }
@@ -289,7 +291,7 @@ public:
         for (auto current = interface_nodes_begin; current != interface_nodes_end; current++) {
             NodeId v = *current;
             nodes_queued++;
-            pool.enqueue([v, this, &stats, emit, &queue, &pool, &nodes_queued, &write_jobs]() {
+            auto task = [v, this, &stats, emit, &queue, &pool, &nodes_queued, &write_jobs]() {
                 if (conf_.pseudo2core && G.outdegree(v) < 2) {
                     stats.local.skipped_nodes++;
                     return;
@@ -310,7 +312,12 @@ public:
                     }
                 });
                 nodes_queued--;
-            });
+            };
+            if (conf_.degree_of_parallelism > 1) {
+                pool.enqueue(task);
+            } else {
+                task();
+            }
         }
         while (true) {
             if (write_jobs == 0 && nodes_queued == 0) {

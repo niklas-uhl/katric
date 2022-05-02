@@ -49,7 +49,11 @@ inline void preprocessing(DistributedGraph<>& G,
         stats.local.preprocessing.orientation_time += timer.elapsed_time();
     }
     timer.restart();
-    G.sort_neighborhoods();
+    if (conf.num_threads <= 1) {
+        G.sort_neighborhoods(execution_policy::sequential {});
+    } else {
+        G.sort_neighborhoods(execution_policy::parallel {});
+    }
 
     stats.local.preprocessing.sorting_time += timer.elapsed_time();
 }

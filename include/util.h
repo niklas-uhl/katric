@@ -166,4 +166,9 @@ std::ostream& operator<<(std::ostream& out, const std::pair<T, V>& p) {
     return out << "<" << p.first << ", " << p.second << ">";
 }
 
+namespace execution_policy {
+    struct sequential {};
+    struct parallel {};
+}
+
 #endif  // PARALLEL_TRIANGLE_COUNTER_UTIL_H

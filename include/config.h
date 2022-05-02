@@ -89,6 +89,7 @@ struct Config {
     std::string communication_policy = "new";
     bool local_parallel = false;
     bool global_parallel = false;
+    size_t degree_of_parallelism = 1;
 
     bool full_all_to_all = false;
 
@@ -107,6 +108,7 @@ struct Config {
     PEID PEs;
     PEID rank;
     size_t num_threads = 0;
+    size_t grainsize = 1;
 
     // Generator parameters
     std::string gen;
@@ -125,7 +127,7 @@ struct Config {
 
     template <class Archive>
     void serialize(Archive& archive) {
-        archive(CEREAL_NVP(input_file), CEREAL_NVP(hostname), CEREAL_NVP(PEs), CEREAL_NVP(num_threads),
+        archive(CEREAL_NVP(input_file), CEREAL_NVP(hostname), CEREAL_NVP(PEs), CEREAL_NVP(num_threads), CEREAL_NVP(grainsize),
                 CEREAL_NVP(cache_input), CEREAL_NVP(algorithm), CEREAL_NVP(communication_policy),
                 CEREAL_NVP(global_parallel), CEREAL_NVP(local_parallel), CEREAL_NVP(threshold),
                 CEREAL_NVP(threshold_scale), CEREAL_NVP(primary_cost_function), CEREAL_NVP(secondary_cost_function),
