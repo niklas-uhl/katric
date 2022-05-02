@@ -67,6 +67,7 @@ cetric::Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
     app.add_flag("--orient-locally", conf.orient_locally);
 
     app.add_option("--num-threads", conf.num_threads);
+    app.add_option("--grainsize", conf.grainsize);
 
     app.add_flag("--pseudo2core", conf.pseudo2core);
 

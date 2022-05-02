@@ -8,6 +8,8 @@
 #include <communicator.h>
 #include <datastructures/distributed/local_graph_view.h>
 #include <datastructures/graph_definitions.h>
+#include <tbb/blocked_range.h>
+#include <tbb/parallel_for_each.h>
 #include <util.h>
 #include <algorithm>
 #include <cassert>
@@ -205,7 +207,7 @@ public:
         return local_edge_count_;
     }
 
-        inline NodeId ghost_count() const {
+    inline NodeId ghost_count() const {
         return ghost_data_.size();
     }
 
@@ -214,6 +216,15 @@ public:
         for (size_t node = 0; node < local_node_count(); ++node) {
             on_node(node);
         }
+    }
+
+    template <typename NodeFunc>
+    inline void parallel_for_each_local_node(NodeFunc on_node) const {
+        tbb::parallel_for(tbb::blocked_range<NodeId>(0, local_node_count()), [&](auto const& r) {
+            for (NodeId node = r.begin(); node != r.end(); node++) {
+                on_node(node);
+            }
+        });
     }
 
     NodeRange local_nodes() const {
@@ -227,6 +238,16 @@ public:
         }
     }
 
+    template <typename NodeFunc>
+    inline void parallel_for_each_ghost_node(NodeFunc on_node) const {
+        tbb::parallel_for(tbb::blocked_range<NodeId>(local_node_count(), local_node_count() + ghost_data_.size()),
+                          [&](auto const& r) {
+                              for (NodeId node = r.begin(); node != r.end(); node++) {
+                                  on_node(node);
+                              }
+                          });
+    }
+
     NodeRange ghost_nodes() const {
         return NodeRange(local_node_count(), local_node_count() + ghost_count());
     }
@@ -236,6 +257,15 @@ public:
         for (size_t node = 0; node < first_out_.size() - 1; ++node) {
             on_node(node);
         }
+    }
+
+    template <typename NodeFunc>
+    inline void parallel_for_each_local_node_and_ghost(NodeFunc on_node) const {
+        tbb::parallel_for(tbb::blocked_range<NodeId>(0, first_out_.size() - 1), [&](const auto& r) {
+            for (NodeId node = r.begin(); node != r.end(); node++) {
+                on_node(node);
+            }
+        });
     }
 
     NodeRange local_and_ghost_nodes() const {
@@ -306,6 +336,22 @@ public:
         }
     }
 
+    template <typename EdgeFunc>
+    inline void parallel_for_each_edge(NodeId node, EdgeFunc on_edge) const {
+        assert(is_local_from_local(node) || is_ghost(node));
+        EdgeId begin = first_out_[node];
+        // TODO change it!!!
+        EdgeId end = first_out_[node] + degree_[node];
+        // EdgeId end = first_out_[node] + first_out_[node + 1];
+        tbb::parallel_for(tbb::blocked_range(begin, end), [&](const auto& r) {
+            for (size_t edge_id = r.begin(); edge_id < r.end(); ++edge_id) {
+                NodeId head = head_[edge_id];
+                Edge edge{node, head};
+                on_edge(edge);
+            }
+        });
+    }
+
     EdgeRange edges(NodeId node) const {
         EdgeId begin = first_out_[node];
         EdgeId end = first_out_[node] + degree_[node];
@@ -323,6 +369,20 @@ public:
         }
     }
 
+    template <typename EdgeFunc>
+    inline void parallel_for_each_local_out_edge(NodeId node, EdgeFunc on_edge) const {
+        assert(is_local_from_local(node) || is_ghost(node));
+        auto begin = first_out_[node] + first_out_offset_[node];
+        auto end = first_out_[node] + degree_[node];
+        tbb::parallel_for(tbb::blocked_range(begin, end), [&on_edge, this, node](const auto& r) {
+            for (size_t edge_id = r.begin(); edge_id < r.end(); ++edge_id) {
+                NodeId head = head_[edge_id];
+                Edge edge{node, head};
+                on_edge(edge);
+            }
+        });
+    }
+
     EdgeRange out_edges(NodeId node) const {
         auto begin = first_out_[node] + first_out_offset_[node];
         auto end = first_out_[node] + degree_[node];
@@ -338,6 +398,20 @@ public:
             NodeId head = head_[edge_id];
             on_edge(Edge(head, node));
         }
+    }
+
+    template <typename EdgeFunc>
+    inline void parallel_for_each_local_in_edge(NodeId node, EdgeFunc on_edge) const {
+        assert(is_local_from_local(node) || is_ghost(node));
+        auto begin = first_out_[node];
+        auto end = first_out_[node] + first_out_offset_[node];
+        tbb::parallel_for(tbb::blocked_range(begin, end), [&](const auto& r) {
+            for (size_t edge_id = r.begin(); edge_id < r.end(); ++edge_id) {
+                NodeId head = head_[edge_id];
+                Edge edge{node, head};
+                on_edge(edge);
+            }
+        });
     }
 
     EdgeRange in_edges(NodeId node) const {
@@ -386,8 +460,9 @@ public:
         ghost_data_[local_node_id - local_node_count_].payload = std::move(payload);
     }
 
-    inline void sort_neighborhoods() {
-        for_each_local_node_and_ghost([&](NodeId node) {
+    template <class ExecutionPolicy = execution_policy::sequential>
+    inline void sort_neighborhoods(ExecutionPolicy&& policy [[maybe_unused]] = ExecutionPolicy{}) {
+        auto on_node = [&](NodeId node) {
             EdgeId begin = first_out_[node];
             EdgeId in_end = first_out_[node] + first_out_offset_[node];
             EdgeId out_end = first_out_[node] + degree_[node];
@@ -402,7 +477,12 @@ public:
             };
             std::sort(head_.begin() + begin, head_.begin() + in_end, node_cmp);
             std::sort(head_.begin() + in_end, head_.begin() + out_end, node_cmp);
-        });
+        };
+        if constexpr (std::is_same_v<ExecutionPolicy, execution_policy::sequential>) {
+            for_each_local_node_and_ghost(on_node);
+        } else {
+            parallel_for_each_local_node_and_ghost(on_node);
+        }
     }
 
     inline bool edge_exists(Edge edge) {
@@ -569,8 +649,9 @@ public:
         return node_range_;
     }
 
-    void remove_internal_edges() {
-        for_each_local_node([&](NodeId node) {
+    template <class ExecutionPolicy = execution_policy::sequential>
+    void remove_internal_edges(ExecutionPolicy&& = ExecutionPolicy{}) {
+        auto on_node = [&](NodeId node) {
             if (!get_local_data(node).is_interface) {
                 degree_[node] = 0;
                 first_out_offset_[node] = 0;
@@ -593,7 +674,12 @@ public:
             }
             degree_[node] = remaining_edges;
             local_edge_count_ -= initial_edges - remaining_edges;
-        });
+        };
+        if constexpr (std::is_same_v<ExecutionPolicy, execution_policy::sequential>) {
+            for_each_local_node(on_node);
+        } else {
+            parallel_for_each_local_node(on_node);
+        }
         if constexpr (payload_has_degree<GhostPayloadType>::value) {
             get_graph_payload().ghost_degree_available = false;
         }
