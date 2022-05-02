@@ -134,7 +134,7 @@ class SBatchRunner:
                     time_limit = 0
                     commands = []
                     for i, config in enumerate(experiment_suite.configs):
-                        json_path = output_path / f"{input_name}-np{ncores}-log-c{i}.json"
+                        json_path = output_path / f"{input_name}-np{mpi_ranks}-t{threads_per_rank}-log-c{i}.json"
                         config['json-output'] = str(json_path)
                         job_time_limit = experiment_suite.get_input_time_limit(
                             input.name)
