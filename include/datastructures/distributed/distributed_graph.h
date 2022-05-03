@@ -10,6 +10,7 @@
 #include <datastructures/graph_definitions.h>
 #include <tbb/blocked_range.h>
 #include <tbb/parallel_for_each.h>
+#include <tbb/partitioner.h>
 #include <util.h>
 #include <algorithm>
 #include <cassert>
@@ -218,13 +219,18 @@ public:
         }
     }
 
-    template <typename NodeFunc>
-    inline void parallel_for_each_local_node(NodeFunc on_node) const {
-        tbb::parallel_for(tbb::blocked_range<NodeId>(0, local_node_count()), [&](auto const& r) {
-            for (NodeId node = r.begin(); node != r.end(); node++) {
-                on_node(node);
-            }
-        });
+    template <typename NodeFunc, typename Partitioner = tbb::auto_partitioner>
+    inline void parallel_for_each_local_node(NodeFunc on_node,
+                                             size_t grainsize = 1,
+                                             Partitioner&& partitioner = Partitioner{}) const {
+        tbb::parallel_for(
+            tbb::blocked_range<NodeId>(0, local_node_count(), grainsize),
+            [&](auto const& r) {
+                for (NodeId node = r.begin(); node != r.end(); node++) {
+                    on_node(node);
+                }
+            },
+            partitioner);
     }
 
     NodeRange local_nodes() const {
@@ -238,14 +244,18 @@ public:
         }
     }
 
-    template <typename NodeFunc>
-    inline void parallel_for_each_ghost_node(NodeFunc on_node) const {
-        tbb::parallel_for(tbb::blocked_range<NodeId>(local_node_count(), local_node_count() + ghost_data_.size()),
-                          [&](auto const& r) {
-                              for (NodeId node = r.begin(); node != r.end(); node++) {
-                                  on_node(node);
-                              }
-                          });
+    template <typename NodeFunc, typename Partitioner = tbb::auto_partitioner>
+    inline void parallel_for_each_ghost_node(NodeFunc on_node,
+                                             size_t grainsize = 1,
+                                             Partitioner&& partitioner = Partitioner{}) const {
+        tbb::parallel_for(
+            tbb::blocked_range<NodeId>(local_node_count(), local_node_count() + ghost_data_.size(), grainsize),
+            [&](auto const& r) {
+                for (NodeId node = r.begin(); node != r.end(); node++) {
+                    on_node(node);
+                }
+            },
+            partitioner);
     }
 
     NodeRange ghost_nodes() const {
@@ -259,13 +269,18 @@ public:
         }
     }
 
-    template <typename NodeFunc>
-    inline void parallel_for_each_local_node_and_ghost(NodeFunc on_node) const {
-        tbb::parallel_for(tbb::blocked_range<NodeId>(0, first_out_.size() - 1), [&](const auto& r) {
-            for (NodeId node = r.begin(); node != r.end(); node++) {
-                on_node(node);
-            }
-        });
+    template <typename NodeFunc, typename Partitioner = tbb::auto_partitioner>
+    inline void parallel_for_each_local_node_and_ghost(NodeFunc on_node,
+                                                       size_t grainsize = 1,
+                                                       Partitioner&& partitioner = Partitioner{}) const {
+        tbb::parallel_for(
+            tbb::blocked_range<NodeId>(0, first_out_.size() - 1, grainsize),
+            [&](const auto& r) {
+                for (NodeId node = r.begin(); node != r.end(); node++) {
+                    on_node(node);
+                }
+            },
+            partitioner);
     }
 
     NodeRange local_and_ghost_nodes() const {
@@ -336,20 +351,26 @@ public:
         }
     }
 
-    template <typename EdgeFunc>
-    inline void parallel_for_each_edge(NodeId node, EdgeFunc on_edge) const {
+    template <typename EdgeFunc, typename Partitioner = tbb::auto_partitioner>
+    inline void parallel_for_each_edge(NodeId node,
+                                       EdgeFunc on_edge,
+                                       size_t grainsize = 1,
+                                       Partitioner&& partitioner = Partitioner{}) const {
         assert(is_local_from_local(node) || is_ghost(node));
         EdgeId begin = first_out_[node];
         // TODO change it!!!
         EdgeId end = first_out_[node] + degree_[node];
         // EdgeId end = first_out_[node] + first_out_[node + 1];
-        tbb::parallel_for(tbb::blocked_range(begin, end), [&](const auto& r) {
-            for (size_t edge_id = r.begin(); edge_id < r.end(); ++edge_id) {
-                NodeId head = head_[edge_id];
-                Edge edge{node, head};
-                on_edge(edge);
-            }
-        });
+        tbb::parallel_for(
+            tbb::blocked_range(begin, end, grainsize),
+            [&](const auto& r) {
+                for (size_t edge_id = r.begin(); edge_id < r.end(); ++edge_id) {
+                    NodeId head = head_[edge_id];
+                    Edge edge{node, head};
+                    on_edge(edge);
+                }
+            },
+            partitioner);
     }
 
     EdgeRange edges(NodeId node) const {
@@ -369,18 +390,24 @@ public:
         }
     }
 
-    template <typename EdgeFunc>
-    inline void parallel_for_each_local_out_edge(NodeId node, EdgeFunc on_edge) const {
+    template <typename EdgeFunc, typename Partitioner = tbb::auto_partitioner>
+    inline void parallel_for_each_local_out_edge(NodeId node,
+                                                 EdgeFunc on_edge,
+                                                 size_t grainsize = 1,
+                                                 Partitioner&& partitioner = Partitioner{}) const {
         assert(is_local_from_local(node) || is_ghost(node));
         auto begin = first_out_[node] + first_out_offset_[node];
         auto end = first_out_[node] + degree_[node];
-        tbb::parallel_for(tbb::blocked_range(begin, end), [&on_edge, this, node](const auto& r) {
-            for (size_t edge_id = r.begin(); edge_id < r.end(); ++edge_id) {
-                NodeId head = head_[edge_id];
-                Edge edge{node, head};
-                on_edge(edge);
-            }
-        });
+        tbb::parallel_for(
+            tbb::blocked_range(begin, end, grainsize),
+            [&on_edge, this, node](const auto& r) {
+                for (size_t edge_id = r.begin(); edge_id < r.end(); ++edge_id) {
+                    NodeId head = head_[edge_id];
+                    Edge edge{node, head};
+                    on_edge(edge);
+                }
+            },
+            partitioner);
     }
 
     EdgeRange out_edges(NodeId node) const {
@@ -400,18 +427,24 @@ public:
         }
     }
 
-    template <typename EdgeFunc>
-    inline void parallel_for_each_local_in_edge(NodeId node, EdgeFunc on_edge) const {
+    template <typename EdgeFunc, typename Partitioner = tbb::auto_partitioner>
+    inline void parallel_for_each_local_in_edge(NodeId node,
+                                                EdgeFunc on_edge,
+                                                size_t grainsize = 1,
+                                                Partitioner&& partitioner = Partitioner{}) const {
         assert(is_local_from_local(node) || is_ghost(node));
         auto begin = first_out_[node];
         auto end = first_out_[node] + first_out_offset_[node];
-        tbb::parallel_for(tbb::blocked_range(begin, end), [&](const auto& r) {
-            for (size_t edge_id = r.begin(); edge_id < r.end(); ++edge_id) {
-                NodeId head = head_[edge_id];
-                Edge edge{node, head};
-                on_edge(edge);
-            }
-        });
+        tbb::parallel_for(
+            tbb::blocked_range(begin, end, grainsize),
+            [&](const auto& r) {
+                for (size_t edge_id = r.begin(); edge_id < r.end(); ++edge_id) {
+                    NodeId head = head_[edge_id];
+                    Edge edge{node, head};
+                    on_edge(edge);
+                }
+            },
+            partitioner);
     }
 
     EdgeRange in_edges(NodeId node) const {
