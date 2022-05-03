@@ -89,7 +89,8 @@ struct Config {
     std::string communication_policy = "new";
     bool local_parallel = false;
     bool global_parallel = false;
-    size_t degree_of_parallelism = 1;
+    size_t local_degree_of_parallelism = 1;
+    size_t global_degree_of_parallelism = 1;
 
     bool full_all_to_all = false;
 
@@ -127,9 +128,10 @@ struct Config {
 
     template <class Archive>
     void serialize(Archive& archive) {
-        archive(CEREAL_NVP(input_file), CEREAL_NVP(hostname), CEREAL_NVP(PEs), CEREAL_NVP(num_threads), CEREAL_NVP(grainsize),
-                CEREAL_NVP(cache_input), CEREAL_NVP(algorithm), CEREAL_NVP(communication_policy),
+        archive(CEREAL_NVP(input_file), CEREAL_NVP(hostname), CEREAL_NVP(PEs), CEREAL_NVP(num_threads),
+                CEREAL_NVP(grainsize), CEREAL_NVP(cache_input), CEREAL_NVP(algorithm), CEREAL_NVP(communication_policy),
                 CEREAL_NVP(global_parallel), CEREAL_NVP(local_parallel), CEREAL_NVP(threshold),
+                CEREAL_NVP(local_degree_of_parallelism), CEREAL_NVP(global_degree_of_parallelism),
                 CEREAL_NVP(threshold_scale), CEREAL_NVP(primary_cost_function), CEREAL_NVP(secondary_cost_function),
                 CEREAL_NVP(orient_locally), CEREAL_NVP(pseudo2core), CEREAL_NVP(dense_load_balancing),
                 CEREAL_NVP(flag_intersection), CEREAL_NVP(skip_local_neighborhood));

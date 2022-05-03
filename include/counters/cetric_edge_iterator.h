@@ -119,7 +119,7 @@ public:
                 });
             }
         }
-        switch(conf.threshold) {
+        switch (conf.threshold) {
             case Threshold::local_nodes:
                 threshold_ = conf.threshold_scale * G.local_node_count();
                 break;
@@ -143,8 +143,8 @@ public:
 
     template <typename TriangleFunc>
     inline void run_local_sequential(TriangleFunc emit,
-                          cetric::profiling::Statistics& stats,
-                          std::vector<NodeId>& interface_nodes) {
+                                     cetric::profiling::Statistics& stats,
+                                     std::vector<NodeId>& interface_nodes) {
         cetric::profiling::Timer phase_time;
         interface_nodes.clear();
         // std::vector<NodeId> interface_nodes;
@@ -197,7 +197,7 @@ public:
                 interface_nodes.local().emplace_back(v);
             }
             pre_intersection(v);
-            G.parallel_for_each_local_out_edge(v, [&stats, this, emit](Edge edge) {
+            auto on_edge = [&stats, this, emit](Edge edge) {
                 NodeId v = edge.tail;
                 NodeId u = edge.head;
                 auto on_intersection = [&](NodeId node) {
@@ -208,8 +208,12 @@ public:
                     intersect(v, u, on_intersection);
                 }
                 // }
-            });
-            post_intersection(v);
+            };
+            if (conf_.global_degree_of_parallelism > 1) {
+                G.parallel_for_each_local_out_edge(v, on_edge);
+            } else {
+                G.for_each_local_out_edge(v, on_edge);
+            }
         };
         switch (conf_.algorithm) {
             case Algorithm::Cetric:
@@ -313,7 +317,7 @@ public:
                 });
                 nodes_queued--;
             };
-            if (conf_.degree_of_parallelism > 1) {
+            if (conf_.global_degree_of_parallelism > 1) {
                 pool.enqueue(task);
             } else {
                 task();
@@ -321,7 +325,8 @@ public:
         }
         while (true) {
             if (write_jobs == 0 && nodes_queued == 0) {
-                //atomic_debug(fmt::format("No more polling, enqueued: {}, done: {}", pool.enqueued(), pool.done()));
+                // atomic_debug(fmt::format("No more polling, enqueued: {}, done: {}", pool.enqueued(),
+                // pool.done()));
                 break;
             }
             queue.check_for_overflow_and_flush();
@@ -334,7 +339,7 @@ public:
         });
         pool.loop_until_empty();
         pool.terminate();
-        //atomic_debug(fmt::format("Finished Pool, enqueued: {}, done: {}", pool.enqueued(), pool.done()));
+        // atomic_debug(fmt::format("Finished Pool, enqueued: {}, done: {}", pool.enqueued(), pool.done()));
         stats.local.global_phase_time += phase_time.elapsed_time();
         stats.local.message_statistics.add(queue.stats());
         queue.reset();
