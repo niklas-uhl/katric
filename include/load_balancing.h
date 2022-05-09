@@ -12,7 +12,7 @@
 #include <sstream>
 #include <string>
 #include <vector>
-#include "datastructures/distributed/local_graph_view.h"
+#include <graph-io/local_graph_view.h>
 #include "datastructures/graph_definitions.h"
 #include "debug_assert.hpp"
 #include "timer.h"

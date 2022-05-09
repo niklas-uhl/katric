@@ -1,17 +1,18 @@
 #include <gmock/gmock-matchers.h>
+#include <graph-io/distributed_graph_io.h>
+#include <graph-io/parsing.h>
 #include <gtest/gtest.h>
-#include <io/distributed_graph_io.h>
 #include <load_balancing.h>
 #include <mpi.h>
 #include <util.h>
 #include <cstddef>
 #include "datastructures/distributed/distributed_graph.h"
-#include "datastructures/distributed/local_graph_view.h"
 #include "datastructures/graph_definitions.h"
 #include "message_statistics.h"
 
 namespace {
 using namespace cetric;
+using namespace graphio;
 class Orientation : public ::testing::TestWithParam<const char*> {
 protected:
     void SetUp() override {
@@ -26,7 +27,7 @@ protected:
 
         // our metis parser should work sequentially, so we read the whole graph
         EdgeId total_number_of_edges = 0;
-        read_metis(
+        graphio::internal::read_metis(
             input,
             [&](NodeId node_count, EdgeId edge_count) {
                 G_full.resize(node_count);
@@ -38,7 +39,7 @@ protected:
         conf.rank = rank;
 
         // read it distributed
-        LocalGraphView G_view = cetric::read_local_graph(input, InputFormat::metis, rank, size);
+        LocalGraphView G_view = graphio::read_local_graph(input, InputFormat::metis, rank, size);
         G = {std::move(G_view), rank, size};
     }
 

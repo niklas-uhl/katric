@@ -2,16 +2,18 @@
 #include <algorithm>
 #include <catch2/catch.hpp>
 #include <datastructures/distributed/distributed_graph.h>
-#include <datastructures/distributed/local_graph_view.h>
+#include <graph-io/local_graph_view.h>
 #include <filesystem>
-#include <io/distributed_graph_io.h>
+#include <graph-io/distributed_graph_io.h>
+#include <graph-io/graph_io.h>
+#include <graph-io/parsing.h>
 #include <iterator>
 #include <mpi.h>
 #include <numeric>
 #include <vector>
 
 TEST_CASE("Construct graph from input file", "[io][datastructure]") {
-    using namespace cetric;
+    using namespace graphio;
     std::vector<std::vector<Edge>> G_full;
     auto input = GENERATE("examples/metis-sample.metis", "examples/triangle.metis", "examples/com-amazon.metis");
     //auto input = GENERATE("examples/triangle.metis");
@@ -19,7 +21,7 @@ TEST_CASE("Construct graph from input file", "[io][datastructure]") {
 
     //our metis parser should work sequentially, so we read the whole graph
     EdgeId total_number_of_edges = 0;
-    read_metis(input, [&](NodeId node_count, EdgeId edge_count) {
+    graphio::internal::read_metis(input, [&](NodeId node_count, EdgeId edge_count) {
         G_full.resize(node_count);
         total_number_of_edges = edge_count;
     }, [](NodeId) {}, [&](Edge edge) {
@@ -32,7 +34,7 @@ TEST_CASE("Construct graph from input file", "[io][datastructure]") {
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
     //read it distributed
-    LocalGraphView G_view = cetric::read_local_graph(input, InputFormat::metis, rank, size);
+    LocalGraphView G_view = graphio::read_local_graph(input, InputFormat::metis, rank, size);
 
     SECTION( "view is correct" ) {
         std::vector<EdgeId> index;
@@ -51,7 +53,7 @@ TEST_CASE("Construct graph from input file", "[io][datastructure]") {
     }
 
     //construct the "real" datastructure
-    DistributedGraph G = DistributedGraph<Degree>(std::move(G_view), rank, size);
+    cetric::graph::DistributedGraph G = cetric::graph::DistributedGraph<Degree>(std::move(G_view), rank, size);
     SECTION( "global and local ids are correct" ) {
         std::vector<NodeId> local_nodes;
         G.for_each_local_node([&](NodeId node) {

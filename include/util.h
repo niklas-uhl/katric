@@ -22,6 +22,9 @@
 #include <sstream>
 #include <tlx/logger.hpp>
 #include <vector>
+#include <mpi_traits.h>
+#include <graph-io/local_graph_view.h>
+#include <datastructures/graph_definitions.h>
 
 using PEID = int;
 
@@ -167,8 +170,19 @@ std::ostream& operator<<(std::ostream& out, const std::pair<T, V>& p) {
 }
 
 namespace execution_policy {
-    struct sequential {};
-    struct parallel {};
-}
+struct sequential {};
+struct parallel {};
+}  // namespace execution_policy
+
+template <>
+struct mpi_traits<graphio::LocalGraphView::NodeInfo> {
+    static MPI_Datatype register_type() {
+        MPI_Datatype mpi_node_info;
+        MPI_Type_contiguous(2, MPI_NODE, &mpi_node_info);
+        MPI_Type_commit(&mpi_node_info);
+        return mpi_node_info;
+    }
+    static constexpr bool builtin = false;
+};
 
 #endif  // PARALLEL_TRIANGLE_COUNTER_UTIL_H

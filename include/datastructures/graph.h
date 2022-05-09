@@ -4,11 +4,10 @@
 
 #pragma once
 
-#include "graph_definitions.h"
+#include <graph-io/local_graph_view.h>
 #include <tbb/blocked_range.h>
 #include <tbb/parallel_for_each.h>
 #include <tbb/partitioner.h>
-#include "../util.h"
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
@@ -20,9 +19,11 @@
 #include <tuple>
 #include <type_traits>
 #include <vector>
+#include "../util.h"
 #include "debug_assert.hpp"
 #include "fmt/core.h"
-#include "io/distributed_graph_io.h"
+#include "graph-io/graph.h"
+#include "graph_definitions.h"
 
 namespace cetric {
 namespace graph {
@@ -46,6 +47,10 @@ public:
         bool operator!=(const NodeIterator& rhs) const {
             return !(*this == rhs);
         }
+
+        bool operator<(const NodeIterator& rhs) const {
+            return this->node_ < rhs.node_;
+        }
         NodeId operator*() const {
             return node_;
         }
@@ -58,8 +63,11 @@ public:
             this->node_ += n;
             return *this;
         }
+        NodeIterator operator+(difference_type n) const {
+            return NodeIterator(this->node_ + n);
+        }
 
-        difference_type operator-(const NodeIterator& rhs) {
+        difference_type operator-(const NodeIterator& rhs) const {
             return this->node_ - rhs.node_;
         }
 
@@ -104,14 +112,25 @@ public:
             this->iter_++;
             return *this;
         }
-
-        difference_type operator-(const EdgeIterator& rhs) {
+        difference_type operator-(const EdgeIterator& rhs) const {
             return this->iter_ - rhs.iter_;
+        }
+
+        EdgeIterator operator-(difference_type n) const {
+            return EdgeIterator(this->tail_, this->iter_ - n);
+        }
+
+        bool operator<(const EdgeIterator& rhs) const {
+            return this->iter_ < rhs.iter_;
         }
 
         EdgeIterator& operator+=(difference_type n) {
             this->iter_ += n;
             return *this;
+        }
+
+        EdgeIterator operator+(difference_type n) const {
+            return EdgeIterator(this->tail_, this->iter_ + n);
         }
 
     private:
@@ -367,11 +386,7 @@ public:
             std::sort(head_.begin() + begin, head_.begin() + in_end, node_cmp);
             std::sort(head_.begin() + in_end, head_.begin() + out_end, node_cmp);
         };
-        if constexpr (std::is_same_v<ExecutionPolicy, execution_policy::sequential>) {
-            for_each_local_node_and_ghost(on_node);
-        } else {
-            parallel_for_each_local_node_and_ghost(on_node);
-        }
+        for_each_local_node(on_node);
     }
 
     inline Degree local_degree(NodeId node) const {
@@ -391,7 +406,19 @@ public:
         first_out_.push_back(0);
     };
 
-    AdjacencyGraph(cetric::graph::LocalGraphView&& G)
+    AdjacencyGraph(graphio::Graph&& G)
+        : first_out_(std::move(G.first_out_)),
+          first_out_offset_(first_out_.size() - 1),
+          degree_(first_out_.size() - 1),
+          head_(std::move(G.head_)),
+          oriented_(false),
+          local_edge_count_(head_.size()) {
+        for (size_t i = 0; i < degree_.size(); i++) {
+            degree_[i] = first_out_[i + 1] - first_out_[i];
+        }
+    }
+
+    AdjacencyGraph(graphio::LocalGraphView&& G)
         : first_out_(G.local_node_count() + 1),
           first_out_offset_(G.local_node_count()),
           degree_(G.local_node_count()),
@@ -416,7 +443,6 @@ public:
         assert(first_out_[first_out_.size() - 1] == G.edge_heads.size());
         head_ = std::move(G.edge_heads);
     }
-
 
     std::vector<EdgeId> first_out_;
     std::vector<EdgeId> first_out_offset_;

@@ -7,7 +7,7 @@
 
 #include <datastructures/distributed/distributed_graph.h>
 #include <datastructures/distributed/graph_communicator.h>
-#include <datastructures/distributed/local_graph_view.h>
+#include <graph-io/local_graph_view.h>
 #include <datastructures/graph_definitions.h>
 #include <cstddef>
 #include <functional>

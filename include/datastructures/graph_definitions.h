@@ -5,6 +5,7 @@
 #include <cassert>
 #include <cinttypes>
 #include <ostream>
+#include <graph-io/graph_definitions.h>
 
 namespace cetric {
 namespace graph {
@@ -21,20 +22,7 @@ static_assert(sizeof(unsigned long long) == 8, "We expect an unsigned long long 
 #endif
 //#endif
 
-struct Edge {
-    Edge() : tail(0), head(0) {}
-    Edge(NodeId tail, NodeId head) : tail(tail), head(head) {}
-    Edge reverse() const {
-        return Edge{head, tail};
-    }
-    template <typename VertexMap>
-    Edge map(VertexMap map) {
-        return Edge{map(tail), map(head)};
-    }
-
-    NodeId tail;
-    NodeId head;
-};
+using Edge = graphio::Edge;
 
 inline std::ostream& operator<<(std::ostream& out, const Edge& edge) {
     out << "(" << edge.tail << ", " << edge.head << ")";

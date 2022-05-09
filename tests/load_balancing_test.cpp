@@ -1,15 +1,16 @@
+#include <graph-io/distributed_graph_io.h>
+#include <graph-io/parsing.h>
 #include <gtest/gtest.h>
-#include <mpi.h>
-#include "datastructures/distributed/distributed_graph.h"
-#include "datastructures/distributed/local_graph_view.h"
-#include "datastructures/graph_definitions.h"
-#include <cstddef>
 #include <load_balancing.h>
-#include <io/distributed_graph_io.h>
+#include <mpi.h>
 #include <util.h>
+#include <cstddef>
+#include "datastructures/distributed/distributed_graph.h"
+#include "datastructures/graph_definitions.h"
 
 namespace {
     using namespace cetric;
+    using namespace graphio;
     class LoadBalancing : public ::testing::TestWithParam<const char*> {
     protected:
         void SetUp() override {
@@ -24,7 +25,7 @@ namespace {
 
             // our metis parser should work sequentially, so we read the whole graph
             EdgeId total_number_of_edges = 0;
-            read_metis(
+            graphio::internal::read_metis(
                 input,
                 [&](NodeId node_count, EdgeId edge_count) {
                     G_full.resize(node_count);
@@ -38,7 +39,7 @@ namespace {
 
             // read it distributed
             G_view =
-                cetric::read_local_graph(input, InputFormat::metis, rank, size);
+                graphio::read_local_graph(input, InputFormat::metis, rank, size);
         }
 
         std::vector<std::vector<Edge>> G_full;

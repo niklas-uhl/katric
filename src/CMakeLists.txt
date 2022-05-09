@@ -1,8 +1,6 @@
 file(GLOB_RECURSE HEADER_LIST CONFIGURE_DEPENDS "${parallel-triangle-counter_SOURCE_DIR}/include/[a-zA-Z_0-9]+.h")
 
-set(FILE_LIST
-        distributed_graph_io.cpp
-        )
+set(FILE_LIST)
 
 add_library(cetric-lib ${FILE_LIST} ${HEADER_LIST})
 
@@ -17,6 +15,7 @@ target_link_libraries(cetric-lib PUBLIC cereal::cereal)
 target_link_libraries(cetric-lib PUBLIC debug_assert)
 target_link_libraries(cetric-lib PUBLIC fmt::fmt)
 target_link_libraries(cetric-lib PUBLIC message-queue)
+target_link_libraries(cetric-lib PUBLIC graph-io)
 target_link_libraries(cetric-lib PUBLIC TBB::tbb)
 target_link_libraries(cetric-lib PUBLIC OpenMP::OpenMP_CXX)
 target_include_directories(cetric-lib PUBLIC ${BACKWARD_INCLUDE_DIRS})
@@ -27,6 +26,7 @@ target_compile_definitions(cetric-lib PUBLIC ${BACKWARD_DEFINITIONS})
 target_compile_options(cetric-lib PUBLIC -Wall -Wextra -pedantic)
 
 source_group(
-        TREE "${PROJECT_SOURCE_DIR}/include"
-        PREFIX "Header Files"
-        FILES ${HEADER_LIST})
+  TREE "${PROJECT_SOURCE_DIR}/include"
+  PREFIX "Header Files"
+  FILES ${HEADER_LIST}
+)

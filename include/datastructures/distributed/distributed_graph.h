@@ -6,8 +6,9 @@
 #define PARALLEL_TRIANGLE_COUNTER_DISTRIBUTED_GRAPH_H
 
 #include <communicator.h>
-#include <datastructures/distributed/local_graph_view.h>
 #include <datastructures/graph_definitions.h>
+#include "datastructures/distributed/helpers.h"
+#include <graph-io/local_graph_view.h>
 #include <tbb/blocked_range.h>
 #include <tbb/parallel_for_each.h>
 #include <tbb/partitioner.h>
@@ -27,7 +28,6 @@
 #include <vector>
 #include "debug_assert.hpp"
 #include "fmt/core.h"
-#include "io/distributed_graph_io.h"
 
 namespace cetric {
 namespace load_balancing {
@@ -35,6 +35,7 @@ class LoadBalancer;
 }
 namespace graph {
 
+using LocalGraphView = graphio::LocalGraphView;
 using node_set = google::dense_hash_set<NodeId>;
 
 template <typename PayloadType>

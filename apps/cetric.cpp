@@ -1,6 +1,6 @@
 #include <config.h>
 #include <counters/cetric.h>
-#include <io/distributed_graph_io.h>
+#include <graph-io/distributed_graph_io.h>
 #include <mpi.h>
 #include <tbb/global_control.h>
 #include <tbb/task_arena.h>
@@ -25,7 +25,8 @@
 #include "cereal/cereal.hpp"
 #include "counters/cetric_edge_iterator.h"
 #include "datastructures/distributed/distributed_graph.h"
-#include "datastructures/distributed/local_graph_view.h"
+#include <graph-io/local_graph_view.h>
+#include <graph-io/definitions.h>
 #include "parse_parameters.h"
 #include "statistics.h"
 #include "timer.h"
@@ -44,7 +45,7 @@ cetric::Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
     app.add_option("input", conf.input_file, "The input graph");
 
     app.add_option("--input-format", conf.input_format)
-        ->transform(CLI::CheckedTransformer(input_types, CLI::ignore_case));
+        ->transform(CLI::CheckedTransformer(graphio::input_types, CLI::ignore_case));
 
     app.add_option("--iterations", conf.iterations);
 
@@ -58,7 +59,6 @@ cetric::Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
     app.add_option("--cache-input", conf.cache_input)
         ->transform(CLI::CheckedTransformer(cetric::cache_input_map, CLI::ignore_case));
 
-    app.add_flag("--rhg-fix", conf.rhg_fix);
 
     app.add_option("--json-output", conf.json_output);
 
@@ -99,7 +99,7 @@ cetric::Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
     gen_option->excludes(input_option);
 
     CLI11_PARSE_MPI(app, argc, argv, rank, size);
-    if (conf.input_file.empty() && conf.gen.empty()) {
+    if (conf.input_file.empty() && conf.gen.generator.empty()) {
         int retval;
         if (rank == 0) {
             CLI::RequiredError e("Provide an input file via 'input' or using the generator via '--gen'");
@@ -110,7 +110,7 @@ cetric::Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
         MPI_Finalize();
         exit(retval);
     }
-    if (conf.primary_cost_function == "none" && conf.gen.empty()) {
+    if (conf.primary_cost_function == "none" && conf.gen.generator.empty()) {
         int retval;
         if (rank == 0) {
             CLI::RequiredError e("Primary cost function 'none' is only allowed for generated graphs.");
@@ -133,7 +133,7 @@ public:
             G_ = load_graph();
         }
         if (conf_.cache_input == cetric::CacheInput::Filesystem) {
-            auto tmp_file = cetric::dump_to_tmp(G_.value(), conf_.rank, conf_.PEs);
+            auto tmp_file = graphio::dump_to_tmp(G_.value(), conf_.rank, conf_.PEs);
             cache_file_ = tmp_file;
             G_ = std::nullopt;
         }
@@ -143,7 +143,7 @@ public:
             case cetric::CacheInput::None:
                 return load_graph();
             case cetric::CacheInput::Filesystem:
-                return cetric::read_graph_view(cache_file_, conf_.rank, conf_.PEs);
+                return graphio::read_graph_view(cache_file_, conf_.rank, conf_.PEs);
             case cetric::CacheInput::InMemory:
                 return G_.value();
             default:
@@ -159,10 +159,10 @@ public:
 
 private:
     LocalGraphView load_graph() {
-        if (conf_.gen == "") {
-            return cetric::read_local_graph(conf_.input_file, conf_.input_format, conf_.rank, conf_.PEs);
+        if (conf_.gen.generator == "") {
+            return graphio::read_local_graph(conf_.input_file, conf_.input_format, conf_.rank, conf_.PEs);
         } else {
-            return cetric::gen_local_graph(conf_, conf_.rank, conf_.PEs);
+            return graphio::gen_local_graph(conf_.gen, conf_.rank, conf_.PEs);
         }
     }
     const cetric::Config& conf_;

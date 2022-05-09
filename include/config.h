@@ -6,7 +6,8 @@
 #define PARALLEL_TRIANGLE_COUNTER_CONFIG_H
 
 #include <datastructures/graph_definitions.h>
-#include <io/definitions.h>
+#include <graph-io/definitions.h>
+#include <graph-io/gen_parameters.h>
 #include <util.h>
 #include <cereal/cereal.hpp>
 #include <cereal/types/optional.hpp>
@@ -75,7 +76,7 @@ struct Config {
     Config() = default;
     std::string input_file;
     std::string output_file;
-    InputFormat input_format;
+    graphio::InputFormat input_format;
     size_t seed = 28475421;
     size_t buffer_threshold = std::numeric_limits<size_t>::max();
     double max_degree_threshold_alpha = 1.0;
@@ -112,19 +113,7 @@ struct Config {
     size_t grainsize = 1;
 
     // Generator parameters
-    std::string gen;
-    cetric::graph::NodeId gen_n = 10;
-    cetric::graph::EdgeId gen_m = 0;
-    float gen_r = 0.125;
-    float gen_r_coeff = 0.55;
-    float gen_p = 0.0;
-    bool gen_periodic = false;
-    size_t gen_k = 0;
-    float gen_gamma = 2.8;
-    float gen_d = 16;
-    bool gen_scale_weak = false;
-    bool rhg_fix = false;
-    double false_positive_rate = 0.01;
+    graphio::GeneratorParameters gen;
 
     template <class Archive>
     void serialize(Archive& archive) {
@@ -136,8 +125,16 @@ struct Config {
                 CEREAL_NVP(orient_locally), CEREAL_NVP(pseudo2core), CEREAL_NVP(dense_load_balancing),
                 CEREAL_NVP(flag_intersection), CEREAL_NVP(skip_local_neighborhood));
         if (input_file.empty()) {
-            archive(CEREAL_NVP(gen), CEREAL_NVP(gen_n), CEREAL_NVP(gen_m), CEREAL_NVP(gen_r), CEREAL_NVP(gen_r_coeff),
-                    CEREAL_NVP(gen_p), CEREAL_NVP(gen_gamma), CEREAL_NVP(gen_d), CEREAL_NVP(gen_scale_weak));
+            archive(cereal::make_nvp("gen", gen.generator),              //
+                    cereal::make_nvp("gen_n", gen.n),                    //
+                    cereal::make_nvp("gen_m", gen.m),                    //
+                    cereal::make_nvp("gen_r", gen.r),                    //
+                    cereal::make_nvp("gen_r_coeff", gen.r_coeff),        //
+                    cereal::make_nvp("gen_p", gen.p),                    //
+                    cereal::make_nvp("gen_gamma", gen.gamma),            //
+                    cereal::make_nvp("gen_d", gen.d),                    //
+                    cereal::make_nvp("gen_scale_weak", gen.scale_weak),  //
+                    cereal::make_nvp("gen_rhg_fix", gen.rhg_fix));
         }
     }
 };

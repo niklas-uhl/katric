@@ -15,7 +15,7 @@
 #include <vector>
 #include "../../communicator.h"
 #include "../graph_definitions.h"
-#include "local_graph_view.h"
+#include <graph-io/local_graph_view.h>
 
 using namespace cetric::graph;
 

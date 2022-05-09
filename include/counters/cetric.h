@@ -14,7 +14,7 @@
 #include <cstddef>
 #include "cost_function.h"
 #include "datastructures/distributed/distributed_graph.h"
-#include "datastructures/distributed/local_graph_view.h"
+#include "graph-io/local_graph_view.h"
 #include "datastructures/graph_definitions.h"
 #include "debug_assert.hpp"
 #include "tlx/algorithm/multiway_merge.hpp"
@@ -68,8 +68,8 @@ inline size_t run_patric(DistributedGraph<>& G,
     bool debug = false;
     G.find_ghost_ranks();
     cetric::profiling::Timer timer;
-    if ((conf.gen.empty() && conf.primary_cost_function != "N") ||
-        (!conf.gen.empty() && conf.primary_cost_function != "none")) {
+    if ((conf.gen.generator.empty() && conf.primary_cost_function != "N") ||
+        (!conf.gen.generator.empty() && conf.primary_cost_function != "none")) {
         auto cost_function = CostFunctionRegistry<DistributedGraph<>>::get(conf.primary_cost_function, G, conf,
                                                                            stats.local.primary_load_balancing);
         LocalGraphView tmp = G.to_local_graph_view(true, false);
@@ -129,8 +129,8 @@ inline size_t run_cetric(DistributedGraph<>& G,
     bool debug = false;
     G.find_ghost_ranks();
     cetric::profiling::Timer timer;
-    if ((conf.gen.empty() && conf.primary_cost_function != "N") ||
-        (!conf.gen.empty() && conf.primary_cost_function != "none")) {
+    if ((conf.gen.generator.empty() && conf.primary_cost_function != "N") ||
+        (!conf.gen.generator.empty() && conf.primary_cost_function != "none")) {
         auto cost_function = CostFunctionRegistry<DistributedGraph<>>::get(conf.primary_cost_function, G, conf,
                                                                            stats.local.primary_load_balancing);
         LocalGraphView tmp = G.to_local_graph_view(true, false);
