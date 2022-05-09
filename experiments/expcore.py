@@ -214,6 +214,17 @@ def explode(config):
         return [config]
     return configs
 
+def params_to_flags(params):
+    flags = []
+    for flag, value in params.items():
+        if isinstance(value, bool):
+            if value:
+                flags.append("--" + flag)
+        else:
+            flags.append("--" + flag)
+            flags.append(str(value))
+    return flags
+
 
 def cetric_command(input, mpi_ranks, threads_per_rank, **kwargs):
     script_path = os.path.dirname(__file__)
@@ -227,12 +238,6 @@ def cetric_command(input, mpi_ranks, threads_per_rank, **kwargs):
         else:
             command.append(str(input))
     flags = ["--num-threads", str(threads_per_rank)]
-    for flag, value in kwargs.items():
-        if isinstance(value, bool):
-            if value:
-                flags.append("--" + flag)
-        else:
-            flags.append("--" + flag)
-            flags.append(str(value))
+    flags = flags + params_to_flags(kwargs)
     command = command + flags
     return command

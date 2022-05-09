@@ -28,6 +28,12 @@
 namespace cetric {
 namespace graph {
 
+namespace intersection_policy {
+struct merge {};
+struct binary_search {};
+struct hybrid {};
+}  // namespace intersection_policy
+
 class AdjacencyGraph {
     friend class GraphBuilder;
     friend class CompactGraph;
@@ -69,6 +75,9 @@ public:
 
         difference_type operator-(const NodeIterator& rhs) const {
             return this->node_ - rhs.node_;
+        }
+        NodeIterator operator-(difference_type n) const {
+            return NodeIterator(this->node_ - n);
         }
 
     private:
@@ -190,8 +199,27 @@ public:
         return NodeRange(0, local_node_count());
     }
 
+    template <typename NodeFunc, typename IntersectionPolicy = intersection_policy::merge>
+    inline void intersect_neighborhoods(NodeId u, NodeId v, NodeFunc on_intersection, IntersectionPolicy&& = {}) const {
+        if constexpr (std::is_same_v<IntersectionPolicy, intersection_policy::merge>) {
+            intersect_neighborhoods_merge(u, v, on_intersection);
+        } else if constexpr (std::is_same_v<IntersectionPolicy, intersection_policy::binary_search>) {
+            intersect_neighborhoods_binary(u, v, on_intersection);
+        } else {
+            auto u_degree = local_outdegree(u);
+            auto v_degree = local_outdegree(v);
+            size_t merge_time = u_degree + v_degree;
+            size_t binary_time = std::min(u_degree, v_degree) * std::log2(std::max(u_degree, v_degree));
+            if (merge_time < binary_time) {
+                intersect_neighborhoods_merge(u, v, on_intersection);
+            } else {
+                intersect_neighborhoods_binary(u, v, on_intersection);
+            }
+        }
+    }
+
     template <typename NodeFunc>
-    inline void intersect_neighborhoods(NodeId u, NodeId v, NodeFunc on_intersection) const {
+    inline void intersect_neighborhoods_merge(NodeId u, NodeId v, NodeFunc on_intersection) const {
         EdgeId u_current_edge = first_out_[u] + first_out_offset_[u];
         EdgeId u_end = first_out_[u] + degree_[u];
         EdgeId v_current_edge = first_out_[v] + first_out_offset_[v];
@@ -208,6 +236,24 @@ public:
                 on_intersection(u_node);
                 u_current_edge++;
                 v_current_edge++;
+            }
+        }
+    }
+
+    template <typename NodeFunc>
+    inline void intersect_neighborhoods_binary(NodeId u, NodeId v, NodeFunc on_intersection) const {
+        if (local_outdegree(u) > local_outdegree(v)) {
+            std::swap(u, v);
+        }
+        size_t u_begin = first_out_[u] + first_out_offset_[u];
+        size_t u_end = first_out_[u] + degree_[u];
+        size_t v_begin = first_out_[v] + first_out_offset_[v];
+        size_t v_end = first_out_[v] + degree_[v];
+        for (EdgeId current = u_begin; current != u_end; current++) {
+            NodeId node = head_[current];
+            bool found = std::binary_search(head_.begin() + v_begin, head_.begin() + v_end, node);
+            if (found) {
+                on_intersection(node);
             }
         }
     }
