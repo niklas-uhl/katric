@@ -2,12 +2,11 @@ name: shared-memory
 graphs:
   - hiv
   - com-amazon
-  - live-journal
 binary: ../build/apps/shared_memory_counter
 ncores: [1, 2, 4, 8] #16, 32, 64, 128]
 config:
-  - partition: [1d, 2d]
-  - intersection_method: [merge, binary_search, hybrid]
-  - grainsize: [1, 10, 100, 1000, 10000]
-  - partitioner: [auto, static, simple, affinity]
-  - iterations: 5
+  partition: [1d, 2d]
+  intersection_method: [merge, binary_search, hybrid]
+  grainsize: [1, 10, 100, 1000, 10000]
+  partitioner: [auto, static, simple, affinity]
+  iterations: 5
