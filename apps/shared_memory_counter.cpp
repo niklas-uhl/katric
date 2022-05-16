@@ -18,6 +18,9 @@ int main(int argc, char* argv[]) {
         ->transform(CLI::CheckedTransformer(graphio::input_types, CLI::ignore_case));
     size_t num_threads = 0;
     app.add_option("--num_threads", num_threads);
+    bool pinning = false;
+    app.add_flag("--pinning", pinning);
+
     size_t iterations = 1;
     app.add_option("--iterations", iterations);
 
@@ -49,9 +52,12 @@ int main(int argc, char* argv[]) {
     CLI11_PARSE(app, argc, argv)
 
     // set the number of threads
-    if (num_threads != 0) {
-        tbb::global_control global_control(tbb::global_control::max_allowed_parallelism, num_threads);
+
+    size_t default_num_threads = tbb::this_task_arena::max_concurrency();
+    if (num_threads == 0) {
+	num_threads = default_num_threads;
     }
+    tbb::global_control global_control(tbb::global_control::max_allowed_parallelism, num_threads);
 
     auto G = cetric::graph::AdjacencyGraph(graphio::read_graph(input_file, input_format));
     G.orient([&](const auto& lhs, const auto& rhs) {
@@ -65,9 +71,10 @@ int main(int argc, char* argv[]) {
         ctr.run([&](auto) { number_of_triangles++; }, conf);
         auto end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> time = end - start;
-        std::cout << "RESULT"
+        std::cout << "RESULT" << std::boolalpha
                   << " input=" << input_file                              //
                   << " num_threads=" << num_threads                       //
+                  << " pinning=" << pinning                       //
                   << " iteration=" << i                                   //
                   << " partition=" << conf.partition                      //
                   << " intersection_method=" << conf.intersection_method  //
