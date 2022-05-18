@@ -53,7 +53,7 @@ int main(int argc, char* argv[]) {
                 {"affinity", cetric::shared_memory::Partitioner::affinity_partitioner}},
             CLI::ignore_case));
     app.add_flag("--skip_previous_edges", conf.skip_previous_edges);
-    bool degree_reordering;
+    bool degree_reordering = false;
     app.add_flag("--degree_reordering", degree_reordering);
 
     CLI11_PARSE(app, argc, argv)
