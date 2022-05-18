@@ -1,6 +1,8 @@
 file(GLOB_RECURSE HEADER_LIST CONFIGURE_DEPENDS "${parallel-triangle-counter_SOURCE_DIR}/include/[a-zA-Z_0-9]+.h")
 
-set(FILE_LIST)
+set(FILE_LIST
+  shared_memory_edge_iterator.cpp
+)
 
 add_library(cetric-lib ${FILE_LIST} ${HEADER_LIST})
 
@@ -17,7 +19,7 @@ target_link_libraries(cetric-lib PUBLIC fmt::fmt)
 target_link_libraries(cetric-lib PUBLIC message-queue)
 target_link_libraries(cetric-lib PUBLIC graph-io)
 target_link_libraries(cetric-lib PUBLIC TBB::tbb)
-target_link_libraries(cetric-lib PUBLIC OpenMP::OpenMP_CXX)
+target_link_libraries(cetric-lib PUBLIC range_adaptor)
 target_include_directories(cetric-lib PUBLIC ${BACKWARD_INCLUDE_DIRS})
 target_link_libraries(cetric-lib PUBLIC ${BACKWARD_LIBRARIES})
 target_compile_definitions(cetric-lib PUBLIC ${BACKWARD_DEFINITIONS})

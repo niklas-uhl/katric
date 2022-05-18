@@ -24,7 +24,7 @@ target_include_directories(sparsehash INTERFACE ${SPARSEHASH_INCLUDE_DIR})
 
 find_package(Boost)
 find_package(TBB REQUIRED)
-find_package(OpenMP REQUIRED)
+#find_package(OpenMP REQUIRED)
 find_package(MPI REQUIRED)
 message(STATUS "Run: ${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} ${MPIEXEC_MAX_NUMPROCS} ${MPIEXEC_PREFLAGS} EXECUTABLE ${MPIEXEC_POSTFLAGS} ARGS")
 

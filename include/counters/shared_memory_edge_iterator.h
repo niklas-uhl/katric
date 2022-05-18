@@ -5,6 +5,7 @@
 #include <tbb/parallel_for.h>
 #include <tbb/partitioner.h>
 #include <algorithm>
+#include <cyclic_range_adaptor.hpp>
 #include <iostream>
 #include "datastructures/graph.h"
 
@@ -60,6 +61,8 @@ struct Config {
     IntersectionMethod intersection_method = IntersectionMethod::merge;
     Partitioner partitioner = Partitioner::auto_partitioner;
     size_t grainsize = 1;
+    size_t num_threads = 0;
+    bool skip_previous_edges = false;
 };
 
 template <class Graph>
@@ -67,89 +70,130 @@ class SharedMemoryEdgeIterator {
 public:
     SharedMemoryEdgeIterator(const Graph& G) : G(G) {}
 
-    template <typename TriangleFunc>
-    void run(TriangleFunc emit) {
-        Config conf;
-        run(emit, conf);
-    }
-
-    template <typename TriangleFunc>
-    void run(TriangleFunc emit, const Config& conf) {
-        run_dispatcher(emit, conf);
+    template <typename TriangleFunc, typename NodeOrdering = std::less<>>
+    void run(TriangleFunc emit, const Config& conf, NodeOrdering&& node_ordering = {}) {
+        run_dispatcher(emit, conf, std::move(node_ordering));
     }
 
 private:
-    template <typename TriangleFunc>
-    void run_dispatcher(TriangleFunc emit, const Config& conf) {
+    template <typename TriangleFunc, typename NodeOrdering>
+    void run_dispatcher(TriangleFunc emit, const Config& conf, NodeOrdering&& node_ordering) {
         switch (conf.partition) {
             case Partition::one_dimensional:
-                run_dispatcher<Partition::one_dimensional>(emit, conf);
+                run_dispatcher<Partition::one_dimensional>(emit, conf, std::move(node_ordering));
                 break;
             case Partition::two_dimensional:
-                run_dispatcher<Partition::two_dimensional>(emit, conf);
+                run_dispatcher<Partition::two_dimensional>(emit, conf, std::move(node_ordering));
                 break;
         }
     }
 
-    template <Partition partition, typename TriangleFunc>
-    void run_dispatcher(TriangleFunc emit, const Config& conf) {
+    template <Partition partition, typename TriangleFunc, typename NodeOrdering>
+    void run_dispatcher(TriangleFunc emit, const Config& conf, NodeOrdering&& node_ordering) {
         switch (conf.intersection_method) {
             case IntersectionMethod::merge:
-                run_dispatcher<partition, graph::intersection_policy::merge>(emit, conf);
+                run_dispatcher<partition, graph::intersection_policy::merge>(emit, conf, std::move(node_ordering));
                 break;
             case IntersectionMethod::binary_search:
-                run_dispatcher<partition, graph::intersection_policy::binary_search>(emit, conf);
+                run_dispatcher<partition, graph::intersection_policy::binary_search>(emit, conf,
+                                                                                     std::move(node_ordering));
                 break;
             case IntersectionMethod::hybrid:
-                run_dispatcher<partition, graph::intersection_policy::hybrid>(emit, conf);
+                run_dispatcher<partition, graph::intersection_policy::hybrid>(emit, conf, std::move(node_ordering));
                 break;
         }
     }
 
-    template <Partition partition, typename IntersectionPolicy, typename TriangleFunc>
-    void run_dispatcher(TriangleFunc emit, const Config& conf) {
+    template <Partition partition, typename IntersectionPolicy, typename TriangleFunc, typename NodeOrdering>
+    void run_dispatcher(TriangleFunc emit, const Config& conf, NodeOrdering&& node_ordering) {
         switch (conf.partitioner) {
             case Partitioner::auto_partitioner:
-                run_dispatcher<partition, IntersectionPolicy, tbb::auto_partitioner>(emit, conf);
-                break;
-            case Partitioner::simple_partitioner:
-                run_dispatcher<partition, IntersectionPolicy, tbb::simple_partitioner>(emit, conf);
+                run_dispatcher<partition, IntersectionPolicy, tbb::auto_partitioner>(emit, conf,
+                                                                                     std::move(node_ordering));
                 break;
             case Partitioner::static_partitioner:
-                run_dispatcher<partition, IntersectionPolicy, tbb::static_partitioner>(emit, conf);
+                run_dispatcher<partition, IntersectionPolicy, tbb::static_partitioner>(emit, conf,
+                                                                                       std::move(node_ordering));
                 break;
             case Partitioner::affinity_partitioner:
-                run_dispatcher<partition, IntersectionPolicy, tbb::affinity_partitioner>(emit, conf);
+                run_dispatcher<partition, IntersectionPolicy, tbb::affinity_partitioner>(emit, conf,
+                                                                                         std::move(node_ordering));
+                break;
+            case Partitioner::simple_partitioner:
+                run_dispatcher<partition, IntersectionPolicy, tbb::simple_partitioner>(emit, conf,
+                                                                                       std::move(node_ordering));
                 break;
         }
     }
 
-    template <Partition partition, typename IntersectionPolicy, typename Partitioner, typename TriangleFunc>
-    void run_dispatcher(TriangleFunc emit, const Config& conf) {
+    template <Partition partition,
+              typename IntersectionPolicy,
+              typename Partitioner,
+              typename TriangleFunc,
+              typename NodeOrdering>
+    void run_dispatcher(TriangleFunc emit, const Config& conf, NodeOrdering&& node_ordering) {
+        if (conf.skip_previous_edges) {
+            run_dispatcher<partition, IntersectionPolicy, Partitioner, true>(emit, conf, std::move(node_ordering));
+        } else {
+            run_dispatcher<partition, IntersectionPolicy, Partitioner, false>(emit, conf, std::move(node_ordering));
+        }
+    }
+
+    template <Partition partition,
+              typename IntersectionPolicy,
+              typename Partitioner,
+              bool skip_previous_edges,
+              typename TriangleFunc,
+              typename NodeOrdering>
+    void run_dispatcher(TriangleFunc emit, const Config& conf, NodeOrdering&& node_ordering) {
         using namespace cetric::graph;
         auto node_range = G.local_nodes();
-        auto on_edge = [this, &emit](Edge edge) {
-            auto v = edge.tail;
-            auto u = edge.head;
-            G.intersect_neighborhoods(
-                v, u,
-                [&](auto x) {
-                    emit(Triangle{u, v, x});
-                },
-                IntersectionPolicy{});
-        };
         Partitioner p;
+
+        // nw::graph::cyclic_range_adaptor tbb_range(node_range.begin(), node_range.end(), conf.num_threads);
+        tbb::blocked_range tbb_range(node_range.begin(), node_range.end(), conf.grainsize);
         tbb::parallel_for(
-            tbb::blocked_range(node_range.begin(), node_range.end(), conf.grainsize),
-            [&](auto r) {
+            tbb_range,
+            [emit, this, &conf, &p, node_ordering](auto r) {
                 for (NodeId v : r) {
-                    auto edge_range = G.out_edges(v);
+                    auto neighbors = G.out_neighbors(v);
                     if constexpr (partition == Partition::one_dimensional) {
-                        std::for_each(edge_range.begin(), edge_range.end(), on_edge);
+                        for (auto current = neighbors.begin(); current != neighbors.end(); current++) {
+                            NodeId u = *current;
+                            decltype(neighbors.begin()) begin;
+                            if constexpr (skip_previous_edges) {
+                                begin = current;
+                            } else {
+                                begin = G.out_neighbors(v).begin();
+                            }
+                            G.intersect_neighborhoods(
+                                begin, neighbors.end(), u,
+                                [&](auto x) {
+                                    emit(Triangle{u, v, x});
+                                },
+                                std::move(node_ordering), IntersectionPolicy{});
+                        }
                     } else {
                         tbb::parallel_for(
-                            tbb::blocked_range(edge_range.begin(), edge_range.end(), conf.grainsize),
-                            [&](auto r2) { std::for_each(r2.begin(), r2.end(), on_edge); }, p);
+                            tbb::blocked_range(neighbors.begin(), neighbors.end(), conf.grainsize),
+                            [this, emit, v, node_ordering](auto r2) {
+                                for (auto current = r2.begin(); current != r2.end(); current++) {
+                                    NodeId u = *current;
+                                    decltype(neighbors.begin()) begin;
+                                    if constexpr (skip_previous_edges) {
+                                        begin = current;
+                                    } else {
+                                        begin = G.out_neighbors(v).begin();
+                                    }
+                                    G.intersect_neighborhoods(
+                                        begin, G.out_neighbors(v).end(), u,
+                                        [&](auto x) {
+                                            emit(Triangle{u, v, x});
+                                        },
+                                        std::move(node_ordering), IntersectionPolicy{});
+                                }
+                            },
+                            p);
                     }
                 }
             },

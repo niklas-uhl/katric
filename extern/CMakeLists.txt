@@ -9,6 +9,7 @@ add_subdirectory(googletest EXCLUDE_FROM_ALL)
 add_subdirectory(kagen)
 set(MESSAGE_QUEUE_BLOCKING_RECEIVE ON CACHE BOOL "Receive messages blocking")
 add_subdirectory(message-queue)
+add_subdirectory(range_adaptor)
 
 set(gtest-mpi-listener_SOURCE_DIR ${CMAKE_SOURCE_DIR}/extern/gtest-mpi-listener)
 add_library(gtest-mpi-listener INTERFACE)

@@ -11,9 +11,12 @@
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
+#include <functional>
 #include <iterator>
 #include <limits>
+#include <numeric>
 #include <optional>
+#include <ostream>
 #include <sstream>
 #include <stdexcept>
 #include <tuple>
@@ -166,6 +169,22 @@ public:
         std::vector<NodeId>::const_iterator end_;
     };
 
+    class NeighborRange {
+    public:
+        explicit NeighborRange(std::vector<NodeId>::const_iterator&& begin, std::vector<NodeId>::const_iterator&& end)
+            : begin_(std::move(begin)), end_(std::move(end)) {}
+        auto begin() const {
+            return begin_;
+        };
+        auto end() const {
+            return end_;
+        };
+
+    private:
+        std::vector<NodeId>::const_iterator begin_;
+        std::vector<NodeId>::const_iterator end_;
+    };
+
     inline NodeId local_node_count() const {
         return first_out_.size() - 1;
     }
@@ -199,37 +218,76 @@ public:
         return NodeRange(0, local_node_count());
     }
 
-    template <typename NodeFunc, typename IntersectionPolicy = intersection_policy::merge>
-    inline void intersect_neighborhoods(NodeId u, NodeId v, NodeFunc on_intersection, IntersectionPolicy&& = {}) const {
+    template <typename NodeFunc, typename Comp = std::less<>, typename IntersectionPolicy = intersection_policy::merge>
+    inline void intersect_neighborhoods(NodeId u,
+                                        NodeId v,
+                                        NodeFunc on_intersection,
+                                        Comp&& comp = {},
+                                        IntersectionPolicy&& = {}) const {
+        auto u_neighbors = out_neighbors(u);
+        auto v_neighbors = out_neighbors(v);
+        intersect_neighborhoods(u_neighbors.begin(), u_neighbors.end(), v_neighbors.begin(), v_neighbors.end(),
+                                on_intersection, std::move(comp), IntersectionPolicy{});
+    }
+
+    template <typename Iterator,
+              typename NodeFunc,
+              typename Comp = std::less<>,
+              typename IntersectionPolicy = intersection_policy::merge>
+    inline void intersect_neighborhoods(Iterator u_begin,
+                                        Iterator u_end,
+                                        NodeId v,
+                                        NodeFunc on_intersection,
+                                        Comp&& comp = {},
+                                        IntersectionPolicy&& = {}) const {
+        auto v_neighbors = out_neighbors(v);
+        intersect_neighborhoods(u_begin, u_end, v_neighbors.begin(), v_neighbors.end(), on_intersection,
+                                std::move(comp), IntersectionPolicy{});
+    }
+
+    template <typename Iterator,
+              typename NodeFunc,
+              typename Comp = std::less<>,
+              typename IntersectionPolicy = intersection_policy::merge>
+    inline void intersect_neighborhoods(Iterator u_begin,
+                                        Iterator u_end,
+                                        Iterator v_begin,
+                                        Iterator v_end,
+                                        NodeFunc on_intersection,
+                                        Comp&& comp = {},
+                                        IntersectionPolicy&& = {}) const {
         if constexpr (std::is_same_v<IntersectionPolicy, intersection_policy::merge>) {
-            intersect_neighborhoods_merge(u, v, on_intersection);
+            intersect_neighborhoods_merge(u_begin, u_end, v_begin, v_end, on_intersection, std::move(comp));
         } else if constexpr (std::is_same_v<IntersectionPolicy, intersection_policy::binary_search>) {
-            intersect_neighborhoods_binary(u, v, on_intersection);
+            intersect_neighborhoods_binary(u_begin, u_end, v_begin, v_end, on_intersection, std::move(comp));
         } else {
-            auto u_degree = local_outdegree(u);
-            auto v_degree = local_outdegree(v);
+            auto u_degree = std::distance(u_begin, u_end);
+            auto v_degree = std::distance(v_begin, v_end);
             size_t merge_time = u_degree + v_degree;
             size_t binary_time = std::min(u_degree, v_degree) * std::log2(std::max(u_degree, v_degree));
             if (merge_time < binary_time) {
-                intersect_neighborhoods_merge(u, v, on_intersection);
+                intersect_neighborhoods_merge(u_begin, u_end, v_begin, v_end, on_intersection, std::move(comp));
             } else {
-                intersect_neighborhoods_binary(u, v, on_intersection);
+                intersect_neighborhoods_binary(u_begin, u_end, v_begin, v_end, on_intersection, std::move(comp));
             }
         }
     }
 
-    template <typename NodeFunc>
-    inline void intersect_neighborhoods_merge(NodeId u, NodeId v, NodeFunc on_intersection) const {
-        EdgeId u_current_edge = first_out_[u] + first_out_offset_[u];
-        EdgeId u_end = first_out_[u] + degree_[u];
-        EdgeId v_current_edge = first_out_[v] + first_out_offset_[v];
-        EdgeId v_end = first_out_[v] + degree_[v];
+  template <typename Iterator, typename NodeFunc, typename Comp = std::less<>>
+    inline void intersect_neighborhoods_merge(Iterator u_begin,
+                                              Iterator u_end,
+                                              Iterator v_begin,
+                                              Iterator v_end,
+                                              NodeFunc on_intersection,
+                                              Comp&& comp = {}) const {
+        auto u_current_edge = u_begin;
+        auto v_current_edge = v_begin;
         while (u_current_edge != u_end && v_current_edge != v_end) {
-            NodeId u_node = head_[u_current_edge];
-            NodeId v_node = head_[v_current_edge];
-            if (u_node < v_node) {
+            NodeId u_node = *u_current_edge;
+            NodeId v_node = *v_current_edge;
+            if (comp(u_node, v_node)) {
                 u_current_edge++;
-            } else if (u_node > v_node) {
+            } else if (comp(v_node, u_node)) {
                 v_current_edge++;
             } else {
                 // u_node == v_node
@@ -240,18 +298,20 @@ public:
         }
     }
 
-    template <typename NodeFunc>
-    inline void intersect_neighborhoods_binary(NodeId u, NodeId v, NodeFunc on_intersection) const {
-        if (local_outdegree(u) > local_outdegree(v)) {
-            std::swap(u, v);
+  template <typename Iterator, typename NodeFunc, typename Comp = std::less<>>
+    inline void intersect_neighborhoods_binary(Iterator u_begin,
+                                               Iterator u_end,
+                                               Iterator v_begin,
+                                               Iterator v_end,
+                                               NodeFunc on_intersection,
+                                               Comp&& comp = {}) const {
+        if (std::distance(u_begin, u_end) > std::distance(v_begin, v_end)) {
+            std::swap(u_begin, v_begin);
+            std::swap(u_end, v_end);
         }
-        size_t u_begin = first_out_[u] + first_out_offset_[u];
-        size_t u_end = first_out_[u] + degree_[u];
-        size_t v_begin = first_out_[v] + first_out_offset_[v];
-        size_t v_end = first_out_[v] + degree_[v];
-        for (EdgeId current = u_begin; current != u_end; current++) {
-            NodeId node = head_[current];
-            bool found = std::binary_search(head_.begin() + v_begin, head_.begin() + v_end, node);
+        for (auto current = u_begin; current != u_end; current++) {
+            NodeId node = *current;
+            bool found = std::binary_search(v_begin, v_end, node, comp);
             if (found) {
                 on_intersection(node);
             }
@@ -319,6 +379,12 @@ public:
         return EdgeRange(node, head_.cbegin() + begin, head_.cbegin() + end);
     }
 
+    NeighborRange neighbors(NodeId node) const {
+        EdgeId begin = first_out_[node];
+        EdgeId end = first_out_[node] + degree_[node];
+        return NeighborRange(head_.cbegin() + begin, head_.cbegin() + end);
+    }
+
     template <typename EdgeFunc>
     inline void for_each_local_out_edge(NodeId node, EdgeFunc on_edge) const {
         auto begin = first_out_[node] + first_out_offset_[node];
@@ -352,6 +418,12 @@ public:
         auto begin = first_out_[node] + first_out_offset_[node];
         auto end = first_out_[node] + degree_[node];
         return EdgeRange(node, head_.cbegin() + begin, head_.cbegin() + end);
+    }
+
+    NeighborRange out_neighbors(NodeId node) const {
+        auto begin = first_out_[node] + first_out_offset_[node];
+        auto end = first_out_[node] + degree_[node];
+        return NeighborRange(head_.cbegin() + begin, head_.cbegin() + end);
     }
 
     template <typename EdgeFunc>
@@ -389,6 +461,12 @@ public:
         return EdgeRange(node, head_.cbegin() + begin, head_.cbegin() + end);
     }
 
+    NeighborRange in_neighbors(NodeId node) const {
+        auto begin = first_out_[node];
+        auto end = first_out_[node] + first_out_offset_[node];
+        return NeighborRange(head_.cbegin() + begin, head_.cbegin() + end);
+    }
+
     template <typename NodeCmp>
     inline void orient(NodeCmp node_cmp) {
         auto is_outgoing = [&](NodeId tail, NodeId head) {
@@ -420,19 +498,39 @@ public:
         return oriented_;
     }
 
-    template <class ExecutionPolicy = execution_policy::sequential>
-    inline void sort_neighborhoods(ExecutionPolicy&& policy [[maybe_unused]] = ExecutionPolicy{}) {
+    template <class Comp = std::less<>, class ExecutionPolicy = execution_policy::sequential>
+    inline void sort_neighborhoods(Comp&& node_cmp = Comp{},
+                                   ExecutionPolicy&& policy [[maybe_unused]] = ExecutionPolicy{}) {
         auto on_node = [&](NodeId node) {
             EdgeId begin = first_out_[node];
             EdgeId in_end = first_out_[node] + first_out_offset_[node];
             EdgeId out_end = first_out_[node] + degree_[node];
-            auto node_cmp = [&](NodeId a, NodeId b) {
-                return a < b;
-            };
             std::sort(head_.begin() + begin, head_.begin() + in_end, node_cmp);
             std::sort(head_.begin() + in_end, head_.begin() + out_end, node_cmp);
         };
         for_each_local_node(on_node);
+    }
+
+    void permutate(std::vector<NodeId> const& permutation) {
+        std::vector<EdgeId> new_first_out(first_out_.size());
+        for (size_t i = 0; i < first_out_.size() - 1; ++i) {
+            new_first_out[permutation[i]] = degree_[i];
+        }
+        std::exclusive_scan(new_first_out.begin(), new_first_out.end(), new_first_out.begin(), 0);
+        new_first_out[new_first_out.size() - 1] = head_.size();
+        std::vector<NodeId> new_head(head_.size());
+        for (size_t i = 0; i < first_out_.size() - 1; ++i) {
+            auto begin = first_out_[i];
+            auto end = first_out_[i + 1];
+            auto target = new_first_out[permutation[i]];
+            for (auto current = begin; current != end; current++) {
+                auto index = current - begin;
+                new_head[target + index] = permutation[head_[current]];
+            }
+            degree_[i] = new_first_out[i + 1] - new_first_out[i];
+        }
+        first_out_ = std::move(new_first_out);
+        head_ = std::move(new_head);
     }
 
     inline Degree local_degree(NodeId node) const {
@@ -497,6 +595,39 @@ public:
     bool oriented_;
     EdgeId local_edge_count_{};
 };
+
+std::ostream& operator<<(std::ostream& os, AdjacencyGraph const& G) {
+    for (auto node : G.local_nodes()) {
+        os << "N(" << node << ") = [";
+        size_t index = 0;
+        for (auto edge : G.edges(node)) {
+            if (index != 0) {
+                os << ", ";
+            }
+            os << edge.head;
+            index++;
+        }
+        os << "]" << std::endl;
+    }
+    return os;
+}
+
+void inverse_permutation(std::vector<NodeId>& perm) {
+    std::vector<NodeId> inv(perm.size());
+    for (size_t i = 0; i < perm.size(); i++) {
+        inv[perm[i]] = i;
+    }
+    perm = std::move(inv);
+}
+
+template <typename Comp = std::less<>>
+std::vector<NodeId> ordering_permutation(AdjacencyGraph const& G, Comp&& cmp = {}) {
+    std::vector<NodeId> permutation(G.local_node_count());
+    std::iota(permutation.begin(), permutation.end(), 0);
+    std::sort(permutation.begin(), permutation.end(), cmp);
+    inverse_permutation(permutation);
+    return permutation;
+}
 
 }  // namespace graph
 }  // namespace cetric
