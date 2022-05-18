@@ -104,6 +104,7 @@ int main(int argc, char* argv[]) {
                   << " partition=" << conf.partition                        //
                   << " intersection_method=" << conf.intersection_method    //
                   << " grainsize=" << conf.grainsize                        //
+                  << " degree_reordering=" << degree_reordering             //
                   << " skip_previous_edges=" << conf.skip_previous_edges    //
                   << " partitioner=" << conf.partitioner                    //
                   << " triangles=" << number_of_triangles                   //
