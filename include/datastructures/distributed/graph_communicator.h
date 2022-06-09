@@ -5,6 +5,7 @@
 #ifndef PARALLEL_TRIANGLE_COUNTER_GRAPH_COMMUNICATOR_H
 #define PARALLEL_TRIANGLE_COUNTER_GRAPH_COMMUNICATOR_H
 
+#include <graph-io/local_graph_view.h>
 #include <statistics.h>
 #include <util.h>
 #include <cstddef>
@@ -15,7 +16,6 @@
 #include <vector>
 #include "../../communicator.h"
 #include "../graph_definitions.h"
-#include <graph-io/local_graph_view.h>
 
 using namespace cetric::graph;
 
@@ -44,9 +44,9 @@ public:
             neighboring_PEs.clear();
             if (G.get_local_data(node).is_interface) {
                 Degree deg = G.degree(node);
-                G.for_each_edge(node, [&](Edge edge) {
-                    if (G.is_ghost(edge.head)) {
-                        PEID rank = G.get_ghost_data(edge.head).rank;
+                G.for_each_edge(node, [&](auto edge) {
+                    if (G.is_ghost(edge.head.id())) {
+                        PEID rank = G.get_ghost_data(edge.head.id()).rank;
                         if (neighboring_PEs.find(rank) == neighboring_PEs.end()) {
                             send_buffers[rank].emplace_back(G.to_global_id(node));
                             send_buffers[rank].emplace_back(deg);
@@ -72,7 +72,7 @@ public:
     template <typename OnDegreeFunc>
     void get_ghost_outdegree(OnDegreeFunc&& on_degree_receive, cetric::profiling::MessageStatistics& stats) {
         assert(G.oriented());
-        get_ghost_outdegree([&](Edge e) { return G.is_outgoing(e); }, on_degree_receive, stats);
+        get_ghost_outdegree([&](RankEncodedEdge e) { return G.is_outgoing(e); }, on_degree_receive, stats);
     }
 
     template <typename EdgePred, typename OnDegreeFunc>
@@ -82,7 +82,7 @@ public:
         assert(G.ghost_ranks_available());
         auto get_out_degree = [&](NodeId local_node_id) {
             Degree outdegree = 0;
-            G.for_each_edge(local_node_id, [&](Edge e) {
+            G.for_each_edge(local_node_id, [&](RankEncodedEdge e) {
                 if (is_outgoing(e)) {
                     outdegree++;
                 }
@@ -95,9 +95,9 @@ public:
         for (NodeId node = 0; node < G.local_node_count(); ++node) {
             neighboring_PEs.clear();
             if (G.get_local_data(node).is_interface) {
-                G.for_each_edge(node, [&](Edge edge) {
-                    if (G.is_ghost(edge.head)) {
-                        PEID rank = G.get_ghost_data(edge.head).rank;
+                G.for_each_edge(node, [&](RankEncodedEdge edge) {
+                    if (G.is_ghost(edge.head.id())) {
+                        PEID rank = G.get_ghost_data(edge.head.id()).rank;
                         if (neighboring_PEs.find(rank) == neighboring_PEs.end()) {
                             send_buffers[rank].emplace_back(G.to_global_id(node));
                             send_buffers[rank].emplace_back(get_out_degree(node));
@@ -248,11 +248,11 @@ private:
 
         LocalGraphView G_balanced;
         CompactBuffer node_recv_buffer(G_balanced.node_info, rank, size);
-        CommunicationUtility::sparse_all_to_all<LocalGraphView::NodeInfo>(to_send_node_info, node_recv_buffer, rank, size,
-                                                as_int(MessageTag::LoadBalancing), stats);
+        CommunicationUtility::sparse_all_to_all<LocalGraphView::NodeInfo>(
+            to_send_node_info, node_recv_buffer, rank, size, as_int(MessageTag::LoadBalancing), stats);
         CompactBuffer edge_recv_buffer(G_balanced.edge_heads, rank, size);
-        CommunicationUtility::sparse_all_to_all<NodeId>(
-            to_send_head, edge_recv_buffer, rank, size, as_int(MessageTag::LoadBalancing), stats);
+        CommunicationUtility::sparse_all_to_all<NodeId>(to_send_head, edge_recv_buffer, rank, size,
+                                                        as_int(MessageTag::LoadBalancing), stats);
         return G_balanced;
     }
 };

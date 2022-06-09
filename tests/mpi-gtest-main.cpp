@@ -11,8 +11,10 @@
 #include <stdexcept>
 #include "gtest-mpi-listener.hpp"
 #include "mpi.h"
+#include <backward.hpp>
 
 int main(int argc, char** argv) {
+  backward::SignalHandling sh;
   // Filter out Google Test arguments
   ::testing::InitGoogleTest(&argc, argv);
 

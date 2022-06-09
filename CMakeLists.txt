@@ -22,7 +22,7 @@ find_package(sparsehash REQUIRED)
 add_library(sparsehash INTERFACE)
 target_include_directories(sparsehash INTERFACE ${SPARSEHASH_INCLUDE_DIR})
 
-find_package(Boost)
+find_package(Boost REQUIRED)
 find_package(TBB REQUIRED)
 #find_package(OpenMP REQUIRED)
 find_package(MPI REQUIRED)

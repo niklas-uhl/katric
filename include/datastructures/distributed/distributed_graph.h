@@ -7,25 +7,34 @@
 
 #include <communicator.h>
 #include <datastructures/graph_definitions.h>
-#include "datastructures/distributed/helpers.h"
 #include <graph-io/local_graph_view.h>
 #include <tbb/blocked_range.h>
 #include <tbb/parallel_for_each.h>
 #include <tbb/partitioner.h>
 #include <util.h>
 #include <algorithm>
+#include <boost/iterator/counting_iterator.hpp>
+#include <boost/iterator/iterator_categories.hpp>
+#include <boost/iterator/transform_iterator.hpp>
+#include <boost/range/adaptor/transformed.hpp>
+#include <boost/range/counting_range.hpp>
+#include <boost/range/iterator_range.hpp>
+#include <boost/range/iterator_range_core.hpp>
 #include <cassert>
 #include <cstddef>
-#include <google/dense_hash_map>
 #include <google/dense_hash_set>
+#include <google/sparse_hash_map>
 #include <iterator>
 #include <limits>
 #include <optional>
+#include <set>
 #include <sstream>
 #include <stdexcept>
+#include <tlx/vector_free.hpp>
 #include <tuple>
 #include <type_traits>
 #include <vector>
+#include "datastructures/distributed/helpers.h"
 #include "debug_assert.hpp"
 #include "fmt/core.h"
 
@@ -80,110 +89,55 @@ class DistributedGraph {
     friend class CompactGraph;
 
 public:
-    class NodeIterator {
-    public:
-        using iterator_category = std::forward_iterator_tag;
-        using difference_type = std::ptrdiff_t;
-        using value_type = NodeId;
-        using pointer = NodeId*;
-        using reference = NodeId&;
-        explicit NodeIterator(NodeId node) : node_(node) {}
-        bool operator==(const NodeIterator& rhs) const {
-            return this->node_ == rhs.node_;
-        }
-        bool operator!=(const NodeIterator& rhs) const {
-            return !(*this == rhs);
-        }
-        NodeId operator*() const {
-            return node_;
-        }
-        NodeIterator& operator++() {
-            this->node_++;
-            return *this;
-        }
-
-        NodeIterator& operator+=(difference_type n) {
-            this->node_ += n;
-            return *this;
-        }
-
-        difference_type operator-(const NodeIterator& rhs) {
-            return this->node_ - rhs.node_;
-        }
-
-    private:
-        NodeId node_;
-    };
-
+    template <typename NodeIdType>
     class NodeRange {
     public:
-        explicit NodeRange(NodeId from, NodeId to) : from_(from), to_(to) {}
-        NodeIterator begin() const {
-            return NodeIterator(from_);
-        };
-        NodeIterator end() const {
-            return NodeIterator(to_);
-        };
-
-    private:
-        NodeId from_;
-        NodeId to_;
-    };
-
-    class EdgeIterator {
-    public:
-        explicit EdgeIterator(NodeId tail, std::vector<NodeId>::const_iterator iter)
-            : tail_(tail), iter_(std::move(iter)) {}
-        using iterator_category = std::forward_iterator_tag;
-        using difference_type = std::ptrdiff_t;
-        using value_type = Edge;
-        using pointer = Edge*;
-        using reference = Edge&;
-        bool operator==(const EdgeIterator& rhs) const {
-            return this->tail_ == rhs.tail_ && this->iter_ == rhs.iter_;
+        explicit NodeRange(NodeIdType from, NodeIdType to) : from_(std::move(from)), to_(std::move(to)) {}
+        boost::counting_iterator<NodeIdType> begin() const {
+            return boost::counting_iterator(from_);
         }
-        bool operator!=(const EdgeIterator& rhs) const {
-            return !(*this == rhs);
-        }
-        Edge operator*() const {
-            return Edge(tail_, *iter_);
-        }
-        EdgeIterator& operator++() {
-            this->iter_++;
-            return *this;
-        }
-
-        difference_type operator-(const EdgeIterator& rhs) {
-            return this->iter_ - rhs.iter_;
-        }
-
-        EdgeIterator& operator+=(difference_type n) {
-            this->iter_ += n;
-            return *this;
+        boost::counting_iterator<NodeIdType> end() const {
+            return boost::counting_iterator(to_);
         }
 
     private:
-        NodeId tail_;
-        std::vector<NodeId>::const_iterator iter_;
+        NodeIdType from_;
+        NodeIdType to_;
     };
 
+    enum RangeModifiability { modifiable, non_modifiable };
+    template <typename NodeIdType, RangeModifiability modifiability>
     class EdgeRange {
     public:
-        explicit EdgeRange(NodeId tail,
-                           std::vector<NodeId>::const_iterator&& begin,
-                           std::vector<NodeId>::const_iterator&& end)
+        using head_iterator_type = std::conditional_t<modifiability == RangeModifiability::modifiable,
+                                                      typename std::vector<NodeIdType>::iterator,
+                                                      typename std::vector<NodeIdType>::const_iterator>;
+        explicit EdgeRange(NodeIdType tail, head_iterator_type&& begin, head_iterator_type&& end)
             : tail_(tail), begin_(std::move(begin)), end_(std::move(end)) {}
-        EdgeIterator begin() const {
-            return EdgeIterator(tail_, begin_);
-        };
-        EdgeIterator end() const {
-            return EdgeIterator(tail_, end_);
-        };
+
+        auto neighbors() const {
+            return boost::make_iterator_range(begin_, end_);
+        }
+        auto edges() const {
+            return boost::adaptors::transform(neighbors(), [this](NodeIdType neighbor) {
+                return graphio::Edge<NodeIdType>{tail_, neighbor};
+            });
+        }
+        // auto begin() const {
+        //     return boost::make_transform_iterator(begin_, [this](NodeIdType neighbor) {
+        //         return graphio::Edge<NodeIdType>{tail_, neighbor};
+        //     });
+        // };
+        // auto end() const {
+        //     return boost::make_transform_iterator(end_, [this](NodeIdType neighbor) {
+        //         return graphio::Edge<NodeIdType>{tail_, neighbor};
+        //     });
+        // };
 
     private:
-        NodeId tail_;
-        std::vector<NodeId>::const_iterator begin_;
-        std::vector<NodeId>::const_iterator end_;
+        NodeIdType tail_;
+        head_iterator_type begin_;
+        head_iterator_type end_;
     };
 
     using payload_type = GhostPayloadType;
@@ -209,264 +163,55 @@ public:
         return local_edge_count_;
     }
 
-    inline NodeId ghost_count() const {
-        return ghost_data_.size();
+    auto local_nodes() const {
+        using counting_iterator_type =
+            boost::counting_iterator<RankEncodedNodeId, boost::random_access_traversal_tag, std::ptrdiff_t>;
+        return boost::make_iterator_range(counting_iterator_type{RankEncodedNodeId(node_range_.first, rank_)},
+                                          counting_iterator_type{RankEncodedNodeId(node_range_.second + 1, rank_)});
+        // return boost::counting_range<RankEncodedNodeId>(RankEncodedNodeId(node_range_.first, rank_),
+        //                                                 RankEncodedNodeId(node_range_.second + 1, rank_));
+        // return NodeRange(RankEncodedNodeId{node_range_.first, rank_}, RankEncodedNodeId{node_range_.second,
+        // rank_});
     }
 
-    template <typename NodeFunc>
-    inline void for_each_local_node(NodeFunc on_node) const {
-        for (size_t node = 0; node < local_node_count(); ++node) {
-            on_node(node);
-        }
+    EdgeRange<RankEncodedNodeId, RangeModifiability::non_modifiable> adj(RankEncodedNodeId node) const {
+        auto idx = node.id() - node_range_.first;
+        EdgeId begin = first_out_[idx];
+        EdgeId end = first_out_[idx] + degree_[idx];
+        return EdgeRange<RankEncodedNodeId, RangeModifiability::non_modifiable>{node, head_.cbegin() + begin,
+                                                                                head_.cbegin() + end};
     }
 
-    template <typename NodeFunc, typename Partitioner = tbb::auto_partitioner>
-    inline void parallel_for_each_local_node(NodeFunc on_node,
-                                             size_t grainsize = 1,
-                                             Partitioner&& partitioner = Partitioner{}) const {
-        tbb::parallel_for(
-            tbb::blocked_range<NodeId>(0, local_node_count(), grainsize),
-            [&](auto const& r) {
-                for (NodeId node = r.begin(); node != r.end(); node++) {
-                    on_node(node);
-                }
-            },
-            partitioner);
+    EdgeRange<RankEncodedNodeId, RangeModifiability::modifiable> adj(RankEncodedNodeId node) {
+        auto idx = node.id() - node_range_.first;
+        EdgeId begin = first_out_[idx];
+        EdgeId end = first_out_[idx] + degree_[idx];
+        return EdgeRange<RankEncodedNodeId, RangeModifiability::modifiable>{node, head_.begin() + begin,
+                                                                            head_.begin() + end};
     }
 
-    NodeRange local_nodes() const {
-        return NodeRange(0, local_node_count());
-    }
-
-    template <typename NodeFunc>
-    inline void for_each_ghost_node(NodeFunc on_node) const {
-        for (size_t node = local_node_count_; node < local_node_count_ + ghost_data_.size(); ++node) {
-            on_node(node);
-        }
-    }
-
-    template <typename NodeFunc, typename Partitioner = tbb::auto_partitioner>
-    inline void parallel_for_each_ghost_node(NodeFunc on_node,
-                                             size_t grainsize = 1,
-                                             Partitioner&& partitioner = Partitioner{}) const {
-        tbb::parallel_for(
-            tbb::blocked_range<NodeId>(local_node_count(), local_node_count() + ghost_data_.size(), grainsize),
-            [&](auto const& r) {
-                for (NodeId node = r.begin(); node != r.end(); node++) {
-                    on_node(node);
-                }
-            },
-            partitioner);
-    }
-
-    NodeRange ghost_nodes() const {
-        return NodeRange(local_node_count(), local_node_count() + ghost_count());
-    }
-
-    template <typename NodeFunc>
-    inline void for_each_local_node_and_ghost(NodeFunc on_node) const {
-        for (size_t node = 0; node < first_out_.size() - 1; ++node) {
-            on_node(node);
-        }
-    }
-
-    template <typename NodeFunc, typename Partitioner = tbb::auto_partitioner>
-    inline void parallel_for_each_local_node_and_ghost(NodeFunc on_node,
-                                                       size_t grainsize = 1,
-                                                       Partitioner&& partitioner = Partitioner{}) const {
-        tbb::parallel_for(
-            tbb::blocked_range<NodeId>(0, first_out_.size() - 1, grainsize),
-            [&](const auto& r) {
-                for (NodeId node = r.begin(); node != r.end(); node++) {
-                    on_node(node);
-                }
-            },
-            partitioner);
-    }
-
-    NodeRange local_and_ghost_nodes() const {
-        return NodeRange(0, local_node_count() + ghost_count());
-    }
-
-    template <typename NodeFunc>
-    inline void intersect_neighborhoods(NodeId u, NodeId v, NodeFunc on_intersection) const {
-        assert(is_local_from_local(u) || is_ghost(u));
-        assert(is_local_from_local(v) || is_ghost(v));
-        EdgeId u_current_edge = first_out_[u] + first_out_offset_[u];
-        EdgeId u_end = first_out_[u] + degree_[u];
-        EdgeId v_current_edge = first_out_[v] + first_out_offset_[v];
-        EdgeId v_end = first_out_[v] + degree_[v];
-        while (u_current_edge != u_end && v_current_edge != v_end) {
-            // The ordering is based on global id, so we must respect this here
-            NodeId u_node = head_[u_current_edge];
-            NodeId v_node = head_[v_current_edge];
-            NodeId u_global = to_global_id(u_node);
-            NodeId v_global = to_global_id(v_node);
-            if (u_global < v_global) {
-                u_current_edge++;
-            } else if (u_global > v_global) {
-                v_current_edge++;
-            } else {
-                // u_node == v_node
-                assert(u_global == v_global);
-                on_intersection(u_node);
-                u_current_edge++;
-                v_current_edge++;
-            }
-        }
-    }
-
-    template <typename NodeFunc, typename Iter>
-    inline void intersect_neighborhoods(NodeId u, Iter begin, Iter end, NodeFunc on_intersection) const {
-        assert(is_local_from_local(u) || is_ghost(u));
-        EdgeId u_current_edge = first_out_[u] + first_out_offset_[u];
-        EdgeId u_end = first_out_[u] + degree_[u];
-        while (u_current_edge != u_end && begin != end) {
-            NodeId u_node = to_global_id(head_[u_current_edge]);
-            NodeId v_node = *begin;
-            if (u_node < v_node) {
-                u_current_edge++;
-            } else if (u_node > v_node) {
-                begin++;
-            } else {
-                // u_node == v_node
-                assert(u_node == v_node);
-                on_intersection(u_node);
-                u_current_edge++;
-                begin++;
-            }
-        }
-    }
-
-    template <typename EdgeFunc>
-    inline void for_each_edge(NodeId node, EdgeFunc on_edge) const {
-        assert(is_local_from_local(node) || is_ghost(node));
-        EdgeId begin = first_out_[node];
-        // TODO change it!!!
-        EdgeId end = first_out_[node] + degree_[node];
-        // EdgeId end = first_out_[node] + first_out_[node + 1];
-        for (size_t edge_id = begin; edge_id < end; ++edge_id) {
-            NodeId head = head_[edge_id];
-            Edge edge{node, head};
-            on_edge(edge);
-        }
-    }
-
-    template <typename EdgeFunc, typename Partitioner = tbb::auto_partitioner>
-    inline void parallel_for_each_edge(NodeId node,
-                                       EdgeFunc on_edge,
-                                       size_t grainsize = 1,
-                                       Partitioner&& partitioner = Partitioner{}) const {
-        assert(is_local_from_local(node) || is_ghost(node));
-        EdgeId begin = first_out_[node];
-        // TODO change it!!!
-        EdgeId end = first_out_[node] + degree_[node];
-        // EdgeId end = first_out_[node] + first_out_[node + 1];
-        tbb::parallel_for(
-            tbb::blocked_range(begin, end, grainsize),
-            [&](const auto& r) {
-                for (size_t edge_id = r.begin(); edge_id < r.end(); ++edge_id) {
-                    NodeId head = head_[edge_id];
-                    Edge edge{node, head};
-                    on_edge(edge);
-                }
-            },
-            partitioner);
-    }
-
-    EdgeRange edges(NodeId node) const {
-        EdgeId begin = first_out_[node];
-        EdgeId end = first_out_[node] + degree_[node];
-        return EdgeRange(node, head_.cbegin() + begin, head_.cbegin() + end);
-    }
-
-    template <typename EdgeFunc>
-    inline void for_each_local_out_edge(NodeId node, EdgeFunc on_edge) const {
-        assert(is_local_from_local(node) || is_ghost(node));
-        auto begin = first_out_[node] + first_out_offset_[node];
-        auto end = first_out_[node] + degree_[node];
-        for (EdgeId edge_id = begin; edge_id < end; ++edge_id) {
-            NodeId head = head_[edge_id];
-            on_edge(Edge(node, head));
-        }
-    }
-
-    template <typename EdgeFunc, typename Partitioner = tbb::auto_partitioner>
-    inline void parallel_for_each_local_out_edge(NodeId node,
-                                                 EdgeFunc on_edge,
-                                                 size_t grainsize = 1,
-                                                 Partitioner&& partitioner = Partitioner{}) const {
-        assert(is_local_from_local(node) || is_ghost(node));
-        auto begin = first_out_[node] + first_out_offset_[node];
-        auto end = first_out_[node] + degree_[node];
-        tbb::parallel_for(
-            tbb::blocked_range(begin, end, grainsize),
-            [&on_edge, this, node](const auto& r) {
-                for (size_t edge_id = r.begin(); edge_id < r.end(); ++edge_id) {
-                    NodeId head = head_[edge_id];
-                    Edge edge{node, head};
-                    on_edge(edge);
-                }
-            },
-            partitioner);
-    }
-
-    EdgeRange out_edges(NodeId node) const {
-        auto begin = first_out_[node] + first_out_offset_[node];
-        auto end = first_out_[node] + degree_[node];
-        return EdgeRange(node, head_.cbegin() + begin, head_.cbegin() + end);
-    }
-
-    template <typename EdgeFunc>
-    inline void for_each_local_in_edge(NodeId node, EdgeFunc on_edge) const {
-        assert(is_local_from_local(node) || is_ghost(node));
-        auto begin = first_out_[node];
-        auto end = first_out_[node] + first_out_offset_[node];
-        for (EdgeId edge_id = begin; edge_id < end; ++edge_id) {
-            NodeId head = head_[edge_id];
-            on_edge(Edge(head, node));
-        }
-    }
-
-    template <typename EdgeFunc, typename Partitioner = tbb::auto_partitioner>
-    inline void parallel_for_each_local_in_edge(NodeId node,
-                                                EdgeFunc on_edge,
-                                                size_t grainsize = 1,
-                                                Partitioner&& partitioner = Partitioner{}) const {
-        assert(is_local_from_local(node) || is_ghost(node));
-        auto begin = first_out_[node];
-        auto end = first_out_[node] + first_out_offset_[node];
-        tbb::parallel_for(
-            tbb::blocked_range(begin, end, grainsize),
-            [&](const auto& r) {
-                for (size_t edge_id = r.begin(); edge_id < r.end(); ++edge_id) {
-                    NodeId head = head_[edge_id];
-                    Edge edge{node, head};
-                    on_edge(edge);
-                }
-            },
-            partitioner);
-    }
-
-    EdgeRange in_edges(NodeId node) const {
-        auto begin = first_out_[node];
-        auto end = first_out_[node] + first_out_offset_[node];
-        return EdgeRange(node, head_.cbegin() + begin, head_.cbegin() + end);
+    EdgeRange<RankEncodedNodeId, RangeModifiability::non_modifiable> out_adj(RankEncodedNodeId node) const {
+        auto idx = node.id() - node_range_.first;
+        auto begin = first_out_[idx] + first_out_offset_[idx];
+        auto end = first_out_[idx] + degree_[idx];
+        return EdgeRange<RankEncodedNodeId, RangeModifiability::non_modifiable>{node, head_.cbegin() + begin,
+                                                                                head_.cbegin() + end};
     }
 
     template <typename NodeCmp>
     inline void orient(NodeCmp node_cmp) {
-        auto is_outgoing = [&](NodeId tail, NodeId head) {
+        auto is_outgoing = [&](auto tail, auto head) {
             return node_cmp(tail, head);
         };
-        auto orient_neighborhoods = [&](NodeId node) {
-            int64_t left = first_out_[node];
-            int64_t right = first_out_[node] + degree_[node] - 1;
+        for (auto node : local_nodes()) {
+            auto idx = to_local_idx(node);
+            int64_t left = first_out_[idx];
+            int64_t right = first_out_[idx] + degree_[idx] - 1;
             while (left <= right) {
                 while (left <= right && !is_outgoing(node, head_[left])) {
                     left++;
                 }
-                while (right >= (int64_t)first_out_[node] && is_outgoing(node, head_[right])) {
+                while (right >= (int64_t)first_out_[idx] && is_outgoing(node, head_[right])) {
                     right--;
                 }
                 if (left <= right) {
@@ -475,13 +220,13 @@ public:
                     // right--;
                 }
             }
-            first_out_offset_[node] = left - first_out_[node];
-        };
-        if (ghosts_expanded_) {
-            for_each_local_node_and_ghost(orient_neighborhoods);
-        } else {
-            for_each_local_node(orient_neighborhoods);
-        };
+            first_out_offset_[idx] = left - first_out_[idx];
+        }
+        // if (ghosts_expanded_) {
+        //     for_each_local_node_and_ghost(orient_neighborhoods);
+        // } else {
+        //     for_each_local_node(orient_neighborhoods);
+        // };
         oriented_ = true;
     }
 
@@ -489,150 +234,88 @@ public:
         return oriented_;
     }
 
-    inline void set_ghost_payload(NodeId local_node_id, GhostPayloadType payload) {
-        assert(is_ghost(local_node_id));
-        ghost_data_[local_node_id - local_node_count_].payload = std::move(payload);
-    }
+    // inline void set_ghost_payload(NodeId local_node_id, GhostPayloadType payload) {
+    //     // assert(is_ghost(local_node_id));
+    //     ghost_data_[local_node_id - local_node_count_].payload = std::move(payload);
+    // }
 
     template <class ExecutionPolicy = execution_policy::sequential>
     inline void sort_neighborhoods(ExecutionPolicy&& policy [[maybe_unused]] = ExecutionPolicy{}) {
-        auto on_node = [&](NodeId node) {
-            EdgeId begin = first_out_[node];
-            EdgeId in_end = first_out_[node] + first_out_offset_[node];
-            EdgeId out_end = first_out_[node] + degree_[node];
-            auto node_cmp = [&](NodeId a, NodeId b) {
-                if (is_ghost(a) || is_ghost(b)) {
-                    NodeId global_a = to_global_id(a);
-                    NodeId global_b = to_global_id(b);
-                    return global_a < global_b;
-                } else {
-                    return a < b;
-                }
+        for (auto node : local_nodes()) {
+            auto idx = to_local_idx(node);
+            EdgeId begin = first_out_[idx];
+            EdgeId in_end = first_out_[idx] + first_out_offset_[idx];
+            EdgeId out_end = first_out_[idx] + degree_[idx];
+            auto node_cmp = [&](RankEncodedNodeId a, RankEncodedNodeId b) {
+                return a.mask_rank(rank_) < b.mask_rank(rank_);
             };
             std::sort(head_.begin() + begin, head_.begin() + in_end, node_cmp);
             std::sort(head_.begin() + in_end, head_.begin() + out_end, node_cmp);
-        };
-        if constexpr (std::is_same_v<ExecutionPolicy, execution_policy::sequential>) {
-            for_each_local_node_and_ghost(on_node);
-        } else {
-            parallel_for_each_local_node_and_ghost(on_node);
-        }
-    }
-
-    inline bool edge_exists(Edge edge) {
-        NodeId tail = edge.tail;
-        NodeId tail_local = to_local_id(tail);
-        NodeId head = edge.head;
-        NodeId head_local = to_local_id(head);
-        assert(is_local(tail));
-        Degree tail_outdeg = outdegree(tail_local);
-        Degree head_indegree = degree(head_local) - outdegree(head_local);
-        if (tail_outdeg < head_indegree) {
-            auto begin = first_out_[tail_local] + first_out_offset_[tail_local];
-            auto end = first_out_[tail_local] + degree_[tail_local];
-            return std::binary_search(head_.begin() + begin, head_.begin() + end, head_local,
-                                      [&](NodeId a, NodeId b) { return to_global_id(a) < to_global_id(b); });
-        } else {
-            auto begin = first_out_[head_local];
-            auto end = first_out_[head_local] + first_out_offset_[head_local];
-            return std::binary_search(head_.begin() + begin, head_.begin() + end, tail_local,
-                                      [&](NodeId a, NodeId b) { return to_global_id(a) < to_global_id(b); });
         }
     }
 
     //! returns the degree for the given local id
     //! if ghost_payload has degree this also works for ghosts
-    inline Degree degree(NodeId node) const {
-        if constexpr (payload_has_degree<payload_type>::value) {
-            assert(is_local_from_local(node) || is_ghost(node));
-            if (is_ghost(node)) {
-                assert(graph_payload_.ghost_degree_available);
-                if constexpr (std::is_convertible_v<payload_type, Degree>) {
-                    return get_ghost_payload(node);
-                } else {
-                    return get_ghost_payload(node).degree;
-                }
-            } else {
-                return degree_[node];
-            }
-        } else {
-            assert(is_local_from_local(node));
-            return degree_[node];
-        }
+    inline Degree degree(RankEncodedNodeId node) const {
+        assert(node.rank() == rank_);
+        return degree_[node.id() - node_range_.first];
     }
 
-    inline Degree local_degree(NodeId node) const {
-        assert(is_local_from_local(node) || is_ghost(node));
-        return degree_[node];
+    inline Degree outdegree(RankEncodedNodeId node) const {
+        assert(node.rank() == rank_);
+        auto idx = node.id() - node_range_.first;
+        return degree_[idx] - first_out_offset_[idx];
     }
 
-    inline Degree local_outdegree(NodeId node) const {
-        assert(oriented());
-        assert(is_local_from_local(node) || is_ghost(node));
-        assert(ghosts_expanded_ || is_local_from_local(node));
-        return degree_[node] - first_out_offset_[node];
-    }
+    // [[nodiscard]] inline NodeId to_global_id(RankEncodedNodeId local_node_id) const {
+    //     assert((is_local_from_local(local_node_id) || is_ghost(local_node_id)));
+    //     if (!is_ghost(local_node_id)) {
+    //         if (consecutive_vertices_) {
+    //             return node_range_.first + local_node_id;
+    //         } else {
+    //             return local_data_[local_node_id].global_id;
+    //         }
+    //     } else {
+    //         return get_ghost_data(local_node_id).global_id;
+    //     }
+    // }
 
-    inline Degree outdegree(NodeId node) const {
-        assert(oriented());
-        assert(is_local_from_local(node));
-        return degree_[node] - first_out_offset_[node];
-    }
+    // [[nodiscard]] inline Edge to_global_edge(const Edge& edge) const {
+    //     return Edge{to_global_id(edge.tail), to_global_id(edge.head)};
+    // }
 
-    Degree initial_degree(NodeId node) const {
-        assert(is_local_from_local(node));
-        return first_out_[node + 1] - first_out_[node];
-    }
+    // [[nodiscard]] inline NodeId to_local_id(NodeId global_node_id) const {
+    //     if (consecutive_vertices_ && is_local(global_node_id)) {
+    //         NodeId local_id = global_node_id - node_range_.first;
+    //         assert(is_local_from_local(local_id));
+    //         return local_id;
+    //     } else {
+    //         assert(global_to_local_.find(global_node_id) != global_to_local_.end());
+    //         return global_to_local_.find(global_node_id)->second;
+    //     }
+    // }
 
-    [[nodiscard]] inline NodeId to_global_id(NodeId local_node_id) const {
-        assert((is_local_from_local(local_node_id) || is_ghost(local_node_id)));
-        if (!is_ghost(local_node_id)) {
-            if (consecutive_vertices_) {
-                return node_range_.first + local_node_id;
-            } else {
-                return local_data_[local_node_id].global_id;
-            }
-        } else {
-            return get_ghost_data(local_node_id).global_id;
-        }
-    }
+    // [[nodiscard]] inline bool is_local(NodeId global_node_id) const {
+    //     return global_node_id >= node_range_.first && global_node_id <= node_range_.second;
+    // }
 
-    [[nodiscard]] inline Edge to_global_edge(const Edge& edge) const {
-        return Edge{to_global_id(edge.tail), to_global_id(edge.head)};
-    }
+    // [[nodiscard]] inline bool is_local_from_local(NodeId local_node_id) const {
+    //     return local_node_id < local_node_count();
+    // }
 
-    [[nodiscard]] inline NodeId to_local_id(NodeId global_node_id) const {
-        if (consecutive_vertices_ && is_local(global_node_id)) {
-            NodeId local_id = global_node_id - node_range_.first;
-            assert(is_local_from_local(local_id));
-            return local_id;
-        } else {
-            assert(global_to_local_.find(global_node_id) != global_to_local_.end());
-            return global_to_local_.find(global_node_id)->second;
-        }
-    }
+    // [[nodiscard]] inline bool is_ghost(NodeId local_node_id) const {
+    //     return local_node_id >= local_node_count_ && local_node_id < local_node_count_ + ghost_count();
+    // }
 
-    [[nodiscard]] inline bool is_local(NodeId global_node_id) const {
-        return global_node_id >= node_range_.first && global_node_id <= node_range_.second;
-    }
-
-    [[nodiscard]] inline bool is_local_from_local(NodeId local_node_id) const {
-        return local_node_id < local_node_count();
-    }
-
-    [[nodiscard]] inline bool is_ghost(NodeId local_node_id) const {
-        return local_node_id >= local_node_count_ && local_node_id < local_node_count_ + ghost_count();
-    }
-
-    [[nodiscard]] inline bool is_ghost_from_global(NodeId global_node_id) const {
-        auto it = global_to_local_.find(global_node_id);
-        if (it == global_to_local_.end()) {
-            return false;
-        } else {
-            NodeId local_id = (*it).second;
-            return local_id >= local_node_count_;
-        }
-    }
+    // [[nodiscard]] inline bool is_ghost_from_global(NodeId global_node_id) const {
+    //     auto it = global_to_local_.find(global_node_id);
+    //     if (it == global_to_local_.end()) {
+    //         return false;
+    //     } else {
+    //         NodeId local_id = (*it).second;
+    //         return local_id >= local_node_count_;
+    //     }
+    // }
 
     [[nodiscard]] inline const GraphPayload& get_graph_payload() const {
         return graph_payload_;
@@ -642,34 +325,34 @@ public:
         return graph_payload_;
     }
 
-    [[nodiscard]] inline const GhostPayloadType& get_ghost_payload(NodeId local_node_id) const {
-        assert(is_ghost(local_node_id));
-        NodeId ghost_index = local_node_id - local_node_count_;
-        return ghost_data_[ghost_index].payload;
-    }
+    // [[nodiscard]] inline const GhostPayloadType& get_ghost_payload(NodeId local_node_id) const {
+    //     assert(is_ghost(local_node_id));
+    //     NodeId ghost_index = local_node_id - local_node_count_;
+    //     return ghost_data_[ghost_index].payload;
+    // }
 
-    [[nodiscard]] inline GhostPayloadType& get_ghost_payload(NodeId local_node_id) {
-        assert(is_ghost(local_node_id));
-        NodeId ghost_index = local_node_id - local_node_count_;
-        return ghost_data_[ghost_index].payload;
-    }
+    // [[nodiscard]] inline GhostPayloadType& get_ghost_payload(NodeId local_node_id) {
+    //     assert(is_ghost(local_node_id));
+    //     NodeId ghost_index = local_node_id - local_node_count_;
+    //     return ghost_data_[ghost_index].payload;
+    // }
 
-    [[nodiscard]] inline const GhostData<GhostPayloadType>& get_ghost_data(NodeId local_node_id) const {
-        assert(is_ghost(local_node_id));
-        NodeId ghost_index = local_node_id - local_node_count_;
-        return ghost_data_[ghost_index];
-    }
+    // [[nodiscard]] inline const GhostData<GhostPayloadType>& get_ghost_data(NodeId local_node_id) const {
+    //     assert(is_ghost(local_node_id));
+    //     NodeId ghost_index = local_node_id - local_node_count_;
+    //     return ghost_data_[ghost_index];
+    // }
 
-    [[nodiscard]] inline const LocalData& get_local_data(NodeId local_node_id) const {
-        assert(is_local_from_local(local_node_id));
-        return local_data_[local_node_id];
-    }
+    // [[nodiscard]] inline const LocalData& get_local_data(NodeId local_node_id) const {
+    //     assert(is_local_from_local(local_node_id));
+    //     return local_data_[local_node_id];
+    // }
 
-    template <typename = std::enable_if_t<payload_has_degree<payload_type>::value>>
-    inline bool is_outgoing(const Edge& e) const {
-        return std::forward_as_tuple(degree(e.tail), to_global_id(e.tail)) <
-               std::forward_as_tuple(degree(e.head), to_global_id(e.head));
-    }
+    // template <typename = std::enable_if_t<payload_has_degree<payload_type>::value>>
+    // inline bool is_outgoing(const RankEncodedEdge& e) const {
+    //     return std::forward_as_tuple(degree(e.tail.id()), to_global_id(e.tail.id())) <
+    //            std::forward_as_tuple(degree(e.head.id()), to_global_id(e.head.id()));
+    // }
 
     DistributedGraph() {
         first_out_.push_back(0);
@@ -683,106 +366,93 @@ public:
         return node_range_;
     }
 
-    template <class ExecutionPolicy = execution_policy::sequential>
-    void remove_internal_edges(ExecutionPolicy&& = ExecutionPolicy{}) {
-        auto on_node = [&](NodeId node) {
-            if (!get_local_data(node).is_interface) {
-                degree_[node] = 0;
-                first_out_offset_[node] = 0;
-                return;
-            }
-            Degree remaining_edges = 0;
-            EdgeId begin = first_out_[node];
-            EdgeId end = first_out_[node] + degree_[node];
-            Degree initial_edges = end - begin;
-            EdgeId offset = first_out_offset_[node];
-            for (EdgeId edge_id = begin; edge_id < end; edge_id++) {
-                NodeId head = head_[edge_id];
-                if (is_ghost(head)) {
-                    head_[begin + remaining_edges] = head;
-                    remaining_edges++;
-                }
-                if (edge_id + 1 == begin + offset) {
-                    first_out_offset_[node] = remaining_edges;
-                }
-            }
-            degree_[node] = remaining_edges;
-            local_edge_count_ -= initial_edges - remaining_edges;
-        };
-        if constexpr (std::is_same_v<ExecutionPolicy, execution_policy::sequential>) {
-            for_each_local_node(on_node);
-        } else {
-            parallel_for_each_local_node(on_node);
-        }
-        if constexpr (payload_has_degree<GhostPayloadType>::value) {
-            get_graph_payload().ghost_degree_available = false;
-        }
+    inline size_t to_local_idx(RankEncodedNodeId node) const {
+        assert(node.rank() == rank_);
+        return node.id() - node_range_.first;
+    }
+    inline bool is_interface_node(RankEncodedNodeId node) const {
+        assert(oriented());
+        assert(node.rank() == rank_);
+        return !degree(node) == 0 && adj(node).neighbors().end()->rank() != rank_;
     }
 
-    void expand_ghosts() {
-        if (ghosts_expanded_) {
+    void remove_internal_edges(RankEncodedNodeId node) {
+        assert(node.rank() == rank_);
+        if (!is_interface_node(node)) {
+            degree_[to_local_idx(node)] = 0;
+            first_out_offset_[to_local_idx(node)] = 0;
             return;
         }
-        std::vector<std::vector<NodeId>> ghost_neighbors(ghost_count());
-        size_t ghost_edges = 0;
-        for_each_local_node([&](NodeId node) {
-            for_each_edge(node, [&](Edge edge) {
-                if (is_ghost(edge.head)) {
-                    ghost_neighbors[ghost_to_ghost_index(edge.head)].push_back(edge.tail);
-                    ghost_edges++;
-                }
-            });
-        });
-        size_t edge_index = head_.size();
-        head_.resize(head_.size() + ghost_edges);
-        local_edge_count_ = head_.size() + ghost_edges;
-        first_out_.resize(first_out_.size() + ghost_count());
-        first_out_offset_.resize(first_out_offset_.size() + ghost_count(), 0);
-        degree_.resize(degree_.size() + ghost_count());
-        for (size_t i = 0; i < ghost_neighbors.size(); ++i) {
-            first_out_[local_node_count_ + i + 1] = first_out_[local_node_count_ + i] + ghost_neighbors[i].size();
-            degree_[local_node_count_ + i] = ghost_neighbors[i].size();
-            for (NodeId neighbor : ghost_neighbors[i]) {
-                head_[edge_index] = neighbor;
-                edge_index++;
-            }
-        }
-        ghosts_expanded_ = true;
+        auto neighbors = adj(node).neighbors();
+        auto it = std::find_if(neighbors.begin(), neighbors.end(),
+                               [this](RankEncodedNodeId node) { return node.rank() != rank_; });
+        size_t old_degree = std::distance(neighbors.begin(), neighbors.end());
+        size_t dist = std::distance(neighbors.begin(), it);
+        size_t degree = std::distance(it, neighbors.end());
+        first_out_[to_local_idx(node)] = first_out_[to_local_idx(node)] + dist;
+        first_out_offset_[to_local_idx(node)] = first_out_[to_local_idx(node)];
+        degree_[to_local_idx(node)] = degree;
+        local_edge_count_ -= old_degree - degree;
     }
+
+    // void expand_ghosts() {
+    //     if (ghosts_expanded_) {
+    //         return;
+    //     }
+    //     std::vector<std::vector<NodeId>> ghost_neighbors(ghost_count());
+    //     size_t ghost_edges = 0;
+    //     for_each_local_node([&](NodeId node) {
+    //         for_each_edge(node, [&](RankEncodedEdge edge) {
+    //             if (is_ghost(edge.head.id())) {
+    //                 ghost_neighbors[ghost_to_ghost_index(edge.head.id())].push_back(edge.tail.id());
+    //                 ghost_edges++;
+    //             }
+    //         });
+    //     });
+    //     size_t edge_index = head_.size();
+    //     head_.resize(head_.size() + ghost_edges);
+    //     local_edge_count_ = head_.size() + ghost_edges;
+    //     first_out_.resize(first_out_.size() + ghost_count());
+    //     first_out_offset_.resize(first_out_offset_.size() + ghost_count(), 0);
+    //     degree_.resize(degree_.size() + ghost_count());
+    //     for (size_t i = 0; i < ghost_neighbors.size(); ++i) {
+    //         first_out_[local_node_count_ + i + 1] = first_out_[local_node_count_ + i] + ghost_neighbors[i].size();
+    //         degree_[local_node_count_ + i] = ghost_neighbors[i].size();
+    //         for (NodeId neighbor : ghost_neighbors[i]) {
+    //             head_[edge_index] = RankEncodedNodeId{neighbor};
+    //             edge_index++;
+    //         }
+    //     }
+    //     ghosts_expanded_ = true;
+    // }
 
     DistributedGraph(cetric::graph::LocalGraphView&& G, PEID rank, PEID size)
         : first_out_(G.local_node_count() + 1),
           first_out_offset_(G.local_node_count()),
           degree_(G.local_node_count()),
           head_(),
-          ghost_data_(),
           local_data_(G.local_node_count()),
           consecutive_vertices_(false),
           ghost_ranks_available_(false),
           oriented_(false),
           ghosts_expanded_(false),
-          global_to_local_(),
           local_node_count_(G.local_node_count()),
           local_edge_count_{G.edge_heads.size()},
           total_node_count_{},
           node_range_(std::numeric_limits<NodeId>::max(), std::numeric_limits<NodeId>::min()),
           rank_(rank),
           size_(size) {
-        global_to_local_.set_empty_key(-1);
+        // global_to_local_.set_empty_key(-1);
         global_to_local_.set_deleted_key(-2);
         auto degree_sum = 0;
+        node_range_.first = G.node_info[0].global_id;
+        node_range_.second = G.node_info.back().global_id;
         for (size_t i = 0; i < local_node_count_; ++i) {
             first_out_[i] = degree_sum;
             degree_sum += G.node_info[i].degree;
             NodeId local_id = i;
-            NodeId global_id = G.node_info[i].global_id;
-            global_to_local_[global_id] = local_id;
             degree_[local_id] = G.node_info[i].degree;
-            local_data_[local_id].global_id = global_id;
-            node_range_.first = std::min(node_range_.first, global_id);
-            node_range_.second = std::max(node_range_.second, global_id);
         }
-        consecutive_vertices_ = node_range_.second - node_range_.first + 1 == local_node_count_;
 
         first_out_[local_node_count_] = degree_sum;
         assert(first_out_.size() == local_node_count_ + 1);
@@ -793,33 +463,15 @@ public:
             assert(first_out_[i + 1] - first_out_[i] == degree_[i]);
         }
         assert(first_out_[first_out_.size() - 1] == G.edge_heads.size());
-        head_ = std::move(G.edge_heads);
-        auto ghost_count = 0;
-        for (NodeId node = 0; node < local_node_count_; ++node) {
-            for (EdgeId edge_id = first_out_[node]; edge_id < first_out_[node + 1]; ++edge_id) {
-                NodeId head = head_[edge_id];
-                if (!is_local(head)) {
-                    local_data_[node].is_interface = true;
-                    if (global_to_local_.find(head) == global_to_local_.end()) {
-                        NodeId local_id = local_node_count_ + ghost_count;
-                        global_to_local_[head] = local_id;
-                        ghost_count++;
-                    }
-                }
-                head_[edge_id] = to_local_id(head);
+        head_.resize(G.edge_heads.size());
+        std::transform(G.edge_heads.begin(), G.edge_heads.end(), head_.begin(), [this](auto id) {
+            auto head = RankEncodedNodeId{id};
+            if (head.id() >= node_range_.first && head.id() <= node_range_.second) {
+                head.set_rank(rank_);
             }
-        }
-        ghost_data_.resize(ghost_count);
-        for (const auto& kv : global_to_local_) {
-            NodeId global_id = kv.first;
-            NodeId local_id = kv.second;
-            if (local_id < local_node_count_) {
-                continue;
-            }
-            // assert(local_id  - local_node_count_ < ghost_data_.size());
-            ghost_data_[local_id - local_node_count_].global_id = global_id;
-            ghost_data_[local_id - local_node_count_].rank = -1;
-        }
+            return head;
+        });
+        tlx::vector_free(G.edge_heads);
     }
 
     void find_ghost_ranks() {
@@ -830,10 +482,12 @@ public:
         // atomic_debug("consecutive vertices");
         std::vector<std::pair<NodeId, NodeId>> ranges(size_);
         gather_PE_ranges(node_range_.first, node_range_.second, ranges, MPI_COMM_WORLD, rank_, size_);
-        for_each_ghost_node([&](NodeId node) {
-            PEID rank = get_PE_from_node_ranges(to_global_id(node), ranges);
-            ghost_data_[ghost_to_ghost_index(node)].rank = rank;
-        });
+        for (auto node : local_nodes()) {
+            for (auto& neighbor : this->adj(node).neighbors()) {
+                PEID rank = get_PE_from_node_ranges(neighbor.id(), ranges);
+                neighbor.set_rank(rank);
+            }
+        }
         // } else {
         //     atomic_debug("No consecutive vertices");
         //     std::vector<NodeId> nodes(local_node_count_);
@@ -871,13 +525,13 @@ public:
             }
             node_info.emplace_back(global_id, degree);
             if (keep_only_out_edges) {
-                G.for_each_local_out_edge(node, [&](Edge edge) {
-                    G.head_[edge_counter] = G.to_global_id(edge.head);
+                G.for_each_local_out_edge(node, [&](RankEncodedEdge edge) {
+                    G.head_[edge_counter] = RankEncodedNodeId{G.to_global_id(edge.head.id())};
                     edge_counter++;
                 });
             } else {
-                G.for_each_edge(node, [&](Edge edge) {
-                    G.head_[edge_counter] = G.to_global_id(edge.head);
+                G.for_each_edge(node, [&](RankEncodedEdge edge) {
+                    G.head_[edge_counter] = RankEncodedNodeId{G.to_global_id(edge.head.id())};
                     edge_counter++;
                 });
             }
@@ -887,7 +541,9 @@ public:
         auto head = std::move(G.head_);
         LocalGraphView view;
         view.node_info = std::move(node_info);
-        view.edge_heads = std::move(head);
+        view.edge_heads.resize(head.size());
+        std::transform(head.begin(), head.end(), view.edge_heads.begin(), [](auto id) { return id.id(); });
+        tlx::vector_free(head);
         return view;
     }
 
@@ -938,16 +594,11 @@ public:
     }
 
 private:
-    NodeId ghost_to_ghost_index(NodeId local_node_id) const {
-        assert(is_ghost(local_node_id));
-        return local_node_id - local_node_count_;
-    }
-
-    using node_map = google::dense_hash_map<NodeId, NodeId>;
+    using node_map = google::sparse_hash_map<NodeId, NodeId>;
     std::vector<EdgeId> first_out_;
     std::vector<EdgeId> first_out_offset_;
     std::vector<Degree> degree_;
-    std::vector<NodeId> head_;
+    std::vector<RankEncodedNodeId> head_;
     std::vector<GhostData<GhostPayloadType>> ghost_data_;
     std::vector<LocalData> local_data_;
     bool consecutive_vertices_;
@@ -972,6 +623,23 @@ inline std::ostream& operator<<(std::ostream& out, DistributedGraph<GhostPayload
         });
     });
     return out;
+}
+
+template <typename GhostPayloadType, template <typename> class SetType = std::set>
+SetType<RankEncodedNodeId> find_ghosts(DistributedGraph<GhostPayloadType> const& G) {
+    SetType<RankEncodedNodeId> ghosts;
+    for (auto node : G.local_nodes()) {
+        const auto neighbors = G.edges(node);
+        for (auto current_neighbor = neighbors.end() - 1; current_neighbor != neighbors.begin() - 1;
+             current_neighbor++) {
+            if (current_neighbor->rank() == G.rank()) {
+                break;
+            }
+            assert(current_neighbor->rank() != G.rank());
+            ghosts.insert(*current_neighbor);
+        }
+    }
+    return ghosts;
 }
 
 }  // namespace graph

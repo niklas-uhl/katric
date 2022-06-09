@@ -1,16 +1,114 @@
 #ifndef GRAPH_DEFINITIONS_H_8XAL43DH
 #define GRAPH_DEFINITIONS_H_8XAL43DH
 
+#include <graph-io/graph_definitions.h>
 #include <algorithm>
 #include <cassert>
 #include <cinttypes>
+#include <cstdint>
+#include <functional>
+#include <limits>
 #include <ostream>
-#include <graph-io/graph_definitions.h>
+#include "message-queue/mpi_datatype.h"
 
 namespace cetric {
 namespace graph {
 
 using NodeId = std::uint64_t;
+static constexpr size_t RANK_BITS = 16;
+class RankEncodedNodeId {
+public:
+    static constexpr std::uint64_t NON_RANK_BITS = sizeof(std::uint64_t) * 8 - RANK_BITS;
+    static constexpr std::uint64_t rank_mask = ((1ull << RANK_BITS) - 1) << NON_RANK_BITS;
+    static constexpr RankEncodedNodeId sentinel() {
+        return RankEncodedNodeId{(1l << (cetric::graph::RankEncodedNodeId::NON_RANK_BITS + 1)) - 1,
+                                 std::numeric_limits<uint16_t>::max()};
+    }
+
+    explicit constexpr RankEncodedNodeId(std::uint64_t id) : value_(id | rank_mask) {}
+    explicit constexpr RankEncodedNodeId(std::uint64_t id, std::uint16_t rank)
+        : value_(id | (std::uint64_t(rank) << NON_RANK_BITS)) {}
+    explicit constexpr RankEncodedNodeId() : RankEncodedNodeId(0) {}
+    // void operator=(const std::uint64_t& value) {
+    //     value_ = value | rank_mask;
+    // }
+
+    inline std::uint16_t rank() const {
+        return (value_ & rank_mask) >> NON_RANK_BITS;
+    }
+
+    inline std::uint64_t id() const {
+        return (value_ & ~rank_mask);
+    }
+
+    inline std::uint64_t data() const {
+        return value_;
+    }
+
+    inline std::uint64_t mask_rank(std::uint16_t rank) const {
+        return value_ ^ (std::uint64_t(rank) << NON_RANK_BITS);
+    }
+
+    inline void set_rank(std::uint16_t rank) {
+        value_ = (value_ & ~rank_mask) | (std::uint64_t(rank) << NON_RANK_BITS);
+    }
+
+    inline bool operator<(const RankEncodedNodeId& rhs) const {
+        return value_ < rhs.value_;
+    }
+
+    inline bool operator==(RankEncodedNodeId const& rhs) const {
+        return value_ == rhs.value_;
+    }
+    inline bool operator!=(RankEncodedNodeId const& rhs) const {
+        return value_ != rhs.value_;
+    }
+    // operator std::uint64_t() const {
+    //     return value_;
+    // }
+    RankEncodedNodeId& operator++() {
+        value_++;
+        return *this;
+    }
+    RankEncodedNodeId operator++(int) {
+        auto pre = *this;
+        value_++;
+        return pre;
+    }
+
+    RankEncodedNodeId& operator+=(const size_t n) {
+        value_ += n;
+        return *this;
+    }
+
+    RankEncodedNodeId operator+(const size_t n) const {
+        auto pre = *this;
+        pre.value_ += n;
+        return pre;
+    }
+    RankEncodedNodeId& operator-=(const size_t n) {
+        value_ -= n;
+        return *this;
+    }
+
+    RankEncodedNodeId operator-(const size_t n) const {
+        auto pre = *this;
+        pre.value_ -= n;
+        return pre;
+    }
+
+    auto operator-(RankEncodedNodeId const& rhs) const {
+        return this->value_ - rhs.value_;
+    }
+
+private:
+    std::uint64_t value_;
+};
+
+inline std::ostream& operator<<(std::ostream& os, const RankEncodedNodeId& node_id) {
+    os << node_id.id();
+    return os;
+}
 using EdgeId = std::uint64_t;
 using Degree = NodeId;
 //#ifdef MPI_VERSION
@@ -22,16 +120,8 @@ static_assert(sizeof(unsigned long long) == 8, "We expect an unsigned long long 
 #endif
 //#endif
 
-using Edge = graphio::Edge;
-
-inline std::ostream& operator<<(std::ostream& out, const Edge& edge) {
-    out << "(" << edge.tail << ", " << edge.head << ")";
-    return out;
-}
-
-inline bool operator==(const Edge& x, const Edge& y) {
-    return x.tail == y.tail && x.head == y.head;
-}
+using Edge = graphio::Edge<>;
+using RankEncodedEdge = graphio::Edge<RankEncodedNodeId>;
 
 struct Triangle {
     NodeId x;
@@ -62,5 +152,31 @@ inline std::ostream& operator<<(std::ostream& out, const Triangle& t) {
 }
 }  // namespace graph
 }  // namespace cetric
+
+template <>
+struct std::hash<cetric::graph::RankEncodedNodeId> {
+    std::size_t operator()(cetric::graph::RankEncodedNodeId const& id) const noexcept {
+        return std::hash<std::uint64_t>{}(id.data());
+    }
+};
+
+// template <>
+// struct std::numeric_limits<cetric::graph::RankEncodedNodeId> {
+//     static constexpr bool is_specialized = std::numeric_limits<uint64_t>::is_specialized;
+//     static constexpr bool is_signed = std::numeric_limits<uint64_t>::is_signed;
+//     static constexpr bool is_bounded = std::numeric_limits<uint64_t>::is_bounded;
+//     static constexpr int digits = std::numeric_limits<uint64_t>::digits;
+
+//     static constexpr cetric::graph::RankEncodedNodeId min() {
+//         return cetric::graph::RankEncodedNodeId{0, 0};
+//     }
+//     static constexpr cetric::graph::RankEncodedNodeId max() {
+//         return cetric::graph::RankEncodedNodeId{(1l << (cetric::graph::RankEncodedNodeId::NON_RANK_BITS + 1)) - 1,
+//                                                 std::numeric_limits<uint16_t>::max()};
+//     }
+// };
+
+template <>
+struct kamping::mpi_type_traits<cetric::graph::RankEncodedNodeId> : kamping::mpi_type_traits<std::uint64_t> {};
 
 #endif /* end of include guard: GRAPH_DEFINITIONS_H_8XAL43DH */

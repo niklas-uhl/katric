@@ -1,5 +1,8 @@
 add_library(mpi-gtest-main EXCLUDE_FROM_ALL mpi-gtest-main.cpp)
-target_link_libraries(mpi-gtest-main gtest gtest-mpi-listener gmock)
+target_link_libraries(mpi-gtest-main PUBLIC gtest gtest-mpi-listener gmock)
+target_include_directories(mpi-gtest-main PUBLIC ${BACKWARD_INCLUDE_DIRS})
+target_link_libraries(mpi-gtest-main PUBLIC ${BACKWARD_LIBRARIES})
+target_compile_definitions(mpi-gtest-main PUBLIC ${BACKWARD_DEFINITIONS})
 
 set(TEST_MAIN_MPI mpi-catch2-main.cpp)
 add_library(mpi-catch2-main EXCLUDE_FROM_ALL ${TEST_MAIN_MPI})
@@ -44,7 +47,7 @@ function(nuhl_add_mpi_test NUHL_ADD_TEST_TARGET)
     endforeach()
 endfunction()
 
-nuhl_add_mpi_test_executable(CATCH TARGET graph_datastructure_test FILES graph_datastructure_test.cpp)
+nuhl_add_mpi_test_executable(GTEST TARGET graph_datastructure_test FILES graph_datastructure_test.cpp)
 target_link_libraries(graph_datastructure_test PRIVATE cetric-lib)
 nuhl_add_mpi_test(graph_datastructure_test CORES 2 4 8 16)
 
@@ -59,3 +62,6 @@ nuhl_add_mpi_test(orientation_test CORES 4)
 nuhl_add_mpi_test_executable(GTEST TARGET communicator_test FILES gather_test.cpp)
 target_link_libraries(communicator_test PRIVATE cetric-lib)
 nuhl_add_mpi_test(communicator_test CORES 2 4 8 16)
+
+add_executable(rank_encoded_node_id_test rank_encoded_node_id_test.cpp)
+target_link_libraries(rank_encoded_node_id_test PRIVATE Catch2::Catch2WithMain cetric-lib)

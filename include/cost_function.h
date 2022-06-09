@@ -7,9 +7,10 @@
 
 #include <datastructures/distributed/distributed_graph.h>
 #include <datastructures/distributed/graph_communicator.h>
-#include <graph-io/local_graph_view.h>
 #include <datastructures/graph_definitions.h>
+#include <graph-io/local_graph_view.h>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <limits>
 #include <numeric>
@@ -28,53 +29,86 @@
 using namespace cetric::graph;
 
 namespace cetric {
-class OutDegreeCache {
+class DegreeCache {
 public:
-    OutDegreeCache() : data_() {}
-    OutDegreeCache(const DistributedGraph<>& G)
-        : data_(G.local_node_count() + G.ghost_count(), std::numeric_limits<Degree>::max()) {
-        assert(G.get_graph_payload().ghost_degree_available);
-        G.for_each_local_node([&](NodeId local_node_id) {
-            Degree out_deg = 0;
-            G.for_each_edge(local_node_id, [&](Edge e) {
-                if (G.is_outgoing(e)) {
-                    out_deg++;
-                }
-            });
-            data_[local_node_id] = out_deg;
-        });
+    struct DegreeStruct {
+        Degree out;
+        Degree degree;
+    };
+    DegreeCache() : data_() {}
+    DegreeCache(const DistributedGraph<>& G) : data_() {
+        std::set ghosts = find_ghosts(G);
+        size_t local_index = 0;
+        for (RankEncodedNodeId ghost : ghosts) {
+            index_map_[ghost] = local_index;
+            local_index++;
+        }
+        data_.resize(G.local_node_count() + ghosts.size());
     }
-
-    inline void set(NodeId local_node_id, Degree degree) {
-        data_[local_node_id] = degree;
+    inline Degree degree(RankEncodedNodeId node) {
+        return data_[index_map_[node]].degree;
     }
-
-    inline Degree get(NodeId local_node_id) {
-        return data_[local_node_id];
+    inline Degree outdegree(RankEncodedNodeId node) {
+        return data_[index_map_[node]].out;
     }
 
 private:
-    std::vector<Degree> data_;
+    google::dense_hash_map<RankEncodedNodeId, size_t> index_map_;
+    std::vector<DegreeStruct> data_;
 };
+// class OutDegreeCache {
+// public:
+//     OutDegreeCache() : data_() {}
+//     OutDegreeCache(const DistributedGraph<>& G) : data_() {
+//         auto ghosts = find_ghosts(G);
+//         assert(G.get_graph_payload().ghost_degree_available);
+//         for (RankEncodedNodeId node : G.local_nodes()) {
+//             Degree out_deg = 0;
+//             for (auto edge : G.edges(node)) {
+//                 if (edge.head.rank() != G.rank()) {
+//                 }
+//             }
+//         }
+
+//         G.for_each_local_node([&](NodeId local_node_id) {
+//             Degree out_deg = 0;
+//             G.for_each_edge(local_node_id, [&](auto e) {
+//                 if (G.is_outgoing(e)) {
+//                     out_deg++;
+//                 }
+//             });
+//             data_[local_node_id] = out_deg;
+//         });
+//     }
+
+//     inline void set(NodeId local_node_id, Degree degree) {
+//         data_[local_node_id] = degree;
+//     }
+
+//     inline Degree get(NodeId local_node_id) {
+//         return data_[local_node_id];
+//     }
+
+// private:
+//     std::vector<Degree> data_;
+// };
 
 template <typename Graph>
 class CostFunction {
 public:
-    static inline void init_nop(Graph& G, OutDegreeCache& cache, cetric::profiling::MessageStatistics& stats) {
+    static inline void init_nop(Graph& G, DegreeCache& cache, cetric::profiling::MessageStatistics& stats) {
         (void)G;
         (void)cache;
         (void)stats;
     }
 
-    static inline void init_local_outdegree(Graph& G,
-                                            OutDegreeCache& cache,
-                                            cetric::profiling::MessageStatistics& stats) {
+    static inline void init_local_outdegree(Graph& G, DegreeCache& cache, cetric::profiling::MessageStatistics& stats) {
         (void)stats;
         init_degree(G, cache, stats);
         cache = OutDegreeCache(G);
     }
 
-    static inline void init_degree(Graph& G, OutDegreeCache& cache, cetric::profiling::MessageStatistics& stats) {
+    static inline void init_degree(Graph& G, DegreeCache& cache, cetric::profiling::MessageStatistics& stats) {
         (void)cache;
         DegreeCommunicator comm(G, G.rank(), G.size(), as_int(MessageTag::CostFunction));
         if (!G.get_graph_payload().ghost_degree_available) {
@@ -85,7 +119,7 @@ public:
         }
     }
 
-    static inline void init_all(Graph& G, OutDegreeCache& cache, cetric::profiling::MessageStatistics& stats) {
+    static inline void init_all(Graph& G, DegreeCache& cache, cetric::profiling::MessageStatistics& stats) {
         DegreeCommunicator<Graph> comm(G, G.rank(), G.size(), as_int(MessageTag::CostFunction));
         if (!G.get_graph_payload().ghost_degree_available) {
             comm.get_ghost_degree(
@@ -94,18 +128,18 @@ public:
             G.get_graph_payload().ghost_degree_available = true;
         }
         cache = OutDegreeCache(G);
-        comm.get_ghost_outdegree(
-            [&](Edge e) { return G.is_outgoing(e); },
-            [&](NodeId global_id, Degree outdegree) { cache.set(G.to_local_id(global_id), outdegree); }, stats);
+        // comm.get_ghost_outdegree(
+        //     [&](auto e) { return G.is_outgoing(e); },
+        //     [&](NodeId global_id, Degree outdegree) { cache.set(G.to_local_id(global_id), outdegree); }, stats);
     }
 
     template <typename CostFunctionType>
     explicit CostFunction(Graph& G,
                           const std::string& name,
-                          OutDegreeCache& cache,
+                          DegreeCache& cache,
                           CostFunctionType& cost_function,
                           cetric::profiling::LoadBalancingStatistics& stats)
-        : G(G), outdegree_cache(cache), global_to_index(G.local_node_count()), cost(G.local_node_count()), name(name) {
+        : G(G), degree_cache(cache), global_to_index(G.local_node_count()), cost(G.local_node_count()), name(name) {
         cetric::profiling::Timer t;
         global_to_index.set_empty_key(-1);
         G.for_each_local_node([&](NodeId node) {
@@ -129,7 +163,7 @@ public:
 
     inline typename std::enable_if<payload_has_degree<typename Graph::payload_type>::value, Degree>::type out_degree(
         NodeId local_node_id) {
-        return outdegree_cache.get(local_node_id);
+        return degree_cache.outdegree(local_node_id);
     }
     inline PEID rank(NodeId local_node_id) {
         assert(G.ghost_ranks_available());
@@ -143,7 +177,7 @@ public:
 
 private:
     Graph& G;
-    OutDegreeCache& outdegree_cache;
+    DegreeCache& degree_cache;
     google::dense_hash_map<NodeId, NodeId> global_to_index;
     std::vector<size_t> cost;
     std::string name;
@@ -192,20 +226,20 @@ struct CostFunctionRegistry {
                                {CostFunction<Graph>::init_all,
                                 [](RefType ctx, GraphType G, NodeId v) {
                                     size_t cost = 0;
-                                    G.for_each_edge(v, [&](Edge e) {
+                                    G.for_each_edge(v, [&](auto e) {
                                         if (G.is_outgoing(e)) {
-                                            NodeId u = e.head;
-                                            cost += ctx.out_degree(v) + ctx.out_degree(u);
+                                            RankEncodedNodeId u = e.head;
+                                            cost += ctx.out_degree(v) + ctx.out_degree(u.id());
                                         }
                                     });
                                     return cost;
                                 }}},
                               {"IDPD", {CostFunction<Graph>::init_all, [](RefType ctx, GraphType G, NodeId v) {
                                             size_t cost = 0;
-                                            G.for_each_edge(v, [&](Edge e) {
+                                            G.for_each_edge(v, [&](auto e) {
                                                 if (!G.is_outgoing(e)) {
-                                                    NodeId u = e.head;
-                                                    cost += ctx.out_degree(v) + ctx.out_degree(u);
+                                                    RankEncodedNodeId u = e.head;
+                                                    cost += ctx.out_degree(v) + ctx.out_degree(u.id());
                                                 }
                                             });
                                             return cost;
@@ -215,7 +249,7 @@ struct CostFunctionRegistry {
             throw std::runtime_error("Unsupported cost function");
         }
         auto [init, cost] = it->second;
-        OutDegreeCache cache;
+        DegreeCache cache;
         cetric::profiling::Timer t;
         init(G, cache, stats.message_statistics);
         stats.cost_function_communication_time += t.elapsed_time();

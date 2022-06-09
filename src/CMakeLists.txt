@@ -23,6 +23,7 @@ target_link_libraries(cetric-lib PUBLIC range_adaptor)
 target_include_directories(cetric-lib PUBLIC ${BACKWARD_INCLUDE_DIRS})
 target_link_libraries(cetric-lib PUBLIC ${BACKWARD_LIBRARIES})
 target_compile_definitions(cetric-lib PUBLIC ${BACKWARD_DEFINITIONS})
+# target_compile_definitions(cetric-lib PUBLIC -D_GLIBCXX_DEBUG)
 
 
 target_compile_options(cetric-lib PUBLIC -Wall -Wextra -pedantic)

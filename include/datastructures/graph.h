@@ -273,7 +273,7 @@ public:
         }
     }
 
-  template <typename Iterator, typename NodeFunc, typename Comp = std::less<>>
+    template <typename Iterator, typename NodeFunc, typename Comp = std::less<>>
     inline void intersect_neighborhoods_merge(Iterator u_begin,
                                               Iterator u_end,
                                               Iterator v_begin,
@@ -298,7 +298,7 @@ public:
         }
     }
 
-  template <typename Iterator, typename NodeFunc, typename Comp = std::less<>>
+    template <typename Iterator, typename NodeFunc, typename Comp = std::less<>>
     inline void intersect_neighborhoods_binary(Iterator u_begin,
                                                Iterator u_end,
                                                Iterator v_begin,
