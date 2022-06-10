@@ -16,6 +16,7 @@
 #include <boost/iterator/counting_iterator.hpp>
 #include <boost/iterator/iterator_categories.hpp>
 #include <boost/iterator/transform_iterator.hpp>
+#include <boost/range/adaptor/reversed.hpp>
 #include <boost/range/adaptor/transformed.hpp>
 #include <boost/range/counting_range.hpp>
 #include <boost/range/iterator_range.hpp>
@@ -25,6 +26,7 @@
 #include <google/dense_hash_set>
 #include <google/sparse_hash_map>
 #include <iterator>
+#include <kassert/kassert.hpp>
 #include <limits>
 #include <optional>
 #include <set>
@@ -175,7 +177,8 @@ public:
     }
 
     EdgeRange<RankEncodedNodeId, RangeModifiability::non_modifiable> adj(RankEncodedNodeId node) const {
-        auto idx = node.id() - node_range_.first;
+        KASSERT(node.rank() == rank_);
+        auto idx = to_local_idx(node);
         EdgeId begin = first_out_[idx];
         EdgeId end = first_out_[idx] + degree_[idx];
         return EdgeRange<RankEncodedNodeId, RangeModifiability::non_modifiable>{node, head_.cbegin() + begin,
@@ -183,7 +186,9 @@ public:
     }
 
     EdgeRange<RankEncodedNodeId, RangeModifiability::modifiable> adj(RankEncodedNodeId node) {
-        auto idx = node.id() - node_range_.first;
+        KASSERT(node.rank() == rank_);
+        auto idx = to_local_idx(node);
+        KASSERT(node.rank() == rank_);
         EdgeId begin = first_out_[idx];
         EdgeId end = first_out_[idx] + degree_[idx];
         return EdgeRange<RankEncodedNodeId, RangeModifiability::modifiable>{node, head_.begin() + begin,
@@ -191,7 +196,8 @@ public:
     }
 
     EdgeRange<RankEncodedNodeId, RangeModifiability::non_modifiable> out_adj(RankEncodedNodeId node) const {
-        auto idx = node.id() - node_range_.first;
+        KASSERT(node.rank() == rank_);
+        auto idx = to_local_idx(node);
         auto begin = first_out_[idx] + first_out_offset_[idx];
         auto end = first_out_[idx] + degree_[idx];
         return EdgeRange<RankEncodedNodeId, RangeModifiability::non_modifiable>{node, head_.cbegin() + begin,
@@ -199,7 +205,7 @@ public:
     }
 
     template <typename NodeCmp>
-    inline void orient(NodeCmp node_cmp) {
+    inline void orient(NodeCmp&& node_cmp) {
         auto is_outgoing = [&](auto tail, auto head) {
             return node_cmp(tail, head);
         };
@@ -239,16 +245,13 @@ public:
     //     ghost_data_[local_node_id - local_node_count_].payload = std::move(payload);
     // }
 
-    template <class ExecutionPolicy = execution_policy::sequential>
-    inline void sort_neighborhoods(ExecutionPolicy&& policy [[maybe_unused]] = ExecutionPolicy{}) {
+    template <typename NodeCmp, class ExecutionPolicy = execution_policy::sequential>
+    inline void sort_neighborhoods(NodeCmp&& node_cmp, ExecutionPolicy&& policy [[maybe_unused]] = ExecutionPolicy{}) {
         for (auto node : local_nodes()) {
             auto idx = to_local_idx(node);
             EdgeId begin = first_out_[idx];
             EdgeId in_end = first_out_[idx] + first_out_offset_[idx];
             EdgeId out_end = first_out_[idx] + degree_[idx];
-            auto node_cmp = [&](RankEncodedNodeId a, RankEncodedNodeId b) {
-                return a.mask_rank(rank_) < b.mask_rank(rank_);
-            };
             std::sort(head_.begin() + begin, head_.begin() + in_end, node_cmp);
             std::sort(head_.begin() + in_end, head_.begin() + out_end, node_cmp);
         }
@@ -257,13 +260,13 @@ public:
     //! returns the degree for the given local id
     //! if ghost_payload has degree this also works for ghosts
     inline Degree degree(RankEncodedNodeId node) const {
-        assert(node.rank() == rank_);
-        return degree_[node.id() - node_range_.first];
+        KASSERT(node.rank() == rank_);
+        return degree_[to_local_idx(node)];
     }
 
     inline Degree outdegree(RankEncodedNodeId node) const {
-        assert(node.rank() == rank_);
-        auto idx = node.id() - node_range_.first;
+        KASSERT(node.rank() == rank_);
+        auto idx = to_local_idx(node);
         return degree_[idx] - first_out_offset_[idx];
     }
 
@@ -367,17 +370,17 @@ public:
     }
 
     inline size_t to_local_idx(RankEncodedNodeId node) const {
-        assert(node.rank() == rank_);
+        KASSERT(node.rank() == rank_);
         return node.id() - node_range_.first;
     }
     inline bool is_interface_node(RankEncodedNodeId node) const {
-        assert(oriented());
-        assert(node.rank() == rank_);
-        return !degree(node) == 0 && adj(node).neighbors().end()->rank() != rank_;
+        KASSERT(oriented());
+        KASSERT(node.rank() == rank_);
+        return !degree(node) == 0 && (adj(node).neighbors().end() - 1)->rank() != rank_;
     }
 
     void remove_internal_edges(RankEncodedNodeId node) {
-        assert(node.rank() == rank_);
+        KASSERT(node.rank() == rank_);
         if (!is_interface_node(node)) {
             degree_[to_local_idx(node)] = 0;
             first_out_offset_[to_local_idx(node)] = 0;
@@ -455,14 +458,14 @@ public:
         }
 
         first_out_[local_node_count_] = degree_sum;
-        assert(first_out_.size() == local_node_count_ + 1);
-        assert(first_out_[0] == 0);
+        KASSERT(first_out_.size() == local_node_count_ + 1);
+        KASSERT(first_out_[0] == 0ul);
 
         for (size_t i = 0; i < local_node_count_; ++i) {
-            assert(degree_[i] == G.node_info[i].degree);
-            assert(first_out_[i + 1] - first_out_[i] == degree_[i]);
+            KASSERT(degree_[i] == G.node_info[i].degree);
+            KASSERT(first_out_[i + 1] - first_out_[i] == degree_[i]);
         }
-        assert(first_out_[first_out_.size() - 1] == G.edge_heads.size());
+        KASSERT(first_out_[first_out_.size() - 1] == G.edge_heads.size());
         head_.resize(G.edge_heads.size());
         std::transform(G.edge_heads.begin(), G.edge_heads.end(), head_.begin(), [this](auto id) {
             auto head = RankEncodedNodeId{id};
@@ -617,11 +620,11 @@ private:
 
 template <typename GhostPayloadType>
 inline std::ostream& operator<<(std::ostream& out, DistributedGraph<GhostPayloadType>& G) {
-    G.for_each_local_node([&](NodeId node) {
-        G.for_each_local_out_edge(node, [&](Edge edge) {
-            out << "(" << G.to_global_id(edge.tail) << ", " << G.to_global_id(edge.head) << ")" << std::endl;
-        });
-    });
+    for (auto node : G.local_nodes()) {
+        for (auto edge : G.out_adj(node).edges()) {
+            out << edge << std::endl;
+        }
+    }
     return out;
 }
 
@@ -629,14 +632,12 @@ template <typename GhostPayloadType, template <typename> class SetType = std::se
 SetType<RankEncodedNodeId> find_ghosts(DistributedGraph<GhostPayloadType> const& G) {
     SetType<RankEncodedNodeId> ghosts;
     for (auto node : G.local_nodes()) {
-        const auto neighbors = G.edges(node);
-        for (auto current_neighbor = neighbors.end() - 1; current_neighbor != neighbors.begin() - 1;
-             current_neighbor++) {
-            if (current_neighbor->rank() == G.rank()) {
+      for (auto neighbor : boost::adaptors::reverse(G.adj(node).neighbors())) {
+            if (neighbor.rank() == G.rank()) {
                 break;
             }
-            assert(current_neighbor->rank() != G.rank());
-            ghosts.insert(*current_neighbor);
+            KASSERT(neighbor.rank() != G.rank());
+            ghosts.insert(neighbor);
         }
     }
     return ghosts;

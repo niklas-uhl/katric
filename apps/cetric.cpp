@@ -1,4 +1,5 @@
 #include <config.h>
+#include <kassert/kassert.hpp>
 #include <counters/cetric.h>
 #include <graph-io/distributed_graph_io.h>
 #include <mpi.h>
@@ -160,7 +161,9 @@ public:
 private:
     LocalGraphView load_graph() {
         if (conf_.gen.generator == "") {
-            return graphio::read_local_graph(conf_.input_file, conf_.input_format, conf_.rank, conf_.PEs);
+            auto G = graphio::read_local_graph(conf_.input_file, conf_.input_format, conf_.rank, conf_.PEs);
+            atomic_debug(G.edge_heads);
+            return G;
         } else {
             return graphio::gen_local_graph(conf_.gen, conf_.rank, conf_.PEs);
         }
@@ -176,7 +179,7 @@ void print_summary(const cetric::Config& conf,
     MPI_Barrier(MPI_COMM_WORLD);
     if (!conf.json_output.empty()) {
         if (conf.rank == 0) {
-            assert(all_stats[0].triangles == all_stats[0].counted_triangles);
+            KASSERT(all_stats[0].triangles == all_stats[0].counted_triangles);
             auto write_json_to_stream = [&](auto& stream) {
                 cereal::JSONOutputArchive ar(stream);
                 ar(cereal::make_nvp("stats", all_stats));
@@ -251,7 +254,10 @@ int main(int argc, char* argv[]) {
         LocalGraphView G_local = input_cache.get();
         LOG << "[R" << rank << "] "
             << "Finished loading from cache";
+        //atomic_debug(G_local.node_info);
+        atomic_debug(G_local.edge_heads);
         G = DistributedGraph<>(std::move(G_local), rank, size);
+        atomic_debug(G);
         LOG << "[R" << rank << "] "
             << "Finished conversion";
         MPI_Barrier(MPI_COMM_WORLD);

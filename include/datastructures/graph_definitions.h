@@ -56,6 +56,17 @@ public:
     inline bool operator<(const RankEncodedNodeId& rhs) const {
         return value_ < rhs.value_;
     }
+    inline bool operator>(const RankEncodedNodeId& rhs) const {
+        return rhs < *this;
+    }
+
+    inline bool operator>=(const RankEncodedNodeId& rhs) const {
+        return !(*this < rhs);
+    }
+
+    inline bool operator<=(const RankEncodedNodeId& rhs) const {
+        return !(*this > rhs);
+    }
 
     inline bool operator==(RankEncodedNodeId const& rhs) const {
         return value_ == rhs.value_;

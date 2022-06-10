@@ -13,6 +13,7 @@
 #include <util.h>
 #include <cstddef>
 // #include "cost_function.h"
+#include <datastructures/auxiliary_node_data.h>
 #include "datastructures/distributed/distributed_graph.h"
 #include "datastructures/distributed/helpers.h"
 #include "datastructures/graph_definitions.h"
@@ -27,35 +28,29 @@ enum class Phase { Local, Global };
 
 inline void preprocessing(DistributedGraph<>& G,
                           cetric::profiling::Statistics& stats,
+                          AuxiliaryNodeData<Degree>& ghost_degree,
                           const Config& conf,
                           Phase phase) {
     cetric::profiling::Timer timer;
     if (!conf.orient_locally || phase == Phase::Global) {
+        auto ghosts = find_ghosts(G);
+        ghost_degree = AuxiliaryNodeData<Degree>{ghosts.begin(), ghosts.end()};
         DegreeCommunicator comm(G, conf.rank, conf.PEs, as_int(MessageTag::Orientation));
-        // comm.get_ghost_degree(
-        //     [&](NodeId global_id, Degree degree) { G.get_ghost_payload(G.to_local_id(global_id)).degree = degree; },
-        //     stats.local.preprocessing.message_statistics);
-        G.get_graph_payload().ghost_degree_available = true;
+        comm.get_ghost_degree([&](RankEncodedNodeId node, Degree degree) { ghost_degree[node] = degree; },
+                              stats.local.preprocessing.message_statistics);
 
         timer.restart();
-        G.orient([&](graph::RankEncodedNodeId a, graph::RankEncodedNodeId b) {
-            return std::make_tuple(G.degree(a), a.id()) < std::make_tuple(G.degree(b), b.id());
-        });
+        G.orient(node_ordering::degree_outward(G));
         stats.local.preprocessing.orientation_time += timer.elapsed_time();
     } else {
-        G.orient([&](graph::RankEncodedNodeId a, graph::RankEncodedNodeId b) {
-            if (b.rank() != G.rank()) {
-                return true;
-            }
-            return std::make_tuple(G.degree(a), a.id()) < std::make_tuple(G.degree(b), b.id());
-        });
+        G.orient(node_ordering::degree_outward(G));
         stats.local.preprocessing.orientation_time += timer.elapsed_time();
     }
     timer.restart();
     if (conf.num_threads <= 1) {
-        G.sort_neighborhoods(execution_policy::sequential{});
+        G.sort_neighborhoods(node_ordering::degree_outward(G), execution_policy::sequential{});
     } else {
-        G.sort_neighborhoods(execution_policy::parallel{});
+        G.sort_neighborhoods(node_ordering::degree_outward(G), execution_policy::parallel{});
     }
 
     stats.local.preprocessing.sorting_time += timer.elapsed_time();
@@ -81,13 +76,14 @@ inline size_t run_patric(DistributedGraph<>& G,
     //     G = DistributedGraph(std::move(tmp), rank, size);
     //     G.find_ghost_ranks();
     // }
+    AuxiliaryNodeData<Degree> ghost_degrees;
     stats.local.primary_load_balancing.phase_time += timer.elapsed_time();
     LOG << "[R" << rank << "] "
         << "Primary load balancing finished " << stats.local.primary_load_balancing.phase_time << " s";
     if (conf.skip_local_neighborhood) {
         // G.expand_ghosts();
     }
-    preprocessing(G, stats, conf, Phase::Global);
+    preprocessing(G, stats, ghost_degrees, conf, Phase::Global);
     LOG << "[R" << rank << "] "
         << "Preprocessing finished";
     timer.restart();
@@ -99,7 +95,7 @@ inline size_t run_patric(DistributedGraph<>& G,
             (void)t;
             triangle_count_local_phase.local()++;
         },
-        stats);
+        stats, node_ordering::degree_outward(G));
     triangle_count += triangle_count_local_phase.combine(std::plus<>{});
     stats.local.local_phase_time += timer.elapsed_time();
     LOG << "[R" << rank << "] "
@@ -142,11 +138,12 @@ inline size_t run_cetric(DistributedGraph<>& G,
     //     G = DistributedGraph(std::move(tmp), rank, size);
     //     G.find_ghost_ranks();
     // }
+    AuxiliaryNodeData<Degree> ghost_degrees;
     stats.local.primary_load_balancing.phase_time += timer.elapsed_time();
     LOG << "[R" << rank << "] "
         << "Primary load balancing finished " << stats.local.primary_load_balancing.phase_time << " s";
     // G.expand_ghosts();
-    preprocessing(G, stats, conf, Phase::Local);
+    preprocessing(G, stats, ghost_degrees, conf, Phase::Local);
     LOG << "[R" << rank << "] "
         << "Preprocessing finished";
     timer.restart();
@@ -163,14 +160,14 @@ inline size_t run_cetric(DistributedGraph<>& G,
             triangle_count++;
             // triangle_count_local_phase.local()++;
         },
-        stats);
+        stats, node_ordering::degree_outward(G));
     // triangle_count += triangle_count_local_phase.combine(std::plus<> {});
     stats.local.local_phase_time += timer.elapsed_time();
     LOG << "[R" << rank << "] "
         << "Local phase finished " << stats.local.local_phase_time << " s";
     timer.restart();
     for (auto node : G.local_nodes()) {
-      G.remove_internal_edges(node);
+        G.remove_internal_edges(node);
     }
     stats.local.contraction_time += timer.elapsed_time();
     LOG << "[R" << rank << "] "
@@ -188,7 +185,7 @@ inline size_t run_cetric(DistributedGraph<>& G,
     //     preprocessing(G, stats, conf, Phase::Global);
     // } else {
     if (conf.orient_locally) {
-        preprocessing(G, stats, conf, Phase::Global);
+        preprocessing(G, stats, ghost_degrees, conf, Phase::Global);
     }
     // }
     stats.local.secondary_load_balancing.phase_time += timer.elapsed_time();
@@ -205,7 +202,7 @@ inline size_t run_cetric(DistributedGraph<>& G,
                 triangle_count++;
                 // triangle_count_global_phase.local()++;
             },
-            stats);
+            stats, node_ordering::degree_outward(G));
     } else {
         ctr.run_distributed(
             [&](Triangle t) {

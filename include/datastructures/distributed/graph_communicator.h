@@ -36,34 +36,41 @@ public:
     }
 
     template <typename DegreeFunc>
-    void get_ghost_degree(DegreeFunc&& on_degree_receive, cetric::profiling::MessageStatistics& stats) {
-        assert(G.ghost_ranks_available());
+    void get_ghost_degree(DegreeFunc&& on_degree_receive,
+                          cetric::profiling::MessageStatistics& stats,
+                          bool sparse = true) {
+        //  assert(G.ghost_ranks_available());
         send_buffers.clear();
         receive_buffers.clear();
-        for (NodeId node = 0; node < G.local_node_count(); ++node) {
+        for (auto node : G.local_nodes()) {
             neighboring_PEs.clear();
-            if (G.get_local_data(node).is_interface) {
+            if (G.is_interface_node(node)) {
                 Degree deg = G.degree(node);
-                G.for_each_edge(node, [&](auto edge) {
-                    if (G.is_ghost(edge.head.id())) {
-                        PEID rank = G.get_ghost_data(edge.head.id()).rank;
+                for (auto node : G.adj(node).neighbors()) {
+                    if (node.rank() != rank_) {
+                        PEID rank = node.rank();
                         if (neighboring_PEs.find(rank) == neighboring_PEs.end()) {
-                            send_buffers[rank].emplace_back(G.to_global_id(node));
-                            send_buffers[rank].emplace_back(deg);
+                            send_buffers[rank].emplace_back(node);
+                            send_buffers[rank].emplace_back(RankEncodedNodeId{deg});
                             neighboring_PEs.insert(rank);
                         }
                     }
-                });
+                }
             }
         }
-        CommunicationUtility::sparse_all_to_all(send_buffers, receive_buffers, MPI_NODE, rank_, size_, stats,
-                                                message_tag_);
+        if (sparse) {
+            CommunicationUtility::sparse_all_to_all(send_buffers, receive_buffers, MPI_NODE, rank_, size_, stats,
+                                                    message_tag_);
+        } else {
+            CommunicationUtility::all_to_all(send_buffers, receive_buffers, MPI_NODE, rank_, size_, stats,
+                                             message_tag_);
+        }
         for (const auto& elem : receive_buffers) {
-            const std::vector<NodeId>& buffer = elem.second;
+            const std::vector<RankEncodedNodeId>& buffer = elem.second;
             assert(buffer.size() % 2 == 0);
             for (size_t i = 0; i < buffer.size(); i += 2) {
-                NodeId node = buffer[i];
-                Degree degree = buffer[i + 1];
+                RankEncodedNodeId node = buffer[i];
+                Degree degree = buffer[i + 1].id();
                 on_degree_receive(node, degree);
             }
         }
@@ -124,8 +131,8 @@ private:
     const Graph& G;
     PEID rank_;
     PEID size_;
-    google::dense_hash_map<PEID, std::vector<NodeId>> send_buffers;
-    google::dense_hash_map<PEID, std::vector<NodeId>> receive_buffers;
+    google::dense_hash_map<PEID, std::vector<RankEncodedNodeId>> send_buffers;
+    google::dense_hash_map<PEID, std::vector<RankEncodedNodeId>> receive_buffers;
     google::dense_hash_set<PEID> neighboring_PEs;
     int message_tag_;
 };

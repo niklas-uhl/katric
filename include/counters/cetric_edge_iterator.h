@@ -34,6 +34,42 @@
 namespace cetric {
 using namespace graph;
 
+namespace node_ordering {
+struct id {
+    explicit id(){};
+    inline bool operator()(RankEncodedNodeId const& lhs, RankEncodedNodeId const& rhs) const {
+        return lhs.id() < rhs.id();
+    }
+
+private:
+};
+struct id_outward {
+    explicit id_outward(PEID rank) : rank_(rank) {}
+    inline bool operator()(RankEncodedNodeId const& lhs, RankEncodedNodeId const& rhs) const {
+        return lhs.mask_rank(rank_) < rhs.mask_rank(rank_);
+    }
+
+private:
+    PEID rank_;
+};
+template <typename GraphType>
+struct degree_outward {
+    explicit degree_outward(GraphType const& G) : G_(G) {}
+    inline bool operator()(RankEncodedNodeId const& lhs, RankEncodedNodeId const& rhs) const {
+        auto degree = [this](RankEncodedNodeId const& node) {
+            if (node.rank() != G_.rank()) {
+                return std::numeric_limits<Degree>::max();
+            }
+            return G_.degree(node);
+        };
+        return std::tuple(degree(lhs), lhs.id()) < std::tuple(degree(rhs), rhs.id());
+    }
+
+private:
+    GraphType const& G_;
+};
+}  // namespace node_ordering
+
 struct MessageQueuePolicy {};
 struct GridPolicy {};
 
@@ -90,7 +126,7 @@ struct Splitter {
         auto buffer_ptr = std::make_shared<VectorType<RankEncodedNodeId>>(std::move(buffer));
         std::vector<RankEncodedNodeId>::iterator slice_begin = buffer_ptr->begin();
         while (slice_begin != buffer_ptr->end()) {
-          auto slice_end = std::find(slice_begin, buffer_ptr->end(), RankEncodedNodeId::sentinel());
+            auto slice_end = std::find(slice_begin, buffer_ptr->end(), RankEncodedNodeId::sentinel());
             on_message(SharedVectorSpan(buffer_ptr, std::distance(buffer_ptr->begin(), slice_begin),
                                         std::distance(buffer_ptr->begin(), slice_end)),
                        sender);
@@ -138,19 +174,20 @@ public:
         }
     }
 
-    template <typename TriangleFunc>
-    inline void run_local(TriangleFunc emit, cetric::profiling::Statistics& stats) {
+    template <typename TriangleFunc, typename NodeOrdering>
+    inline void run_local(TriangleFunc emit, cetric::profiling::Statistics& stats, NodeOrdering&& node_ordering) {
         if (conf_.local_parallel && conf_.num_threads > 1) {
-            run_local_parallel(emit, stats, interface_nodes_);
+            run_local_parallel(emit, stats, interface_nodes_, std::forward<NodeOrdering>(node_ordering));
         } else {
-            run_local_sequential(emit, stats, interface_nodes_.local());
+            run_local_sequential(emit, stats, interface_nodes_.local(), std::forward<NodeOrdering>(node_ordering));
         }
     }
 
-    template <typename TriangleFunc>
+    template <typename TriangleFunc, typename NodeOrdering>
     inline void run_local_sequential(TriangleFunc emit,
                                      cetric::profiling::Statistics& stats,
-                                     std::vector<RankEncodedNodeId>& interface_nodes) {
+                                     std::vector<RankEncodedNodeId>& interface_nodes,
+                                     NodeOrdering&& node_ordering) {
         cetric::profiling::Timer phase_time;
         interface_nodes.clear();
         // std::vector<NodeId> interface_nodes;
@@ -177,13 +214,18 @@ public:
             for (RankEncodedEdge edge : G.out_adj(v).edges()) {
                 auto v = edge.tail;
                 auto u = edge.head;
+                if (u.rank() != rank_) {
+                    // TODO: we should be able to break here when the edges are properly sorted
+                    continue;
+                }
                 auto v_neighbors = G.out_adj(v).neighbors();
                 auto u_neighbors = G.out_adj(u).neighbors();
-                std::merge(v_neighbors.begin(), v_neighbors.end(), u_neighbors.begin(), u_neighbors.end(),
-                           boost::function_output_iterator([&](RankEncodedNodeId w) {
-                               stats.local.local_triangles++;
-                               emit(Triangle{v.id(), u.id(), w.id()});
-                           }));
+                std::set_intersection(v_neighbors.begin(), v_neighbors.end(), u_neighbors.begin(), u_neighbors.end(),
+                                      boost::function_output_iterator([&](RankEncodedNodeId w) {
+                                          stats.local.local_triangles++;
+                                          emit(Triangle{v.id(), u.id(), w.id()});
+                                      }),
+                                      node_ordering);
                 // post_intersection(v);
             }
         }
@@ -198,10 +240,11 @@ public:
         stats.local.local_phase_time += phase_time.elapsed_time();
     }
 
-    template <typename TriangleFunc>
+    template <typename TriangleFunc, typename NodeOrdering>
     inline void run_local_parallel(TriangleFunc emit,
                                    cetric::profiling::Statistics& stats,
-                                   tbb::enumerable_thread_specific<std::vector<RankEncodedNodeId>>& interface_nodes) {
+                                   tbb::enumerable_thread_specific<std::vector<RankEncodedNodeId>>& interface_nodes,
+                                   NodeOrdering&& node_ordering) {
         cetric::profiling::Timer phase_time;
         interface_nodes.clear();
         // std::vector<NodeId> interface_nodes;
@@ -223,7 +266,8 @@ public:
                                       boost::function_output_iterator([&](RankEncodedNodeId w) {
                                           stats.local.local_triangles++;
                                           emit(Triangle{v.id(), u.id(), w.id()});
-                                      }));
+                                      }),
+                                      node_ordering);
             }
         };
         tbb::parallel_for_each(G.local_nodes(), find_intersections);
@@ -348,9 +392,9 @@ public:
         queue.reset();
     }
 
-    template <typename TriangleFunc>
-    inline void run(TriangleFunc emit, cetric::profiling::Statistics& stats) {
-        run_local(emit, stats);
+    template <typename TriangleFunc, typename NodeOrdering>
+    inline void run(TriangleFunc emit, cetric::profiling::Statistics& stats, NodeOrdering&& node_ordering) {
+      run_local(emit, stats, std::forward<NodeOrdering>(node_ordering));
         cetric::profiling::Timer phase_time;
         for (auto node : G.local_nodes()) {
             G.remove_internal_edges(node);
