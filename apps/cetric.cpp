@@ -162,7 +162,7 @@ private:
     LocalGraphView load_graph() {
         if (conf_.gen.generator == "") {
             auto G = graphio::read_local_graph(conf_.input_file, conf_.input_format, conf_.rank, conf_.PEs);
-            atomic_debug(G.edge_heads);
+            // atomic_debug(G.edge_heads);
             return G;
         } else {
             return graphio::gen_local_graph(conf_.gen, conf_.rank, conf_.PEs);
@@ -255,9 +255,9 @@ int main(int argc, char* argv[]) {
         LOG << "[R" << rank << "] "
             << "Finished loading from cache";
         //atomic_debug(G_local.node_info);
-        atomic_debug(G_local.edge_heads);
+        // atomic_debug(G_local.edge_heads);
         G = DistributedGraph<>(std::move(G_local), rank, size);
-        atomic_debug(G);
+        // atomic_debug(G);
         LOG << "[R" << rank << "] "
             << "Finished conversion";
         MPI_Barrier(MPI_COMM_WORLD);

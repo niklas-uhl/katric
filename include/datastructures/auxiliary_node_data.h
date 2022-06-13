@@ -1,9 +1,12 @@
 #pragma once
 
 #include <datastructures/graph_definitions.h>
+#include <fmt/ranges.h>
+#include <boost/iterator/transform_iterator.hpp>
 #include <iterator>
 #include <kassert/kassert.hpp>
 #include <sparsehash/dense_hash_map>
+#include <utility>
 
 namespace cetric {
 template <typename T>
@@ -45,13 +48,37 @@ public:
         return data_[get_index(node)];
     }
 
+    bool has_data_for(graph::RankEncodedNodeId node) const {
+        return (node >= from_ && node <= to_) || index_map_.find(node) != index_map_.end();
+    }
+
+    size_t size() const {
+        return data_.size();
+    }
+
+    auto begin() const {
+        return boost::iterators::make_transform_iterator(index_map_.begin(), Transformer{data_});
+    }
+    auto end() const {
+        return boost::iterators::make_transform_iterator(index_map_.end(), Transformer{data_});
+    }
+
 private:
+    struct Transformer {
+        std::vector<T> const& data;
+        std::pair<graph::RankEncodedNodeId, T> operator()(std::pair<graph::RankEncodedNodeId, size_t> kv) const {
+            return std::make_pair(kv.first, data[kv.second]);
+        }
+    };
     size_t get_index(graph::RankEncodedNodeId node) const {
+        // atomic_debug(fmt::format("Lookup node {}", node));
         if (node >= from_ && node <= to_) {
             return node - from_;
         }
         auto it = index_map_.find(node);
-        KASSERT(it != index_map_.end());
+        int rank;
+        MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+        KASSERT(it != index_map_.end(), "[R" << rank << "] Failed lookup of " << node);
         return it->second;
     }
     graph::RankEncodedNodeId from_;

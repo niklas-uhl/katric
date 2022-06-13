@@ -46,10 +46,11 @@ public:
             neighboring_PEs.clear();
             if (G.is_interface_node(node)) {
                 Degree deg = G.degree(node);
-                for (auto node : G.adj(node).neighbors()) {
-                    if (node.rank() != rank_) {
-                        PEID rank = node.rank();
+                for (auto neighbor : G.adj(node).neighbors()) {
+                    if (neighbor.rank() != rank_) {
+                        PEID rank = neighbor.rank();
                         if (neighboring_PEs.find(rank) == neighboring_PEs.end()) {
+                            // atomic_debug(fmt::format("Sending degree of {} to rank {}", node, rank));
                             send_buffers[rank].emplace_back(node);
                             send_buffers[rank].emplace_back(RankEncodedNodeId{deg});
                             neighboring_PEs.insert(rank);

@@ -30,6 +30,7 @@
 #include <limits>
 #include <optional>
 #include <set>
+#include <sparsehash/dense_hash_set>
 #include <sstream>
 #include <stdexcept>
 #include <tlx/vector_free.hpp>
@@ -121,8 +122,8 @@ public:
             return boost::make_iterator_range(begin_, end_);
         }
         auto edges() const {
-            return boost::adaptors::transform(neighbors(), [this](NodeIdType neighbor) {
-                return graphio::Edge<NodeIdType>{tail_, neighbor};
+            return boost::adaptors::transform(neighbors(), [tail = tail_](NodeIdType neighbor) {
+                return graphio::Edge<NodeIdType>{RankEncodedNodeId(tail), neighbor};
             });
         }
         // auto begin() const {
@@ -177,7 +178,7 @@ public:
     }
 
     EdgeRange<RankEncodedNodeId, RangeModifiability::non_modifiable> adj(RankEncodedNodeId node) const {
-        KASSERT(node.rank() == rank_);
+        KASSERT(node.rank() == rank_, "Node " << node << " is not local.");
         auto idx = to_local_idx(node);
         EdgeId begin = first_out_[idx];
         EdgeId end = first_out_[idx] + degree_[idx];
@@ -186,9 +187,8 @@ public:
     }
 
     EdgeRange<RankEncodedNodeId, RangeModifiability::modifiable> adj(RankEncodedNodeId node) {
-        KASSERT(node.rank() == rank_);
+        KASSERT(node.rank() == rank_, "Node " << node << " is not local.");
         auto idx = to_local_idx(node);
-        KASSERT(node.rank() == rank_);
         EdgeId begin = first_out_[idx];
         EdgeId end = first_out_[idx] + degree_[idx];
         return EdgeRange<RankEncodedNodeId, RangeModifiability::modifiable>{node, head_.begin() + begin,
@@ -196,7 +196,7 @@ public:
     }
 
     EdgeRange<RankEncodedNodeId, RangeModifiability::non_modifiable> out_adj(RankEncodedNodeId node) const {
-        KASSERT(node.rank() == rank_);
+        KASSERT(node.rank() == rank_, "Node " << node << " is not local.");
         auto idx = to_local_idx(node);
         auto begin = first_out_[idx] + first_out_offset_[idx];
         auto end = first_out_[idx] + degree_[idx];
@@ -207,7 +207,8 @@ public:
     template <typename NodeCmp>
     inline void orient(NodeCmp&& node_cmp) {
         auto is_outgoing = [&](auto tail, auto head) {
-            return node_cmp(tail, head);
+            auto out = node_cmp(tail, head);
+            return out;
         };
         for (auto node : local_nodes()) {
             auto idx = to_local_idx(node);
@@ -228,6 +229,7 @@ public:
             }
             first_out_offset_[idx] = left - first_out_[idx];
         }
+        // atomic_debug(head_);
         // if (ghosts_expanded_) {
         //     for_each_local_node_and_ghost(orient_neighborhoods);
         // } else {
@@ -439,6 +441,7 @@ public:
           ghost_ranks_available_(false),
           oriented_(false),
           ghosts_expanded_(false),
+          neighbor_ranks_(),
           local_node_count_(G.local_node_count()),
           local_edge_count_{G.edge_heads.size()},
           total_node_count_{},
@@ -447,6 +450,7 @@ public:
           size_(size) {
         // global_to_local_.set_empty_key(-1);
         global_to_local_.set_deleted_key(-2);
+        neighbor_ranks_.set_empty_key(-1);
         auto degree_sum = 0;
         node_range_.first = G.node_info[0].global_id;
         node_range_.second = G.node_info.back().global_id;
@@ -489,6 +493,7 @@ public:
             for (auto& neighbor : this->adj(node).neighbors()) {
                 PEID rank = get_PE_from_node_ranges(neighbor.id(), ranges);
                 neighbor.set_rank(rank);
+                neighbor_ranks_.insert(rank);
             }
         }
         // } else {
@@ -509,6 +514,14 @@ public:
         //     }
         // }
         ghost_ranks_available_ = true;
+    }
+
+    bool is_neighbor(PEID rank) const {
+        return neighbor_ranks_.find(rank) != neighbor_ranks_.end();
+    }
+
+    google::dense_hash_set<PEID> const& neighbor_ranks() const {
+        return neighbor_ranks_;
     }
 
     LocalGraphView to_local_graph_view(bool remove_isolated, bool keep_only_out_edges) {
@@ -610,6 +623,7 @@ private:
     bool ghosts_expanded_;
     GraphPayload graph_payload_;
     node_map global_to_local_;
+    google::dense_hash_set<PEID> neighbor_ranks_;
     NodeId local_node_count_{};
     EdgeId local_edge_count_{};
     NodeId total_node_count_{};
@@ -629,10 +643,9 @@ inline std::ostream& operator<<(std::ostream& out, DistributedGraph<GhostPayload
 }
 
 template <typename GhostPayloadType, template <typename> class SetType = std::set>
-SetType<RankEncodedNodeId> find_ghosts(DistributedGraph<GhostPayloadType> const& G) {
-    SetType<RankEncodedNodeId> ghosts;
+void find_ghosts(DistributedGraph<GhostPayloadType> const& G, SetType<RankEncodedNodeId>& ghosts) {
     for (auto node : G.local_nodes()) {
-      for (auto neighbor : boost::adaptors::reverse(G.adj(node).neighbors())) {
+        for (auto neighbor : boost::adaptors::reverse(G.adj(node).neighbors())) {
             if (neighbor.rank() == G.rank()) {
                 break;
             }
@@ -640,7 +653,6 @@ SetType<RankEncodedNodeId> find_ghosts(DistributedGraph<GhostPayloadType> const&
             ghosts.insert(neighbor);
         }
     }
-    return ghosts;
 }
 
 }  // namespace graph

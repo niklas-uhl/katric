@@ -25,6 +25,7 @@
 #include <mpi_traits.h>
 #include <graph-io/local_graph_view.h>
 #include <datastructures/graph_definitions.h>
+#include <atomic_debug.h>
 
 using PEID = int;
 
@@ -119,18 +120,6 @@ inline void check_mpi_error(int errcode, const std::string& file, int line) {
         msg = msg + " in " + file + ":" + std::to_string(line);
         throw MPIException(msg);
     }
-}
-
-template <class MessageType>
-inline void atomic_debug(MessageType message, std::ostream& out = std::cout, bool newline = true) {
-    std::stringstream sout;
-    int rank;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    sout << "[R" << rank << "] " << message;
-    if (newline) {
-        sout << std::endl;
-    }
-    out << sout.str();
 }
 
 constexpr unsigned long long log2(unsigned long long x) {

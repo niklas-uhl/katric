@@ -1,6 +1,7 @@
 #ifndef GRAPH_DEFINITIONS_H_8XAL43DH
 #define GRAPH_DEFINITIONS_H_8XAL43DH
 
+#include <atomic_debug.h>
 #include <graph-io/graph_definitions.h>
 #include <algorithm>
 #include <cassert>
@@ -10,6 +11,9 @@
 #include <limits>
 #include <ostream>
 #include "message-queue/mpi_datatype.h"
+
+#include <fmt/core.h>
+#include <fmt/ostream.h>
 
 namespace cetric {
 namespace graph {
@@ -117,7 +121,7 @@ private:
 };
 
 inline std::ostream& operator<<(std::ostream& os, const RankEncodedNodeId& node_id) {
-    os << node_id.id();
+    os << node_id.id() << "@" << node_id.rank();
     return os;
 }
 using EdgeId = std::uint64_t;
