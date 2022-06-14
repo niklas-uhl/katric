@@ -34,3 +34,6 @@
 [submodule "extern/kassert"]
 	path = extern/kassert
 	url = https://github.com/kamping-site/kassert
+[submodule "extern/utils_tm"]
+	path = extern/utils_tm
+	url = https://github.com/toobiased/utils_tm

@@ -30,7 +30,7 @@ message(STATUS "Run: ${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} ${MPIEXEC_MAX_NUMPROCS} 
 
 #set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer -fsanitize=address")
 #set (CMAKE_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} -fno-omit-frame-pointer -fsanitize=address")
-add_compile_definitions(_GLIBCXX_DEBUG)
+# add_compile_definitions(_GLIBCXX_DEBUG)
 
 add_subdirectory(extern)
 

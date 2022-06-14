@@ -41,6 +41,7 @@ namespace node_ordering {
 struct id {
     explicit id(){};
     inline bool operator()(RankEncodedNodeId const& lhs, RankEncodedNodeId const& rhs) const {
+        // return lhs < rhs;
         return lhs.id() < rhs.id();
     }
 
@@ -174,16 +175,6 @@ public:
           interface_nodes_(),
           pe_min_degree(),
           threshold_() {
-        if constexpr (payload_has_degree<typename GraphType::payload_type>::value) {
-            // if (conf_.degree_filtering) {
-            //     pe_min_degree.resize(size);
-            //     G.for_each_ghost_node([&](NodeId node) {
-            //         auto ghost_data = G.get_ghost_data(node);
-            //         pe_min_degree[ghost_data.rank] =
-            //             std::min(pe_min_degree[ghost_data.rank], ghost_data.payload.degree);
-            //     });
-            // }
-        }
         switch (conf.threshold) {
             case Threshold::local_nodes:
                 threshold_ = conf.threshold_scale * G.local_node_count();
@@ -293,6 +284,12 @@ public:
         };
         tbb::parallel_for_each(G.local_nodes(), find_intersections);
         stats.local.local_phase_time += phase_time.elapsed_time();
+    }
+
+    template <typename TriangleFunc, typename NodeOrdering>
+    inline void run_distributed(TriangleFunc emit, cetric::profiling::Statistics& stats, NodeOrdering&& node_ordering) {
+        std::set<RankEncodedNodeId> ghosts;
+        run_distributed(emit, stats, std::forward<NodeOrdering>(node_ordering), ghosts);
     }
 
     template <typename TriangleFunc, typename NodeOrdering, typename GhostSet>
@@ -422,6 +419,11 @@ public:
         queue.reset();
     }
 
+    template <typename TriangleFunc, typename NodeOrdering>
+    inline void run(TriangleFunc emit, cetric::profiling::Statistics& stats, NodeOrdering&& node_ordering) {
+        std::set<RankEncodedNodeId> ghosts;
+        run(emit, stats, std::forward<NodeOrdering>(node_ordering), ghosts);
+    }
     template <typename TriangleFunc, typename NodeOrdering, typename GhostSet>
     inline void run(TriangleFunc emit,
                     cetric::profiling::Statistics& stats,
@@ -630,13 +632,18 @@ private:
         //     });
         // } else {
         auto u_neighbors = G.out_adj(u).neighbors();
-        auto filtered_neighbors = boost::adaptors::filter(
-            boost::make_iterator_range(begin, end),
-            [this, &ghosts](RankEncodedNodeId node) { return ghosts.find(node) != ghosts.end(); });
-        // atomic_debug(fmt::format("intersecting {} and {}", u_neighbors, filtered_neighbors));
-        std::set_intersection(u_neighbors.begin(), u_neighbors.end(), filtered_neighbors.begin(),
-                              filtered_neighbors.end(), boost::make_function_output_iterator(on_intersection),
-                              node_ordering);
+        if (!ghosts.empty()) {
+            auto filtered_neighbors = boost::adaptors::filter(
+                boost::make_iterator_range(begin, end),
+                [this, &ghosts](RankEncodedNodeId node) { return ghosts.find(node) != ghosts.end(); });
+            // atomic_debug(fmt::format("intersecting {} and {}", u_neighbors, filtered_neighbors));
+            std::set_intersection(u_neighbors.begin(), u_neighbors.end(), filtered_neighbors.begin(),
+                                  filtered_neighbors.end(), boost::make_function_output_iterator(on_intersection),
+                                  node_ordering);
+        } else {
+            std::set_intersection(u_neighbors.begin(), u_neighbors.end(), begin, end,
+                                  boost::make_function_output_iterator(on_intersection), node_ordering);
+        }
         if (conf_.skip_local_neighborhood && conf_.algorithm == Algorithm::Patric) {
             auto v_neighbors = G.out_adj(v).neighbors();
             std::set_intersection(u_neighbors.begin(), u_neighbors.end(), v_neighbors.begin(), v_neighbors.end(),
@@ -683,7 +690,6 @@ private:
         });
         // distributed_post_intersect(v, begin, end);
     }
-    using NodeBuffer = google::dense_hash_map<PEID, std::vector<RankEncodedNodeId>>;
     GraphType& G;
     const Config& conf_;
     PEID rank_;

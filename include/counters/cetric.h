@@ -67,7 +67,7 @@ inline size_t run_patric(DistributedGraph<>& G,
                          CommunicationPolicy&&) {
     bool debug = false;
     G.find_ghost_ranks();
-    google::dense_hash_set<RankEncodedNodeId> ghosts;
+    google::dense_hash_set<RankEncodedNodeId, cetric::hash> ghosts;
     ghosts.set_empty_key(RankEncodedNodeId::sentinel());
     cetric::profiling::Timer timer;
     // if ((conf.gen.generator.empty() && conf.primary_cost_function != "N") ||
@@ -131,7 +131,7 @@ inline size_t run_cetric(DistributedGraph<>& G,
                          CommunicationPolicy&&) {
     bool debug = true;
     G.find_ghost_ranks();
-    google::dense_hash_set<RankEncodedNodeId> ghosts;
+    google::dense_hash_set<RankEncodedNodeId, cetric::hash> ghosts;
     ghosts.set_empty_key(RankEncodedNodeId::sentinel());
     cetric::profiling::Timer timer;
     // if ((conf.gen.generator.empty() && conf.primary_cost_function != "N") ||
@@ -195,6 +195,8 @@ inline size_t run_cetric(DistributedGraph<>& G,
     //     preprocessing(G, stats, conf, Phase::Global);
     // } else {
     preprocessing(G, stats, ghost_degrees, ghosts, conf, Phase::Global);
+    ghosts = decltype(ghosts) {};
+    ghost_degrees = AuxiliaryNodeData<Degree>();
     // }
     stats.local.secondary_load_balancing.phase_time += timer.elapsed_time();
     LOG << "[R" << rank << "] "
@@ -213,7 +215,7 @@ inline size_t run_cetric(DistributedGraph<>& G,
                 triangle_count++;
                 // triangle_count_global_phase.local()++;
             },
-            stats, node_ordering::id(), ghosts);
+            stats, node_ordering::id());
     } else {
         // atomic_debug(fmt::format("local nodes: {}", G.local_nodes()));
         // atomic_debug(fmt::format("ghost degrees: {}", ghost_degrees));
@@ -228,7 +230,7 @@ inline size_t run_cetric(DistributedGraph<>& G,
                 triangle_count++;
                 // triangle_count_global_phase.local()++;
             },
-            stats, node_ordering::id(), ghosts);
+            stats, node_ordering::id());
     }
     // triangle_count += triangles.size();
     stats.local.global_phase_time = timer.elapsed_time();

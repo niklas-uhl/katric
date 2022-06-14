@@ -23,6 +23,7 @@
 #include <boost/range/iterator_range_core.hpp>
 #include <cassert>
 #include <cstddef>
+#include <default_hash.hpp>
 #include <google/dense_hash_set>
 #include <google/sparse_hash_map>
 #include <iterator>
@@ -143,21 +144,6 @@ public:
         head_iterator_type end_;
     };
 
-    using payload_type = GhostPayloadType;
-
-    template <typename Payload>
-    struct GhostData {
-        PEID rank;
-        NodeId global_id;
-        Payload payload;
-    };
-    struct LocalData {
-        LocalData(NodeId global_id, bool is_interface) : global_id(global_id), is_interface(is_interface) {}
-        LocalData() : LocalData(0, false) {}
-        NodeId global_id;
-        bool is_interface;
-    };
-
     inline NodeId local_node_count() const {
         return local_node_count_;
     }
@@ -274,100 +260,9 @@ public:
         return degree_[idx] - first_out_offset_[idx];
     }
 
-    // [[nodiscard]] inline NodeId to_global_id(RankEncodedNodeId local_node_id) const {
-    //     assert((is_local_from_local(local_node_id) || is_ghost(local_node_id)));
-    //     if (!is_ghost(local_node_id)) {
-    //         if (consecutive_vertices_) {
-    //             return node_range_.first + local_node_id;
-    //         } else {
-    //             return local_data_[local_node_id].global_id;
-    //         }
-    //     } else {
-    //         return get_ghost_data(local_node_id).global_id;
-    //     }
-    // }
-
-    // [[nodiscard]] inline Edge to_global_edge(const Edge& edge) const {
-    //     return Edge{to_global_id(edge.tail), to_global_id(edge.head)};
-    // }
-
-    // [[nodiscard]] inline NodeId to_local_id(NodeId global_node_id) const {
-    //     if (consecutive_vertices_ && is_local(global_node_id)) {
-    //         NodeId local_id = global_node_id - node_range_.first;
-    //         assert(is_local_from_local(local_id));
-    //         return local_id;
-    //     } else {
-    //         assert(global_to_local_.find(global_node_id) != global_to_local_.end());
-    //         return global_to_local_.find(global_node_id)->second;
-    //     }
-    // }
-
-    // [[nodiscard]] inline bool is_local(NodeId global_node_id) const {
-    //     return global_node_id >= node_range_.first && global_node_id <= node_range_.second;
-    // }
-
-    // [[nodiscard]] inline bool is_local_from_local(NodeId local_node_id) const {
-    //     return local_node_id < local_node_count();
-    // }
-
-    // [[nodiscard]] inline bool is_ghost(NodeId local_node_id) const {
-    //     return local_node_id >= local_node_count_ && local_node_id < local_node_count_ + ghost_count();
-    // }
-
-    // [[nodiscard]] inline bool is_ghost_from_global(NodeId global_node_id) const {
-    //     auto it = global_to_local_.find(global_node_id);
-    //     if (it == global_to_local_.end()) {
-    //         return false;
-    //     } else {
-    //         NodeId local_id = (*it).second;
-    //         return local_id >= local_node_count_;
-    //     }
-    // }
-
-    [[nodiscard]] inline const GraphPayload& get_graph_payload() const {
-        return graph_payload_;
-    }
-
-    [[nodiscard]] inline GraphPayload& get_graph_payload() {
-        return graph_payload_;
-    }
-
-    // [[nodiscard]] inline const GhostPayloadType& get_ghost_payload(NodeId local_node_id) const {
-    //     assert(is_ghost(local_node_id));
-    //     NodeId ghost_index = local_node_id - local_node_count_;
-    //     return ghost_data_[ghost_index].payload;
-    // }
-
-    // [[nodiscard]] inline GhostPayloadType& get_ghost_payload(NodeId local_node_id) {
-    //     assert(is_ghost(local_node_id));
-    //     NodeId ghost_index = local_node_id - local_node_count_;
-    //     return ghost_data_[ghost_index].payload;
-    // }
-
-    // [[nodiscard]] inline const GhostData<GhostPayloadType>& get_ghost_data(NodeId local_node_id) const {
-    //     assert(is_ghost(local_node_id));
-    //     NodeId ghost_index = local_node_id - local_node_count_;
-    //     return ghost_data_[ghost_index];
-    // }
-
-    // [[nodiscard]] inline const LocalData& get_local_data(NodeId local_node_id) const {
-    //     assert(is_local_from_local(local_node_id));
-    //     return local_data_[local_node_id];
-    // }
-
-    // template <typename = std::enable_if_t<payload_has_degree<payload_type>::value>>
-    // inline bool is_outgoing(const RankEncodedEdge& e) const {
-    //     return std::forward_as_tuple(degree(e.tail.id()), to_global_id(e.tail.id())) <
-    //            std::forward_as_tuple(degree(e.head.id()), to_global_id(e.head.id()));
-    // }
-
     DistributedGraph() {
         first_out_.push_back(0);
     };
-
-    inline NodeId total_node_count() const {
-        return total_node_count_;
-    }
 
     inline std::pair<NodeId, NodeId> node_range() const {
         return node_range_;
@@ -438,20 +333,15 @@ public:
           first_out_offset_(G.local_node_count()),
           degree_(G.local_node_count()),
           head_(),
-          local_data_(G.local_node_count()),
-          consecutive_vertices_(false),
           ghost_ranks_available_(false),
           oriented_(false),
-          ghosts_expanded_(false),
           neighbor_ranks_(),
           local_node_count_(G.local_node_count()),
           local_edge_count_{G.edge_heads.size()},
-          total_node_count_{},
           node_range_(std::numeric_limits<NodeId>::max(), std::numeric_limits<NodeId>::min()),
           rank_(rank),
           size_(size) {
         // global_to_local_.set_empty_key(-1);
-        global_to_local_.set_deleted_key(-2);
         neighbor_ranks_.set_empty_key(-1);
         auto degree_sum = 0;
         node_range_.first = G.node_info[0].global_id;
@@ -522,7 +412,7 @@ public:
         return neighbor_ranks_.find(rank) != neighbor_ranks_.end();
     }
 
-    google::dense_hash_set<PEID> const& neighbor_ranks() const {
+    google::dense_hash_set<PEID, cetric::hash> const& neighbor_ranks() const {
         return neighbor_ranks_;
     }
 
@@ -612,23 +502,15 @@ public:
     }
 
 private:
-    using node_map = google::sparse_hash_map<NodeId, NodeId>;
     std::vector<EdgeId> first_out_;
     std::vector<EdgeId> first_out_offset_;
     std::vector<Degree> degree_;
     std::vector<RankEncodedNodeId> head_;
-    std::vector<GhostData<GhostPayloadType>> ghost_data_;
-    std::vector<LocalData> local_data_;
-    bool consecutive_vertices_;
     bool ghost_ranks_available_;
     bool oriented_;
-    bool ghosts_expanded_;
-    GraphPayload graph_payload_;
-    node_map global_to_local_;
-    google::dense_hash_set<PEID> neighbor_ranks_;
+    google::dense_hash_set<PEID, cetric::hash> neighbor_ranks_;
     NodeId local_node_count_{};
     EdgeId local_edge_count_{};
-    NodeId total_node_count_{};
     std::pair<NodeId, NodeId> node_range_;
     PEID rank_;
     PEID size_;
@@ -644,8 +526,8 @@ inline std::ostream& operator<<(std::ostream& out, DistributedGraph<GhostPayload
     return out;
 }
 
-template <typename GhostPayloadType, template <typename> class SetType = std::set>
-void find_ghosts(DistributedGraph<GhostPayloadType> const& G, SetType<RankEncodedNodeId>& ghosts) {
+template <typename GhostPayloadType, typename SetType = std::set<RankEncodedNodeId>>
+void find_ghosts(DistributedGraph<GhostPayloadType> const& G, SetType& ghosts) {
     for (auto node : G.local_nodes()) {
         for (auto neighbor : boost::adaptors::reverse(G.adj(node).neighbors())) {
             if (neighbor.rank() == G.rank()) {

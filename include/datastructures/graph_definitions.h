@@ -10,6 +10,7 @@
 #include <functional>
 #include <limits>
 #include <ostream>
+#include <hash/murmur2_hash.hpp>
 #include "message-queue/mpi_datatype.h"
 
 #include <fmt/core.h>
@@ -177,6 +178,20 @@ struct std::hash<cetric::graph::RankEncodedNodeId> {
         return std::hash<std::uint64_t>{}(id.data());
     }
 };
+
+namespace cetric {
+struct hash {
+    size_t operator()(int rank) const {
+        int local = rank;
+        return murmur.MurmurHash64A(&local, sizeof(int), murmur.seed);
+    }
+    size_t operator()(graph::RankEncodedNodeId node) const {
+        std::uint64_t local = node.data();
+        return murmur.MurmurHash64A(&local, sizeof(local), murmur.seed);
+    }
+    utils_tm::hash_tm::murmur2_hash murmur;
+};
+}  // namespace cetric
 
 // template <>
 // struct std::numeric_limits<cetric::graph::RankEncodedNodeId> {

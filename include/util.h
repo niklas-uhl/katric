@@ -5,13 +5,18 @@
 #ifndef PARALLEL_TRIANGLE_COUNTER_UTIL_H
 #define PARALLEL_TRIANGLE_COUNTER_UTIL_H
 
+#include <atomic_debug.h>
+#include <datastructures/graph_definitions.h>
 #include <fmt/core.h>
 #include <fmt/ostream.h>
 #include <fmt/ranges.h>
+#include <graph-io/local_graph_view.h>
 #include <mpi.h>
+#include <mpi_traits.h>
 #include <unistd.h>
 #include <array>
 #include <backward.hpp>
+#include <cstddef>
 #include <cstdlib>
 #include <debug_assert.hpp>
 #include <exception>
@@ -22,10 +27,6 @@
 #include <sstream>
 #include <tlx/logger.hpp>
 #include <vector>
-#include <mpi_traits.h>
-#include <graph-io/local_graph_view.h>
-#include <datastructures/graph_definitions.h>
-#include <atomic_debug.h>
 
 using PEID = int;
 
