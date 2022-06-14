@@ -220,7 +220,7 @@ int main(int argc, char* argv[]) {
         std::cerr << "The MPI implementation must support MPI_THREAD_FUNNELED" << std::endl;
         std::exit(1);
     }
-    bool debug = false;
+    bool debug = true;
     PEID rank;
     PEID size;
     backward::SignalHandling sh;

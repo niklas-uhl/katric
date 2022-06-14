@@ -138,10 +138,11 @@ static_assert(sizeof(unsigned long long) == 8, "We expect an unsigned long long 
 using Edge = graphio::Edge<>;
 using RankEncodedEdge = graphio::Edge<RankEncodedNodeId>;
 
+template <typename NodeIdType = NodeId>
 struct Triangle {
-    NodeId x;
-    NodeId y;
-    NodeId z;
+    NodeIdType x;
+    NodeIdType y;
+    NodeIdType z;
 
     void normalize() {
         if (x > y) {
@@ -157,11 +158,13 @@ struct Triangle {
     }
 };
 
-inline bool operator==(const Triangle& t1, const Triangle& t2) {
+template <typename NodeIdType>
+inline bool operator==(const Triangle<NodeIdType>& t1, const Triangle<NodeIdType>& t2) {
     return t1.x == t2.x && t1.y == t2.y && t1.z == t2.z;
 }
 
-inline std::ostream& operator<<(std::ostream& out, const Triangle& t) {
+template <typename NodeIdType>
+inline std::ostream& operator<<(std::ostream& out, const Triangle<NodeIdType>& t) {
     out << "(" << t.x << ", " << t.y << ", " << t.z << ")";
     return out;
 }

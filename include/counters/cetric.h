@@ -12,6 +12,7 @@
 #include <timer.h>
 #include <util.h>
 #include <cstddef>
+#include <numeric>
 #include <sparsehash/dense_hash_set>
 // #include "cost_function.h"
 #include <datastructures/auxiliary_node_data.h>
@@ -20,6 +21,7 @@
 #include "datastructures/graph_definitions.h"
 #include "debug_assert.hpp"
 #include "graph-io/local_graph_view.h"
+#include "kassert/kassert.hpp"
 #include "tlx/algorithm/multiway_merge.hpp"
 #include "tlx/logger.hpp"
 #include "tlx/multi_timer.hpp"
@@ -46,7 +48,7 @@ inline void preprocessing(DistributedGraph<>& G,
         G.orient(node_ordering::degree(G, ghost_degree));
         stats.local.preprocessing.orientation_time += timer.elapsed_time();
         timer.restart();
-        G.sort_neighborhoods(node_ordering::degree(G, ghost_degree), execution_policy::parallel{});
+        G.sort_neighborhoods(node_ordering::id(), execution_policy::sequential{});
     } else {
         G.orient(node_ordering::degree_outward(G));
         stats.local.preprocessing.orientation_time += timer.elapsed_time();
@@ -93,11 +95,11 @@ inline size_t run_patric(DistributedGraph<>& G,
     size_t triangle_count = 0;
     tbb::combinable<size_t> triangle_count_local_phase{0};
     ctr.run_local(
-        [&](Triangle t) {
+        [&](Triangle<RankEncodedNodeId> t) {
             (void)t;
             triangle_count_local_phase.local()++;
         },
-        stats, node_ordering::degree(G, ghost_degrees));
+        stats, node_ordering::id());
     triangle_count += triangle_count_local_phase.combine(std::plus<>{});
     stats.local.local_phase_time += timer.elapsed_time();
     LOG << "[R" << rank << "] "
@@ -106,11 +108,11 @@ inline size_t run_patric(DistributedGraph<>& G,
         << "Contraction finished " << stats.local.contraction_time << " s";
     timer.restart();
     ctr.run_distributed(
-        [&](Triangle t) {
+        [&](Triangle<RankEncodedNodeId> t) {
             (void)t;
             triangle_count++;
         },
-        stats, node_ordering::degree(G, ghost_degrees), ghosts);
+        stats, node_ordering::id(), ghosts);
     stats.local.global_phase_time = timer.elapsed_time();
     LOG << "[R" << rank << "] "
         << "Global phase finished " << stats.local.global_phase_time << " s";
@@ -127,7 +129,7 @@ inline size_t run_cetric(DistributedGraph<>& G,
                          PEID rank,
                          PEID size,
                          CommunicationPolicy&&) {
-    bool debug = false;
+    bool debug = true;
     G.find_ghost_ranks();
     google::dense_hash_set<RankEncodedNodeId> ghosts;
     ghosts.set_empty_key(RankEncodedNodeId::sentinel());
@@ -153,13 +155,17 @@ inline size_t run_cetric(DistributedGraph<>& G,
     timer.restart();
     auto ctr = cetric::CetricEdgeIterator(G, conf, rank, size, CommunicationPolicy{});
     std::atomic<size_t> triangle_count = 0;
-    tbb::concurrent_vector<Triangle> triangles;
+    tbb::concurrent_vector<Triangle<RankEncodedNodeId>> triangles;
     // tbb::combinable<size_t> triangle_count_local_phase {0};
     ctr.run_local(
-        [&](Triangle t) {
+        [&](Triangle<RankEncodedNodeId> t) {
             (void)t;
             // atomic_debug(t);
-            // triangles.push_back(t);
+            t.normalize();
+
+            if constexpr (KASSERT_ASSERTION_LEVEL >= kassert::assert::normal) {
+                triangles.push_back(t);
+            }
             // atomic_debug(tbb::this_task_arena::current_thread_index());
             triangle_count++;
             // triangle_count_local_phase.local()++;
@@ -197,29 +203,50 @@ inline size_t run_cetric(DistributedGraph<>& G,
     if (conf.secondary_cost_function != "none") {
         auto ctr_dist = cetric::CetricEdgeIterator(G, conf, rank, size, CommunicationPolicy{});
         ctr_dist.run(
-            [&](Triangle t) {
+            [&](Triangle<RankEncodedNodeId> t) {
                 (void)t;
-                // triangles.push_back(t);
+                t.normalize();
+                if constexpr (KASSERT_ASSERTION_LEVEL >= kassert::assert::normal) {
+                    triangles.push_back(t);
+                }
                 // atomic_debug(t);
                 triangle_count++;
                 // triangle_count_global_phase.local()++;
             },
-            stats, node_ordering::degree(G, ghost_degrees), ghosts);
+            stats, node_ordering::id(), ghosts);
     } else {
-        atomic_debug(fmt::format("local nodes: {}", G.local_nodes()));
-        atomic_debug(fmt::format("ghost degrees: {}", ghost_degrees));
+        // atomic_debug(fmt::format("local nodes: {}", G.local_nodes()));
+        // atomic_debug(fmt::format("ghost degrees: {}", ghost_degrees));
         ctr.run_distributed(
-            [&](Triangle t) {
+            [&](Triangle<RankEncodedNodeId> t) {
                 (void)t;
-                // triangles.push_back(t);
+                t.normalize();
+                if constexpr (KASSERT_ASSERTION_LEVEL >= kassert::assert::normal) {
+                    triangles.push_back(t);
+                }
                 // atomic_debug(t);
                 triangle_count++;
                 // triangle_count_global_phase.local()++;
             },
-            stats, node_ordering::degree(G, ghost_degrees), ghosts);
+            stats, node_ordering::id(), ghosts);
     }
     // triangle_count += triangles.size();
     stats.local.global_phase_time = timer.elapsed_time();
+    if constexpr (KASSERT_ASSERTION_LEVEL >= kassert::assert::normal) {
+        KASSERT(triangles.size() == triangle_count);
+        std::sort(triangles.begin(), triangles.end(), [](auto const& lhs, auto const& rhs) {
+            return std::tuple(lhs.x.id(), lhs.y.id(), lhs.z.id()) < std::tuple(rhs.x.id(), rhs.y.id(), rhs.z.id());
+        });
+        auto current = triangles.begin();
+        while (true) {
+            current = std::adjacent_find(current, triangles.end());
+            if (current == triangles.end()) {
+                break;
+            }
+            KASSERT(false, "Duplicate triangle " << *current);
+            current++;
+        }
+    }
     LOG << "[R" << rank << "] "
         << "Global phase finished " << stats.local.global_phase_time << " s";
     timer.restart();

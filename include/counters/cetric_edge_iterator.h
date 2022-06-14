@@ -244,7 +244,7 @@ public:
                 std::set_intersection(v_neighbors.begin(), v_neighbors.end(), u_neighbors.begin(), u_neighbors.end(),
                                       boost::function_output_iterator([&](RankEncodedNodeId w) {
                                           stats.local.local_triangles++;
-                                          emit(Triangle{v.id(), u.id(), w.id()});
+                                          emit(Triangle<RankEncodedNodeId>{v, u, w});
                                       }),
                                       node_ordering);
                 // post_intersection(v);
@@ -286,7 +286,7 @@ public:
                 std::set_intersection(v_neighbors.begin(), v_neighbors.end(), u_neighbors.begin(), u_neighbors.end(),
                                       boost::function_output_iterator([&](RankEncodedNodeId w) {
                                           stats.local.local_triangles++;
-                                          emit(Triangle{v.id(), u.id(), w.id()});
+                                          emit(Triangle<RankEncodedNodeId>{v, u, w});
                                       }),
                                       node_ordering);
             }
@@ -361,7 +361,7 @@ public:
                                          NodeIterator interface_nodes_end,
                                          NodeOrdering&& node_ordering,
                                          GhostSet const& ghosts) {
-        assert(conf_.num_threads > 1);
+        KASSERT(conf_.num_threads > 1);
         auto queue =
             message_queue::make_concurrent_buffered_queue<RankEncodedNodeId>(conf_.num_threads, Merger{}, Splitter{});
         queue.set_threshold(threshold_);
@@ -438,7 +438,7 @@ public:
 
     inline size_t get_triangle_count(cetric::profiling::Statistics& stats) {
         size_t triangle_count = 0;
-        run([&](Triangle) { triangle_count++; }, stats);
+        run([&](auto) { triangle_count++; }, stats);
         return triangle_count;
     }
 
@@ -498,7 +498,7 @@ private:
         std::vector<RankEncodedNodeId> buffer;
         buffer.emplace_back(v);
         // size_t send_count = 0;
-        for (RankEncodedEdge e : G.adj(v).edges()) {
+        for (RankEncodedEdge e : G.out_adj(v).edges()) {
             assert(conf_.algorithm == Algorithm::Patric || e.head.rank() != rank_);
             // using payload_type = typename GraphType::payload_type;
             // if constexpr (std::is_convertible_v<decltype(payload_type{}.degree), Degree>) {
@@ -513,6 +513,7 @@ private:
                 buffer.emplace_back(e.head);
             }
         }
+        // atomic_debug(fmt::format("Sending {} to {}", buffer, u_rank));
         queue.post_message(std::move(buffer), u_rank);
         last_proc_[G.to_local_idx(v)] = u_rank;
     }
@@ -558,12 +559,13 @@ private:
         process_neighborhood(v, begin + 1, end, emit, stats, std::forward<NodeOrdering>(node_ordering), ghosts);
     }
 
-  template <typename TriangleFunc, typename NodeOrdering, typename GhostSet>
+    template <typename TriangleFunc, typename NodeOrdering, typename GhostSet>
     void handle_buffer_hybrid(SharedVectorSpan<RankEncodedNodeId> span,
                               ThreadPool& thread_pool,
                               TriangleFunc emit,
                               cetric::profiling::Statistics& stats,
-                              NodeOrdering&& node_ordering, GhostSet const& ghosts) {
+                              NodeOrdering&& node_ordering,
+                              GhostSet const& ghosts) {
         thread_pool.enqueue(
             [this, emit, span = std::move(span), &stats, &node_ordering, &ghosts] {
                 RankEncodedNodeId v = *span.begin();
@@ -628,12 +630,10 @@ private:
         //     });
         // } else {
         auto u_neighbors = G.out_adj(u).neighbors();
-        atomic_debug(fmt::format("original neighbors {}", boost::make_iterator_range(begin, end)));
-        atomic_debug(fmt::format("neighbor ranks {}", G.neighbor_ranks()));
         auto filtered_neighbors = boost::adaptors::filter(
             boost::make_iterator_range(begin, end),
             [this, &ghosts](RankEncodedNodeId node) { return ghosts.find(node) != ghosts.end(); });
-        atomic_debug(fmt::format("filtered neighbors {}", filtered_neighbors));
+        // atomic_debug(fmt::format("intersecting {} and {}", u_neighbors, filtered_neighbors));
         std::set_intersection(u_neighbors.begin(), u_neighbors.end(), filtered_neighbors.begin(),
                               filtered_neighbors.end(), boost::make_function_output_iterator(on_intersection),
                               node_ordering);
@@ -676,7 +676,7 @@ private:
             intersect_from_message(
                 u, v, begin, end,
                 [&](RankEncodedNodeId local_intersection) {
-                    emit(Triangle{v.id(), u.id(), local_intersection.id()});
+                    emit(Triangle<RankEncodedNodeId>{v, u, local_intersection});
                     stats.local.type3_triangles++;
                 },
                 node_ordering, ghosts);

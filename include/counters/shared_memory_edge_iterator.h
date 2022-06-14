@@ -169,7 +169,7 @@ private:
                             G.intersect_neighborhoods(
                                 begin, neighbors.end(), u,
                                 [&](auto x) {
-                                    emit(Triangle{u, v, x});
+                                    emit(Triangle<>{u, v, x});
                                 },
                                 std::move(node_ordering), IntersectionPolicy{});
                         }
@@ -188,7 +188,7 @@ private:
                                     G.intersect_neighborhoods(
                                         begin, G.out_neighbors(v).end(), u,
                                         [&](auto x) {
-                                            emit(Triangle{u, v, x});
+                                            emit(Triangle<>{u, v, x});
                                         },
                                         std::move(node_ordering), IntersectionPolicy{});
                                 }

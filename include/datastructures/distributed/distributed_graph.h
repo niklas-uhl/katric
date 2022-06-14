@@ -256,6 +256,8 @@ public:
             EdgeId out_end = first_out_[idx] + degree_[idx];
             std::sort(head_.begin() + begin, head_.begin() + in_end, node_cmp);
             std::sort(head_.begin() + in_end, head_.begin() + out_end, node_cmp);
+            auto neighbors = out_adj(node).neighbors();
+            KASSERT(std::is_sorted(neighbors.begin(), neighbors.end(), node_cmp));
         }
     }
 
