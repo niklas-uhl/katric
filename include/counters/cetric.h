@@ -195,7 +195,7 @@ inline size_t run_cetric(DistributedGraph<>& G,
     //     preprocessing(G, stats, conf, Phase::Global);
     // } else {
     preprocessing(G, stats, ghost_degrees, ghosts, conf, Phase::Global);
-    ghosts = decltype(ghosts) {};
+    ghosts = decltype(ghosts){};
     ghost_degrees = AuxiliaryNodeData<Degree>();
     // }
     stats.local.secondary_load_balancing.phase_time += timer.elapsed_time();
@@ -235,7 +235,7 @@ inline size_t run_cetric(DistributedGraph<>& G,
     // triangle_count += triangles.size();
     stats.local.global_phase_time = timer.elapsed_time();
     if constexpr (KASSERT_ASSERTION_LEVEL >= kassert::assert::normal) {
-        KASSERT(triangles.size() == triangle_count);
+        KASSERT(triangles.size() == triangle_count.load());
         std::sort(triangles.begin(), triangles.end(), [](auto const& lhs, auto const& rhs) {
             return std::tuple(lhs.x.id(), lhs.y.id(), lhs.z.id()) < std::tuple(rhs.x.id(), rhs.y.id(), rhs.z.id());
         });

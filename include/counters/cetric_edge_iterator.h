@@ -225,20 +225,32 @@ public:
             //     }
             //     intersect(v, u, on_intersection);
             // });
+            size_t neighbor_index = 0;
             for (RankEncodedNodeId u : G.out_adj(v).neighbors()) {
+                KASSERT(*(G.out_adj(v).neighbors().begin() + neighbor_index) == u);
                 if (u.rank() != rank_) {
+                    // atomic_debug(
+                    //     fmt::format("Remaining neighbors {}",
+                    //                 boost::make_iterator_range(G.out_adj(v).neighbors().begin() + neighbor_index,
+                    //                                            G.out_adj(v).neighbors().end())));
                     // TODO: we should be able to break here when the edges are properly sorted
-                    continue;
+                    KASSERT(std::all_of(G.out_adj(v).neighbors().begin() + neighbor_index,
+                                        G.out_adj(v).neighbors().end(),
+                                        [rank = this->rank_](RankEncodedNodeId node) { return node.rank() != rank; }));
+                    break;
                 }
                 auto v_neighbors = G.out_adj(v).neighbors();
                 auto u_neighbors = G.out_adj(u).neighbors();
-                std::set_intersection(v_neighbors.begin(), v_neighbors.end(), u_neighbors.begin(), u_neighbors.end(),
-                                      boost::function_output_iterator([&](RankEncodedNodeId w) {
+                auto offset = neighbor_index;
+                // auto offset = 0;
+                std::set_intersection(v_neighbors.begin() + offset, v_neighbors.end(), u_neighbors.begin(),
+                                      u_neighbors.end(), boost::function_output_iterator([&](RankEncodedNodeId w) {
                                           stats.local.local_triangles++;
                                           emit(Triangle<RankEncodedNodeId>{v, u, w});
                                       }),
                                       node_ordering);
                 // post_intersection(v);
+                neighbor_index++;
             }
         }
         // switch (conf_.algorithm) {
@@ -358,7 +370,7 @@ public:
                                          NodeIterator interface_nodes_end,
                                          NodeOrdering&& node_ordering,
                                          GhostSet const& ghosts) {
-        KASSERT(conf_.num_threads > 1);
+        KASSERT(conf_.num_threads > 1ul);
         auto queue =
             message_queue::make_concurrent_buffered_queue<RankEncodedNodeId>(conf_.num_threads, Merger{}, Splitter{});
         queue.set_threshold(threshold_);
