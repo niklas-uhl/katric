@@ -39,20 +39,30 @@ public:
     void get_ghost_degree(DegreeFunc&& on_degree_receive,
                           cetric::profiling::MessageStatistics& stats,
                           bool sparse = true) {
+        get_ghost_data([this](auto node) { return RankEncodedNodeId{G.degree(node)}; },
+                       [&on_degree_receive](auto node, auto data) { on_degree_receive(node, data.id()); }, stats,
+                       sparse);
+    }
+
+    template <typename DataFunc, typename ReceiveFunc>
+    void get_ghost_data(DataFunc&& get_data,
+                        ReceiveFunc&& on_receive,
+                        cetric::profiling::MessageStatistics& stats,
+                        bool sparse = true) {
         //  assert(G.ghost_ranks_available());
         send_buffers.clear();
         receive_buffers.clear();
         for (auto node : G.local_nodes()) {
             neighboring_PEs.clear();
             if (G.is_interface_node(node)) {
-                Degree deg = G.degree(node);
+                auto data = get_data(node);
                 for (auto neighbor : G.adj(node).neighbors()) {
                     if (neighbor.rank() != rank_) {
                         PEID rank = neighbor.rank();
                         if (neighboring_PEs.find(rank) == neighboring_PEs.end()) {
                             // atomic_debug(fmt::format("Sending degree of {} to rank {}", node, rank));
                             send_buffers[rank].emplace_back(node);
-                            send_buffers[rank].emplace_back(RankEncodedNodeId{deg});
+                            send_buffers[rank].emplace_back(data);
                             neighboring_PEs.insert(rank);
                         }
                     }
@@ -71,8 +81,7 @@ public:
             assert(buffer.size() % 2 == 0);
             for (size_t i = 0; i < buffer.size(); i += 2) {
                 RankEncodedNodeId node = buffer[i];
-                Degree degree = buffer[i + 1].id();
-                on_degree_receive(node, degree);
+                on_receive(node, buffer[i + 1]);
             }
         }
     }

@@ -49,7 +49,6 @@ class LoadBalancer;
 namespace graph {
 
 using LocalGraphView = graphio::LocalGraphView;
-using node_set = google::dense_hash_set<NodeId>;
 
 template <typename PayloadType>
 class payload_has_degree {
@@ -420,30 +419,30 @@ public:
         DistributedGraph G = std::move(*this);
         std::vector<LocalGraphView::NodeInfo> node_info;
         EdgeId edge_counter = 0;
-        G.for_each_local_node([&](NodeId node) {
+        for (RankEncodedNodeId node : local_nodes()) {
             auto degree = G.degree(node);
             // TODO we need to handle vertices with out degree 0
             // maybe prevent sending to them, as we should know their degree (?)
             if (remove_isolated && degree == 0) {
-                return;
+                continue;
             }
-            auto global_id = G.to_global_id(node);
+            // auto global_id = G.to_global_id(node);
             if (keep_only_out_edges) {
                 degree = G.outdegree(node);
             }
-            node_info.emplace_back(global_id, degree);
+            node_info.emplace_back(node.id(), degree);
             if (keep_only_out_edges) {
-                G.for_each_local_out_edge(node, [&](RankEncodedEdge edge) {
-                    G.head_[edge_counter] = RankEncodedNodeId{G.to_global_id(edge.head.id())};
+                for (RankEncodedNodeId head : G.out_adj(node).neighbors()) {
+                    G.head_[edge_counter] = head;
                     edge_counter++;
-                });
+                }
             } else {
-                G.for_each_edge(node, [&](RankEncodedEdge edge) {
-                    G.head_[edge_counter] = RankEncodedNodeId{G.to_global_id(edge.head.id())};
+                for (RankEncodedNodeId head : G.adj(node).neighbors()) {
+                    G.head_[edge_counter] = head;
                     edge_counter++;
-                });
+                }
             }
-        });
+        }
         G.head_.resize(edge_counter);
         G.head_.shrink_to_fit();
         auto head = std::move(G.head_);

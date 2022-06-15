@@ -4,7 +4,7 @@
 #include <config.h>
 #include <counters/cetric_edge_iterator.h>
 #include <datastructures/distributed/graph_communicator.h>
-// #include <load_balancing.h>
+#include <load_balancing.h>
 #include <statistics.h>
 #include <tbb/combinable.h>
 #include <tbb/concurrent_vector.h>
@@ -14,7 +14,7 @@
 #include <cstddef>
 #include <numeric>
 #include <sparsehash/dense_hash_set>
-// #include "cost_function.h"
+#include "cost_function.h"
 #include <datastructures/auxiliary_node_data.h>
 #include "datastructures/distributed/distributed_graph.h"
 #include "datastructures/distributed/helpers.h"
@@ -134,16 +134,16 @@ inline size_t run_cetric(DistributedGraph<>& G,
     google::dense_hash_set<RankEncodedNodeId, cetric::hash> ghosts;
     ghosts.set_empty_key(RankEncodedNodeId::sentinel());
     cetric::profiling::Timer timer;
-    // if ((conf.gen.generator.empty() && conf.primary_cost_function != "N") ||
-    //     (!conf.gen.generator.empty() && conf.primary_cost_function != "none")) {
-    //     auto cost_function = CostFunctionRegistry<DistributedGraph<>>::get(conf.primary_cost_function, G, conf,
-    //                                                                        stats.local.primary_load_balancing);
-    //     LocalGraphView tmp = G.to_local_graph_view(true, false);
-    //     tmp = cetric::load_balancing::LoadBalancer::run(std::move(tmp), cost_function, conf,
-    //                                                     stats.local.primary_load_balancing);
-    //     G = DistributedGraph(std::move(tmp), rank, size);
-    //     G.find_ghost_ranks();
-    // }
+    if ((conf.gen.generator.empty() && conf.primary_cost_function != "N") ||
+        (!conf.gen.generator.empty() && conf.primary_cost_function != "none")) {
+        auto cost_function = CostFunctionRegistry<DistributedGraph<>>::get(conf.primary_cost_function, G, conf,
+                                                                           stats.local.primary_load_balancing);
+        LocalGraphView tmp = G.to_local_graph_view(true, false);
+        tmp = cetric::load_balancing::LoadBalancer::run(std::move(tmp), cost_function, conf,
+                                                        stats.local.primary_load_balancing);
+        G = DistributedGraph(std::move(tmp), rank, size);
+        G.find_ghost_ranks();
+    }
     AuxiliaryNodeData<Degree> ghost_degrees;
     stats.local.primary_load_balancing.phase_time += timer.elapsed_time();
     LOG << "[R" << rank << "] "

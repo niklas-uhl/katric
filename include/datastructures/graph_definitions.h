@@ -8,9 +8,10 @@
 #include <cinttypes>
 #include <cstdint>
 #include <functional>
+#include <hash/murmur2_hash.hpp>
 #include <limits>
 #include <ostream>
-#include <hash/murmur2_hash.hpp>
+#include <sparsehash/dense_hash_set>
 #include "message-queue/mpi_datatype.h"
 
 #include <fmt/core.h>
@@ -190,6 +191,11 @@ struct hash {
         return murmur.MurmurHash64A(&local, sizeof(local), murmur.seed);
     }
     utils_tm::hash_tm::murmur2_hash murmur;
+};
+struct node_set : public google::dense_hash_set<graph::RankEncodedNodeId, hash> {
+    explicit node_set() : google::dense_hash_set<graph::RankEncodedNodeId, hash>() {
+        this->set_empty_key(graph::RankEncodedNodeId::sentinel());
+    }
 };
 }  // namespace cetric
 

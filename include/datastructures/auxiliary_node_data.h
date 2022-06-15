@@ -15,15 +15,14 @@ public:
     explicit AuxiliaryNodeData()
         : AuxiliaryNodeData(graph::RankEncodedNodeId::sentinel(), graph::RankEncodedNodeId::sentinel()) {}
     explicit AuxiliaryNodeData(graph::RankEncodedNodeId from, graph::RankEncodedNodeId to)
-        : index_map_(), data_(to - from + 1) {}
+        : index_map_(), data_(to - from) {}
 
     template <typename GhostIterator>
     explicit AuxiliaryNodeData(graph::RankEncodedNodeId from,
                                graph::RankEncodedNodeId to,
                                GhostIterator ghost_begin,
                                GhostIterator ghost_end)
-        : index_map_(std::distance(ghost_begin, ghost_end)),
-          data_(to - from + 1 + std::distance(ghost_begin, ghost_end)) {
+        : index_map_(std::distance(ghost_begin, ghost_end)), data_(to - from + std::distance(ghost_begin, ghost_end)) {
         index_map_.set_empty_key(graph::RankEncodedNodeId::sentinel());
         index_map_.set_deleted_key(graph::RankEncodedNodeId::sentinel() - 1);
         size_t index = to - from;
@@ -31,6 +30,17 @@ public:
             index_map_[*current] = index;
             index++;
         }
+    }
+    template <typename GhostIterator>
+    void add_ghosts(GhostIterator ghost_begin, GhostIterator ghost_end) {
+        size_t index = data_.size();
+        for (auto current = ghost_begin; current != ghost_end; current++) {
+            if (!has_data_for(*current)) {
+                index_map_[*current] = index;
+                index++;
+            }
+        }
+        data_.resize(index);
     }
 
     template <typename GhostIterator>
@@ -49,7 +59,7 @@ public:
     }
 
     bool has_data_for(graph::RankEncodedNodeId node) const {
-        return (node >= from_ && node <= to_) || index_map_.find(node) != index_map_.end();
+        return (node >= from_ && node < to_) || index_map_.find(node) != index_map_.end();
     }
 
     size_t size() const {
