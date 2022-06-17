@@ -1,4 +1,5 @@
 #include <graph-io/distributed_graph_io.h>
+#include <graph-io/local_graph_view.h>
 #include <graph-io/parsing.h>
 #include <gtest/gtest.h>
 #include <load_balancing.h>
@@ -31,7 +32,7 @@ namespace {
                     G_full.resize(node_count);
                     total_number_of_edges = edge_count;
                 },
-                [](NodeId) {}, [&](Edge edge) { G_full[edge.tail].push_back(edge);
+                [](NodeId) {}, [&](graphio::Edge<> edge) { G_full[edge.tail].push_back(edge);
                 });
 
             conf.PEs = size;
@@ -42,7 +43,7 @@ namespace {
                 graphio::read_local_graph(input, InputFormat::metis, rank, size);
         }
 
-        std::vector<std::vector<Edge>> G_full;
+      std::vector<std::vector<graphio::Edge<>>> G_full;
         LocalGraphView G_view;
         profiling::LoadBalancingStatistics stats;
         Config conf;

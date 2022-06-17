@@ -18,6 +18,7 @@
 #include <sparsehash/dense_hash_map>
 #include <stdexcept>
 #include <unordered_map>
+#include "atomic_debug.h"
 #include "communicator.h"
 #include "fmt/core.h"
 #include "timer.h"
@@ -70,11 +71,11 @@ namespace cetric {
 template <typename Graph>
 class CostFunction {
 public:
-    static inline void init_nop(Graph& G,
-                                node_set& ghosts,
-                                AuxiliaryNodeData<Degree>& degree,
-                                AuxiliaryNodeData<Degree>& out_degree,
-                                cetric::profiling::MessageStatistics& stats) {}
+    static inline void init_nop(Graph&,
+                                node_set&,
+                                AuxiliaryNodeData<Degree>&,
+                                AuxiliaryNodeData<Degree>&,
+                                cetric::profiling::MessageStatistics&) {}
 
     static inline void init_local_outdegree(Graph& G,
                                             node_set& ghosts,
@@ -83,10 +84,11 @@ public:
                                             cetric::profiling::MessageStatistics& stats) {
         init_degree(G, ghosts, degree, out_degree, stats);
         if (out_degree.size() == 0) {
-            out_degree = AuxiliaryNodeData<Degree>(RankEncodedNodeId{G.node_range().first, G.rank()},
-                                                   RankEncodedNodeId{G.node_range().second + 1, G.rank()});
+            out_degree = AuxiliaryNodeData<Degree>(
+                RankEncodedNodeId{G.node_range().first, static_cast<uint16_t>(G.rank())},
+                RankEncodedNodeId{G.node_range().second + 1, static_cast<uint16_t>(G.rank())});
             auto deg = [&G, &degree](RankEncodedNodeId node) {
-                if (node.id() == G.rank()) {
+                if (node.rank() == G.rank()) {
                     return G.degree(node);
                 }
                 return degree[node];
@@ -104,7 +106,7 @@ public:
     static inline void init_degree(Graph& G,
                                    node_set& ghosts,
                                    AuxiliaryNodeData<Degree>& degree,
-                                   AuxiliaryNodeData<Degree>& out_degree,
+                                   AuxiliaryNodeData<Degree>&,
                                    cetric::profiling::MessageStatistics& stats) {
         // (void)cache;
         DegreeCommunicator comm(G, G.rank(), G.size(), as_int(MessageTag::CostFunction));
@@ -113,7 +115,12 @@ public:
         }
         if (degree.size() == 0) {
             degree = AuxiliaryNodeData<Degree>(ghosts.begin(), ghosts.end());
-            comm.get_ghost_degree([&](RankEncodedNodeId node, Degree deg) { degree[node] = deg; }, stats);
+            comm.get_ghost_degree(
+                [&](RankEncodedNodeId node, Degree deg) {
+                    KASSERT(ghosts.find(node) != ghosts.end());
+                    degree[node] = deg;
+                },
+                stats);
         }
     }
 
@@ -127,11 +134,15 @@ public:
         if (ghosts.size() == 0) {
             find_ghosts(G, ghosts);
         }
-        if (degree.size() == 0) {
+        if (out_degree.size() <= G.local_node_count()) {
             out_degree.add_ghosts(ghosts.begin(), ghosts.end());
             DegreeCommunicator comm(G, G.rank(), G.size(), as_int(MessageTag::CostFunction));
             comm.get_ghost_data([&](auto node) { return out_degree[node]; },
-                                [&](auto node, auto data) { out_degree[node] = data.id(); }, stats);
+                                [&](auto node, auto data) {
+                                    KASSERT(ghosts.find(node) != ghosts.end());
+                                    out_degree[node] = data.id();
+                                },
+                                stats);
             // comm.get_ghost_degree([&](RankEncodedNodeId node, Degree deg) { degree[node] = deg; }, stats);
         }
         //     DegreeCommunicator<Graph> comm(G, G.rank(), G.size(), as_int(MessageTag::CostFunction));
@@ -159,17 +170,22 @@ public:
         : G(G),
           degree_(degree),
           out_degree_(outdegree),
+          node_to_idx_(G.local_node_count()),
           cost(G.local_node_count()),
           name(name) {
+        node_to_idx_.set_empty_key(-1);
         cetric::profiling::Timer t;
+        size_t node_index = 0;
         for (RankEncodedNodeId node : G.local_nodes()) {
-            cost[G.to_local_idx(node)] = cost_function(*this, G, node);
+            node_to_idx_[node.id()] = node_index;
+            cost[node_index] = cost_function(*this, G, node);
+            node_index++;
         }
         stats.cost_function_evaluation_time = t.elapsed_time();
     }
 
     inline size_t operator()(const LocalGraphView& G_local, NodeId local_node_id) {
-        auto idx = global_to_index[G_local.node_info[local_node_id].global_id];
+        auto idx = node_to_idx_[G_local.node_info[local_node_id].global_id];
         return cost[idx];
     }
 
@@ -177,12 +193,16 @@ public:
         // DEBUG_ASSERT(G.is_local_from_local(local_node_id) || G.get_graph_payload().ghost_degree_available,
         //              debug_module{}, name.c_str());
         // return G.degree(local_node_id);
-        return 0;
+        if (node.rank() == G.rank()) {
+            return G.degree(node);
+        } else {
+            return degree_[node];
+        }
     }
 
     inline Degree out_degree(RankEncodedNodeId node) {
         // return degree_cache.outdegree(local_node_id);
-        return 0;
+        return out_degree_[node];
     }
     inline PEID rank(NodeId local_node_id) {
         assert(G.ghost_ranks_available());
@@ -198,6 +218,7 @@ private:
     Graph& G;
     AuxiliaryNodeData<Degree> const& degree_;
     AuxiliaryNodeData<Degree> const& out_degree_;
+    default_map<NodeId, size_t> node_to_idx_;
     std::vector<size_t> cost;
     std::string name;
 };

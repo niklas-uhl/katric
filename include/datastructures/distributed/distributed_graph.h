@@ -189,6 +189,15 @@ public:
                                                                                 head_.cbegin() + end};
     }
 
+    EdgeRange<RankEncodedNodeId, RangeModifiability::non_modifiable> in_adj(RankEncodedNodeId node) const {
+        KASSERT(node.rank() == rank_, "Node " << node << " is not local.");
+        auto idx = to_local_idx(node);
+        auto begin = first_out_[idx];
+        auto end = first_out_[idx] + first_out_offset_[idx];
+        return EdgeRange<RankEncodedNodeId, RangeModifiability::non_modifiable>{node, head_.cbegin() + begin,
+                                                                                head_.cbegin() + end};
+    }
+
     template <typename NodeCmp>
     inline void orient(NodeCmp&& node_cmp) {
         auto is_outgoing = [&](auto tail, auto head) {
@@ -241,8 +250,14 @@ public:
             EdgeId out_end = first_out_[idx] + degree_[idx];
             std::sort(head_.begin() + begin, head_.begin() + in_end, node_cmp);
             std::sort(head_.begin() + in_end, head_.begin() + out_end, node_cmp);
-            auto neighbors = out_adj(node).neighbors();
-            KASSERT(std::is_sorted(neighbors.begin(), neighbors.end(), node_cmp));
+            {
+                auto neighbors = out_adj(node).neighbors();
+                KASSERT(std::is_sorted(neighbors.begin(), neighbors.end(), node_cmp));
+            }
+            {
+                auto neighbors = in_adj(node).neighbors();
+                KASSERT(std::is_sorted(neighbors.begin(), neighbors.end(), node_cmp));
+            }
         }
     }
 
@@ -271,15 +286,31 @@ public:
         KASSERT(node.rank() == rank_);
         return node.id() - node_range_.first;
     }
-    inline bool is_interface_node(RankEncodedNodeId node) const {
-        KASSERT(oriented());
+
+    inline bool is_interface_node_if_sorted_by_rank(RankEncodedNodeId node) const {
+        // KASSERT(oriented());
+        KASSERT(std::is_sorted(out_adj(node).neighbors().begin(), out_adj(node).neighbors().begin(),
+                               [](auto lhs, auto rhs) { return lhs.rank() < rhs.rank(); }));
         KASSERT(node.rank() == rank_);
+
         return !degree(node) == 0 && (adj(node).neighbors().end() - 1)->rank() != rank_;
+    }
+
+    inline bool is_interface_node(RankEncodedNodeId node) const {
+        auto neighbors = adj(node).neighbors();
+        auto it = std::find_if(neighbors.begin(), neighbors.end(),
+                               [rank = rank_](RankEncodedNodeId node) { return node.rank() != rank; });
+        bool is_interface = it != neighbors.end();
+        KASSERT(is_interface == std::any_of(neighbors.begin(), neighbors.end(),
+                                            [rank = rank_](RankEncodedNodeId node) { return node.rank() != rank; }));
+        return is_interface;
     }
 
     void remove_internal_edges(RankEncodedNodeId node) {
         KASSERT(node.rank() == rank_);
-        if (!is_interface_node(node)) {
+        KASSERT(std::is_sorted(out_adj(node).neighbors().begin(), out_adj(node).neighbors().begin(),
+                               [](auto lhs, auto rhs) { return lhs.rank() < rhs.rank(); }));
+        if (!is_interface_node_if_sorted_by_rank(node)) {
             degree_[to_local_idx(node)] = 0;
             first_out_offset_[to_local_idx(node)] = 0;
             return;
@@ -530,7 +561,7 @@ void find_ghosts(DistributedGraph<GhostPayloadType> const& G, SetType& ghosts) {
     for (auto node : G.local_nodes()) {
         for (auto neighbor : boost::adaptors::reverse(G.adj(node).neighbors())) {
             if (neighbor.rank() == G.rank()) {
-                break;
+                continue;
             }
             KASSERT(neighbor.rank() != G.rank());
             ghosts.insert(neighbor);

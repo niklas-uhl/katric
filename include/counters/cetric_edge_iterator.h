@@ -209,8 +209,8 @@ public:
             // if (conf_.pseudo2core && G.local_outdegree(v) < 2) {
             //     stats.local.skipped_nodes++;
             //     return;
-            // }
-            if (G.is_interface_node(v)) {
+            //  
+            if (G.is_interface_node_if_sorted_by_rank(v)) {
                 interface_nodes.emplace_back(v);
             }
             // pre_intersection(v);
@@ -277,7 +277,7 @@ public:
             //     stats.local.skipped_nodes++;
             //     return;
             // }
-            if (G.is_interface_node(v)) {
+            if (G.is_interface_node_if_sorted_by_rank(v)) {
                 interface_nodes.local().emplace_back(v);
             }
             // pre_intersection(v);

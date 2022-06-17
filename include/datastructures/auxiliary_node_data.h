@@ -2,7 +2,11 @@
 
 #include <datastructures/graph_definitions.h>
 #include <fmt/ranges.h>
+#include <boost/iterator/counting_iterator.hpp>
 #include <boost/iterator/transform_iterator.hpp>
+#include <boost/range/adaptor/transformed.hpp>
+#include <boost/range/iterator_range_core.hpp>
+#include <boost/range/join.hpp>
 #include <iterator>
 #include <kassert/kassert.hpp>
 #include <sparsehash/dense_hash_map>
@@ -15,14 +19,19 @@ public:
     explicit AuxiliaryNodeData()
         : AuxiliaryNodeData(graph::RankEncodedNodeId::sentinel(), graph::RankEncodedNodeId::sentinel()) {}
     explicit AuxiliaryNodeData(graph::RankEncodedNodeId from, graph::RankEncodedNodeId to)
-        : index_map_(), data_(to - from) {}
+        : from_(from), to_(to), index_map_(), data_(to - from) {
+        index_map_.set_empty_key(graph::RankEncodedNodeId::sentinel());
+    }
 
     template <typename GhostIterator>
     explicit AuxiliaryNodeData(graph::RankEncodedNodeId from,
                                graph::RankEncodedNodeId to,
                                GhostIterator ghost_begin,
                                GhostIterator ghost_end)
-        : index_map_(std::distance(ghost_begin, ghost_end)), data_(to - from + std::distance(ghost_begin, ghost_end)) {
+        : from_(from),
+          to_(to),
+          index_map_(std::distance(ghost_begin, ghost_end)),
+          data_(to - from + std::distance(ghost_begin, ghost_end)) {
         index_map_.set_empty_key(graph::RankEncodedNodeId::sentinel());
         index_map_.set_deleted_key(graph::RankEncodedNodeId::sentinel() - 1);
         size_t index = to - from;
@@ -66,11 +75,22 @@ public:
         return data_.size();
     }
 
+    auto range() const {
+        using counting_iterator_type =
+            boost::counting_iterator<graph::RankEncodedNodeId, boost::random_access_traversal_tag, std::ptrdiff_t>;
+        auto local = boost::adaptors::transform(
+            boost::make_iterator_range(counting_iterator_type{from_}, counting_iterator_type{to_}),
+            [&](graph::RankEncodedNodeId node) { return std::make_pair(node, get_index(node)); });
+        auto ghosts = boost::make_iterator_range(index_map_.begin(), index_map_.end());
+        auto full_range = boost::join(local, ghosts);
+        return boost::adaptors::transform(full_range, Transformer{data_});
+    }
+
     auto begin() const {
-        return boost::iterators::make_transform_iterator(index_map_.begin(), Transformer{data_});
+        return range().begin();
     }
     auto end() const {
-        return boost::iterators::make_transform_iterator(index_map_.end(), Transformer{data_});
+        return range().end();
     }
 
 private:

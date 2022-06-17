@@ -11,6 +11,7 @@
 #include <hash/murmur2_hash.hpp>
 #include <limits>
 #include <ostream>
+#include <sparsehash/dense_hash_map>
 #include <sparsehash/dense_hash_set>
 #include "message-queue/mpi_datatype.h"
 
@@ -194,6 +195,22 @@ struct hash {
 };
 struct node_set : public google::dense_hash_set<graph::RankEncodedNodeId, hash> {
     explicit node_set() : google::dense_hash_set<graph::RankEncodedNodeId, hash>() {
+        this->set_empty_key(graph::RankEncodedNodeId::sentinel());
+    }
+    explicit node_set(size_t size) : google::dense_hash_set<graph::RankEncodedNodeId, hash>(size) {
+        this->set_empty_key(graph::RankEncodedNodeId::sentinel());
+    }
+};
+
+template <typename K, typename V>
+using default_map = google::dense_hash_map<K, V, hash>;
+
+template <typename T>
+struct node_map : public google::dense_hash_map<graph::RankEncodedNodeId, T, hash> {
+    explicit node_map() : google::dense_hash_map<graph::RankEncodedNodeId, T, hash>() {
+        this->set_empty_key(graph::RankEncodedNodeId::sentinel());
+    }
+    explicit node_map(size_t size) : google::dense_hash_map<graph::RankEncodedNodeId, T, hash>(size) {
         this->set_empty_key(graph::RankEncodedNodeId::sentinel());
     }
 };

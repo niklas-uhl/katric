@@ -3,6 +3,7 @@
 
 #include <config.h>
 #include <counters/cetric_edge_iterator.h>
+#include <datastructures/auxiliary_node_data.h>
 #include <datastructures/distributed/graph_communicator.h>
 #include <load_balancing.h>
 #include <statistics.h>
@@ -15,7 +16,6 @@
 #include <numeric>
 #include <sparsehash/dense_hash_set>
 #include "cost_function.h"
-#include <datastructures/auxiliary_node_data.h>
 #include "datastructures/distributed/distributed_graph.h"
 #include "datastructures/distributed/helpers.h"
 #include "datastructures/graph_definitions.h"
@@ -182,7 +182,7 @@ inline size_t run_cetric(DistributedGraph<>& G,
     stats.local.contraction_time += timer.elapsed_time();
     LOG << "[R" << rank << "] "
         << "Contraction finished " << stats.local.contraction_time << " s";
-    timer.restart();
+    // timer.restart();
     // if (conf.secondary_cost_function != "none") {
     //     auto cost_function = CostFunctionRegistry<DistributedGraph<>>::get(conf.secondary_cost_function, G, conf,
     //                                                                        stats.local.secondary_load_balancing);
@@ -198,40 +198,40 @@ inline size_t run_cetric(DistributedGraph<>& G,
     ghosts = decltype(ghosts){};
     ghost_degrees = AuxiliaryNodeData<Degree>();
     // }
-    stats.local.secondary_load_balancing.phase_time += timer.elapsed_time();
-    LOG << "[R" << rank << "] "
-        << "Secondary load balancing finished " << stats.local.secondary_load_balancing.phase_time << " s";
+    // stats.local.secondary_load_balancing.phase_time += timer.elapsed_time();
+    // LOG << "[R" << rank << "] "
+    //     << "Secondary load balancing finished " << stats.local.secondary_load_balancing.phase_time << " s";
     timer.restart();
-    if (conf.secondary_cost_function != "none") {
-        auto ctr_dist = cetric::CetricEdgeIterator(G, conf, rank, size, CommunicationPolicy{});
-        ctr_dist.run(
-            [&](Triangle<RankEncodedNodeId> t) {
-                (void)t;
-                t.normalize();
-                if constexpr (KASSERT_ASSERTION_LEVEL >= kassert::assert::normal) {
-                    triangles.push_back(t);
-                }
-                // atomic_debug(t);
-                triangle_count++;
-                // triangle_count_global_phase.local()++;
-            },
-            stats, node_ordering::id());
-    } else {
-        // atomic_debug(fmt::format("local nodes: {}", G.local_nodes()));
-        // atomic_debug(fmt::format("ghost degrees: {}", ghost_degrees));
-        ctr.run_distributed(
-            [&](Triangle<RankEncodedNodeId> t) {
-                (void)t;
-                t.normalize();
-                if constexpr (KASSERT_ASSERTION_LEVEL >= kassert::assert::normal) {
-                    triangles.push_back(t);
-                }
-                // atomic_debug(t);
-                triangle_count++;
-                // triangle_count_global_phase.local()++;
-            },
-            stats, node_ordering::id());
-    }
+    // if (conf.secondary_cost_function != "none") {
+    //     auto ctr_dist = cetric::CetricEdgeIterator(G, conf, rank, size, CommunicationPolicy{});
+    //     ctr_dist.run(
+    //         [&](Triangle<RankEncodedNodeId> t) {
+    //             (void)t;
+    //             t.normalize();
+    //             if constexpr (KASSERT_ASSERTION_LEVEL >= kassert::assert::normal) {
+    //                 triangles.push_back(t);
+    //             }
+    //             // atomic_debug(t);
+    //             triangle_count++;
+    //             // triangle_count_global_phase.local()++;
+    //         },
+    //         stats, node_ordering::id());
+    // } else {
+    // atomic_debug(fmt::format("local nodes: {}", G.local_nodes()));
+    // atomic_debug(fmt::format("ghost degrees: {}", ghost_degrees));
+    ctr.run_distributed(
+        [&](Triangle<RankEncodedNodeId> t) {
+            (void)t;
+            t.normalize();
+            if constexpr (KASSERT_ASSERTION_LEVEL >= kassert::assert::normal) {
+                triangles.push_back(t);
+            }
+            // atomic_debug(t);
+            triangle_count++;
+            // triangle_count_global_phase.local()++;
+        },
+        stats, node_ordering::id());
+    // }
     // triangle_count += triangles.size();
     stats.local.global_phase_time = timer.elapsed_time();
     if constexpr (KASSERT_ASSERTION_LEVEL >= kassert::assert::normal) {
