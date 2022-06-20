@@ -108,33 +108,34 @@ class SBatchRunner:
         command_template = Template(command_template)
         njobs = 0
         for input in experiment_suite.inputs:
+            if isinstance(input, expcore.InputGraph):
+                input_name = input.name
+            else:
+                input_name = str(input)
             for ncores in experiment_suite.cores:
+                if experiment_suite.tasks_per_node:
+                    tasks_per_node = experiment_suite.tasks_per_node
+                else:
+                    tasks_per_node = self.tasks_per_node
+                aggregate_jobname = f"{experiment_suite.name}-{input_name}-cores{ncores}"
+                log_path = output_path / f"{input_name}-cores{ncores}-log.txt"
+                subs = {}
+                subs["nodes"] = required_nodes(ncores, tasks_per_node)
+                subs["output_log"] = str(log_path)
+                subs["job_name"] = aggregate_jobname
+                if self.use_test_partition:
+                    subs["job_queue"] = "test"
+                else:
+                    subs["job_queue"] = get_queue(ncores, tasks_per_node)
+                subs["account"] = project
+                time_limit = 0
+                commands = []
                 for threads_per_rank in experiment_suite.threads_per_rank:
-                    if experiment_suite.tasks_per_node:
-                        tasks_per_node = experiment_suite.tasks_per_node
-                    else:
-                        tasks_per_node = self.tasks_per_node
                     mpi_ranks = ncores // threads_per_rank
                     ranks_per_node = tasks_per_node // threads_per_rank
-                    if isinstance(input, expcore.InputGraph):
-                        input_name = input.name
-                    else:
-                        input_name = str(input)
-                    log_path = output_path / f"{input_name}-np{mpi_ranks}-t{threads_per_rank}-log.txt"
                     jobname = f"{experiment_suite.name}-{input_name}-np{mpi_ranks}-t{threads_per_rank}"
-                    subs = {}
-                    subs["nodes"] = required_nodes(ncores, tasks_per_node)
-                    subs["output_log"] = str(log_path)
-                    subs["job_name"] = jobname
-                    if self.use_test_partition:
-                        subs["job_queue"] = "test"
-                    else:
-                        subs["job_queue"] = get_queue(ncores, tasks_per_node)
-                    subs["account"] = project
-                    time_limit = 0
-                    commands = []
                     for i, config in enumerate(experiment_suite.configs):
-                        json_path = output_path / f"{input_name}-np{ncores}-log-c{i}.json"
+                        json_path = output_path / f"{input_name}-np{mpi_ranks}-t{threads_per_rank}-log-c{i}.json"
                         config['json-output'] = str(json_path)
                         job_time_limit = experiment_suite.get_input_time_limit(
                             input.name)
@@ -152,14 +153,14 @@ class SBatchRunner:
                             threads_per_rank=threads_per_rank,
                             ranks_per_node=ranks_per_node)
                         commands.append(cmd_string)
-                    subs["commands"] = '\n'.join(commands)
-                    subs["time_string"] = time.strftime(
-                        "%H:%M:%S", time.gmtime(time_limit * 60))
-                    job_script = template.substitute(subs)
-                    job_file = self.job_output_directory / jobname
-                    with open(job_file, "w") as job:
-                        job.write(job_script)
-                    njobs += 1
+                subs["commands"] = '\n'.join(commands)
+                subs["time_string"] = time.strftime(
+                    "%H:%M:%S", time.gmtime(time_limit * 60))
+                job_script = template.substitute(subs)
+                job_file = self.job_output_directory / aggregate_jobname
+                with open(job_file, "w") as job:
+                    job.write(job_script)
+                njobs += 1
         print(
             f"Created {njobs} job files in directory {self.job_output_directory}."
         )
