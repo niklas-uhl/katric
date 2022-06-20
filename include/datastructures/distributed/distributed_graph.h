@@ -199,37 +199,34 @@ public:
     }
 
     template <typename NodeCmp>
-    inline void orient(NodeCmp&& node_cmp) {
+    inline void orient(RankEncodedNodeId node, NodeCmp&& node_cmp) {
         auto is_outgoing = [&](auto tail, auto head) {
             auto out = node_cmp(tail, head);
             return out;
         };
-        for (auto node : local_nodes()) {
-            auto idx = to_local_idx(node);
-            int64_t left = first_out_[idx];
-            int64_t right = first_out_[idx] + degree_[idx] - 1;
-            while (left <= right) {
-                while (left <= right && !is_outgoing(node, head_[left])) {
-                    left++;
-                }
-                while (right >= (int64_t)first_out_[idx] && is_outgoing(node, head_[right])) {
-                    right--;
-                }
-                if (left <= right) {
-                    std::iter_swap(head_.begin() + left, head_.begin() + right);
-                    // left++;
-                    // right--;
-                }
+        auto idx = to_local_idx(node);
+        int64_t left = first_out_[idx];
+        int64_t right = first_out_[idx] + degree_[idx] - 1;
+        while (left <= right) {
+            while (left <= right && !is_outgoing(node, head_[left])) {
+                left++;
             }
-            first_out_offset_[idx] = left - first_out_[idx];
+            while (right >= (int64_t)first_out_[idx] && is_outgoing(node, head_[right])) {
+                right--;
+            }
+            if (left <= right) {
+                std::iter_swap(head_.begin() + left, head_.begin() + right);
+                // left++;
+                // right--;
+            }
         }
+        first_out_offset_[idx] = left - first_out_[idx];
         // atomic_debug(head_);
         // if (ghosts_expanded_) {
         //     for_each_local_node_and_ghost(orient_neighborhoods);
         // } else {
         //     for_each_local_node(orient_neighborhoods);
         // };
-        oriented_ = true;
     }
 
     inline bool oriented() const {
@@ -241,23 +238,21 @@ public:
     //     ghost_data_[local_node_id - local_node_count_].payload = std::move(payload);
     // }
 
-    template <typename NodeCmp, class ExecutionPolicy = execution_policy::sequential>
-    inline void sort_neighborhoods(NodeCmp&& node_cmp, ExecutionPolicy&& policy [[maybe_unused]] = ExecutionPolicy{}) {
-        for (auto node : local_nodes()) {
-            auto idx = to_local_idx(node);
-            EdgeId begin = first_out_[idx];
-            EdgeId in_end = first_out_[idx] + first_out_offset_[idx];
-            EdgeId out_end = first_out_[idx] + degree_[idx];
-            std::sort(head_.begin() + begin, head_.begin() + in_end, node_cmp);
-            std::sort(head_.begin() + in_end, head_.begin() + out_end, node_cmp);
-            {
-                auto neighbors = out_adj(node).neighbors();
-                KASSERT(std::is_sorted(neighbors.begin(), neighbors.end(), node_cmp));
-            }
-            {
-                auto neighbors = in_adj(node).neighbors();
-                KASSERT(std::is_sorted(neighbors.begin(), neighbors.end(), node_cmp));
-            }
+    template <typename NodeCmp>
+    inline void sort_neighborhoods(RankEncodedNodeId node, NodeCmp&& node_cmp) {
+        auto idx = to_local_idx(node);
+        EdgeId begin = first_out_[idx];
+        EdgeId in_end = first_out_[idx] + first_out_offset_[idx];
+        EdgeId out_end = first_out_[idx] + degree_[idx];
+        std::sort(head_.begin() + begin, head_.begin() + in_end, node_cmp);
+        std::sort(head_.begin() + in_end, head_.begin() + out_end, node_cmp);
+        {
+            auto neighbors = out_adj(node).neighbors();
+            KASSERT(std::is_sorted(neighbors.begin(), neighbors.end(), node_cmp));
+        }
+        {
+            auto neighbors = in_adj(node).neighbors();
+            KASSERT(std::is_sorted(neighbors.begin(), neighbors.end(), node_cmp));
         }
     }
 
@@ -403,7 +398,8 @@ public:
         tlx::vector_free(G.edge_heads);
     }
 
-    void find_ghost_ranks() {
+    template <typename ExecutionPolicy = execution_policy::sequential>
+    void find_ghost_ranks(ExecutionPolicy&& = {}) {
         if (ghost_ranks_available()) {
             return;
         }
@@ -411,11 +407,24 @@ public:
         // atomic_debug("consecutive vertices");
         std::vector<std::pair<NodeId, NodeId>> ranges(size_);
         gather_PE_ranges(node_range_.first, node_range_.second, ranges, MPI_COMM_WORLD, rank_, size_);
-        for (auto node : local_nodes()) {
-            for (auto& neighbor : this->adj(node).neighbors()) {
-                PEID rank = get_PE_from_node_ranges(neighbor.id(), ranges);
-                neighbor.set_rank(rank);
-                neighbor_ranks_.insert(rank);
+        auto nodes = local_nodes();
+        if constexpr (std::is_same_v<ExecutionPolicy, execution_policy::parallel>) {
+            tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&ranges, this](auto const& r) {
+                for (auto node : r) {
+                    for (auto& neighbor : this->adj(node).neighbors()) {
+                        PEID rank = get_PE_from_node_ranges(neighbor.id(), ranges);
+                        neighbor.set_rank(rank);
+                        neighbor_ranks_.insert(rank);
+                    }
+                }
+            });
+        } else {
+            for (auto node : nodes) {
+                for (auto& neighbor : this->adj(node).neighbors()) {
+                    PEID rank = get_PE_from_node_ranges(neighbor.id(), ranges);
+                    neighbor.set_rank(rank);
+                    neighbor_ranks_.insert(rank);
+                }
             }
         }
         // } else {

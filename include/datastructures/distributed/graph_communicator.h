@@ -86,56 +86,56 @@ public:
         }
     }
 
-    template <typename OnDegreeFunc>
-    void get_ghost_outdegree(OnDegreeFunc&& on_degree_receive, cetric::profiling::MessageStatistics& stats) {
-        assert(G.oriented());
-        get_ghost_outdegree([&](RankEncodedEdge e) { return G.is_outgoing(e); }, on_degree_receive, stats);
-    }
+    // template <typename OnDegreeFunc>
+    // void get_ghost_outdegree(OnDegreeFunc&& on_degree_receive, cetric::profiling::MessageStatistics& stats) {
+    //     assert(G.oriented());
+    //     get_ghost_outdegree([&](RankEncodedEdge e) { return G.is_outgoing(e); }, on_degree_receive, stats);
+    // }
 
-    template <typename EdgePred, typename OnDegreeFunc>
-    void get_ghost_outdegree(EdgePred&& is_outgoing,
-                             OnDegreeFunc&& on_degree_receive,
-                             cetric::profiling::MessageStatistics& stats) {
-        assert(G.ghost_ranks_available());
-        auto get_out_degree = [&](NodeId local_node_id) {
-            Degree outdegree = 0;
-            G.for_each_edge(local_node_id, [&](RankEncodedEdge e) {
-                if (is_outgoing(e)) {
-                    outdegree++;
-                }
-            });
-            return outdegree;
-        };
-        // assert(G.oriented());
-        send_buffers.clear();
-        receive_buffers.clear();
-        for (NodeId node = 0; node < G.local_node_count(); ++node) {
-            neighboring_PEs.clear();
-            if (G.get_local_data(node).is_interface) {
-                G.for_each_edge(node, [&](RankEncodedEdge edge) {
-                    if (G.is_ghost(edge.head.id())) {
-                        PEID rank = G.get_ghost_data(edge.head.id()).rank;
-                        if (neighboring_PEs.find(rank) == neighboring_PEs.end()) {
-                            send_buffers[rank].emplace_back(G.to_global_id(node));
-                            send_buffers[rank].emplace_back(get_out_degree(node));
-                            neighboring_PEs.insert(rank);
-                        }
-                    }
-                });
-            }
-        }
-        CommunicationUtility::sparse_all_to_all(send_buffers, receive_buffers, MPI_NODE, rank_, size_, stats,
-                                                message_tag_ + 1);
-        for (const auto& elem : receive_buffers) {
-            const std::vector<NodeId>& buffer = elem.second;
-            assert(buffer.size() % 2 == 0);
-            for (size_t i = 0; i < buffer.size(); i += 2) {
-                NodeId node = buffer[i];
-                Degree degree = buffer[i + 1];
-                on_degree_receive(node, degree);
-            }
-        }
-    }
+    // template <typename EdgePred, typename OnDegreeFunc>
+    // void get_ghost_outdegree(EdgePred&& is_outgoing,
+    //                          OnDegreeFunc&& on_degree_receive,
+    //                          cetric::profiling::MessageStatistics& stats) {
+    //     assert(G.ghost_ranks_available());
+    //     auto get_out_degree = [&](NodeId local_node_id) {
+    //         Degree outdegree = 0;
+    //         G.for_each_edge(local_node_id, [&](RankEncodedEdge e) {
+    //             if (is_outgoing(e)) {
+    //                 outdegree++;
+    //             }
+    //         });
+    //         return outdegree;
+    //     };
+    //     // assert(G.oriented());
+    //     send_buffers.clear();
+    //     receive_buffers.clear();
+    //     for (NodeId node = 0; node < G.local_node_count(); ++node) {
+    //         neighboring_PEs.clear();
+    //         if (G.get_local_data(node).is_interface) {
+    //             G.for_each_edge(node, [&](RankEncodedEdge edge) {
+    //                 if (G.is_ghost(edge.head.id())) {
+    //                     PEID rank = G.get_ghost_data(edge.head.id()).rank;
+    //                     if (neighboring_PEs.find(rank) == neighboring_PEs.end()) {
+    //                         send_buffers[rank].emplace_back(G.to_global_id(node));
+    //                         send_buffers[rank].emplace_back(get_out_degree(node));
+    //                         neighboring_PEs.insert(rank);
+    //                     }
+    //                 }
+    //             });
+    //         }
+    //     }
+    //     CommunicationUtility::sparse_all_to_all(send_buffers, receive_buffers, MPI_NODE, rank_, size_, stats,
+    //                                             message_tag_ + 1);
+    //     for (const auto& elem : receive_buffers) {
+    //         const std::vector<NodeId>& buffer = elem.second;
+    //         assert(buffer.size() % 2 == 0);
+    //         for (size_t i = 0; i < buffer.size(); i += 2) {
+    //             NodeId node = buffer[i];
+    //             Degree degree = buffer[i + 1];
+    //             on_degree_receive(node, degree);
+    //         }
+    //     }
+    // }
 
 private:
     const Graph& G;

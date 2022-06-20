@@ -94,6 +94,7 @@ struct Config {
     size_t global_degree_of_parallelism = 1;
 
     bool full_all_to_all = false;
+    bool dense_degree_exchange = false;
 
     bool degree_filtering = false;
     bool orient_locally = false;

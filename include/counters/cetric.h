@@ -42,18 +42,64 @@ inline void preprocessing(DistributedGraph<>& G,
         ghost_degree = AuxiliaryNodeData<Degree>{ghosts.begin(), ghosts.end()};
         DegreeCommunicator comm(G, conf.rank, conf.PEs, as_int(MessageTag::Orientation));
         comm.get_ghost_degree([&](RankEncodedNodeId node, Degree degree) { ghost_degree[node] = degree; },
-                              stats.local.preprocessing.message_statistics);
+                              stats.local.preprocessing.message_statistics, !conf.dense_degree_exchange);
 
         timer.restart();
-        G.orient(node_ordering::degree(G, ghost_degree));
+        auto nodes = G.local_nodes();
+        if (conf.num_threads > 1) {
+            tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G, &ghost_degree](auto const& r) {
+                for (auto node : r) {
+                    G.orient(node, node_ordering::degree(G, ghost_degree));
+                }
+            });
+        } else {
+            for (auto node : nodes) {
+                G.orient(node, node_ordering::degree(G, ghost_degree));
+            }
+        }
         stats.local.preprocessing.orientation_time += timer.elapsed_time();
         timer.restart();
-        G.sort_neighborhoods(node_ordering::id(), execution_policy::sequential{});
+        if (conf.num_threads > 1) {
+            tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G, &ghost_degree](auto const& r) {
+                for (auto node : r) {
+                    G.sort_neighborhoods(node, node_ordering::id());
+                }
+            });
+        } else {
+            for (auto node : nodes) {
+                G.sort_neighborhoods(node, node_ordering::id());
+            }
+        }
     } else {
-        G.orient(node_ordering::degree_outward(G));
+        // G.orient(node_ordering::degree_outward(G));
+        // stats.local.preprocessing.orientation_time += timer.elapsed_time();
+        // timer.restart();
+        // G.sort_neighborhoods(node_ordering::degree_outward(G), execution_policy::sequential{});
+        auto nodes = G.local_nodes();
+        if (conf.num_threads > 1) {
+            tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G, &ghost_degree](auto const& r) {
+                for (auto node : r) {
+                    G.orient(node, node_ordering::degree_outward(G));
+                }
+            });
+        } else {
+            for (auto node : nodes) {
+                G.orient(node, node_ordering::degree_outward(G));
+            }
+        }
         stats.local.preprocessing.orientation_time += timer.elapsed_time();
         timer.restart();
-        G.sort_neighborhoods(node_ordering::degree_outward(G), execution_policy::sequential{});
+        if (conf.num_threads > 1) {
+            tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G, &ghost_degree](auto const& r) {
+                for (auto node : r) {
+                    G.sort_neighborhoods(node, node_ordering::degree_outward(G));
+                }
+            });
+        } else {
+            for (auto node : nodes) {
+                G.sort_neighborhoods(node, node_ordering::degree_outward(G));
+            }
+        }
     }
     stats.local.preprocessing.sorting_time += timer.elapsed_time();
 }
@@ -130,19 +176,36 @@ inline size_t run_cetric(DistributedGraph<>& G,
                          PEID size,
                          CommunicationPolicy&&) {
     bool debug = true;
-    G.find_ghost_ranks();
+    if (conf.num_threads > 1) {
+        G.find_ghost_ranks(execution_policy::parallel{});
+    } else {
+        G.find_ghost_ranks(execution_policy::sequential{});
+    }
     google::dense_hash_set<RankEncodedNodeId, cetric::hash> ghosts;
     ghosts.set_empty_key(RankEncodedNodeId::sentinel());
     cetric::profiling::Timer timer;
     if ((conf.gen.generator.empty() && conf.primary_cost_function != "N") ||
         (!conf.gen.generator.empty() && conf.primary_cost_function != "none")) {
-        auto cost_function = CostFunctionRegistry<DistributedGraph<>>::get(conf.primary_cost_function, G, conf,
-                                                                           stats.local.primary_load_balancing);
+        auto cost_function = [&]() {
+            if (conf.num_threads > 1) {
+                return CostFunctionRegistry<DistributedGraph<>>::get(conf.primary_cost_function, G, conf,
+                                                                     stats.local.primary_load_balancing,
+                                                                     execution_policy::parallel{});
+            } else {
+                return CostFunctionRegistry<DistributedGraph<>>::get(conf.primary_cost_function, G, conf,
+                                                                     stats.local.primary_load_balancing,
+                                                                     execution_policy::sequential{});
+            }
+        }();
         LocalGraphView tmp = G.to_local_graph_view(true, false);
         tmp = cetric::load_balancing::LoadBalancer::run(std::move(tmp), cost_function, conf,
                                                         stats.local.primary_load_balancing);
         G = DistributedGraph(std::move(tmp), rank, size);
-        G.find_ghost_ranks();
+        if (conf.num_threads > 1) {
+            G.find_ghost_ranks(execution_policy::parallel{});
+        } else {
+            G.find_ghost_ranks(execution_policy::sequential{});
+        }
     }
     AuxiliaryNodeData<Degree> ghost_degrees;
     stats.local.primary_load_balancing.phase_time += timer.elapsed_time();
@@ -154,30 +217,39 @@ inline size_t run_cetric(DistributedGraph<>& G,
         << "Preprocessing finished";
     timer.restart();
     auto ctr = cetric::CetricEdgeIterator(G, conf, rank, size, CommunicationPolicy{});
-    std::atomic<size_t> triangle_count = 0;
+    size_t triangle_count = 0;
     tbb::concurrent_vector<Triangle<RankEncodedNodeId>> triangles;
-    // tbb::combinable<size_t> triangle_count_local_phase {0};
+    tbb::combinable<size_t> triangle_count_local_phase{0};
     ctr.run_local(
         [&](Triangle<RankEncodedNodeId> t) {
             (void)t;
             // atomic_debug(t);
-            t.normalize();
 
             if constexpr (KASSERT_ASSERTION_LEVEL >= kassert::assert::normal) {
+                t.normalize();
                 triangles.push_back(t);
             }
             // atomic_debug(tbb::this_task_arena::current_thread_index());
-            triangle_count++;
-            // triangle_count_local_phase.local()++;
+            // triangle_count++;
+            triangle_count_local_phase.local()++;
         },
         stats, node_ordering::degree_outward(G));
-    // triangle_count += triangle_count_local_phase.combine(std::plus<> {});
+    triangle_count += triangle_count_local_phase.combine(std::plus<>{});
     stats.local.local_phase_time += timer.elapsed_time();
     LOG << "[R" << rank << "] "
         << "Local phase finished " << stats.local.local_phase_time << " s";
     timer.restart();
-    for (auto node : G.local_nodes()) {
-        G.remove_internal_edges(node);
+    auto nodes = G.local_nodes();
+    if (conf.local_parallel) {
+        tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G](auto const& r) {
+            for (auto node : r) {
+                G.remove_internal_edges(node);
+            }
+        });
+    } else {
+        for (auto node : nodes) {
+            G.remove_internal_edges(node);
+        }
     }
     stats.local.contraction_time += timer.elapsed_time();
     LOG << "[R" << rank << "] "
@@ -219,23 +291,24 @@ inline size_t run_cetric(DistributedGraph<>& G,
     // } else {
     // atomic_debug(fmt::format("local nodes: {}", G.local_nodes()));
     // atomic_debug(fmt::format("ghost degrees: {}", ghost_degrees));
+    tbb::combinable<size_t> triangle_count_global_phase{0};
     ctr.run_distributed(
         [&](Triangle<RankEncodedNodeId> t) {
             (void)t;
-            t.normalize();
             if constexpr (KASSERT_ASSERTION_LEVEL >= kassert::assert::normal) {
+                t.normalize();
                 triangles.push_back(t);
             }
             // atomic_debug(t);
-            triangle_count++;
-            // triangle_count_global_phase.local()++;
+            // triangle_count++;
+            triangle_count_global_phase.local()++;
         },
         stats, node_ordering::id());
     // }
-    // triangle_count += triangles.size();
+    triangle_count += triangle_count_global_phase.combine(std::plus<>{});
     stats.local.global_phase_time = timer.elapsed_time();
     if constexpr (KASSERT_ASSERTION_LEVEL >= kassert::assert::normal) {
-        KASSERT(triangles.size() == triangle_count.load());
+        KASSERT(triangles.size() == triangle_count);
         std::sort(triangles.begin(), triangles.end(), [](auto const& lhs, auto const& rhs) {
             return std::tuple(lhs.x.id(), lhs.y.id(), lhs.z.id()) < std::tuple(rhs.x.id(), rhs.y.id(), rhs.z.id());
         });

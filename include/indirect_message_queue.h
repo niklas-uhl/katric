@@ -3,18 +3,29 @@
 #include <mpi.h>
 #include <sstream>
 #include <type_traits>
+#include "counters/cetric_edge_iterator.h"
 #include "datastructures/graph_definitions.h"
+#include "datastructures/span.h"
 #include "message-queue/buffered_queue.h"
 
 namespace cetric {
-template <typename T, typename = std::enable_if_t<std::is_convertible_v<PEID, T>>>
+template <typename T>
 T PEID_to_datatype(PEID rank) {
     return rank;
-};
-template <typename T, typename = std::enable_if_t<std::is_convertible_v<T, PEID>>>
-PEID datatype_to_PEID(T rank) {
+}
+template <typename T>
+PEID datatype_to_PEID(T const& rank) {
     return rank;
-};
+}
+
+template <>
+graph::RankEncodedNodeId PEID_to_datatype<graph::RankEncodedNodeId>(PEID rank) {
+    return graph::RankEncodedNodeId(0, rank);
+}
+template <>
+PEID datatype_to_PEID<graph::RankEncodedNodeId>(graph::RankEncodedNodeId const& val) {
+    return val.rank();
+}
 
 using namespace graph;
 template <typename T, class Merger, class Splitter>
@@ -26,13 +37,18 @@ public:
         MPI_Comm_size(MPI_COMM_WORLD, &size_);
         grid_size_ = std::round(std::sqrt(size_));
     };
-    void post_message(std::vector<T>&& message, PEID receiver) {
+    void post_message(std::vector<T>&& message, PEID receiver, bool direct_send = false) {
         message.push_back(PEID_to_datatype<T>(rank_));
         message.push_back(PEID_to_datatype<T>(receiver));
-        auto proxy = get_proxy(rank_, receiver);
+        PEID proxy;
+        if (direct_send) {
+            proxy = receiver;
+        } else {
+            proxy = get_proxy(rank_, receiver);
+        }
         std::stringstream out;
         out << "Redirecting message to " << receiver << " via " << proxy;
-        //atomic_debug(out.str());
+        // atomic_debug(out.str());
         queue_.post_message(std::move(message), proxy);
     }
 
@@ -42,18 +58,21 @@ public:
 
     template <typename MessageHandler>
     void poll(MessageHandler&& on_message) {
-        static_assert(std::is_invocable_v<MessageHandler, typename std::vector<T>::iterator,
-                                          typename std::vector<T>::iterator, PEID>);
-        queue_.poll([&](auto begin, auto end, PEID) {
+        // static_assert(std::is_invocable_v<MessageHandler, typename std::vector<T>::iterator,
+        //                                   typename std::vector<T>::iterator, PEID>);
+        queue_.poll([&](SharedVectorSpan<T> span, PEID /*sender*/) {
+            auto begin = span.begin();
+            auto end = span.end();
             PEID receiver = datatype_to_PEID(*(end - 1));
             PEID original_sender = datatype_to_PEID(*(end - 2));
             if (receiver == rank_) {
-                on_message(begin, end - 2, original_sender);
+                auto received_message = span.subspan(0, span.size() - 2);
+                on_message(received_message, original_sender);
             } else {
                 auto proxy = get_proxy(rank_, receiver);
                 std::stringstream out;
                 out << "Redirecting message to " << receiver << " via " << proxy;
-                //atomic_debug(out.str());
+                // atomic_debug(out.str());
                 queue_.post_message(std::vector(begin, end), proxy);
             }
         });
@@ -61,18 +80,21 @@ public:
 
     template <typename MessageHandler>
     void terminate(MessageHandler&& on_message) {
-        static_assert(std::is_invocable_v<MessageHandler, typename std::vector<T>::iterator,
-                                          typename std::vector<T>::iterator, PEID>);
-        queue_.terminate([&](auto begin, auto end, PEID) {
+        // static_assert(std::is_invocable_v<MessageHandler, typename std::vector<T>::iterator,
+        //                                   typename std::vector<T>::iterator, PEID>);
+        queue_.terminate([&](SharedVectorSpan<T> span, PEID /*sender*/) {
+            auto begin = span.begin();
+            auto end = span.end();
             PEID receiver = datatype_to_PEID(*(end - 1));
             PEID original_sender = datatype_to_PEID(*(end - 2));
             if (receiver == rank_) {
-                on_message(begin, end - 2, original_sender);
+                auto received_message = span.subspan(0, span.size() - 2);
+                on_message(received_message, original_sender);
             } else {
                 auto proxy = get_proxy(rank_, receiver);
                 std::stringstream out;
                 out << "Redirecting message to " << receiver << " via " << proxy;
-                //atomic_debug(out.str());
+                // atomic_debug(out.str());
                 queue_.post_message(std::vector(begin, end), proxy);
             }
         });
@@ -123,4 +145,8 @@ private:
     PEID grid_size_;
     message_queue::BufferedMessageQueue<T, Merger, Splitter> queue_;
 };
+template <class T, typename Merger, typename Splitter>
+auto make_indirect_queue(Merger&& merger, Splitter&& splitter) {
+    return IndirectMessageQueue<T, Merger, Splitter>(std::forward<Merger>(merger), std::forward<Splitter>(splitter));
+}
 }  // namespace cetric

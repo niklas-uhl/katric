@@ -28,6 +28,7 @@
 #include "datastructures/auxiliary_node_data.h"
 #include "datastructures/distributed/distributed_graph.h"
 #include "datastructures/distributed/helpers.h"
+#include "datastructures/span.h"
 #include "indirect_message_queue.h"
 #include "message-queue/buffered_queue.h"
 #include "thread_pool.h"
@@ -103,27 +104,6 @@ template <typename VectorType>
 static constexpr bool has_grow_by_v =
     has_method_grow_by<VectorType, typename VectorType::iterator(typename VectorType::size_type)>::value;
 static_assert(has_grow_by_v<tbb::concurrent_vector<RankEncodedNodeId>>);
-
-template <typename T>
-class SharedVectorSpan {
-public:
-    using iterator = typename std::vector<T>::iterator;
-    SharedVectorSpan(std::shared_ptr<std::vector<T>> ptr, size_t begin, size_t end)
-        : ptr_(std::move(ptr)), begin_(begin), end_(end) {}
-
-    iterator begin() const {
-        return ptr_->begin() + begin_;
-    }
-
-    iterator end() const {
-        return ptr_->begin() + end_;
-    }
-
-private:
-    std::shared_ptr<std::vector<T>> ptr_;
-    size_t begin_;
-    size_t end_;
-};
 
 struct Merger {
     template <template <typename> typename VectorType>
@@ -204,27 +184,10 @@ public:
                                      NodeOrdering&& node_ordering) {
         cetric::profiling::Timer phase_time;
         interface_nodes.clear();
-        // std::vector<NodeId> interface_nodes;
         for (auto v : G.local_nodes()) {
-            // if (conf_.pseudo2core && G.local_outdegree(v) < 2) {
-            //     stats.local.skipped_nodes++;
-            //     return;
-            //  
             if (G.is_interface_node_if_sorted_by_rank(v)) {
                 interface_nodes.emplace_back(v);
             }
-            // pre_intersection(v);
-            // G.for_each_local_out_edge(v, [&](graph::RankEncodedEdge edge) {
-            //     NodeId u = edge.head.id();
-            //     auto on_intersection = [&](NodeId node) {
-            //         stats.local.local_triangles++;
-            //         emit(Triangle{G.to_global_id(v), G.to_global_id(u), G.to_global_id(node)});
-            //     };
-            //     if (/*conf_.algorithm == Algorithm::Patric && */ G.is_ghost(u)) {
-            //         return;
-            //     }
-            //     intersect(v, u, on_intersection);
-            // });
             size_t neighbor_index = 0;
             for (RankEncodedNodeId u : G.out_adj(v).neighbors()) {
                 KASSERT(*(G.out_adj(v).neighbors().begin() + neighbor_index) == u);
@@ -242,25 +205,15 @@ public:
                 auto v_neighbors = G.out_adj(v).neighbors();
                 auto u_neighbors = G.out_adj(u).neighbors();
                 auto offset = neighbor_index;
-                // auto offset = 0;
                 std::set_intersection(v_neighbors.begin() + offset, v_neighbors.end(), u_neighbors.begin(),
                                       u_neighbors.end(), boost::function_output_iterator([&](RankEncodedNodeId w) {
                                           stats.local.local_triangles++;
                                           emit(Triangle<RankEncodedNodeId>{v, u, w});
                                       }),
                                       node_ordering);
-                // post_intersection(v);
                 neighbor_index++;
             }
         }
-        // switch (conf_.algorithm) {
-        // case Algorithm::Cetric:
-        // G.for_each_local_node_and_ghost(find_intersections);
-        // break;
-        // case Algorithm::Patric:
-        // G.for_each_local_node(find_intersections);
-        // break;
-        // }
         stats.local.local_phase_time += phase_time.elapsed_time();
     }
 
@@ -271,30 +224,40 @@ public:
                                    NodeOrdering&& node_ordering) {
         cetric::profiling::Timer phase_time;
         interface_nodes.clear();
-        // std::vector<NodeId> interface_nodes;
-        auto find_intersections = [&](RankEncodedNodeId v) {
-            // if (conf_.pseudo2core && G.local_outdegree(v) < 2) {
-            //     stats.local.skipped_nodes++;
-            //     return;
-            // }
-            if (G.is_interface_node_if_sorted_by_rank(v)) {
-                interface_nodes.local().emplace_back(v);
+        auto nodes = G.local_nodes();
+        tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [this, &interface_nodes, &node_ordering,
+                                                                           &emit, &stats](auto const& nodes_r) {
+            for (auto v : nodes_r) {
+                if (G.is_interface_node_if_sorted_by_rank(v)) {
+                    interface_nodes.local().emplace_back(v);
+                }
+                size_t neighbor_index = 0;
+                for (RankEncodedNodeId u : G.out_adj(v).neighbors()) {
+                    KASSERT(*(G.out_adj(v).neighbors().begin() + neighbor_index) == u);
+                    if (u.rank() != rank_) {
+                        // atomic_debug(
+                        //     fmt::format("Remaining neighbors {}",
+                        //                 boost::make_iterator_range(G.out_adj(v).neighbors().begin() + neighbor_index,
+                        //                                            G.out_adj(v).neighbors().end())));
+                        // TODO: we should be able to break here when the edges are properly sorted
+                        KASSERT(std::all_of(
+                            G.out_adj(v).neighbors().begin() + neighbor_index, G.out_adj(v).neighbors().end(),
+                            [rank = this->rank_](RankEncodedNodeId node) { return node.rank() != rank; }));
+                        break;
+                    }
+                    auto v_neighbors = G.out_adj(v).neighbors();
+                    auto u_neighbors = G.out_adj(u).neighbors();
+                    auto offset = neighbor_index;
+                    std::set_intersection(v_neighbors.begin() + offset, v_neighbors.end(), u_neighbors.begin(),
+                                          u_neighbors.end(), boost::function_output_iterator([&](RankEncodedNodeId w) {
+                                              stats.local.local_triangles++;
+                                              emit(Triangle<RankEncodedNodeId>{v, u, w});
+                                          }),
+                                          node_ordering);
+                    neighbor_index++;
+                }
             }
-            // pre_intersection(v);
-            for (RankEncodedEdge edge : G.out_adj(v).edges()) {
-                auto v = edge.tail;
-                auto u = edge.head;
-                auto v_neighbors = G.out_adj(v).neighbors();
-                auto u_neighbors = G.out_adj(u).neighbors();
-                std::set_intersection(v_neighbors.begin(), v_neighbors.end(), u_neighbors.begin(), u_neighbors.end(),
-                                      boost::function_output_iterator([&](RankEncodedNodeId w) {
-                                          stats.local.local_triangles++;
-                                          emit(Triangle<RankEncodedNodeId>{v, u, w});
-                                      }),
-                                      node_ordering);
-            }
-        };
-        tbb::parallel_for_each(G.local_nodes(), find_intersections);
+        });
         stats.local.local_phase_time += phase_time.elapsed_time();
     }
 
@@ -326,7 +289,13 @@ public:
                                            NodeIterator interface_nodes_end,
                                            NodeOrdering&& node_ordering,
                                            GhostSet const& ghosts) {
-        auto queue = message_queue::make_buffered_queue<RankEncodedNodeId>(Merger{}, Splitter{});
+        auto queue = []() {
+            if constexpr (std::is_same_v<CommunicationPolicy, cetric::GridPolicy>) {
+                return cetric::make_indirect_queue<RankEncodedNodeId>(Merger{}, Splitter{});
+            } else {
+                return message_queue::make_buffered_queue<RankEncodedNodeId>(Merger{}, Splitter{});
+            }
+        }();
         queue.set_threshold(threshold_);
         cetric::profiling::Timer phase_time;
         for (auto current = interface_nodes_begin; current != interface_nodes_end; current++) {
@@ -678,14 +647,34 @@ private:
         // distributed_pre_intersect(v, begin, end);
         auto for_each_local_receiver = [&](auto on_node) {
             if (conf_.skip_local_neighborhood) {
-                for (auto node : G.out_adj(v).neighbors()) {
-                    on_node(node);
+                auto neighbors = G.out_adj(v).neighbors();
+                if (conf_.num_threads > 1 && conf_.global_parallel && conf_.global_degree_of_parallelism > 2) {
+                    tbb::parallel_for(tbb::blocked_range(neighbors.begin(), neighbors.end()),
+                                      [&on_node](auto const& r) {
+                                          for (auto node : r) {
+                                              on_node(node);
+                                          }
+                                      });
+                } else {
+                    for (auto node : G.out_adj(v).neighbors()) {
+                        on_node(node);
+                    }
                 }
             } else {
-                for (auto current = begin; current != end; current++) {
-                    RankEncodedNodeId u = *current;
-                    if (u.rank() == rank_) {
-                        on_node(u);
+                if (conf_.num_threads > 1 && conf_.global_parallel && conf_.global_degree_of_parallelism > 2) {
+                    tbb::parallel_for(tbb::blocked_range(begin, end), [&on_node, this](auto const& r) {
+                        for (auto u : r) {
+                            if (u.rank() == rank_) {
+                                on_node(u);
+                            }
+                        }
+                    });
+                } else {
+                    for (auto current = begin; current != end; current++) {
+                        RankEncodedNodeId u = *current;
+                        if (u.rank() == rank_) {
+                            on_node(u);
+                        }
                     }
                 }
             }

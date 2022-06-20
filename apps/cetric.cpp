@@ -75,6 +75,7 @@ cetric::Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
     app.add_flag("--pseudo2core", conf.pseudo2core);
 
     app.add_flag("--dense-load-balancing", conf.dense_load_balancing);
+    app.add_flag("--dense-degree-exchange", conf.dense_degree_exchange);
 
     app.add_option("--algorithm", conf.algorithm)
         ->transform(CLI::CheckedTransformer(cetric::algorithm_map, CLI::ignore_case));
@@ -235,7 +236,7 @@ int main(int argc, char* argv[]) {
     if (conf.num_threads > max_concurrency) {
         atomic_debug(fmt::format("Warning, TBB uses only {} instead of {} threads!", max_concurrency, conf.num_threads));
     }
-    tbb::global_control global_limit(tbb::global_control::max_allowed_parallelism, conf.num_threads);
+    tbb::global_control global_limit(tbb::global_control::max_allowed_parallelism, conf.num_threads + 1);
     std::optional<double> io_time;
     cetric::profiling::Timer t;
     InputCache input_cache(conf);
