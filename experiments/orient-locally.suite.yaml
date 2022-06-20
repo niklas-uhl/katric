@@ -5,7 +5,7 @@ graphs:
         - name: uk-2007-05
           time_limit: 20
         - europe
-time_limit: 10
+time_limit: 5
 config: {
   "orient-locally": [False, True],
   "primary-cost-function": [N],

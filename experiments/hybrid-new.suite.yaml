@@ -1,0 +1,22 @@
+name: hybrid-new
+ncores: [512, 1024, 2048, 4096]
+threads_per_rank: [1, 4, 16, 32]
+graphs:
+        - name: live-journal
+          time_limit: 5
+        - name: uk-2007-05
+          time_limit: 15
+        - name: webbase-2001
+          time_limit: 15
+        - name: europe
+          time_limit: 5
+#time_limit: 15
+config: {
+  algorithm: [cetric],
+  local-parallel: True,
+  global-parallel: [True],
+  degree-of-parallelism: [1, 2],
+  skip-local-neighborhood: [True],
+  primary-cost-function: [N],
+}
+
