@@ -175,7 +175,7 @@ inline size_t run_cetric(DistributedGraph<>& G,
                          PEID rank,
                          PEID size,
                          CommunicationPolicy&&) {
-    bool debug = true;
+    bool debug = false;
     if (conf.num_threads > 1) {
         G.find_ghost_ranks(execution_policy::parallel{});
     } else {

@@ -1,7 +1,8 @@
 #include <config.h>
-#include <kassert/kassert.hpp>
 #include <counters/cetric.h>
+#include <graph-io/definitions.h>
 #include <graph-io/distributed_graph_io.h>
+#include <graph-io/local_graph_view.h>
 #include <mpi.h>
 #include <tbb/global_control.h>
 #include <tbb/task_arena.h>
@@ -17,6 +18,7 @@
 #include <iomanip>
 #include <iostream>
 #include <istream>
+#include <kassert/kassert.hpp>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -26,8 +28,6 @@
 #include "cereal/cereal.hpp"
 #include "counters/cetric_edge_iterator.h"
 #include "datastructures/distributed/distributed_graph.h"
-#include <graph-io/local_graph_view.h>
-#include <graph-io/definitions.h>
 #include "parse_parameters.h"
 #include "statistics.h"
 #include "timer.h"
@@ -60,7 +60,6 @@ cetric::Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
     app.add_option("--cache-input", conf.cache_input)
         ->transform(CLI::CheckedTransformer(cetric::cache_input_map, CLI::ignore_case));
 
-
     app.add_option("--json-output", conf.json_output);
 
     app.add_flag("--degree-filtering", conf.degree_filtering);
@@ -84,8 +83,7 @@ cetric::Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
 
     app.add_flag("--skip-local-neighborhood", conf.skip_local_neighborhood);
 
-    app.add_option("--communication-policy", conf.communication_policy)
-        ->transform(CLI::IsMember({"new", "grid"}));
+    app.add_option("--communication-policy", conf.communication_policy)->transform(CLI::IsMember({"new", "grid"}));
 
     app.add_flag("--local-parallel", conf.local_parallel);
     app.add_flag("--global-parallel", conf.global_parallel);
@@ -221,70 +219,74 @@ int main(int argc, char* argv[]) {
         std::cerr << "The MPI implementation must support MPI_THREAD_FUNNELED" << std::endl;
         std::exit(1);
     }
-    bool debug = true;
+    bool debug = false;
     PEID rank;
     PEID size;
     backward::SignalHandling sh;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
-    DEBUG_BARRIER(rank);
-    cetric::Config conf = parse_config(argc, argv, rank, size);
-    size_t max_concurrency = tbb::this_task_arena::max_concurrency();
-    if (conf.num_threads == 0) {
-        conf.num_threads = max_concurrency;
-    }
-    if (conf.num_threads > max_concurrency) {
-        atomic_debug(fmt::format("Warning, TBB uses only {} instead of {} threads!", max_concurrency, conf.num_threads));
-    }
-    tbb::global_control global_limit(tbb::global_control::max_allowed_parallelism, conf.num_threads + 1);
-    std::optional<double> io_time;
-    cetric::profiling::Timer t;
-    InputCache input_cache(conf);
-    if (conf.cache_input != cetric::CacheInput::None) {
-        io_time = t.elapsed_time();
-    }
-    std::vector<cetric::profiling::Statistics> all_stats;
-    for (size_t iter = 0; iter < conf.iterations; ++iter) {
-        MPI_Barrier(MPI_COMM_WORLD);
-
-        DistributedGraph<> G;
-        cetric::profiling::Statistics stats(rank, size);
-        cetric::profiling::Timer timer;
-        LOG << "[R" << rank << "] "
-            << "Loading from cache";
-        LocalGraphView G_local = input_cache.get();
-        LOG << "[R" << rank << "] "
-            << "Finished loading from cache";
-        //atomic_debug(G_local.node_info);
-        // atomic_debug(G_local.edge_heads);
-        G = DistributedGraph<>(std::move(G_local), rank, size);
-        // atomic_debug(G);
-        LOG << "[R" << rank << "] "
-            << "Finished conversion";
-        MPI_Barrier(MPI_COMM_WORLD);
-        stats.local.io_time = timer.elapsed_time();
-        cetric::profiling::Timer global_time;
-
-        if (conf.algorithm == cetric::Algorithm::Cetric) {
-            if (conf.communication_policy == "new") {
-                run_cetric(G, stats, conf, rank, size, cetric::MessageQueuePolicy{});
-            } else if (conf.communication_policy == "grid") {
-                run_cetric(G, stats, conf, rank, size, cetric::GridPolicy{});
-            }
-        } else {
-            if (conf.communication_policy == "new") {
-                run_patric(G, stats, conf, rank, size, cetric::MessageQueuePolicy{});
-            } else if (conf.communication_policy == "grid") {
-                run_patric(G, stats, conf, rank, size, cetric::GridPolicy{});
-            }
+    {
+        backward::MPIErrorHandler mpi_error_handler(MPI_COMM_WORLD);
+        MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+        MPI_Comm_size(MPI_COMM_WORLD, &size);
+        DEBUG_BARRIER(rank);
+        cetric::Config conf = parse_config(argc, argv, rank, size);
+        size_t max_concurrency = tbb::this_task_arena::max_concurrency();
+        if (conf.num_threads == 0) {
+            conf.num_threads = max_concurrency;
         }
+        if (conf.num_threads > max_concurrency) {
+            atomic_debug(
+                fmt::format("Warning, TBB uses only {} instead of {} threads!", max_concurrency, conf.num_threads));
+        }
+        tbb::global_control global_limit(tbb::global_control::max_allowed_parallelism, conf.num_threads + 1);
+        std::optional<double> io_time;
+        cetric::profiling::Timer t;
+        InputCache input_cache(conf);
+        if (conf.cache_input != cetric::CacheInput::None) {
+            io_time = t.elapsed_time();
+        }
+        std::vector<cetric::profiling::Statistics> all_stats;
+        for (size_t iter = 0; iter < conf.iterations; ++iter) {
+            MPI_Barrier(MPI_COMM_WORLD);
 
-        MPI_Barrier(MPI_COMM_WORLD);
-        stats.local.local_wall_time = global_time.elapsed_time();
+            DistributedGraph<> G;
+            cetric::profiling::Statistics stats(rank, size);
+            cetric::profiling::Timer timer;
+            LOG << "[R" << rank << "] "
+                << "Loading from cache";
+            LocalGraphView G_local = input_cache.get();
+            LOG << "[R" << rank << "] "
+                << "Finished loading from cache";
+            // atomic_debug(G_local.node_info);
+            //  atomic_debug(G_local.edge_heads);
+            G = DistributedGraph<>(std::move(G_local), rank, size);
+            // atomic_debug(G);
+            LOG << "[R" << rank << "] "
+                << "Finished conversion";
+            MPI_Barrier(MPI_COMM_WORLD);
+            stats.local.io_time = timer.elapsed_time();
+            cetric::profiling::Timer global_time;
 
-        stats.reduce();
-        all_stats.emplace_back(std::move(stats));
+            if (conf.algorithm == cetric::Algorithm::Cetric) {
+                if (conf.communication_policy == "new") {
+                    run_cetric(G, stats, conf, rank, size, cetric::MessageQueuePolicy{});
+                } else if (conf.communication_policy == "grid") {
+                    run_cetric(G, stats, conf, rank, size, cetric::GridPolicy{});
+                }
+            } else {
+                if (conf.communication_policy == "new") {
+                    run_patric(G, stats, conf, rank, size, cetric::MessageQueuePolicy{});
+                } else if (conf.communication_policy == "grid") {
+                    run_patric(G, stats, conf, rank, size, cetric::GridPolicy{});
+                }
+            }
+
+            MPI_Barrier(MPI_COMM_WORLD);
+            stats.local.local_wall_time = global_time.elapsed_time();
+
+            stats.reduce();
+            all_stats.emplace_back(std::move(stats));
+        }
+        print_summary(conf, all_stats, io_time);
     }
-    print_summary(conf, all_stats, io_time);
     return MPI_Finalize();
 }
