@@ -1,5 +1,5 @@
 name: hybrid-detail
-ncores: [1024, 2048, 4096]
+ncores: [1024, 2048, 4096, 8192]
 threads_per_rank: [1, 4, 8, 16, 32]
 graphs:
         - name: webbase-2001
@@ -12,7 +12,7 @@ config: {
   local-parallel: True,
   global-parallel: [True],
   local-degree-of-parallelism: [2],
-  dense-degree-exchange: [False, True]
+  dense-degree-exchange: [False, True],
   global-degree-of-parallelism: [1, 2, 3],
   skip-local-neighborhood: [False],
   primary-cost-function: [N, D],
