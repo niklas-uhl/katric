@@ -76,10 +76,9 @@ template <typename T>
 class VectorView {
 public:
     using iterator_type = typename std::vector<T>::iterator;
-    VectorView(std::vector<T>& vector, size_t begin, size_t end)
-        :data_(&vector), begin_(begin), end_(end) {}
+    VectorView(std::vector<T>& vector, size_t begin, size_t end) : data_(&vector), begin_(begin), end_(end) {}
 
-    VectorView(): data_(nullptr), begin_(), end_() {}
+    VectorView() : data_(nullptr), begin_(), end_() {}
 
     iterator_type begin() {
         return data_->begin() + begin_;
@@ -141,15 +140,15 @@ public:
     using HashedBuffer = google::dense_hash_map<PEID, std::vector<T>>;
     template <class T, typename SendBuf = hashed_view_buffer<T>, typename RecvBuf = HashedBuffer<T>>
     static void sparse_all_to_all(SendBuf& to_send,
-                           RecvBuf& recv_buffers,
-                           PEID rank,
-                           PEID size [[maybe_unused]],
-                           int message_tag,
-                           cetric::profiling::MessageStatistics& stats) {
+                                  RecvBuf& recv_buffers,
+                                  PEID rank,
+                                  PEID size [[maybe_unused]],
+                                  int message_tag,
+                                  cetric::profiling::MessageStatistics& stats) {
         static_assert(std::is_same_v<RecvBuf, HashedBuffer<T>> || std::is_same_v<RecvBuf, CompactBuffer<T>>);
         constexpr bool compact_buffer = std::is_same_v<RecvBuf, CompactBuffer<T>>;
         MPI_Datatype mpi_type;
-        if constexpr(mpi_traits<T>::builtin) {
+        if constexpr (mpi_traits<T>::builtin) {
             mpi_type = mpi_traits<T>::mpi_type;
         } else {
             mpi_type = mpi_traits<T>::register_type();
@@ -242,7 +241,7 @@ public:
 
         int ibarrier_done = 0;
         while (ibarrier_done == 0) {
-            //TODO We should test after each received message, else we get may get message from the next a2a
+            // TODO We should test after each received message, else we get may get message from the next a2a
             probe();
             MPI_Status test_status;
             MPI_Test(&barrier_request, &ibarrier_done, &test_status);
@@ -278,7 +277,8 @@ public:
             const std::vector<T>& buffer = kv.second;
             if (!buffer.empty()) {
                 if (pe != rank) {
-                    MPI_Issend(buffer.data(), buffer.size(), mpi_type, pe, message_tag, MPI_COMM_WORLD, &requests[request++]);
+                    MPI_Issend(buffer.data(), buffer.size(), mpi_type, pe, message_tag, MPI_COMM_WORLD,
+                               &requests[request++]);
                     stats.send_volume += buffer.size();
                     stats.sent_messages++;
                 }
@@ -501,10 +501,7 @@ public:
     }
 
     template <typename MessageFunc, typename StatsType>
-    inline void add_message(const std::vector<T>& message,
-                            PEID recv,
-                            MessageFunc on_message,
-                            StatsType& stats) {
+    inline void add_message(const std::vector<T>& message, PEID recv, MessageFunc on_message, StatsType& stats) {
         if (!empty_pending_buffers_on_overflow) {
             if (!overflow_buffers_[recv].empty()) {
                 // we haven't finished sending yet
@@ -585,7 +582,8 @@ public:
                 }
             }
             MPI_Status test_status;
-            MPI_Test(&barrier_request, &ibarrier_done, &test_status);
+            int errcode = MPI_Test(&barrier_request, &ibarrier_done, &test_status);
+            check_mpi_error(errcode, __FILE__, __LINE__);
         }
     }
 
@@ -598,15 +596,17 @@ public:
         while (iprobe_success > 0) {
             iprobe_success = 0;
             MPI_Status status;
-            MPI_Iprobe(MPI_ANY_SOURCE, message_tag_, MPI_COMM_WORLD, &iprobe_success, &status);
+            int errcode = MPI_Iprobe(MPI_ANY_SOURCE, message_tag_, MPI_COMM_WORLD, &iprobe_success, &status);
+            check_mpi_error(errcode, __FILE__, __LINE__);
             if (iprobe_success > 0) {
                 int message_length;
                 MPI_Get_count(&status, mpi_type, &message_length);
                 assert(message_length > 0);
                 std::vector<T> message(message_length);
                 MPI_Status rst;
-                MPI_Recv(message.data(), message_length, mpi_type, status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD,
-                         &rst);
+                int errcode = MPI_Recv(message.data(), message_length, mpi_type, status.MPI_SOURCE, status.MPI_TAG,
+                                       MPI_COMM_WORLD, &rst);
+                check_mpi_error(errcode, __FILE__, __LINE__);
                 stats.receive_volume += message_length;
                 stats.received_messages++;
                 on_message(status.MPI_SOURCE, message);
@@ -615,9 +615,7 @@ public:
     }
 
     template <typename MessageFunc, typename StatsType>
-    inline void all_to_all(MessageFunc on_message,
-                           StatsType& stats,
-                           bool full_all_to_all = false) {
+    inline void all_to_all(MessageFunc on_message, StatsType& stats, bool full_all_to_all = false) {
         // TODO: ensure that old buffers have been sent
 
         finish_overflow_sending(on_message, stats);

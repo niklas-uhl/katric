@@ -187,7 +187,8 @@ private:
         std::vector<std::pair<NodeId, NodeId>> to_receive(size);
         stats.send_volume += 2;
         stats.receive_volume += 2;
-        MPI_Alltoall(to_send.data(), 2, MPI_NODE, to_receive.data(), 2, MPI_NODE, MPI_COMM_WORLD);
+        int errcode = MPI_Alltoall(to_send.data(), 2, MPI_NODE, to_receive.data(), 2, MPI_NODE, MPI_COMM_WORLD);
+        check_mpi_error(errcode, __FILE__, __LINE__);
 
         std::vector<int> send_counts(size);
         std::vector<int> send_displs(size);
@@ -214,8 +215,10 @@ private:
 
         stats.send_volume += G.node_info.size() * 2;
         stats.receive_volume += node_info_recv.size() * 2;
-        MPI_Alltoallv(G.node_info.data(), send_counts.data(), send_displs.data(), mpi_node_info, node_info_recv.data(),
-                      recv_counts.data(), recv_displs.data(), mpi_node_info, MPI_COMM_WORLD);
+        errcode =
+            MPI_Alltoallv(G.node_info.data(), send_counts.data(), send_displs.data(), mpi_node_info,
+                          node_info_recv.data(), recv_counts.data(), recv_displs.data(), mpi_node_info, MPI_COMM_WORLD);
+        check_mpi_error(errcode, __FILE__, __LINE__);
         G.node_info.resize(0);
         G.node_info.shrink_to_fit();
 
@@ -233,9 +236,9 @@ private:
         std::vector<NodeId> head(recv_displs[size - 1] + recv_counts[size - 1]);
         stats.send_volume += G.edge_heads.size();
         stats.receive_volume += head.size();
-        MPI_Alltoallv(G.edge_heads.data(), send_counts.data(), send_displs.data(), MPI_NODE, head.data(),
+        errcode = MPI_Alltoallv(G.edge_heads.data(), send_counts.data(), send_displs.data(), MPI_NODE, head.data(),
                       recv_counts.data(), recv_displs.data(), MPI_NODE, MPI_COMM_WORLD);
-        G.edge_heads.resize(0);
+        check_mpi_error(errcode, __FILE__, __LINE__);
         G.edge_heads.shrink_to_fit();
 
         LocalGraphView G_balanced;
