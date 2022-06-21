@@ -197,7 +197,7 @@ inline size_t run_cetric(DistributedGraph<>& G,
                                                                      execution_policy::sequential{});
             }
         }();
-        LocalGraphView tmp = G.to_local_graph_view(true, false);
+        LocalGraphView tmp = G.to_local_graph_view(false, false);
         tmp = cetric::load_balancing::LoadBalancer::run(std::move(tmp), cost_function, conf,
                                                         stats.local.primary_load_balancing);
         G = DistributedGraph(std::move(tmp), rank, size);

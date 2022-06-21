@@ -34,11 +34,15 @@ void gather_PE_ranges(NodeId local_from,
             }
             if (range.first > next_expected) {
                 throw std::runtime_error("[R" + std::to_string(i) + "] range [" + std::to_string(range.first) + ", " +
-                                         std::to_string(range.second) + "] has a gap to previous one");
+                                         std::to_string(range.second) + "] has a gap to previous one: [" +
+                                         std::to_string(ranges[i - 1].first) + ", " +
+                                         std::to_string(ranges[i - 1].second) + "]");
             }
             if (range.first < next_expected) {
                 throw std::runtime_error("[R" + std::to_string(i) + "] range [" + std::to_string(range.first) + ", " +
-                                         std::to_string(range.second) + "] overlaps with previous one");
+                                         std::to_string(range.second) + "] overlaps with previous one: [" +
+                                         std::to_string(ranges[i - 1].first) + ", " +
+                                         std::to_string(ranges[i - 1].second) + "]");
             }
             next_expected = range.second;
         }
@@ -52,7 +56,7 @@ PEID get_PE_from_node_ranges(NodeId node, const std::vector<std::pair<NodeId, No
     NodeId local_to;
     for (size_t i = 0; i < ranges.size(); ++i) {
         std::tie(local_from, local_to) = ranges[i];
-        if (local_from <= node && node <= local_to) {
+        if (local_from <= node && node < local_to) {
             return i;
         }
     }

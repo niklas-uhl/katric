@@ -256,8 +256,6 @@ public:
         }
     }
 
-    //! returns the degree for the given local id
-    //! if ghost_payload has degree this also works for ghosts
     inline Degree degree(RankEncodedNodeId node) const {
         KASSERT(node.rank() == rank_);
         return degree_[to_local_idx(node)];
@@ -279,7 +277,9 @@ public:
 
     inline size_t to_local_idx(RankEncodedNodeId node) const {
         KASSERT(node.rank() == rank_);
-        return node.id() - node_range_.first;
+        auto idx = node.id() - node_range_.first;
+        KASSERT(idx < first_out_.size() - 1, "Trying to get index of non-local node " << node);
+        return idx;
     }
 
     inline bool is_interface_node_if_sorted_by_rank(RankEncodedNodeId node) const {
@@ -406,7 +406,7 @@ public:
         // if (consecutive_vertices_) {
         // atomic_debug("consecutive vertices");
         std::vector<std::pair<NodeId, NodeId>> ranges(size_);
-        gather_PE_ranges(node_range_.first, node_range_.second, ranges, MPI_COMM_WORLD, rank_, size_);
+        gather_PE_ranges(node_range_.first, node_range_.second + 1, ranges, MPI_COMM_WORLD, rank_, size_);
         auto nodes = local_nodes();
         if constexpr (std::is_same_v<ExecutionPolicy, execution_policy::parallel>) {
             tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&ranges, this](auto const& r) {
@@ -538,6 +538,16 @@ public:
                 node, [&](Edge e) { DEBUG_ASSERT(is_local_from_local(e.head) != is_ghost(e.head), debug_module{}); });
         });
 #endif
+    }
+    void check_edge_consistency() {
+        std::vector<std::pair<NodeId, NodeId>> ranges(size_);
+        gather_PE_ranges(node_range_.first, node_range_.second + 1, ranges, MPI_COMM_WORLD, rank_, size_);
+        NodeId max_node_id = ranges.back().second - 1;
+        for (auto node : this->local_nodes()) {
+            for (auto neighbor : this->adj(node).neighbors()) {
+                KASSERT(neighbor.id() <= max_node_id, "neighbor " << neighbor << " of node " << node << " is invalid!");
+            }
+        }
     }
 
 private:

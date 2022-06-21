@@ -124,7 +124,12 @@ private:
 };
 
 inline std::ostream& operator<<(std::ostream& os, const RankEncodedNodeId& node_id) {
-    os << node_id.id() << "@" << node_id.rank();
+    os << node_id.id() << "@";
+    if (node_id.rank() == RankEncodedNodeId::sentinel().rank()) {
+        os << "nil";
+    } else {
+        os << node_id.rank();
+    }
     return os;
 }
 using EdgeId = std::uint64_t;
