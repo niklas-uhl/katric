@@ -589,7 +589,7 @@ private:
     bool ghost_ranks_available_;
     bool oriented_;
     google::dense_hash_set<PEID, cetric::hash> neighbor_ranks_;
-    std::atomic<EdgeId> local_edge_count_{};
+    EdgeId local_edge_count_{};
     std::pair<NodeId, NodeId> node_range_;
     PEID rank_;
     PEID size_;
