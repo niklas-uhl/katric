@@ -110,7 +110,7 @@ struct Config {
     std::string hostname;
     PEID PEs;
     PEID rank;
-    size_t num_threads = 0;
+    size_t num_threads = 1;
     size_t grainsize = 1;
 
     // Generator parameters

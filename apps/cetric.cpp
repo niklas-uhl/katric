@@ -28,6 +28,7 @@
 #include "cereal/cereal.hpp"
 #include "counters/cetric_edge_iterator.h"
 #include "datastructures/distributed/distributed_graph.h"
+#include "graph-io/graph_definitions.h"
 #include "parse_parameters.h"
 #include "statistics.h"
 #include "timer.h"
@@ -130,7 +131,9 @@ class InputCache {
 public:
     InputCache(const cetric::Config& conf) : conf_(conf), cache_file_(), G_() {
         if (conf_.cache_input != cetric::CacheInput::None) {
-            G_ = load_graph();
+            auto [G, info] = load_graph();
+            G_ = std::move(G);
+            info_ = std::move(info);
         }
         if (conf_.cache_input == cetric::CacheInput::Filesystem) {
             auto tmp_file = graphio::dump_to_tmp(G_.value(), conf_.rank, conf_.PEs);
@@ -138,17 +141,17 @@ public:
             G_ = std::nullopt;
         }
     }
-    LocalGraphView get() {
+    graphio::IOResult get() {
         switch (conf_.cache_input) {
             case cetric::CacheInput::None:
                 return load_graph();
             case cetric::CacheInput::Filesystem:
                 return graphio::read_graph_view(cache_file_, conf_.rank, conf_.PEs);
             case cetric::CacheInput::InMemory:
-                return G_.value();
+                return {G_.value(), info_};
             default:
                 // unreachable
-                return LocalGraphView();
+                return {};
         }
     }
     virtual ~InputCache() {
@@ -158,7 +161,7 @@ public:
     }
 
 private:
-    LocalGraphView load_graph() {
+    graphio::IOResult load_graph() {
         if (conf_.gen.generator == "") {
             auto G = graphio::read_local_graph(conf_.input_file, conf_.input_format, conf_.rank, conf_.PEs);
             // atomic_debug(G.edge_heads);
@@ -170,6 +173,7 @@ private:
     const cetric::Config& conf_;
     std::string cache_file_;
     std::optional<LocalGraphView> G_;
+    graphio::internal::GraphInfo info_;
 };
 
 void print_summary(const cetric::Config& conf,
@@ -253,12 +257,12 @@ int main(int argc, char* argv[]) {
             cetric::profiling::Timer timer;
             LOG << "[R" << rank << "] "
                 << "Loading from cache";
-            LocalGraphView G_local = input_cache.get();
+            graphio::IOResult input = input_cache.get();
             LOG << "[R" << rank << "] "
                 << "Finished loading from cache";
             // atomic_debug(G_local.node_info);
             //  atomic_debug(G_local.edge_heads);
-            G = DistributedGraph<>(std::move(G_local), rank, size);
+            G = DistributedGraph<>(std::move(input.G), {input.info.local_from, input.info.local_to}, rank, size);
             // atomic_debug(G);
             LOG << "[R" << rank << "] "
                 << "Finished conversion";

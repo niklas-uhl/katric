@@ -88,7 +88,7 @@ public:
         if (out_degree.size() == 0) {
             out_degree = AuxiliaryNodeData<Degree>(
                 RankEncodedNodeId{G.node_range().first, static_cast<uint16_t>(G.rank())},
-                RankEncodedNodeId{G.node_range().second + 1, static_cast<uint16_t>(G.rank())});
+                RankEncodedNodeId{G.node_range().second, static_cast<uint16_t>(G.rank())});
             auto deg = [&G, &degree](RankEncodedNodeId node) {
                 if (node.rank() == G.rank()) {
                     return G.degree(node);

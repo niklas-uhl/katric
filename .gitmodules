@@ -1,9 +1,6 @@
 [submodule "extern/cli11"]
 	path = extern/cli11
 	url = https://github.com/CLIUtils/CLI11.git
-[submodule "extern/kagen"]
-	path = extern/kagen
-	url = https://github.com/niklas-uhl/KaGen.git
 [submodule "extern/tlx"]
 	path = extern/tlx
 	url = https://github.com/tlx/tlx
