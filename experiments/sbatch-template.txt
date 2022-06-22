@@ -6,7 +6,9 @@
 #SBATCH --time=${time_string}
 #SBATCH --get-user-env
 #SBATCH --account=${account}
+#SBATCH --ear=off
 
 module load slurm_setup
+module restore cetric
 
 ${commands}
