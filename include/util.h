@@ -37,6 +37,12 @@ inline void print_stacktrace(std::ostream& os = std::cerr) {
     printer.print(stacktrace, os);
 }
 
+inline std::string get_stacktrace() {
+    std::stringstream out;
+    print_stacktrace(out);
+    return out.str();
+}
+
 #define MODULE_A_LEVEL 0
 #define PRINT_TRACE 1
 struct debug_module : debug_assert::default_handler, debug_assert::set_level<MODULE_A_LEVEL> {

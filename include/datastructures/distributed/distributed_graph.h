@@ -23,6 +23,7 @@
 #include <boost/range/iterator_range_core.hpp>
 #include <cassert>
 #include <cstddef>
+#include <cstdint>
 #include <default_hash.hpp>
 #include <google/dense_hash_set>
 #include <google/sparse_hash_map>
@@ -144,7 +145,7 @@ public:
     };
 
     inline NodeId local_node_count() const {
-        return local_node_count_;
+        return node_range_.second - node_range_.first;
     }
 
     inline EdgeId local_edge_count() const {
@@ -155,7 +156,7 @@ public:
         using counting_iterator_type =
             boost::counting_iterator<RankEncodedNodeId, boost::random_access_traversal_tag, std::ptrdiff_t>;
         return boost::make_iterator_range(counting_iterator_type{RankEncodedNodeId(node_range_.first, rank_)},
-                                          counting_iterator_type{RankEncodedNodeId(node_range_.second + 1, rank_)});
+                                          counting_iterator_type{RankEncodedNodeId(node_range_.second, rank_)});
         // return boost::counting_range<RankEncodedNodeId>(RankEncodedNodeId(node_range_.first, rank_),
         //                                                 RankEncodedNodeId(node_range_.second + 1, rank_));
         // return NodeRange(RankEncodedNodeId{node_range_.first, rank_}, RankEncodedNodeId{node_range_.second,
@@ -172,7 +173,7 @@ public:
     }
 
     EdgeRange<RankEncodedNodeId, RangeModifiability::modifiable> adj(RankEncodedNodeId node) {
-        KASSERT(node.rank() == rank_, "Node " << node << " is not local.");
+        KASSERT(node.rank() == rank_, "Node " << node << " is not local.\n" << get_stacktrace());
         auto idx = to_local_idx(node);
         EdgeId begin = first_out_[idx];
         EdgeId end = first_out_[idx] + degree_[idx];
@@ -276,7 +277,7 @@ public:
     }
 
     inline size_t to_local_idx(RankEncodedNodeId node) const {
-        KASSERT(node.rank() == rank_);
+        KASSERT(node.rank() == rank_, get_stacktrace());
         auto idx = node.id() - node_range_.first;
         KASSERT(idx < first_out_.size() - 1, "Trying to get index of non-local node " << node);
         return idx;
@@ -353,44 +354,74 @@ public:
     //     ghosts_expanded_ = true;
     // }
 
-    DistributedGraph(cetric::graph::LocalGraphView&& G, PEID rank, PEID size)
-        : first_out_(G.local_node_count() + 1),
-          first_out_offset_(G.local_node_count()),
-          degree_(G.local_node_count()),
+    DistributedGraph(cetric::graph::LocalGraphView&& G, std::pair<NodeId, NodeId> node_range, PEID rank, PEID size)
+        : first_out_(node_range.second - node_range.first + 1),
+          first_out_offset_(first_out_.size() - 1),
+          degree_(first_out_.size() - 1),
           head_(),
           ghost_ranks_available_(false),
           oriented_(false),
           neighbor_ranks_(),
-          local_node_count_(G.local_node_count()),
           local_edge_count_{G.edge_heads.size()},
-          node_range_(std::numeric_limits<NodeId>::max(), std::numeric_limits<NodeId>::min()),
+          node_range_(std::move(node_range)),
           rank_(rank),
           size_(size) {
         // global_to_local_.set_empty_key(-1);
         neighbor_ranks_.set_empty_key(-1);
         auto degree_sum = 0;
-        node_range_.first = G.node_info[0].global_id;
-        node_range_.second = G.node_info.back().global_id;
-        for (size_t i = 0; i < local_node_count_; ++i) {
-            first_out_[i] = degree_sum;
+        // node_range_.first = G.node_info[0].global_id;
+        // node_range_.second = G.node_info.back().global_id;
+        std::stringstream out;
+        NodeId current_node = node_range_.first;
+        KASSERT(std::is_sorted(G.node_info.begin(), G.node_info.end(),
+                               [](auto const& lhs, auto const& rhs) { return lhs.global_id < rhs.global_id; }),
+                "Nodes are not sorted");
+        if constexpr (KASSERT_ASSERTION_LEVEL >= kassert::assert::normal) {
+            for (auto const& node_info : G.node_info) {
+                KASSERT(node_info.global_id >= node_range_.first);
+                KASSERT(node_info.global_id < node_range_.second);
+            }
+        }
+        // KASSERT(std::all_of(G.node_info.begin(), G.node_info.end(),
+        //                     [this](auto const& node) {
+        //                         return node.global_id >= node_range_.first && node.global_id < node_range_.second;
+        //                     }),
+        //         "Range does not match the actual nodes");
+        for (size_t i = 0; i < G.node_info.size(); i++) {
+            while (current_node != G.node_info[i].global_id) {
+                // insert empty nodes for all nodes in range that have no edges
+                auto idx = to_local_idx(RankEncodedNodeId{current_node, static_cast<std::uint16_t>(rank_)});
+                first_out_[idx] = degree_sum;
+                degree_[idx] = 0;
+                current_node++;
+            }
+            auto idx = to_local_idx(RankEncodedNodeId{current_node, static_cast<std::uint16_t>(rank_)});
+            first_out_[idx] = degree_sum;
             degree_sum += G.node_info[i].degree;
-            NodeId local_id = i;
-            degree_[local_id] = G.node_info[i].degree;
+            degree_[idx] = G.node_info[i].degree;
+            current_node++;
+        }
+        while (current_node != node_range_.second) {
+            // insert empty nodes for all nodes in range that have no edges
+            auto idx = to_local_idx(RankEncodedNodeId{current_node, static_cast<std::uint16_t>(rank_)});
+            first_out_[idx] = degree_sum;
+            degree_[idx] = 0;
+            current_node++;
         }
 
-        first_out_[local_node_count_] = degree_sum;
-        KASSERT(first_out_.size() == local_node_count_ + 1);
+        first_out_[local_node_count()] = degree_sum;
+        KASSERT(first_out_.size() == local_node_count() + 1);
         KASSERT(first_out_[0] == 0ul);
 
-        for (size_t i = 0; i < local_node_count_; ++i) {
-            KASSERT(degree_[i] == G.node_info[i].degree);
-            KASSERT(first_out_[i + 1] - first_out_[i] == degree_[i]);
-        }
+        // for (size_t i = 0; i < local_node_count(); ++i) {
+        //     KASSERT(degree_[i] == G.node_info[i].degree);
+        //     KASSERT(first_out_[i + 1] - first_out_[i] == degree_[i]);
+        // }
         KASSERT(first_out_[first_out_.size() - 1] == G.edge_heads.size());
         head_.resize(G.edge_heads.size());
         std::transform(G.edge_heads.begin(), G.edge_heads.end(), head_.begin(), [this](auto id) {
             auto head = RankEncodedNodeId{id};
-            if (head.id() >= node_range_.first && head.id() <= node_range_.second) {
+            if (head.id() >= node_range_.first && head.id() < node_range_.second) {
                 head.set_rank(rank_);
             }
             return head;
@@ -406,7 +437,7 @@ public:
         // if (consecutive_vertices_) {
         // atomic_debug("consecutive vertices");
         std::vector<std::pair<NodeId, NodeId>> ranges(size_);
-        gather_PE_ranges(node_range_.first, node_range_.second + 1, ranges, MPI_COMM_WORLD, rank_, size_);
+        gather_PE_ranges(node_range_.first, node_range_.second, ranges, MPI_COMM_WORLD, rank_, size_);
         auto nodes = local_nodes();
         if constexpr (std::is_same_v<ExecutionPolicy, execution_policy::parallel>) {
             tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&ranges, this](auto const& r) {
@@ -541,7 +572,7 @@ public:
     }
     void check_edge_consistency() {
         std::vector<std::pair<NodeId, NodeId>> ranges(size_);
-        gather_PE_ranges(node_range_.first, node_range_.second + 1, ranges, MPI_COMM_WORLD, rank_, size_);
+        gather_PE_ranges(node_range_.first, node_range_.second, ranges, MPI_COMM_WORLD, rank_, size_);
         NodeId max_node_id = ranges.back().second - 1;
         for (auto node : this->local_nodes()) {
             for (auto neighbor : this->adj(node).neighbors()) {
@@ -558,8 +589,7 @@ private:
     bool ghost_ranks_available_;
     bool oriented_;
     google::dense_hash_set<PEID, cetric::hash> neighbor_ranks_;
-    NodeId local_node_count_{};
-    EdgeId local_edge_count_{};
+    std::atomic<EdgeId> local_edge_count_{};
     std::pair<NodeId, NodeId> node_range_;
     PEID rank_;
     PEID size_;

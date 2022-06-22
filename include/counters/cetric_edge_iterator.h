@@ -61,7 +61,7 @@ template <typename GraphType>
 struct degree {
     explicit degree(GraphType const& G, AuxiliaryNodeData<Degree> const& ghost_degree)
         : G_(G), ghost_degree_(ghost_degree) {
-        KASSERT(ghost_degree_.size() > 0ul);
+        // KASSERT(ghost_degree_.size() > 0ul);
     }
     inline bool operator()(RankEncodedNodeId const& lhs, RankEncodedNodeId const& rhs) const {
         auto degree = [this](RankEncodedNodeId const& node) {

@@ -13,8 +13,10 @@
 #include <timer.h>
 #include <util.h>
 #include <cstddef>
+#include <limits>
 #include <numeric>
 #include <sparsehash/dense_hash_set>
+#include <utility>
 #include "cost_function.h"
 #include "datastructures/distributed/distributed_graph.h"
 #include "datastructures/distributed/helpers.h"
@@ -200,7 +202,10 @@ inline size_t run_cetric(DistributedGraph<>& G,
         LocalGraphView tmp = G.to_local_graph_view(false, false);
         tmp = cetric::load_balancing::LoadBalancer::run(std::move(tmp), cost_function, conf,
                                                         stats.local.primary_load_balancing);
-        G = DistributedGraph(std::move(tmp), rank, size);
+        auto node_range = tmp.local_node_count() == 0
+                              ? std::make_pair(std::numeric_limits<NodeId>::max(), std::numeric_limits<NodeId>::max())
+                              : std::make_pair(tmp.node_info.front().global_id, tmp.node_info.back().global_id + 1);
+        G = DistributedGraph(std::move(tmp), std::move(node_range), rank, size);
         if (conf.num_threads > 1) {
             G.find_ghost_ranks(execution_policy::parallel{});
         } else {
