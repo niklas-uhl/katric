@@ -38,7 +38,7 @@ public:
     template <typename DegreeFunc>
     void get_ghost_degree(DegreeFunc&& on_degree_receive,
                           cetric::profiling::MessageStatistics& stats,
-                          bool sparse = true) {
+                          bool sparse) {
         get_ghost_data([this](auto node) { return RankEncodedNodeId{G.degree(node)}; },
                        [&on_degree_receive](auto node, auto data) { on_degree_receive(node, data.id()); }, stats,
                        sparse);
@@ -48,7 +48,7 @@ public:
     void get_ghost_data(DataFunc&& get_data,
                         ReceiveFunc&& on_receive,
                         cetric::profiling::MessageStatistics& stats,
-                        bool sparse = true) {
+                        bool sparse) {
         //  assert(G.ghost_ranks_available());
         send_buffers.clear();
         receive_buffers.clear();

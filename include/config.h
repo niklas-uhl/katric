@@ -93,7 +93,6 @@ struct Config {
     size_t local_degree_of_parallelism = 1;
     size_t global_degree_of_parallelism = 1;
 
-    bool full_all_to_all = false;
     bool dense_degree_exchange = false;
 
     bool degree_filtering = false;
@@ -122,9 +121,9 @@ struct Config {
                 CEREAL_NVP(grainsize), CEREAL_NVP(cache_input), CEREAL_NVP(algorithm), CEREAL_NVP(communication_policy),
                 CEREAL_NVP(global_parallel), CEREAL_NVP(local_parallel), CEREAL_NVP(threshold),
                 CEREAL_NVP(local_degree_of_parallelism), CEREAL_NVP(global_degree_of_parallelism),
-                CEREAL_NVP(threshold_scale), CEREAL_NVP(primary_cost_function), CEREAL_NVP(secondary_cost_function),
-                CEREAL_NVP(orient_locally), CEREAL_NVP(pseudo2core), CEREAL_NVP(dense_load_balancing),
-                CEREAL_NVP(flag_intersection), CEREAL_NVP(skip_local_neighborhood));
+                CEREAL_NVP(dense_degree_exchange), CEREAL_NVP(threshold_scale), CEREAL_NVP(primary_cost_function),
+                CEREAL_NVP(secondary_cost_function), CEREAL_NVP(orient_locally), CEREAL_NVP(pseudo2core),
+                CEREAL_NVP(dense_load_balancing), CEREAL_NVP(flag_intersection), CEREAL_NVP(skip_local_neighborhood));
         if (input_file.empty()) {
             archive(cereal::make_nvp("gen", gen.generator),              //
                     cereal::make_nvp("gen_n", gen.n),                    //
