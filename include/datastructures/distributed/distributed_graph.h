@@ -361,13 +361,11 @@ public:
           head_(),
           ghost_ranks_available_(false),
           oriented_(false),
-          neighbor_ranks_(),
           local_edge_count_{G.edge_heads.size()},
           node_range_(std::move(node_range)),
           rank_(rank),
           size_(size) {
         // global_to_local_.set_empty_key(-1);
-        neighbor_ranks_.set_empty_key(-1);
         auto degree_sum = 0;
         // node_range_.first = G.node_info[0].global_id;
         // node_range_.second = G.node_info.back().global_id;
@@ -445,7 +443,6 @@ public:
                     for (auto& neighbor : this->adj(node).neighbors()) {
                         PEID rank = get_PE_from_node_ranges(neighbor.id(), ranges);
                         neighbor.set_rank(rank);
-                        neighbor_ranks_.insert(rank);
                     }
                 }
             });
@@ -454,7 +451,6 @@ public:
                 for (auto& neighbor : this->adj(node).neighbors()) {
                     PEID rank = get_PE_from_node_ranges(neighbor.id(), ranges);
                     neighbor.set_rank(rank);
-                    neighbor_ranks_.insert(rank);
                 }
             }
         }
@@ -476,14 +472,6 @@ public:
         //     }
         // }
         ghost_ranks_available_ = true;
-    }
-
-    bool is_neighbor(PEID rank) const {
-        return neighbor_ranks_.find(rank) != neighbor_ranks_.end();
-    }
-
-    google::dense_hash_set<PEID, cetric::hash> const& neighbor_ranks() const {
-        return neighbor_ranks_;
     }
 
     LocalGraphView to_local_graph_view(bool remove_isolated, bool keep_only_out_edges) {
@@ -588,7 +576,6 @@ private:
     std::vector<RankEncodedNodeId> head_;
     bool ghost_ranks_available_;
     bool oriented_;
-    google::dense_hash_set<PEID, cetric::hash> neighbor_ranks_;
     EdgeId local_edge_count_{};
     std::pair<NodeId, NodeId> node_range_;
     PEID rank_;
