@@ -35,8 +35,9 @@ TEST(DistributedGraphTest, loading_works) {
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
     // read it distributed
-    LocalGraphView G_view = graphio::read_local_graph(input, InputFormat::metis, rank, size);
+    auto result = graphio::read_local_graph(input, InputFormat::metis, rank, size);
 
+    auto G_view = result.G;
     // SECTION( "view is correct" ) {
     std::vector<EdgeId> index;
     std::exclusive_scan(G_view.node_info.begin(), G_view.node_info.end(), std::back_inserter(index), 0,
@@ -56,7 +57,8 @@ TEST(DistributedGraphTest, loading_works) {
     // }
 
     // construct the "real" datastructure
-    cetric::graph::DistributedGraph G = cetric::graph::DistributedGraph<Degree>(std::move(G_view), rank, size);
+    cetric::graph::DistributedGraph G =
+        cetric::graph::DistributedGraph<Degree>(std::move(result.G), {result.info.local_from, result.info.local_to}, rank, size);
     // SECTION( "global and local ids are correct" ) {
     //     std::vector<NodeId> local_nodes;
     //     G.for_each_local_node([&](NodeId node) {
@@ -103,7 +105,7 @@ TEST(DistributedGraphTest, loading_works) {
         std::vector<Edge<>> edges;
         EXPECT_EQ(G.degree(node), G_full[node.id()].size());
         for (cetric::graph::RankEncodedNodeId head : G.adj(node).neighbors()) {
-            edges.push_back(Edge<> {node.id(), head.id()});
+            edges.push_back(Edge<>{node.id(), head.id()});
         }
         EXPECT_EQ(G.degree(node), edges.size());
         EXPECT_THAT(edges, testing::UnorderedElementsAreArray(G_full[node.id()]));

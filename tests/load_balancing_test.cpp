@@ -40,7 +40,7 @@ namespace {
 
             // read it distributed
             G_view =
-                graphio::read_local_graph(input, InputFormat::metis, rank, size);
+                graphio::read_local_graph(input, InputFormat::metis, rank, size).G;
         }
 
       std::vector<std::vector<graphio::Edge<>>> G_full;
