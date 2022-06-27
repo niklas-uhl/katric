@@ -112,6 +112,8 @@ struct Config {
     size_t num_threads = 1;
     size_t grainsize = 1;
 
+    std::string git_commit;
+
     // Generator parameters
     graphio::GeneratorParameters gen;
 
@@ -123,7 +125,8 @@ struct Config {
                 CEREAL_NVP(local_degree_of_parallelism), CEREAL_NVP(global_degree_of_parallelism),
                 CEREAL_NVP(dense_degree_exchange), CEREAL_NVP(threshold_scale), CEREAL_NVP(primary_cost_function),
                 CEREAL_NVP(secondary_cost_function), CEREAL_NVP(orient_locally), CEREAL_NVP(pseudo2core),
-                CEREAL_NVP(dense_load_balancing), CEREAL_NVP(flag_intersection), CEREAL_NVP(skip_local_neighborhood));
+                CEREAL_NVP(dense_load_balancing), CEREAL_NVP(flag_intersection), CEREAL_NVP(skip_local_neighborhood),
+                CEREAL_NVP(git_commit));
         if (input_file.empty()) {
             archive(cereal::make_nvp("gen", gen.generator),              //
                     cereal::make_nvp("gen_n", gen.n),                    //

@@ -32,12 +32,14 @@
 #include "parse_parameters.h"
 #include "statistics.h"
 #include "timer.h"
+#include "git_hash.h"
 
 cetric::Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
     (void)size;
 
     CLI::App app("Parallel Triangle Counter");
     cetric::Config conf;
+    conf.git_commit = cetric::git_hash;
 
     // conf.hostname = std::getenv("HOST");
     char hostname[256];
