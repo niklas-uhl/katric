@@ -267,17 +267,39 @@ public:
         run_distributed(emit, stats, std::forward<NodeOrdering>(node_ordering), ghosts);
     }
 
+    template <typename TriangleFunc, typename NodeIterator, typename NodeOrdering>
+    inline void run_distributed(TriangleFunc emit,
+                                cetric::profiling::Statistics& stats,
+                                NodeIterator interface_nodes_begin,
+                                NodeIterator interface_ndoes_end,
+                                NodeOrdering&& node_ordering) {
+        std::set<RankEncodedNodeId> ghosts;
+        run_distributed(emit, stats, interface_nodes_begin, interface_ndoes_end,
+                        std::forward<NodeOrdering>(node_ordering), ghosts);
+    }
+
     template <typename TriangleFunc, typename NodeOrdering, typename GhostSet>
     inline void run_distributed(TriangleFunc emit,
                                 cetric::profiling::Statistics& stats,
                                 NodeOrdering&& node_ordering,
                                 GhostSet const& ghosts) {
         auto all_interface_nodes = tbb::flatten2d(interface_nodes_);
+        run_distributed(emit, stats, all_interface_nodes.begin(), all_interface_nodes.end(),
+                        std::forward<NodeOrdering>(node_ordering), ghosts);
+    }
+
+    template <typename TriangleFunc, typename NodeIterator, typename NodeOrdering, typename GhostSet>
+    inline void run_distributed(TriangleFunc emit,
+                                cetric::profiling::Statistics& stats,
+                                NodeIterator interface_nodes_begin,
+                                NodeIterator interface_nodes_end,
+                                NodeOrdering&& node_ordering,
+                                GhostSet const& ghosts) {
         if (conf_.global_parallel && conf_.num_threads > 1) {
-            run_distributed_parallel(emit, stats, all_interface_nodes.begin(), all_interface_nodes.end(),
+            run_distributed_parallel(emit, stats, interface_nodes_begin, interface_nodes_end,
                                      std::forward<NodeOrdering>(node_ordering), ghosts);
         } else {
-            run_distributed_sequential(emit, stats, all_interface_nodes.begin(), all_interface_nodes.end(),
+            run_distributed_sequential(emit, stats, interface_nodes_begin, interface_nodes_end,
                                        std::forward<NodeOrdering>(node_ordering), ghosts);
         }
     }

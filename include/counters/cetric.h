@@ -31,8 +31,8 @@
 namespace cetric {
 enum class Phase { Local, Global };
 
-template <typename GhostSet>
-inline void preprocessing(DistributedGraph<>& G,
+  template <typename NodeIndexer, typename GhostSet>
+inline void preprocessing(DistributedGraph<NodeIndexer>& G,
                           cetric::profiling::Statistics& stats,
                           AuxiliaryNodeData<Degree>& ghost_degree,
                           GhostSet& ghosts,
@@ -256,6 +256,7 @@ inline size_t run_cetric(DistributedGraph<>& G,
             G.remove_internal_edges(node);
         }
     }
+    auto G_compact = G.compact();
     stats.local.contraction_time += timer.elapsed_time();
     LOG << "[R" << rank << "] "
         << "Contraction finished " << stats.local.contraction_time << " s";
@@ -271,7 +272,7 @@ inline size_t run_cetric(DistributedGraph<>& G,
     //     G.find_ghost_ranks();
     //     preprocessing(G, stats, conf, Phase::Global);
     // } else {
-    preprocessing(G, stats, ghost_degrees, ghosts, conf, Phase::Global);
+    preprocessing(G_compact, stats, ghost_degrees, ghosts, conf, Phase::Global);
     ghosts = decltype(ghosts){};
     ghost_degrees = AuxiliaryNodeData<Degree>();
     // }
@@ -297,7 +298,8 @@ inline size_t run_cetric(DistributedGraph<>& G,
     // atomic_debug(fmt::format("local nodes: {}", G.local_nodes()));
     // atomic_debug(fmt::format("ghost degrees: {}", ghost_degrees));
     tbb::combinable<size_t> triangle_count_global_phase{0};
-    ctr.run_distributed(
+    cetric::CetricEdgeIterator ctr_global(G_compact, conf, rank, size, CommunicationPolicy{});
+    ctr_global.run_distributed(
         [&](Triangle<RankEncodedNodeId> t) {
             (void)t;
             if constexpr (KASSERT_ASSERTION_LEVEL >= kassert::assert::normal) {
@@ -308,7 +310,7 @@ inline size_t run_cetric(DistributedGraph<>& G,
             // triangle_count++;
             triangle_count_global_phase.local()++;
         },
-        stats, node_ordering::id());
+        stats, G_compact.local_nodes().begin(), G_compact.local_nodes().end(), node_ordering::id());
     // }
     triangle_count += triangle_count_global_phase.combine(std::plus<>{});
     stats.local.global_phase_time = timer.elapsed_time();

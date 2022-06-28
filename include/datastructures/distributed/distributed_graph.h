@@ -141,6 +141,8 @@ class DistributedGraph {
     friend class cetric::load_balancing::LoadBalancer;
     friend class GraphBuilder;
     friend class CompactGraph;
+    template <typename Idx>
+    friend class DistributedGraph;
 
 public:
     template <typename NodeIdType>
@@ -353,7 +355,7 @@ public:
         size_t dist = std::distance(neighbors.begin(), it);
         size_t degree = std::distance(it, neighbors.end());
         first_out_[to_local_idx(node)] = first_out_[to_local_idx(node)] + dist;
-        first_out_offset_[to_local_idx(node)] = first_out_[to_local_idx(node)];
+        first_out_offset_[to_local_idx(node)] = 0;
         degree_[to_local_idx(node)] = degree;
         local_edge_count_ -= old_degree - degree;
     }
@@ -518,7 +520,7 @@ public:
             // TODO we need to handle vertices with out degree 0
             // maybe prevent sending to them, as we should know their degree (?)
             if (remove_isolated && degree == 0) {
-                continue;
+                coninue;
             }
             // auto global_id = G.to_global_id(node);
             if (keep_only_out_edges) {
@@ -548,17 +550,40 @@ public:
         return view;
     }
 
-    // DistributedGraph<SparseNodeIndexer> compact() {
-    //     DistributedGraph<SparseNodeIndexer> G_compact;
-    //     auto remaining_nodes =
-    //         boost::adaptors::filter(this->local_nodes(), [this](auto node) { return this->degree(node) > 0; });
-    //     SparseNodeIndexer sparse_indexer(this->node_range_, remaining_nodes.begin(), remaining_nodes.end(), rank_);
-    //     for (size_t i = 0; i < sparse_indexer.size(); ++i) {
-    //         first_out_[i] = this->degree(sparse_indexer.get_node(i));
-    //         degree_[i] = this->degree(sparse_indexer.get_node(i));
-    //         first_out_offset_[i] = this->degree(sparse_indexer.get_node(i));
-    //     }
-    // }
+    DistributedGraph<SparseNodeIndexer> compact() {
+        auto remaining_nodes =
+            boost::adaptors::filter(this->local_nodes(), [this](auto node) { return this->degree(node) > 0; });
+        SparseNodeIndexer sparse_indexer(this->node_range_, remaining_nodes.begin(), remaining_nodes.end(), rank_);
+        Degree running_sum = 0;
+        for (size_t i = 0; i < sparse_indexer.size(); ++i) {
+            auto node = sparse_indexer.get_node(i);
+            std::copy(adj(node).neighbors().begin(), adj(node).neighbors().end(), head_.begin() + running_sum);
+            first_out_[i] = running_sum;
+            auto degree = this->degree(node);
+            degree_[i] = degree;
+            running_sum += degree;
+            first_out_offset_[i] = 0;
+        }
+        auto new_node_count = sparse_indexer.size();
+        first_out_[new_node_count] = running_sum;
+        first_out_.resize(new_node_count + 1);
+        first_out_offset_.resize(new_node_count);
+        degree_.resize(new_node_count);
+        head_.resize(running_sum);
+        DistributedGraph<SparseNodeIndexer> G_compact;
+        G_compact.first_out_ = std::move(this->first_out_);
+        G_compact.first_out_offset_ = std::move(this->first_out_offset_);
+        G_compact.degree_ = std::move(this->degree_);
+        G_compact.head_ = std::move(this->head_);
+        G_compact.ghost_ranks_available_ = ghost_ranks_available_;
+        G_compact.oriented_ = false;
+        G_compact.local_edge_count_ = running_sum;
+        G_compact.node_range_ = node_range_;
+        G_compact.rank_ = rank_;
+        G_compact.size_ = size_;
+        G_compact.node_indexer_ = std::move(sparse_indexer);
+        return G_compact;
+    }
 
     bool ghost_ranks_available() const {
         return ghost_ranks_available_;
