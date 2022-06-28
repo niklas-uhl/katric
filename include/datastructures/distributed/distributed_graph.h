@@ -16,6 +16,7 @@
 #include <boost/iterator/counting_iterator.hpp>
 #include <boost/iterator/iterator_categories.hpp>
 #include <boost/iterator/transform_iterator.hpp>
+#include <boost/range/adaptor/filtered.hpp>
 #include <boost/range/adaptor/reversed.hpp>
 #include <boost/range/adaptor/transformed.hpp>
 #include <boost/range/counting_range.hpp>
@@ -51,42 +52,91 @@ namespace graph {
 
 using LocalGraphView = graphio::LocalGraphView;
 
-template <typename PayloadType>
-class payload_has_degree {
-    template <typename C>
-    static char test(decltype(&C::degree));
+struct ContinuousNodeIndexer {
+    ContinuousNodeIndexer()
+        : from(std::numeric_limits<NodeId>::max()), to(std::numeric_limits<NodeId>::max()), rank(-1) {}
+    template <typename NodeIterator>
+    ContinuousNodeIndexer(std::pair<NodeId, NodeId> const& node_range,
+                          NodeIterator begin [[maybe_unused]],
+                          NodeIterator end [[maybe_unused]],
+                          PEID rank)
+        : from(node_range.first), to(node_range.second), rank(rank) {}
 
-    template <typename C>
-    static char test(int, typename std::enable_if<std::is_convertible_v<C, Degree>>::type* = 0);
+    bool is_indexed(RankEncodedNodeId node) const {
+        KASSERT(node.rank() == rank);
+        return node.id() >= from && node.id() < to;
+    }
 
-    template <typename C>
-    static int test(...);
+    auto nodes() const {
+        using counting_iterator_type =
+            boost::counting_iterator<RankEncodedNodeId, boost::random_access_traversal_tag, std::ptrdiff_t>;
+        return boost::make_iterator_range(counting_iterator_type{RankEncodedNodeId(from, rank)},
+                                          counting_iterator_type{RankEncodedNodeId(to, rank)});
+    }
 
-public:
-    static const bool value = (sizeof(test<PayloadType>(0)) == sizeof(char));
+    inline size_t get_index(RankEncodedNodeId node) const {
+        KASSERT(is_indexed(node));
+        auto idx = node.id() - from;
+        return idx;
+    }
+
+    inline RankEncodedNodeId get_node(size_t idx) const {
+        KASSERT(idx < to - from);
+        return RankEncodedNodeId{from + idx, static_cast<uint16_t>(rank)};
+    }
+    inline size_t size() const {
+        return to - from;
+    }
+
+    NodeId from;
+    NodeId to;
+    PEID rank;
 };
 
-template <typename PayloadType>
-class payload_has_outdegree {
-    template <typename C>
-    static char test(decltype(&C::outdegree));
+struct SparseNodeIndexer {
+    SparseNodeIndexer() : id_map(), idx_map(), rank(-1) {}
 
-    template <typename C>
-    static int test(...);
+    template <typename NodeIterator>
+    SparseNodeIndexer(std::pair<NodeId, NodeId> const& node_range [[maybe_unused]],
+                      NodeIterator begin,
+                      NodeIterator end,
+                      PEID rank)
+        : id_map(begin, end), idx_map(id_map.size()), rank(rank) {
+        for (size_t i = 0; i < id_map.size(); i++) {
+            idx_map[id_map[i]] = i;
+        }
+    }
 
-public:
-    static const bool value = (sizeof(test<PayloadType>(0)) == sizeof(char));
+    bool is_indexed(RankEncodedNodeId node) const {
+        KASSERT(node.rank() == rank);
+        return idx_map.find(node) != idx_map.end();
+    }
+    auto nodes() const {
+        return boost::make_iterator_range(id_map.begin(), id_map.end());
+    }
+
+    inline size_t get_index(RankEncodedNodeId node) const {
+        KASSERT(is_indexed(node));
+        auto it = idx_map.find(node);
+        KASSERT(it != idx_map.end());
+        return it->second;
+    }
+
+    inline RankEncodedNodeId get_node(size_t idx) const {
+        KASSERT(idx < id_map.size());
+        return id_map[idx];
+    }
+
+    inline size_t size() const {
+        return id_map.size();
+    }
+
+    std::vector<RankEncodedNodeId> id_map;
+    node_map<size_t> idx_map;
+    PEID rank;
 };
 
-struct DegreePayload {
-    Degree degree;
-};
-
-struct DegreeIndicators {
-    bool ghost_degree_available = false;
-};
-
-template <typename GhostPayloadType = DegreePayload, typename GraphPayload = DegreeIndicators>
+template <typename NodeIndexer = ContinuousNodeIndexer>
 class DistributedGraph {
     friend class cetric::load_balancing::LoadBalancer;
     friend class GraphBuilder;
@@ -127,16 +177,6 @@ public:
                 return graphio::Edge<NodeIdType>{RankEncodedNodeId(tail), neighbor};
             });
         }
-        // auto begin() const {
-        //     return boost::make_transform_iterator(begin_, [this](NodeIdType neighbor) {
-        //         return graphio::Edge<NodeIdType>{tail_, neighbor};
-        //     });
-        // };
-        // auto end() const {
-        //     return boost::make_transform_iterator(end_, [this](NodeIdType neighbor) {
-        //         return graphio::Edge<NodeIdType>{tail_, neighbor};
-        //     });
-        // };
 
     private:
         NodeIdType tail_;
@@ -153,14 +193,7 @@ public:
     }
 
     auto local_nodes() const {
-        using counting_iterator_type =
-            boost::counting_iterator<RankEncodedNodeId, boost::random_access_traversal_tag, std::ptrdiff_t>;
-        return boost::make_iterator_range(counting_iterator_type{RankEncodedNodeId(node_range_.first, rank_)},
-                                          counting_iterator_type{RankEncodedNodeId(node_range_.second, rank_)});
-        // return boost::counting_range<RankEncodedNodeId>(RankEncodedNodeId(node_range_.first, rank_),
-        //                                                 RankEncodedNodeId(node_range_.second + 1, rank_));
-        // return NodeRange(RankEncodedNodeId{node_range_.first, rank_}, RankEncodedNodeId{node_range_.second,
-        // rank_});
+        return node_indexer_.nodes();
     }
 
     EdgeRange<RankEncodedNodeId, RangeModifiability::non_modifiable> adj(RankEncodedNodeId node) const {
@@ -277,16 +310,12 @@ public:
     }
 
     inline size_t to_local_idx(RankEncodedNodeId node) const {
-        KASSERT(node.rank() == rank_, get_stacktrace());
-        auto idx = node.id() - node_range_.first;
-        KASSERT(idx < first_out_.size() - 1, "Trying to get index of non-local node " << node);
-        return idx;
+        return node_indexer_.get_index(node);
     }
 
     inline bool is_interface_node_if_sorted_by_rank(RankEncodedNodeId node) const {
         // KASSERT(oriented());
-        KASSERT(std::is_sorted(out_adj(node).neighbors().begin(), out_adj(node).neighbors().begin(),
-                               [](auto lhs, auto rhs) { return lhs.rank() < rhs.rank(); }));
+        KASSERT(edges_last_outward_sorted(node));
         KASSERT(node.rank() == rank_);
 
         return !degree(node) == 0 && (adj(node).neighbors().end() - 1)->rank() != rank_;
@@ -302,10 +331,16 @@ public:
         return is_interface;
     }
 
+    bool edges_last_outward_sorted(RankEncodedNodeId node) const {
+        auto it = std::find_if(adj(node).neighbors().begin(), adj(node).neighbors().end(),
+                               [rank = rank_](auto v) { return v.rank() != rank; });
+        auto it2 = std::find_if(it, adj(node).neighbors().end(), [rank = rank_](auto v) { return v.rank() == rank; });
+        return it2 == adj(node).neighbors().end();
+    }
+
     void remove_internal_edges(RankEncodedNodeId node) {
         KASSERT(node.rank() == rank_);
-        KASSERT(std::is_sorted(out_adj(node).neighbors().begin(), out_adj(node).neighbors().begin(),
-                               [](auto lhs, auto rhs) { return lhs.rank() < rhs.rank(); }));
+        KASSERT(edges_last_outward_sorted(node));
         if (!is_interface_node_if_sorted_by_rank(node)) {
             degree_[to_local_idx(node)] = 0;
             first_out_offset_[to_local_idx(node)] = 0;
@@ -364,12 +399,12 @@ public:
           local_edge_count_{G.edge_heads.size()},
           node_range_(std::move(node_range)),
           rank_(rank),
-          size_(size) {
+          size_(size),
+          node_indexer_() {
         // global_to_local_.set_empty_key(-1);
         auto degree_sum = 0;
         // node_range_.first = G.node_info[0].global_id;
         // node_range_.second = G.node_info.back().global_id;
-        std::stringstream out;
         NodeId current_node = node_range_.first;
         KASSERT(std::is_sorted(G.node_info.begin(), G.node_info.end(),
                                [](auto const& lhs, auto const& rhs) { return lhs.global_id < rhs.global_id; }),
@@ -380,11 +415,11 @@ public:
                 KASSERT(node_info.global_id < node_range_.second);
             }
         }
-        // KASSERT(std::all_of(G.node_info.begin(), G.node_info.end(),
-        //                     [this](auto const& node) {
-        //                         return node.global_id >= node_range_.first && node.global_id < node_range_.second;
-        //                     }),
-        //         "Range does not match the actual nodes");
+        auto nodes = boost::adaptors::transform(
+            boost::make_iterator_range(G.node_info.begin(), G.node_info.end()), [rank](auto node_info) {
+                return RankEncodedNodeId{node_info.global_id, static_cast<std::uint16_t>(rank)};
+            });
+        node_indexer_ = NodeIndexer(node_range, nodes.begin(), nodes.end(), rank);
         for (size_t i = 0; i < G.node_info.size(); i++) {
             while (current_node != G.node_info[i].global_id) {
                 // insert empty nodes for all nodes in range that have no edges
@@ -478,7 +513,7 @@ public:
         DistributedGraph G = std::move(*this);
         std::vector<LocalGraphView::NodeInfo> node_info;
         EdgeId edge_counter = 0;
-        for (RankEncodedNodeId node : local_nodes()) {
+        for (RankEncodedNodeId node : G.local_nodes()) {
             auto degree = G.degree(node);
             // TODO we need to handle vertices with out degree 0
             // maybe prevent sending to them, as we should know their degree (?)
@@ -512,6 +547,18 @@ public:
         tlx::vector_free(head);
         return view;
     }
+
+    // DistributedGraph<SparseNodeIndexer> compact() {
+    //     DistributedGraph<SparseNodeIndexer> G_compact;
+    //     auto remaining_nodes =
+    //         boost::adaptors::filter(this->local_nodes(), [this](auto node) { return this->degree(node) > 0; });
+    //     SparseNodeIndexer sparse_indexer(this->node_range_, remaining_nodes.begin(), remaining_nodes.end(), rank_);
+    //     for (size_t i = 0; i < sparse_indexer.size(); ++i) {
+    //         first_out_[i] = this->degree(sparse_indexer.get_node(i));
+    //         degree_[i] = this->degree(sparse_indexer.get_node(i));
+    //         first_out_offset_[i] = this->degree(sparse_indexer.get_node(i));
+    //     }
+    // }
 
     bool ghost_ranks_available() const {
         return ghost_ranks_available_;
@@ -580,6 +627,7 @@ private:
     std::pair<NodeId, NodeId> node_range_;
     PEID rank_;
     PEID size_;
+    NodeIndexer node_indexer_;
 };
 
 template <typename GhostPayloadType>

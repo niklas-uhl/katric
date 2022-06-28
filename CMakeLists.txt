@@ -16,6 +16,7 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
     include(CTest)
 endif()
 
+option(CETRIC_DEBUG_CONTAINERS "Use GNU debug containers" OFF)
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_LIST_DIR}/cmake)
 
 find_package(sparsehash REQUIRED)
@@ -30,8 +31,10 @@ message(STATUS "Run: ${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} ${MPIEXEC_MAX_NUMPROCS} 
 
 #set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer -fsanitize=address")
 #set (CMAKE_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} -fno-omit-frame-pointer -fsanitize=address")
-add_compile_definitions($<$<CONFIG:Debug>:_GLIBCXX_DEBUG>)
-add_compile_definitions($<$<CONFIG:Debug>:_GLIBCXX_DEBUG_PEDANTIC>)
+if (CETRIC_DEBUG_CONTAINERS)
+  add_compile_definitions(_GLIBCXX_DEBUG)
+  add_compile_definitions(_GLIBCXX_DEBUG_PEDANTIC)
+endif()
 set(KASSERT_ASSERTION_LEVEL $<IF:$<CONFIG:Debug>,30,0> CACHE STRING "KASSERT assertion level")
 
 add_subdirectory(extern)

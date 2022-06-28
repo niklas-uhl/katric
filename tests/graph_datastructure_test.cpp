@@ -58,7 +58,7 @@ TEST(DistributedGraphTest, loading_works) {
 
     // construct the "real" datastructure
     cetric::graph::DistributedGraph G =
-        cetric::graph::DistributedGraph<Degree>(std::move(result.G), {result.info.local_from, result.info.local_to}, rank, size);
+        cetric::graph::DistributedGraph<>(std::move(result.G), {result.info.local_from, result.info.local_to}, rank, size);
     // SECTION( "global and local ids are correct" ) {
     //     std::vector<NodeId> local_nodes;
     //     G.for_each_local_node([&](NodeId node) {
