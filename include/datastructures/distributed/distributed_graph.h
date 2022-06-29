@@ -75,7 +75,7 @@ struct ContinuousNodeIndexer {
     }
 
     inline size_t get_index(RankEncodedNodeId node) const {
-        KASSERT(is_indexed(node));
+        KASSERT(is_indexed(node), "node " << node << " is not indexed");
         auto idx = node.id() - from;
         return idx;
     }
@@ -116,7 +116,7 @@ struct SparseNodeIndexer {
     }
 
     inline size_t get_index(RankEncodedNodeId node) const {
-        KASSERT(is_indexed(node));
+        KASSERT(is_indexed(node), "node " << node << " is not indexed");
         auto it = idx_map.find(node);
         KASSERT(it != idx_map.end());
         return it->second;
@@ -135,6 +135,7 @@ struct SparseNodeIndexer {
     node_map<size_t> idx_map;
     PEID rank;
 };
+enum class AdjacencyType { out, in, full };
 
 template <typename NodeIndexer = ContinuousNodeIndexer>
 class DistributedGraph {
@@ -206,32 +207,51 @@ public:
         return EdgeRange<RankEncodedNodeId, RangeModifiability::non_modifiable>{node, head_.cbegin() + begin,
                                                                                 head_.cbegin() + end};
     }
-
-    EdgeRange<RankEncodedNodeId, RangeModifiability::modifiable> adj(RankEncodedNodeId node) {
-        KASSERT(node.rank() == rank_, "Node " << node << " is not local.\n" << get_stacktrace());
+    template <AdjacencyType adj_type>
+    inline std::pair<EdgeId, EdgeId> get_edge_range(RankEncodedNodeId node) const {
+        KASSERT(node.rank() == rank_, "Node " << node << " is not local.");
         auto idx = to_local_idx(node);
-        EdgeId begin = first_out_[idx];
-        EdgeId end = first_out_[idx] + degree_[idx];
+        EdgeId begin;
+        EdgeId end;
+        if constexpr (adj_type == AdjacencyType::full) {
+            begin = first_out_[idx];
+            end = first_out_[idx] + degree_[idx];
+            return {begin, end};
+        } else if constexpr (adj_type == AdjacencyType::out) {
+            auto begin = first_out_[idx] + first_out_offset_[idx];
+            auto end = first_out_[idx] + degree_[idx];
+            return {begin, end};
+        } else if constexpr (adj_type == AdjacencyType::in) {
+            auto begin = first_out_[idx];
+            auto end = first_out_[idx] + first_out_offset_[idx];
+            return {begin, end};
+        }
+    }
+
+    template <AdjacencyType adj_type>
+    EdgeRange<RankEncodedNodeId, RangeModifiability::modifiable> adj_for(RankEncodedNodeId node) {
+        auto [begin, end] = get_edge_range<adj_type>(node);
         return EdgeRange<RankEncodedNodeId, RangeModifiability::modifiable>{node, head_.begin() + begin,
                                                                             head_.begin() + end};
     }
 
-    EdgeRange<RankEncodedNodeId, RangeModifiability::non_modifiable> out_adj(RankEncodedNodeId node) const {
-        KASSERT(node.rank() == rank_, "Node " << node << " is not local.");
-        auto idx = to_local_idx(node);
-        auto begin = first_out_[idx] + first_out_offset_[idx];
-        auto end = first_out_[idx] + degree_[idx];
+    template <AdjacencyType adj_type>
+    EdgeRange<RankEncodedNodeId, RangeModifiability::non_modifiable> adj_for(RankEncodedNodeId node) const {
+        auto [begin, end] = get_edge_range<adj_type>(node);
         return EdgeRange<RankEncodedNodeId, RangeModifiability::non_modifiable>{node, head_.cbegin() + begin,
                                                                                 head_.cbegin() + end};
     }
 
+    EdgeRange<RankEncodedNodeId, RangeModifiability::modifiable> adj(RankEncodedNodeId node) {
+        return adj_for<AdjacencyType::full>(node);
+    }
+
+    EdgeRange<RankEncodedNodeId, RangeModifiability::non_modifiable> out_adj(RankEncodedNodeId node) const {
+        return adj_for<AdjacencyType::out>(node);
+    }
+
     EdgeRange<RankEncodedNodeId, RangeModifiability::non_modifiable> in_adj(RankEncodedNodeId node) const {
-        KASSERT(node.rank() == rank_, "Node " << node << " is not local.");
-        auto idx = to_local_idx(node);
-        auto begin = first_out_[idx];
-        auto end = first_out_[idx] + first_out_offset_[idx];
-        return EdgeRange<RankEncodedNodeId, RangeModifiability::non_modifiable>{node, head_.cbegin() + begin,
-                                                                                head_.cbegin() + end};
+        return adj_for<AdjacencyType::in>(node);
     }
 
     template <typename NodeCmp>
@@ -292,15 +312,27 @@ public:
         }
     }
 
-    inline Degree degree(RankEncodedNodeId node) const {
+    template <AdjacencyType adj_type>
+    inline Degree degree_for(RankEncodedNodeId node) const {
         KASSERT(node.rank() == rank_);
-        return degree_[to_local_idx(node)];
+        auto idx = to_local_idx(node);
+        if constexpr (adj_type == AdjacencyType::full) {
+            return degree_[idx];
+        } else if constexpr (adj_type == AdjacencyType::out) {
+            return degree_[idx] - first_out_offset_[idx];
+        } else if constexpr (adj_type == AdjacencyType::in) {
+            return first_out_offset_[idx];
+        }
+    }
+    inline Degree degree(RankEncodedNodeId node) const {
+        return degree_for<AdjacencyType::full>(node);
     }
 
     inline Degree outdegree(RankEncodedNodeId node) const {
-        KASSERT(node.rank() == rank_);
-        auto idx = to_local_idx(node);
-        return degree_[idx] - first_out_offset_[idx];
+        return degree_for<AdjacencyType::out>(node);
+    }
+    inline Degree indegree(RankEncodedNodeId node) const {
+        return degree_for<AdjacencyType::in>(node);
     }
 
     DistributedGraph() {
@@ -315,12 +347,13 @@ public:
         return node_indexer_.get_index(node);
     }
 
+    template <AdjacencyType adj_type>
     inline bool is_interface_node_if_sorted_by_rank(RankEncodedNodeId node) const {
-        // KASSERT(oriented());
-        KASSERT(edges_last_outward_sorted(node));
         KASSERT(node.rank() == rank_);
+        KASSERT(edges_last_outward_sorted<adj_type>(node) || edges_rank_sorted<adj_type>(node));
 
-        return !degree(node) == 0 && (adj(node).neighbors().end() - 1)->rank() != rank_;
+        return !degree_for<adj_type>(node) == 0 && ((adj_for<adj_type>(node).neighbors().end() - 1)->rank() != rank_ ||
+                                                    adj_for<adj_type>(node).neighbors().begin()->rank() != rank_);
     }
 
     inline bool is_interface_node(RankEncodedNodeId node) const {
@@ -333,31 +366,63 @@ public:
         return is_interface;
     }
 
+    template <AdjacencyType adj_type>
     bool edges_last_outward_sorted(RankEncodedNodeId node) const {
-        auto it = std::find_if(adj(node).neighbors().begin(), adj(node).neighbors().end(),
-                               [rank = rank_](auto v) { return v.rank() != rank; });
-        auto it2 = std::find_if(it, adj(node).neighbors().end(), [rank = rank_](auto v) { return v.rank() == rank; });
-        return it2 == adj(node).neighbors().end();
+        auto begin = adj_for<adj_type>(node).neighbors().begin();
+        auto end = adj_for<adj_type>(node).neighbors().end();
+        auto it = std::find_if(begin, end, [rank = rank_](auto const& v) { return v.rank() != rank; });
+        auto it2 = std::find_if(it, end, [rank = rank_](auto const& v) { return v.rank() == rank; });
+        return it2 == end;
     }
 
-    void remove_internal_edges(RankEncodedNodeId node) {
+    template <AdjacencyType adj_type>
+    bool edges_rank_sorted(RankEncodedNodeId node) const {
+        auto begin = adj_for<adj_type>(node).neighbors().begin();
+        auto end = adj_for<adj_type>(node).neighbors().end();
+        return std::is_sorted(begin, end,
+                              [rank = rank_](auto const& lhs, auto const& rhs) { return lhs.rank() < rhs.rank(); });
+    }
+
+    void remove_internal_edges(RankEncodedNodeId node, bool remove_all_in_edges = true) {
         KASSERT(node.rank() == rank_);
-        KASSERT(edges_last_outward_sorted(node));
-        if (!is_interface_node_if_sorted_by_rank(node)) {
+        KASSERT(edges_last_outward_sorted<AdjacencyType::out>(node) &&
+                edges_last_outward_sorted<AdjacencyType::in>(node));
+        if (!is_interface_node_if_sorted_by_rank<AdjacencyType::out>(node) &&
+            (remove_all_in_edges || !is_interface_node_if_sorted_by_rank<AdjacencyType::in>(node))) {
             degree_[to_local_idx(node)] = 0;
             first_out_offset_[to_local_idx(node)] = 0;
             return;
         }
-        auto neighbors = adj(node).neighbors();
-        auto it = std::find_if(neighbors.begin(), neighbors.end(),
-                               [this](RankEncodedNodeId node) { return node.rank() != rank_; });
-        size_t old_degree = std::distance(neighbors.begin(), neighbors.end());
-        size_t dist = std::distance(neighbors.begin(), it);
-        size_t degree = std::distance(it, neighbors.end());
-        first_out_[to_local_idx(node)] = first_out_[to_local_idx(node)] + dist;
-        first_out_offset_[to_local_idx(node)] = 0;
-        degree_[to_local_idx(node)] = degree;
-        local_edge_count_ -= old_degree - degree;
+        // atomic_debug(fmt::format("Before internal edge removal N+({})={},  N-({})={}", node, out_adj(node).neighbors(),
+        //                          node, in_adj(node).neighbors()));
+        auto out_neighbors = adj_for<AdjacencyType::out>(node).neighbors();
+        auto it_new_out_begin = std::find_if(out_neighbors.begin(), out_neighbors.end(),
+                                             [this](RankEncodedNodeId node) { return node.rank() != rank_; });
+        size_t old_outdegree = std::distance(out_neighbors.begin(), out_neighbors.end());
+        size_t removed_out_edges = std::distance(out_neighbors.begin(), it_new_out_begin);
+        size_t new_outdegree = std::distance(it_new_out_begin, out_neighbors.end());
+        auto idx = to_local_idx(node);
+        if (!remove_all_in_edges) {
+            auto in_neighbors = adj_for<AdjacencyType::in>(node).neighbors();
+            auto it = std::find_if(in_neighbors.begin(), in_neighbors.end(),
+                                   [this](RankEncodedNodeId node) { return node.rank() != rank_; });
+            size_t old_indegree = std::distance(in_neighbors.begin(), in_neighbors.end());
+            // size_t removed_in_edges = std::distance(in_neighbors.begin(), it);
+            size_t new_indegree = std::distance(it, in_neighbors.end());
+            auto it_new_in_begin = it_new_out_begin - new_indegree;
+            std::copy(it, in_neighbors.end(), it_new_in_begin);
+            first_out_[idx] = first_out_[idx] + std::distance(in_neighbors.begin(), it_new_in_begin);
+            first_out_offset_[idx] = new_indegree;
+            degree_[idx] = new_indegree + new_outdegree;
+            local_edge_count_ -= (old_indegree - new_indegree) + (old_outdegree - new_outdegree);
+        } else {
+            first_out_[idx] = first_out_[idx] + first_out_offset_[idx] + removed_out_edges;
+            first_out_offset_[idx] = 0;
+            degree_[idx] = new_outdegree;
+            local_edge_count_ -= old_outdegree - new_outdegree;
+        }
+        // atomic_debug(fmt::format("After internal edge removal N+({})={},  N-({})={}", node, out_adj(node).neighbors(),
+        //                          node, in_adj(node).neighbors()));
     }
 
     // void expand_ghosts() {
@@ -381,9 +446,9 @@ public:
     //     first_out_offset_.resize(first_out_offset_.size() + ghost_count(), 0);
     //     degree_.resize(degree_.size() + ghost_count());
     //     for (size_t i = 0; i < ghost_neighbors.size(); ++i) {
-    //         first_out_[local_node_count_ + i + 1] = first_out_[local_node_count_ + i] + ghost_neighbors[i].size();
-    //         degree_[local_node_count_ + i] = ghost_neighbors[i].size();
-    //         for (NodeId neighbor : ghost_neighbors[i]) {
+    //         first_out_[local_node_count_ + i + 1] = first_out_[local_node_count_ + i] +
+    //         ghost_neighbors[i].size(); degree_[local_node_count_ + i] = ghost_neighbors[i].size(); for (NodeId
+    //         neighbor : ghost_neighbors[i]) {
     //             head_[edge_index] = RankEncodedNodeId{neighbor};
     //             edge_index++;
     //         }
@@ -423,25 +488,29 @@ public:
             });
         node_indexer_ = NodeIndexer(node_range, nodes.begin(), nodes.end(), rank);
         for (size_t i = 0; i < G.node_info.size(); i++) {
-            while (current_node != G.node_info[i].global_id) {
+            if constexpr (std::is_same_v<NodeIndexer, ContinuousNodeIndexer>) {
+                while (current_node != G.node_info[i].global_id) {
+                    // insert empty nodes for all nodes in range that have no edges
+                    auto idx = to_local_idx(RankEncodedNodeId{current_node, static_cast<std::uint16_t>(rank_)});
+                    first_out_[idx] = degree_sum;
+                    degree_[idx] = 0;
+                    current_node++;
+                }
+            }
+            auto idx = to_local_idx(RankEncodedNodeId{G.node_info[i].global_id, static_cast<std::uint16_t>(rank_)});
+            first_out_[idx] = degree_sum;
+            degree_sum += G.node_info[i].degree;
+            degree_[idx] = G.node_info[i].degree;
+            current_node++;
+        }
+        if constexpr (std::is_same_v<NodeIndexer, ContinuousNodeIndexer>) {
+            while (current_node != node_range_.second) {
                 // insert empty nodes for all nodes in range that have no edges
                 auto idx = to_local_idx(RankEncodedNodeId{current_node, static_cast<std::uint16_t>(rank_)});
                 first_out_[idx] = degree_sum;
                 degree_[idx] = 0;
                 current_node++;
             }
-            auto idx = to_local_idx(RankEncodedNodeId{current_node, static_cast<std::uint16_t>(rank_)});
-            first_out_[idx] = degree_sum;
-            degree_sum += G.node_info[i].degree;
-            degree_[idx] = G.node_info[i].degree;
-            current_node++;
-        }
-        while (current_node != node_range_.second) {
-            // insert empty nodes for all nodes in range that have no edges
-            auto idx = to_local_idx(RankEncodedNodeId{current_node, static_cast<std::uint16_t>(rank_)});
-            first_out_[idx] = degree_sum;
-            degree_[idx] = 0;
-            current_node++;
         }
 
         first_out_[local_node_count()] = degree_sum;
@@ -511,32 +580,16 @@ public:
         ghost_ranks_available_ = true;
     }
 
-    LocalGraphView to_local_graph_view(bool remove_isolated, bool keep_only_out_edges) {
+    LocalGraphView to_local_graph_view() {
         DistributedGraph G = std::move(*this);
         std::vector<LocalGraphView::NodeInfo> node_info;
         EdgeId edge_counter = 0;
         for (RankEncodedNodeId node : G.local_nodes()) {
             auto degree = G.degree(node);
-            // TODO we need to handle vertices with out degree 0
-            // maybe prevent sending to them, as we should know their degree (?)
-            if (remove_isolated && degree == 0) {
-                coninue;
-            }
-            // auto global_id = G.to_global_id(node);
-            if (keep_only_out_edges) {
-                degree = G.outdegree(node);
-            }
             node_info.emplace_back(node.id(), degree);
-            if (keep_only_out_edges) {
-                for (RankEncodedNodeId head : G.out_adj(node).neighbors()) {
-                    G.head_[edge_counter] = head;
-                    edge_counter++;
-                }
-            } else {
-                for (RankEncodedNodeId head : G.adj(node).neighbors()) {
-                    G.head_[edge_counter] = head;
-                    edge_counter++;
-                }
+            for (RankEncodedNodeId head : G.adj(node).neighbors()) {
+                G.head_[edge_counter] = head;
+                edge_counter++;
             }
         }
         G.head_.resize(edge_counter);
@@ -562,7 +615,7 @@ public:
             auto degree = this->degree(node);
             degree_[i] = degree;
             running_sum += degree;
-            first_out_offset_[i] = 0;
+            first_out_offset_[i] = first_out_offset_[node_indexer_.get_index(node)];
         }
         auto new_node_count = sparse_indexer.size();
         first_out_[new_node_count] = running_sum;
@@ -658,9 +711,14 @@ private:
 template <typename GhostPayloadType>
 inline std::ostream& operator<<(std::ostream& out, DistributedGraph<GhostPayloadType>& G) {
     for (auto node : G.local_nodes()) {
-        for (auto edge : G.out_adj(node).edges()) {
-            out << edge << std::endl;
-        }
+        out << "N+( " << node << ") = [";
+        std::copy(G.out_adj(node).neighbors().begin(), G.out_adj(node).neighbors().end(),
+                  std::ostream_iterator<RankEncodedNodeId>(out, ", "));
+        out << "]\n";
+        out << "N-( " << node << ") = [";
+        std::copy(G.in_adj(node).neighbors().begin(), G.in_adj(node).neighbors().end(),
+                  std::ostream_iterator<RankEncodedNodeId>(out, ", "));
+        out << "]\n";
     }
     return out;
 }

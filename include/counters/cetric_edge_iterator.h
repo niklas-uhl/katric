@@ -51,7 +51,7 @@ private:
 struct id_outward {
     explicit id_outward(PEID rank) : rank_(rank) {}
     inline bool operator()(RankEncodedNodeId const& lhs, RankEncodedNodeId const& rhs) const {
-        return lhs.mask_rank(rank_) < rhs.mask_rank(rank_);
+        return std::pair(lhs.rank() != rank_, lhs.id()) < std::pair(rhs.rank() != rank_, rhs.id()) ;
     }
 
 private:
@@ -185,7 +185,7 @@ public:
         cetric::profiling::Timer phase_time;
         interface_nodes.clear();
         for (auto v : G.local_nodes()) {
-            if (G.is_interface_node_if_sorted_by_rank(v)) {
+            if (G.template is_interface_node_if_sorted_by_rank<AdjacencyType::out>(v)) {
                 interface_nodes.emplace_back(v);
             }
             size_t neighbor_index = 0;
@@ -228,7 +228,7 @@ public:
         tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [this, &interface_nodes, &node_ordering,
                                                                            &emit, &stats](auto const& nodes_r) {
             for (auto v : nodes_r) {
-                if (G.is_interface_node_if_sorted_by_rank(v)) {
+                if (G.template is_interface_node_if_sorted_by_rank<AdjacencyType::out>(v)) {
                     interface_nodes.local().emplace_back(v);
                 }
                 size_t neighbor_index = 0;
@@ -328,7 +328,7 @@ public:
             // } else {
             for (RankEncodedEdge edge : G.out_adj(v).edges()) {
                 RankEncodedNodeId u = edge.head;
-                if (conf_.algorithm == Algorithm::Cetric || u.rank() != rank_) {
+                if (/*conf_.algorithm == Algorithm::Cetric || */ u.rank() != rank_) {
                     // assert(G.is_local_from_local(v));
                     // assert(G.is_local(G.to_global_id(v)));
                     // assert(!G.is_local(G.to_global_id(u)));
@@ -379,7 +379,7 @@ public:
                 // }
                 for (RankEncodedEdge edge : G.out_adj(v).edges()) {
                     RankEncodedNodeId u = edge.head;
-                    if (conf_.algorithm == Algorithm::Cetric || u.rank() != rank_) {
+                    if (/*conf_.algorithm == Algorithm::Cetric || */ u.rank() != rank_) {
                         // assert(G.is_local_from_local(v));
                         // assert(G.is_local(G.to_global_id(v)));
                         // assert(!G.is_local(G.to_global_id(u)));

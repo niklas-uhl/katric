@@ -84,11 +84,11 @@ public:
                                             AuxiliaryNodeData<Degree>& out_degree,
                                             bool dense_degree_exchange,
                                             cetric::profiling::MessageStatistics& stats) {
-      init_degree(G, ghosts, degree, out_degree, dense_degree_exchange, stats);
+        init_degree(G, ghosts, degree, out_degree, dense_degree_exchange, stats);
         if (out_degree.size() == 0) {
-            out_degree = AuxiliaryNodeData<Degree>(
-                RankEncodedNodeId{G.node_range().first, static_cast<uint16_t>(G.rank())},
-                RankEncodedNodeId{G.node_range().second, static_cast<uint16_t>(G.rank())});
+            out_degree =
+                AuxiliaryNodeData<Degree>(RankEncodedNodeId{G.node_range().first, static_cast<uint16_t>(G.rank())},
+                                          RankEncodedNodeId{G.node_range().second, static_cast<uint16_t>(G.rank())});
             auto deg = [&G, &degree](RankEncodedNodeId node) {
                 if (node.rank() == G.rank()) {
                     return G.degree(node);
@@ -133,7 +133,7 @@ public:
                                 AuxiliaryNodeData<Degree>& out_degree,
                                 bool dense_degree_exchange,
                                 cetric::profiling::MessageStatistics& stats) {
-      init_degree(G, ghosts, degree, out_degree, dense_degree_exchange, stats);
+        init_degree(G, ghosts, degree, out_degree, dense_degree_exchange, stats);
         init_local_outdegree(G, ghosts, degree, out_degree, dense_degree_exchange, stats);
         if (ghosts.size() == 0) {
             find_ghosts(G, ghosts);
@@ -244,17 +244,17 @@ template <typename Graph>
 struct CostFunctionRegistry {
     template <typename ExecutionPolicy = execution_policy::sequential>
     static CostFunction<Graph> get(const std::string& name,
-                                                    Graph& G,
-                                                    const Config& conf,
-                                                    cetric::profiling::LoadBalancingStatistics& stats,
-                                                    ExecutionPolicy&& = {}) {
+                                   Graph& G,
+                                   const Config& conf,
+                                   cetric::profiling::LoadBalancingStatistics& stats,
+                                   ExecutionPolicy&& = {}) {
         (void)conf;
         using RefType = CostFunction<Graph>&;
         using GraphType = Graph&;
         std::unordered_map<
             std::string,
-          std::pair<std::function<void(GraphType, node_set&, AuxiliaryNodeData<Degree>&, AuxiliaryNodeData<Degree>&, bool,
-                                         cetric::profiling::MessageStatistics&)>,
+            std::pair<std::function<void(GraphType, node_set&, AuxiliaryNodeData<Degree>&, AuxiliaryNodeData<Degree>&,
+                                         bool, cetric::profiling::MessageStatistics&)>,
                       std::function<size_t(RefType, GraphType, RankEncodedNodeId)>>>
             cost_functions = {
                 {"N",

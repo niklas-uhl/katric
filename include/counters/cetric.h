@@ -17,6 +17,7 @@
 #include <numeric>
 #include <sparsehash/dense_hash_set>
 #include <utility>
+#include "atomic_debug.h"
 #include "cost_function.h"
 #include "datastructures/distributed/distributed_graph.h"
 #include "datastructures/distributed/helpers.h"
@@ -31,7 +32,7 @@
 namespace cetric {
 enum class Phase { Local, Global };
 
-  template <typename NodeIndexer, typename GhostSet>
+template <typename NodeIndexer, typename GhostSet>
 inline void preprocessing(DistributedGraph<NodeIndexer>& G,
                           cetric::profiling::Statistics& stats,
                           AuxiliaryNodeData<Degree>& ghost_degree,
@@ -64,12 +65,12 @@ inline void preprocessing(DistributedGraph<NodeIndexer>& G,
         if (conf.num_threads > 1) {
             tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G, &ghost_degree](auto const& r) {
                 for (auto node : r) {
-                    G.sort_neighborhoods(node, node_ordering::id());
+                  G.sort_neighborhoods(node, node_ordering::id_outward(G.rank()));
                 }
             });
         } else {
             for (auto node : nodes) {
-                G.sort_neighborhoods(node, node_ordering::id());
+              G.sort_neighborhoods(node, node_ordering::id_outward(G.rank()));
             }
         }
     } else {
@@ -115,8 +116,7 @@ inline size_t run_patric(DistributedGraph<>& G,
                          CommunicationPolicy&&) {
     bool debug = false;
     G.find_ghost_ranks();
-    google::dense_hash_set<RankEncodedNodeId, cetric::hash> ghosts;
-    ghosts.set_empty_key(RankEncodedNodeId::sentinel());
+    node_set ghosts;
     cetric::profiling::Timer timer;
     // if ((conf.gen.generator.empty() && conf.primary_cost_function != "N") ||
     //     (!conf.gen.generator.empty() && conf.primary_cost_function != "none")) {
@@ -183,8 +183,7 @@ inline size_t run_cetric(DistributedGraph<>& G,
     } else {
         G.find_ghost_ranks(execution_policy::sequential{});
     }
-    google::dense_hash_set<RankEncodedNodeId, cetric::hash> ghosts;
-    ghosts.set_empty_key(RankEncodedNodeId::sentinel());
+    node_set ghosts;
     cetric::profiling::Timer timer;
     if ((conf.gen.generator.empty() && conf.primary_cost_function != "N") ||
         (!conf.gen.generator.empty() && conf.primary_cost_function != "none")) {
@@ -199,7 +198,7 @@ inline size_t run_cetric(DistributedGraph<>& G,
                                                                      execution_policy::sequential{});
             }
         }();
-        LocalGraphView tmp = G.to_local_graph_view(false, false);
+        LocalGraphView tmp = G.to_local_graph_view();
         tmp = cetric::load_balancing::LoadBalancer::run(std::move(tmp), cost_function, conf,
                                                         stats.local.primary_load_balancing);
         auto node_range = tmp.local_node_count() == 0
@@ -260,58 +259,116 @@ inline size_t run_cetric(DistributedGraph<>& G,
     stats.local.contraction_time += timer.elapsed_time();
     LOG << "[R" << rank << "] "
         << "Contraction finished " << stats.local.contraction_time << " s";
-    // timer.restart();
-    // if (conf.secondary_cost_function != "none") {
-    //     auto cost_function = CostFunctionRegistry<DistributedGraph<>>::get(conf.secondary_cost_function, G, conf,
-    //                                                                        stats.local.secondary_load_balancing);
-    //     auto tmp = G.to_local_graph_view(true, false);
-    //     tmp = cetric::load_balancing::LoadBalancer::run(std::move(tmp), cost_function, conf,
-    //                                                     stats.local.secondary_load_balancing);
-    //     G = DistributedGraph(std::move(tmp), rank, size);
-    //     G.expand_ghosts();
-    //     G.find_ghost_ranks();
-    //     preprocessing(G, stats, conf, Phase::Global);
-    // } else {
-    preprocessing(G_compact, stats, ghost_degrees, ghosts, conf, Phase::Global);
     ghosts = decltype(ghosts){};
-    ghost_degrees = AuxiliaryNodeData<Degree>();
-    // }
-    // stats.local.secondary_load_balancing.phase_time += timer.elapsed_time();
-    // LOG << "[R" << rank << "] "
-    //     << "Secondary load balancing finished " << stats.local.secondary_load_balancing.phase_time << " s";
-    timer.restart();
-    // if (conf.secondary_cost_function != "none") {
-    //     auto ctr_dist = cetric::CetricEdgeIterator(G, conf, rank, size, CommunicationPolicy{});
-    //     ctr_dist.run(
-    //         [&](Triangle<RankEncodedNodeId> t) {
-    //             (void)t;
-    //             t.normalize();
-    //             if constexpr (KASSERT_ASSERTION_LEVEL >= kassert::assert::normal) {
-    //                 triangles.push_back(t);
-    //             }
-    //             // atomic_debug(t);
-    //             triangle_count++;
-    //             // triangle_count_global_phase.local()++;
-    //         },
-    //         stats, node_ordering::id());
-    // } else {
-    // atomic_debug(fmt::format("local nodes: {}", G.local_nodes()));
-    // atomic_debug(fmt::format("ghost degrees: {}", ghost_degrees));
+    // atomic_debug(fmt::format("Found {} triangles in local phase", triangle_count_local_phase.combine(std::plus<>{})));
     tbb::combinable<size_t> triangle_count_global_phase{0};
-    cetric::CetricEdgeIterator ctr_global(G_compact, conf, rank, size, CommunicationPolicy{});
-    ctr_global.run_distributed(
-        [&](Triangle<RankEncodedNodeId> t) {
-            (void)t;
-            if constexpr (KASSERT_ASSERTION_LEVEL >= kassert::assert::normal) {
-                t.normalize();
-                triangles.push_back(t);
+    if (conf.secondary_cost_function != "none") {
+        timer.restart();
+        auto cost_function = [&]() {
+            if (conf.num_threads > 1) {
+                return CostFunctionRegistry<decltype(G_compact)>::get(conf.secondary_cost_function, G_compact, conf,
+                                                                      stats.local.secondary_load_balancing,
+                                                                      execution_policy::parallel{});
+            } else {
+                return CostFunctionRegistry<decltype(G_compact)>::get(conf.secondary_cost_function, G_compact, conf,
+                                                                      stats.local.secondary_load_balancing,
+                                                                      execution_policy::sequential{});
             }
-            // atomic_debug(t);
-            // triangle_count++;
-            triangle_count_global_phase.local()++;
-        },
-        stats, G_compact.local_nodes().begin(), G_compact.local_nodes().end(), node_ordering::id());
-    // }
+        }();
+        auto tmp = G_compact.to_local_graph_view();
+        auto node_range = tmp.local_node_count() == 0
+                              ? std::make_pair(std::numeric_limits<NodeId>::max(), std::numeric_limits<NodeId>::max())
+                              : std::make_pair(tmp.node_info.front().global_id, tmp.node_info.back().global_id + 1);
+        auto G_global_phase = DistributedGraph<SparseNodeIndexer>(std::move(tmp), std::move(node_range), rank, size);
+        if (conf.num_threads > 1) {
+            G_global_phase.find_ghost_ranks(execution_policy::parallel{});
+        } else {
+            G_global_phase.find_ghost_ranks(execution_policy::sequential{});
+        }
+        stats.local.secondary_load_balancing.phase_time += timer.elapsed_time();
+        LOG << "[R" << rank << "] "
+            << "Secondary load balancing finished " << stats.local.secondary_load_balancing.phase_time << " s";
+        preprocessing(G_global_phase, stats, ghost_degrees, ghosts, conf, Phase::Global);
+        ghost_degrees = AuxiliaryNodeData<Degree>();
+        timer.restart();
+        cetric::CetricEdgeIterator ctr_global(G_global_phase, conf, rank, size, CommunicationPolicy{});
+        ctr_global.run_local(
+            [&](Triangle<RankEncodedNodeId> t) {
+                (void)t;
+                if constexpr (KASSERT_ASSERTION_LEVEL >= kassert::assert::normal) {
+                    t.normalize();
+                    triangles.push_back(t);
+                }
+                // atomic_debug(t);
+                // triangle_count++;
+                triangle_count_global_phase.local()++;
+            },
+            stats, node_ordering::id_outward(rank));
+        // atomic_debug(
+        //     fmt::format("Found {} triangles in global phase 1", triangle_count_global_phase.combine(std::plus<>{})));
+        auto nodes = G_global_phase.local_nodes();
+        if (conf.local_parallel) {
+            tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G_global_phase](auto const& r) {
+                for (auto node : r) {
+                    G_global_phase.remove_internal_edges(node);
+                }
+            });
+        } else {
+            for (auto node : nodes) {
+                G_global_phase.remove_internal_edges(node);
+            }
+        }
+        ctr_global.run_distributed(
+            [&](Triangle<RankEncodedNodeId> t) {
+                (void)t;
+                if constexpr (KASSERT_ASSERTION_LEVEL >= kassert::assert::normal) {
+                    t.normalize();
+                    triangles.push_back(t);
+                }
+                // atomic_debug(t);
+                // triangle_count++;
+                triangle_count_global_phase.local()++;
+            },
+            stats, node_ordering::id_outward(rank));
+        // atomic_debug(
+            // fmt::format("Found {} triangles in global phase 2", triangle_count_global_phase.combine(std::plus<>{})));
+    } else {
+        preprocessing(G_compact, stats, ghost_degrees, ghosts, conf, Phase::Global);
+        ghost_degrees = AuxiliaryNodeData<Degree>();
+        // }
+        timer.restart();
+        // if (conf.secondary_cost_function != "none") {
+        //     auto ctr_dist = cetric::CetricEdgeIterator(G, conf, rank, size, CommunicationPolicy{});
+        //     ctr_dist.run(
+        //         [&](Triangle<RankEncodedNodeId> t) {
+        //             (void)t;
+        //             t.normalize();
+        //             if constexpr (KASSERT_ASSERTION_LEVEL >= kassert::assert::normal) {
+        //                 triangles.push_back(t);
+        //             }
+        //             // atomic_debug(t);
+        //             triangle_count++;
+        //             // triangle_count_global_phase.local()++;
+        //         },
+        //         stats, node_ordering::id());
+        // } else {
+        // atomic_debug(fmt::format("local nodes: {}", G.local_nodes()));
+        // atomic_debug(fmt::format("ghost degrees: {}", ghost_degrees));
+        cetric::CetricEdgeIterator ctr_global(G_compact, conf, rank, size, CommunicationPolicy{});
+        ctr_global.run_distributed(
+            [&](Triangle<RankEncodedNodeId> t) {
+                (void)t;
+                if constexpr (KASSERT_ASSERTION_LEVEL >= kassert::assert::normal) {
+                    t.normalize();
+                    triangles.push_back(t);
+                }
+                // atomic_debug(t);
+                // triangle_count++;
+                triangle_count_global_phase.local()++;
+            },
+            stats, G_compact.local_nodes().begin(), G_compact.local_nodes().end(), node_ordering::id_outward(rank));
+        // }
+    }
     triangle_count += triangle_count_global_phase.combine(std::plus<>{});
     stats.local.global_phase_time = timer.elapsed_time();
     if constexpr (KASSERT_ASSERTION_LEVEL >= kassert::assert::normal) {
