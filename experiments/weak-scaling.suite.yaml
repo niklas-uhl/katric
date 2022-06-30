@@ -1,16 +1,25 @@
 name: weak-scaling
 ncores: [2, 4, 16]
+nthreads: [1, 2, 4]
 graphs:
+  - generator: rgg
+    n: 10
+    m: 14
+    scale_weak: True
   - generator: rhg
     n: 10
+    m: 14
     gamma: 2.8
-    avg_degree: 16
     scale_weak: True
   - generator: rdg_2d
     n: 10
     scale_weak: True
   - generator: rdg_3d
     n: 10
+    scale_weak: True
+  - generator: gnm
+    n: 10
+    m: 14
     scale_weak: True
 time_limit: 10
 config: {

@@ -43,8 +43,9 @@ class FileInputGraph(InputGraph):
 class GenInputGraph(InputGraph):
 
     parameter_list = {
-        "rhg": ["avg_degree", "gamma"],
-        "rgg": ["radius"],
+        "rhg": ["m", "gamma"],
+        "gnm": ["m"],
+        "rgg": ["m"],
         "rdg_2d": [],
         "rdg_3d": [],
     }
@@ -69,29 +70,35 @@ class GenInputGraph(InputGraph):
         elif self.generator == 'rhg':
             arg_list.append('rhg')
         elif self.generator == 'rdg_2d':
-            arg_list.append('rgg_2d')
+            arg_list.append('rdg_2d')
         elif self.generator == 'rdg_3d':
-            arg_list.append('rgg_3d')
+            arg_list.append('rdg_3d')
+        elif self.generator == 'gnm':
+            arg_list.append('gnm_undirected')
         arg_list.append("--gen_n")
         if self.scale_weak:
             if not math.log2(p).is_integer():
                 sys.exit("Number of PEs must be a power of two")
             scaled_n = self.params["n"] + int(math.log2(p));
+            if "m" in self.params:
+                scaled_m = self.params["m"] + int(math.log2(p));
+            else:
+                scaled_m = None
             arg_list.append(str(scaled_n))
-            arg_list.append("--gen_scale_weak")
         else:
             arg_list.append(str(self.params["n"]))
         if self.generator == 'rgg':
-            arg_list.append("--gen_r_coeff")
-            arg_list.append(str(self.params["radius"]))
+            arg_list.append("--gen_m")
+            arg_list.append(str(scaled_m))
         elif self.generator == 'rhg':
             arg_list.append("--gen_gamma")
             arg_list.append(str(self.params["gamma"]))
-            arg_list.append("--gen_d")
-            arg_list.append(str(self.params["avg_degree"]))
-            arg_list.append("--rhg-fix")
-        else:
-            arg_list.append("--rhg-fix")
+            arg_list.append("--gen_m")
+            arg_list.append(str(scaled_m))
+        elif self.generator == 'gnm':
+            arg_list.append("--gen_m")
+            arg_list.append(str(scaled_m))
+        arg_list.append("--gen_statistics")
         return arg_list
 
     @property
@@ -234,7 +241,7 @@ def cetric_command(input, mpi_ranks, threads_per_rank, **kwargs):
     command = [str(app)]
     if input:
         if isinstance(input, InputGraph):
-            command = command + input.args(mpi_ranks)
+            command = command + input.args(mpi_ranks * threads_per_rank)
         else:
             command.append(str(input))
     flags = ["--num-threads", str(threads_per_rank)]
