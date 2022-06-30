@@ -77,7 +77,6 @@ struct Config {
     std::string input_file;
     std::string output_file;
     graphio::InputFormat input_format;
-    size_t seed = 28475421;
     size_t buffer_threshold = std::numeric_limits<size_t>::max();
     double max_degree_threshold_alpha = 1.0;
     bool empty_pending_buffers_on_overflow = false;
@@ -128,16 +127,17 @@ struct Config {
                 CEREAL_NVP(dense_load_balancing), CEREAL_NVP(flag_intersection), CEREAL_NVP(skip_local_neighborhood),
                 CEREAL_NVP(git_commit));
         if (input_file.empty()) {
-            archive(cereal::make_nvp("gen", gen.generator),              //
-                    cereal::make_nvp("gen_n", gen.n),                    //
-                    cereal::make_nvp("gen_m", gen.m),                    //
-                    cereal::make_nvp("gen_r", gen.r),                    //
-                    cereal::make_nvp("gen_r_coeff", gen.r_coeff),        //
-                    cereal::make_nvp("gen_p", gen.p),                    //
-                    cereal::make_nvp("gen_gamma", gen.gamma),            //
-                    cereal::make_nvp("gen_d", gen.d),                    //
-                    cereal::make_nvp("gen_scale_weak", gen.scale_weak),  //
-                    cereal::make_nvp("gen_rhg_fix", gen.rhg_fix));
+            archive(cereal::make_nvp("gen", gen.generator),                  //
+                    cereal::make_nvp("gen_n", gen.n),                        //
+                    cereal::make_nvp("gen_m", gen.m),                        //
+                    cereal::make_nvp("gen_r", gen.r),                        //
+                    cereal::make_nvp("gen_p", gen.p),                        //
+                    cereal::make_nvp("gen_gamma", gen.gamma),                //
+                    cereal::make_nvp("gen_d", gen.d),                        //
+                    cereal::make_nvp("gen_seed", gen.seed),                  //
+                    cereal::make_nvp("gen_verify_graph", gen.verify_graph),  //
+                    cereal::make_nvp("gen_statistics", gen.statistics)       //
+            );
         }
     }
 };
