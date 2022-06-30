@@ -151,7 +151,8 @@ class SBatchRunner:
                             jobname=config_jobname,
                             mpi_ranks=mpi_ranks,
                             threads_per_rank=threads_per_rank,
-                            ranks_per_node=ranks_per_node)
+                            ranks_per_node=ranks_per_node
+                            timeout=job_time_limit * 60)
                         commands.append(cmd_string)
                 subs["commands"] = '\n'.join(commands)
                 subs["time_string"] = time.strftime(

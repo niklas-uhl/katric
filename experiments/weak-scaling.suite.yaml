@@ -1,30 +1,28 @@
 name: weak-scaling
-ncores: [2, 4, 16]
-nthreads: [1, 2, 4]
+ncores: [512, 1024, 2048, 4096, 8192]
+nthreads: [1, 2, 4, 8, 16, 32]
 graphs:
   - generator: rgg
-    n: 10
-    m: 14
+    n: 20
+    m: 24
     scale_weak: True
   - generator: rhg
-    n: 10
-    m: 14
-    gamma: 2.8
-    scale_weak: True
-  - generator: rdg_2d
-    n: 10
-    scale_weak: True
-  - generator: rdg_3d
-    n: 10
+    n: 20
+    m: 24
+    gamma: 3.0
     scale_weak: True
   - generator: gnm
-    n: 10
-    m: 14
+    n: 20
+    m: 24
     scale_weak: True
-time_limit: 10
+time_limit: 20
 config: {
-  "algorithm": cetric,
-  "primary-cost-function": [none, N],
-  "secondary-cost-function": [IDPD],
+  algorithm: [cetric],
+  local-parallel: True,
+  global-parallel: [True],
+  local-degree-of-parallelism: [2],
+  dense-degree-exchange: [False, True],
+  global-degree-of-parallelism: [1, 2, 3],
+  skip-local-neighborhood: [False],
+  primary-cost-function: [none],
 }
-
