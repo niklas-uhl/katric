@@ -5,6 +5,7 @@ from pathlib import Path
 import yaml
 import sys
 import math
+import slugify
 
 
 class InputGraph:
@@ -18,7 +19,7 @@ class InputGraph:
 
 class FileInputGraph(InputGraph):
     def __init__(self, name, path, format='metis', triangles=None):
-        self.name = name
+        self.name = slugify.slugify(name)
         self.path = path
         self.format = format
         self.triangles = triangles
@@ -104,14 +105,14 @@ class GenInputGraph(InputGraph):
     @property
     def name(self):
         n = self.params["n"]
-        name = f"{self.generator.upper()}(2**{n}"
+        name = f"{self.generator.upper()}({n}"
         for key in GenInputGraph.parameter_list[self.generator]:
             val = self.params[key]
-            name += f", {val}"
+            name += f"-{key}={val}"
         name += ")"
         if self.scale_weak:
             name += "_weak"
-        return name
+        return slugify.slugify(name)
 
 def load_inputs_from_yaml(yaml_path):
     with open(yaml_path, "r") as file:

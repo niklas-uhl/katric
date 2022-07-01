@@ -1,6 +1,6 @@
 name: weak-scaling
 ncores: [512, 1024, 2048, 4096, 8192]
-nthreads: [1, 2, 4, 8, 16, 32]
+threads_per_rank: [1, 2, 4, 8, 16, 32]
 graphs:
   - generator: rgg
     n: 20
@@ -15,7 +15,7 @@ graphs:
     n: 20
     m: 24
     scale_weak: True
-time_limit: 20
+time_limit: 5
 config: {
   algorithm: [cetric],
   local-parallel: True,

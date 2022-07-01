@@ -1,6 +1,6 @@
-name: weak-scaling
-ncores: [2, 4, 16]
-nthreads: [1, 2, 4]
+name: weak-scaling-example
+ncores: [4, 8, 16]
+threads_per_rank: [1, 2, 4]
 graphs:
   - generator: rgg
     n: 10
