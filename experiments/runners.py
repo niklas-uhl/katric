@@ -143,7 +143,7 @@ class SBatchRunner:
                         if not job_time_limit:
                             job_time_limit = self.time_limit
                         time_limit += job_time_limit
-                        cmd = expcore.cetric_command(input, ncores,
+                        cmd = expcore.cetric_command(input, mpi_ranks,
                                                      threads_per_rank,
                                                      **config)
                         config_jobname = jobname + "-c" + str(i)
