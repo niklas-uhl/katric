@@ -106,7 +106,7 @@ static constexpr bool has_grow_by_v =
 static_assert(has_grow_by_v<tbb::concurrent_vector<RankEncodedNodeId>>);
 
 struct Merger {
-    template <template <typename> typename VectorType>
+    template <template <typename...> typename VectorType>
     size_t operator()(VectorType<RankEncodedNodeId>& buffer,
                       std::vector<RankEncodedNodeId> msg,
                       int tag [[maybe_unused]]) {
@@ -125,7 +125,7 @@ struct Merger {
 };
 
 struct Splitter {
-    template <typename MessageFunc, template <typename> typename VectorType>
+    template <typename MessageFunc, template <typename...> typename VectorType>
     void operator()(VectorType<RankEncodedNodeId> buffer, MessageFunc&& on_message, PEID sender) {
         auto buffer_ptr = std::make_shared<VectorType<RankEncodedNodeId>>(std::move(buffer));
         std::vector<RankEncodedNodeId>::iterator slice_begin = buffer_ptr->begin();
@@ -534,7 +534,7 @@ private:
         // atomic_debug(fmt::format("rank {}", u_rank));
         // atomic_debug(u_rank);
         write_jobs++;
-        thread_pool.enqueue([&queue, &stats, &write_jobs, emit, this, v, u_rank] {
+        thread_pool.enqueue([&queue, &write_jobs, this, v, u_rank] {
             // tg.run([&stats, emit, this, v, u_rank]() {
             std::vector<RankEncodedNodeId> buffer;
             buffer.emplace_back(v);
@@ -638,7 +638,7 @@ private:
         if (!ghosts.empty()) {
             auto filtered_neighbors = boost::adaptors::filter(
                 boost::make_iterator_range(begin, end),
-                [this, &ghosts](RankEncodedNodeId node) { return ghosts.find(node) != ghosts.end(); });
+                [&ghosts](RankEncodedNodeId node) { return ghosts.find(node) != ghosts.end(); });
             // atomic_debug(fmt::format("intersecting {} and {}", u_neighbors, filtered_neighbors));
             std::set_intersection(u_neighbors.begin(), u_neighbors.end(), filtered_neighbors.begin(),
                                   filtered_neighbors.end(), boost::make_function_output_iterator(on_intersection),

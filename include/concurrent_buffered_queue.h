@@ -23,11 +23,11 @@ namespace message_queue {
 
 template <class T, typename Merger, typename Splitter>
 class ConcurrentBufferedMessageQueue {
-    static_assert(std::is_invocable_v<Splitter,
-                                      std::vector<T>,
-                                      std::function<void()>,
-                                      PEID>);
-    static_assert(std::is_invocable_v<Merger, std::vector<T>&, std::vector<T>, int>);
+    // static_assert(std::is_invocable_v<Splitter,
+    //                                   std::vector<T>,
+    //                                   std::function<void()>,
+    //                                   PEID>);
+    // static_assert(std::is_invocable_v<Merger, std::vector<T>&, std::vector<T>, int>);
 
 public:
     ConcurrentBufferedMessageQueue(size_t num_threads, Merger&& merge, Splitter&& split)

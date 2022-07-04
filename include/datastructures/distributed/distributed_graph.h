@@ -352,7 +352,7 @@ public:
         KASSERT(node.rank() == rank_);
         KASSERT(edges_last_outward_sorted<adj_type>(node) || edges_rank_sorted<adj_type>(node));
 
-        return !degree_for<adj_type>(node) == 0 && ((adj_for<adj_type>(node).neighbors().end() - 1)->rank() != rank_ ||
+        return degree_for<adj_type>(node) != 0 && ((adj_for<adj_type>(node).neighbors().end() - 1)->rank() != rank_ ||
                                                     adj_for<adj_type>(node).neighbors().begin()->rank() != rank_);
     }
 
@@ -380,7 +380,7 @@ public:
         auto begin = adj_for<adj_type>(node).neighbors().begin();
         auto end = adj_for<adj_type>(node).neighbors().end();
         return std::is_sorted(begin, end,
-                              [rank = rank_](auto const& lhs, auto const& rhs) { return lhs.rank() < rhs.rank(); });
+                              [](auto const& lhs, auto const& rhs) { return lhs.rank() < rhs.rank(); });
     }
 
     void remove_internal_edges(RankEncodedNodeId node, bool remove_all_in_edges = true) {

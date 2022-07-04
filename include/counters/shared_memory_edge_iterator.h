@@ -155,6 +155,8 @@ private:
         tbb::parallel_for(
             tbb_range,
             [emit, this, &conf, &p, node_ordering](auto r) {
+                (void)conf;
+                (void)p;
                 for (NodeId v : r) {
                     auto neighbors = G.out_neighbors(v);
                     if constexpr (partition == Partition::one_dimensional) {

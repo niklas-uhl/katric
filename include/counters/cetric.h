@@ -63,7 +63,7 @@ inline void preprocessing(DistributedGraph<NodeIndexer>& G,
         stats.local.preprocessing.orientation_time += timer.elapsed_time();
         timer.restart();
         if (conf.num_threads > 1) {
-            tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G, &ghost_degree](auto const& r) {
+            tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G](auto const& r) {
                 for (auto node : r) {
                   G.sort_neighborhoods(node, node_ordering::id_outward(G.rank()));
                 }
@@ -80,7 +80,7 @@ inline void preprocessing(DistributedGraph<NodeIndexer>& G,
         // G.sort_neighborhoods(node_ordering::degree_outward(G), execution_policy::sequential{});
         auto nodes = G.local_nodes();
         if (conf.num_threads > 1) {
-            tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G, &ghost_degree](auto const& r) {
+            tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G](auto const& r) {
                 for (auto node : r) {
                     G.orient(node, node_ordering::degree_outward(G));
                 }
@@ -93,7 +93,7 @@ inline void preprocessing(DistributedGraph<NodeIndexer>& G,
         stats.local.preprocessing.orientation_time += timer.elapsed_time();
         timer.restart();
         if (conf.num_threads > 1) {
-            tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G, &ghost_degree](auto const& r) {
+            tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G](auto const& r) {
                 for (auto node : r) {
                     G.sort_neighborhoods(node, node_ordering::degree_outward(G));
                 }
