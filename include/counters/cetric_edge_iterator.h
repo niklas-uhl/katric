@@ -51,7 +51,7 @@ private:
 struct id_outward {
     explicit id_outward(PEID rank) : rank_(rank) {}
     inline bool operator()(RankEncodedNodeId const& lhs, RankEncodedNodeId const& rhs) const {
-        return std::pair(lhs.rank() != rank_, lhs.id()) < std::pair(rhs.rank() != rank_, rhs.id()) ;
+        return std::pair(lhs.rank() != rank_, lhs.id()) < std::pair(rhs.rank() != rank_, rhs.id());
     }
 
 private:
@@ -192,6 +192,10 @@ public:
             for (RankEncodedNodeId u : G.out_adj(v).neighbors()) {
                 KASSERT(*(G.out_adj(v).neighbors().begin() + neighbor_index) == u);
                 if (u.rank() != rank_) {
+                    if (conf_.algorithm == Algorithm::Patric) {
+                        neighbor_index++;
+                        continue;
+                    }
                     // atomic_debug(
                     //     fmt::format("Remaining neighbors {}",
                     //                 boost::make_iterator_range(G.out_adj(v).neighbors().begin() + neighbor_index,
@@ -204,7 +208,7 @@ public:
                 }
                 auto v_neighbors = G.out_adj(v).neighbors();
                 auto u_neighbors = G.out_adj(u).neighbors();
-                auto offset = neighbor_index;
+                auto offset = (conf_.algorithm == Algorithm::Cetric) * neighbor_index;
                 std::set_intersection(v_neighbors.begin() + offset, v_neighbors.end(), u_neighbors.begin(),
                                       u_neighbors.end(), boost::function_output_iterator([&](RankEncodedNodeId w) {
                                           stats.local.local_triangles++;
@@ -235,6 +239,10 @@ public:
                 for (RankEncodedNodeId u : G.out_adj(v).neighbors()) {
                     KASSERT(*(G.out_adj(v).neighbors().begin() + neighbor_index) == u);
                     if (u.rank() != rank_) {
+                        if (conf_.algorithm == Algorithm::Patric) {
+                            neighbor_index++;
+                            continue;
+                        }
                         // atomic_debug(
                         //     fmt::format("Remaining neighbors {}",
                         //                 boost::make_iterator_range(G.out_adj(v).neighbors().begin() + neighbor_index,
@@ -247,7 +255,7 @@ public:
                     }
                     auto v_neighbors = G.out_adj(v).neighbors();
                     auto u_neighbors = G.out_adj(u).neighbors();
-                    auto offset = neighbor_index;
+                    auto offset = (conf_.algorithm == Algorithm::Cetric) * neighbor_index;
                     std::set_intersection(v_neighbors.begin() + offset, v_neighbors.end(), u_neighbors.begin(),
                                           u_neighbors.end(), boost::function_output_iterator([&](RankEncodedNodeId w) {
                                               stats.local.local_triangles++;
