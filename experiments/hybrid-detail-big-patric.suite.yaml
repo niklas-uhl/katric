@@ -1,0 +1,28 @@
+name: hybrid-detail-big-patric
+ncores: [512, 1024, 2048, 4096, 8192, 16384]
+threads_per_rank: [1, 2, 4, 8, 16]
+graphs:
+        - name: webbase-2001
+          time_limit: 10
+          #- name: europe
+          #time_limit: 3
+          #- name: usa
+          #time_limit: 3
+        - name: uk-2007-05
+          time_limit: 20
+          #- name: live-journal
+          #time_limit: 5
+        - name: twitter
+          time_limit: 10
+#time_limit: 15
+config: {
+  algorithm: [patric],
+  local-parallel: True,
+  global-parallel: [True],
+  local-degree-of-parallelism: [2],
+  dense-degree-exchange: [False],
+  global-degree-of-parallelism: [3],
+  skip-local-neighborhood: [False],
+  primary-cost-function: [N, D, DPD, IDPD],
+}
+

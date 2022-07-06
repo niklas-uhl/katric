@@ -1,4 +1,4 @@
-name: hybrid-detail
+name: hybrid-detail-patric
 ncores: [512, 1024, 2048, 4096, 8192, 16384]
 threads_per_rank: [1, 2, 4, 8, 16]
 graphs:
@@ -10,7 +10,7 @@ graphs:
     time_limit: 5
 #time_limit: 15
 config: {
-  algorithm: [cetric],
+  algorithm: [patric],
   local-parallel: True,
   global-parallel: [True],
   local-degree-of-parallelism: [2],

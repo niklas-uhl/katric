@@ -1,20 +1,16 @@
-name: hybrid-detail
-ncores: [512, 1024, 2048, 4096, 8192, 16384]
-threads_per_rank: [1, 2, 4, 8, 16]
+name: hybrid-test
+ncores: [1024, 2048, 4096]
+threads_per_rank: [1, 2, 4, 8, 16, 32]
 graphs:
-  - name: europe
-    time_limit: 3
-  - name: usa
-    time_limit: 3
-  - name: live-journal
-    time_limit: 5
+        - name: uk-2007-05
+          time_limit: 20
 #time_limit: 15
 config: {
   algorithm: [cetric],
   local-parallel: True,
   global-parallel: [True],
   local-degree-of-parallelism: [2],
-  dense-degree-exchange: [False],
+  dense-degree-exchange: [True],
   global-degree-of-parallelism: [3],
   skip-local-neighborhood: [False],
   primary-cost-function: [N, D, DPD, IDPD],
