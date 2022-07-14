@@ -1,0 +1,28 @@
+name: weak-scaling-longer-patric
+ncores: [512, 1024, 2048, 4096, 8192, 16384]
+threads_per_rank: [1, 2, 4, 8, 16]
+graphs:
+  - generator: rgg
+    n: 20
+    m: 24
+    scale_weak: True
+  - generator: rhg
+    n: 20
+    m: 24
+    gamma: 3.0
+    scale_weak: True
+      #- generator: gnm
+      #n: 20
+      #m: 24
+      #scale_weak: True
+time_limit: 20
+config: {
+  algorithm: [patric],
+  local-parallel: True,
+  global-parallel: [True],
+  local-degree-of-parallelism: [2],
+  dense-degree-exchange: [False, True],
+  global-degree-of-parallelism: [3],
+  skip-local-neighborhood: [False],
+  primary-cost-function: [none],
+}
