@@ -219,10 +219,10 @@ def load_suite_from_yaml(path):
     else:
         suite_type = "cetric"
     if "executable" in data:
-        if Path(path).is_absolute():
-            executable = data["executable"]
-        else:
-            executable = Path(path).parent / data["executable"]
+        #if Path(path).is_absolute():
+        #    executable = data["executable"]
+        #else:
+        executable = Path(os.getcwd()) / Path(path).parent / data["executable"]
     else:
         executable = None
     return ExperimentSuite(data["name"],

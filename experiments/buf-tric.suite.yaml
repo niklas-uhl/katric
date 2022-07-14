@@ -19,16 +19,14 @@ graphs:
     n: 20
     m: 24
     scale_weak: True
-    time_limit: 20
   - generator: rhg
     n: 20
     m: 24
     gamma: 3.0
     scale_weak: True
-    time_limit: 20
-#time_limit: 15
+time_limit: 20
 config: {
-  b: [True, False]
+  b: [True, False],
   s: [8000, 4000, 2000]
 }
 

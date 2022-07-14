@@ -191,7 +191,7 @@ class TricSBatchRunner(SBatchRunner):
         if isinstance(input, GenInputGraph):
             input_args = ['-g', str(input.generator), '-n', str(input.n(mpi_ranks * threads_per_rank)), '-m', str(input.m(mpi_ranks * threads_per_rank))]
             if input.generator == "rhg":
-                input_args += ['-e', input.params["gamma"]]
+                input_args += ['-e', str(input.params["gamma"])]
         elif isinstance(input, FileInputGraph):
             input_args = ["-f", str(input.path), "-i", "split"]
         cmd = [str(self.executable)] + input_args + expcore.params_to_flags(config)
