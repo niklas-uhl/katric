@@ -90,13 +90,10 @@ def main():
     if not args.suite:
         args.suite = suites.keys()
 
-    if args.machine == 'shared':
-        runner = SharedMemoryRunner(args.output_dir, verify_results=args.verify)
-    else:
-        runner = SBatchRunner(args.output_dir, args.job_output_dir, args.tasks_per_node, args.time_limit, args.test)
     for suitename in args.suite:
         suite = suites.get(suitename)
         if suite:
+            runner = get_runner(args, suite)
             runner.execute(suite)
 
     if args.machine == 'shared':

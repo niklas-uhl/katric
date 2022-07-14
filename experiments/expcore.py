@@ -80,9 +80,9 @@ class GenInputGraph(InputGraph):
         if self.scale_weak:
             if not math.log2(p).is_integer():
                 sys.exit("Number of PEs must be a power of two")
-            scaled_n = self.params["n"] + int(math.log2(p));
+            scaled_n = self.n(p)
             if "m" in self.params:
-                scaled_m = self.params["m"] + int(math.log2(p));
+                scaled_m = self.m(p)
             else:
                 scaled_m = None
             arg_list.append(str(scaled_n))
@@ -101,6 +101,18 @@ class GenInputGraph(InputGraph):
             arg_list.append(str(scaled_m))
         arg_list.append("--gen_statistics")
         return arg_list
+
+    def n(self, p):
+        if self.scale_weak:
+            return self.params["n"] + int(math.log2(p))
+        else:
+            return self.params["n"]
+
+    def m(self, p):
+        if self.scale_weak:
+            return self.params["m"] + int(math.log2(p))
+        else:
+            return self.params["m"]
 
     @property
     def name(self):
@@ -137,6 +149,8 @@ def load_inputs_from_yaml(yaml_path):
 class ExperimentSuite:
     def __init__(self,
                  name: str,
+                 suite_type: str,
+                 executable: None,
                  cores=[],
                  threads_per_rank=[1],
                  inputs=[],
@@ -145,6 +159,8 @@ class ExperimentSuite:
                  time_limit=None,
                  input_time_limit={}):
         self.name = name
+        self.suite_type = suite_type
+        self.executable = executable
         self.cores = cores
         self.threads_per_rank = threads_per_rank
         self.inputs = inputs
@@ -198,7 +214,20 @@ def load_suite_from_yaml(path):
             time_limit = graph.get("time_limit")
             if time_limit:
                 time_limits[graph["name"]] = time_limit
+    if "type" in data:
+        suite_type = data["type"]
+    else:
+        suite_type = "cetric"
+    if "executable" in data:
+        if Path(path).is_absolute():
+            executable = data["executable"]
+        else:
+            executable = Path(path).parent / data["executable"]
+    else:
+        executable = None
     return ExperimentSuite(data["name"],
+                           suite_type,
+                           executable,
                            data["ncores"],
                            data.get("threads_per_rank", [1]),
                            inputs,
@@ -225,11 +254,14 @@ def explode(config):
 def params_to_flags(params):
     flags = []
     for flag, value in params.items():
+        dash = "-"
+        if (len(flag) > 1):
+            dash += "-"
         if isinstance(value, bool):
             if value:
-                flags.append("--" + flag)
+                flags.append(dash + flag)
         else:
-            flags.append("--" + flag)
+            flags.append(dash + flag)
             flags.append(str(value))
     return flags
 

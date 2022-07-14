@@ -1,0 +1,33 @@
+name: plain-tric
+type: tric
+executable: ../../tric/build/tric
+ncores: [512, 1024, 2048, 4096]
+graphs:
+  - name: europe
+    time_limit: 3
+  - name: webbase-2001
+    time_limit: 10
+  - name: uk-2007-05
+    time_limit: 20
+  - name: twitter
+    time_limit: 10
+  - name: usa
+    time_limit: 3
+  - name: live-journal
+    time_limit: 5
+  - generator: rgg
+    n: 20
+    m: 24
+    scale_weak: True
+    time_limit: 20
+  - generator: rhg
+    n: 20
+    m: 24
+    gamma: 3.0
+    scale_weak: True
+    time_limit: 20
+#time_limit: 15
+config: {
+  b: [True, False]
+}
+

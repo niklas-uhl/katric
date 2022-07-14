@@ -94,6 +94,9 @@ class SBatchRunner:
         self.time_limit = time_limit
         self.use_test_partition = use_test_partition
 
+    def make_cmd_for_config(self, suite: ExperimentSuite, input, config_job_name, config_index, mpi_ranks, threads_per_rank, config):
+        raise NotImplementError("Please implement this method.")
+
     def execute(self, experiment_suite: ExperimentSuite):
         project = os.environ["PROJECT"]
         output_path = self.output_directory / experiment_suite.name
@@ -136,17 +139,13 @@ class SBatchRunner:
                     ranks_per_node = tasks_per_node // threads_per_rank
                     jobname = f"{experiment_suite.name}-{input_name}-np{mpi_ranks}-t{threads_per_rank}"
                     for i, config in enumerate(experiment_suite.configs):
-                        json_path = output_path / f"{input_name}-np{mpi_ranks}-t{threads_per_rank}-log-c{i}.json"
-                        config['json-output'] = str(json_path)
                         job_time_limit = experiment_suite.get_input_time_limit(
                             input.name)
                         if not job_time_limit:
                             job_time_limit = self.time_limit
                         time_limit += job_time_limit
-                        cmd = expcore.cetric_command(input, mpi_ranks,
-                                                     threads_per_rank,
-                                                     **config)
                         config_jobname = jobname + "-c" + str(i)
+                        cmd = self.make_cmd_for_config(experiment_suite, input, config_jobname, i, mpi_ranks, threads_per_rank, config)
                         cmd_string = command_template.substitute(
                             cmd=" ".join(cmd),
                             jobname=config_jobname,
@@ -166,3 +165,45 @@ class SBatchRunner:
         print(
             f"Created {njobs} job files in directory {self.job_output_directory}."
         )
+
+class CetricSBatchRunner(SBatchRunner):
+    def __init__(self, output_directory, job_output_directory, tasks_per_node, time_limit, use_test_partition = False):
+        SBatchRunner.__init__(self, output_directory, job_output_directory, tasks_per_node, time_limit, use_test_partition)
+
+    def make_cmd_for_config(self, suite: ExperimentSuite, input, config_job_name, config_index, mpi_ranks, threads_per_rank, config):
+        json_path = self.output_directory / suite.name / f"{config_job_name}.json"
+        config = config.copy()
+        config['json-output'] = str(json_path)
+        cmd = expcore.cetric_command(input, mpi_ranks,
+                                        threads_per_rank,
+                                        **config)
+        return cmd
+
+class TricSBatchRunner(SBatchRunner):
+    def __init__(self, output_directory, job_output_directory, tasks_per_node, time_limit, use_test_partition = False):
+        SBatchRunner.__init__(self, output_directory, job_output_directory, tasks_per_node, time_limit, use_test_partition)
+
+    def set_executable(self, executable):
+        self.executable = executable
+
+    def make_cmd_for_config(self, suite: ExperimentSuite, input, config_job_name, config_index, mpi_ranks, threads_per_rank, config):
+        config = config.copy()
+        if isinstance(input, GenInputGraph):
+            input_args = ['-g', str(input.generator), '-n', str(input.n(mpi_ranks * threads_per_rank)), '-m', str(input.m(mpi_ranks * threads_per_rank))]
+            if input.generator == "rhg":
+                input_args += ['-e', input.params["gamma"]]
+        elif isinstance(input, FileInputGraph):
+            input_args = ["-f", str(input.path), "-i", "split"]
+        cmd = [str(self.executable)] + input_args + expcore.params_to_flags(config)
+        return cmd
+
+def get_runner(args, suite):
+    if args.machine == 'shared':
+        runner = SharedMemoryRunner(args.output_dir, verify_results=args.verify)
+        return runner
+    if suite.suite_type == 'cetric':
+        return CetricSBatchRunner(args.output_dir, args.job_output_dir, args.tasks_per_node, args.time_limit, args.test)
+    if suite.suite_type == 'tric':
+        runner = TricSBatchRunner(args.output_dir, args.job_output_dir, args.tasks_per_node, args.time_limit)
+        runner.set_executable(suite.executable)
+        return runner
