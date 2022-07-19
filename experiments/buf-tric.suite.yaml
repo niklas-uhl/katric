@@ -1,7 +1,7 @@
 name: buf-tric
 type: tric
 executable: ../../tric/build/tric-buffered
-ncores: [512, 1024, 2048, 4096]
+ncores: [512, 1024, 2048, 4096, 8192, 16384]
 graphs:
   - name: europe
     time_limit: 3
