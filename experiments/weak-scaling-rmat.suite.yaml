@@ -1,0 +1,27 @@
+name: weak-scaling-rmat
+ncores: [512, 1024, 2048, 4096, 8192]
+threads_per_rank: [1, 2, 4, 8, 16]
+graphs:
+      #- generator: rmat
+      #  n: 20
+      #  m: 24
+      #  scale_weak: True
+      - generator: rmat
+        n: 18
+        m: 22
+        scale_weak: True
+      #- generator: rmat
+      #  n: 16
+      #  m: 20
+      #  scale_weak: True
+time_limit: 20
+config: {
+  algorithm: [cetric, patric],
+  local-parallel: True,
+  global-parallel: [True],
+  local-degree-of-parallelism: [2],
+  dense-degree-exchange: [False, True],
+  global-degree-of-parallelism: [3],
+  skip-local-neighborhood: [False],
+  primary-cost-function: [none, D],
+}
