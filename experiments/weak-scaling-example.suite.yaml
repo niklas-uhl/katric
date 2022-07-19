@@ -21,6 +21,10 @@ graphs:
     n: 10
     m: 14
     scale_weak: True
+  - generator: rmat
+    n: 10
+    m: 14
+    scale_weak: True
 time_limit: 10
 config: {
   "algorithm": cetric,

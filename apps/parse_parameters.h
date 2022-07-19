@@ -38,7 +38,7 @@ inline std::shared_ptr<CLI::App> parse_parameters(const std::string& app_name, c
 inline void parse_gen_parameters(CLI::App& app, cetric::Config& conf) {
     app.add_option("--seed", conf.gen.seed);
     app.add_option("--gen", conf.gen.generator)
-        ->transform(CLI::IsMember({"gnm_undirected", "rdg_2d", "rdg_3d", "rgg_2d", "rgg_3d", "rhg", "ba", "grid_2d"}));
+      ->transform(CLI::IsMember({"gnm_undirected", "rdg_2d", "rdg_3d", "rgg_2d", "rgg_3d", "rhg", "ba", "grid_2d", "rmat"}));
     app.add_option("--gen_n", conf.gen.n);
     app.add_option("--gen_m", conf.gen.m);
     // app.add_option("--gen_r", conf.gen_r);
@@ -46,6 +46,9 @@ inline void parse_gen_parameters(CLI::App& app, cetric::Config& conf) {
     app.add_flag("--gen_periodic", conf.gen.periodic);
     app.add_option("--gen_gamma", conf.gen.gamma);
     app.add_option("--gen_d", conf.gen.d);
+    app.add_option("--gen_a", conf.gen.a);
+    app.add_option("--gen_b", conf.gen.b);
+    app.add_option("--gen_c", conf.gen.c);
     app.add_flag("--gen_verify_graph", conf.gen.verify_graph);
     app.add_flag("--gen_statistics", conf.gen.statistics);
 }

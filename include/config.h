@@ -134,6 +134,9 @@ struct Config {
                     cereal::make_nvp("gen_p", gen.p),                        //
                     cereal::make_nvp("gen_gamma", gen.gamma),                //
                     cereal::make_nvp("gen_d", gen.d),                        //
+                    cereal::make_nvp("gen_a", gen.a),                        //
+                    cereal::make_nvp("gen_b", gen.b),                        //
+                    cereal::make_nvp("gen_c", gen.c),                        //
                     cereal::make_nvp("gen_seed", gen.seed),                  //
                     cereal::make_nvp("gen_verify_graph", gen.verify_graph),  //
                     cereal::make_nvp("gen_statistics", gen.statistics)       //

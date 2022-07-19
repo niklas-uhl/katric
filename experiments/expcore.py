@@ -47,6 +47,7 @@ class GenInputGraph(InputGraph):
         "rhg": ["m", "gamma"],
         "gnm": ["m"],
         "rgg": ["m"],
+        "rmat": ["m"],
         "rdg_2d": [],
         "rdg_3d": [],
     }
@@ -76,6 +77,8 @@ class GenInputGraph(InputGraph):
             arg_list.append('rdg_3d')
         elif self.generator == 'gnm':
             arg_list.append('gnm_undirected')
+        elif self.generator == 'rmat':
+            arg_list.append('rmat')
         arg_list.append("--gen_n")
         if self.scale_weak:
             if not math.log2(p).is_integer():
@@ -99,6 +102,18 @@ class GenInputGraph(InputGraph):
         elif self.generator == 'gnm':
             arg_list.append("--gen_m")
             arg_list.append(str(scaled_m))
+        elif self.generator == 'rmat':
+            arg_list.append("--gen_m")
+            arg_list.append(str(scaled_m))
+            if 'a' in self.params:
+                arg_list.append("--gen_a")
+                arg_list.append(str(a))
+            if 'b' in self.params:
+                arg_list.append("--gen_b")
+                arg_list.append(str(b))
+            if 'c' in self.params:
+                arg_list.append("--gen_c")
+                arg_list.append(str(c))
         arg_list.append("--gen_statistics")
         return arg_list
 
