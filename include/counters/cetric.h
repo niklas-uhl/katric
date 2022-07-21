@@ -24,6 +24,7 @@
 #include "datastructures/graph_definitions.h"
 #include "debug_assert.hpp"
 #include "graph-io/local_graph_view.h"
+#include "kassert/internal/assertion_macros.hpp"
 #include "kassert/kassert.hpp"
 #include "tlx/algorithm/multiway_merge.hpp"
 #include "tlx/logger.hpp"
@@ -122,7 +123,7 @@ inline size_t run_patric(DistributedGraph<>& G,
                          PEID rank,
                          PEID size,
                          CommunicationPolicy&&) {
-    bool debug = false;
+    bool debug = true;
     if (conf.num_threads > 1) {
         G.find_ghost_ranks(execution_policy::parallel{});
     } else {
@@ -204,7 +205,15 @@ inline size_t run_patric(DistributedGraph<>& G,
         stats, node_ordering::id());
     triangle_count += triangle_count_global_phase.combine(std::plus<>{});
     stats.local.global_phase_time = timer.elapsed_time();
-    if constexpr (KASSERT_ASSERTION_LEVEL >= kassert::assert::normal) {
+    LOG << "[R" << rank << "] "
+        << "Global phase finished " << stats.local.global_phase_time << " s";
+    timer.restart();
+    MPI_Reduce(&triangle_count, &stats.counted_triangles, 1, MPI_NODE, MPI_SUM, 0, MPI_COMM_WORLD);
+    stats.local.reduce_time = timer.elapsed_time();
+    if constexpr (KASSERT_ENABLED(kassert::assert::normal)) {
+        timer.restart();
+        LOG << "[R" << rank << "] "
+            << "Verification started" << stats.local.local_phase_time << " s";
         KASSERT(triangles.size() == triangle_count);
         std::sort(triangles.begin(), triangles.end(), [](auto const& lhs, auto const& rhs) {
             return std::tuple(lhs.x.id(), lhs.y.id(), lhs.z.id()) < std::tuple(rhs.x.id(), rhs.y.id(), rhs.z.id());
@@ -218,12 +227,9 @@ inline size_t run_patric(DistributedGraph<>& G,
             KASSERT(false, "Duplicate triangle " << *current);
             current++;
         }
+        LOG << "[R" << rank << "] "
+            << "Verification finished " << timer.elapsed_time() << " s";
     }
-    LOG << "[R" << rank << "] "
-        << "Global phase finished " << stats.local.global_phase_time << " s";
-    timer.restart();
-    MPI_Reduce(&triangle_count, &stats.counted_triangles, 1, MPI_NODE, MPI_SUM, 0, MPI_COMM_WORLD);
-    stats.local.reduce_time = timer.elapsed_time();
     return stats.counted_triangles;
 }
 
@@ -234,7 +240,7 @@ inline size_t run_cetric(DistributedGraph<>& G,
                          PEID rank,
                          PEID size,
                          CommunicationPolicy&&) {
-    bool debug = false;
+    bool debug = true;
     if (conf.num_threads > 1) {
         G.find_ghost_ranks(execution_policy::parallel{});
     } else {
@@ -429,7 +435,15 @@ inline size_t run_cetric(DistributedGraph<>& G,
     }
     triangle_count += triangle_count_global_phase.combine(std::plus<>{});
     stats.local.global_phase_time = timer.elapsed_time();
-    if constexpr (KASSERT_ASSERTION_LEVEL >= kassert::assert::normal) {
+    LOG << "[R" << rank << "] "
+        << "Global phase finished " << stats.local.global_phase_time << " s";
+    timer.restart();
+    MPI_Reduce(&triangle_count, &stats.counted_triangles, 1, MPI_NODE, MPI_SUM, 0, MPI_COMM_WORLD);
+    stats.local.reduce_time = timer.elapsed_time();
+    if constexpr (KASSERT_ENABLED(kassert::assert::normal)) {
+        timer.restart();
+        LOG << "[R" << rank << "] "
+            << "Verification started" << stats.local.local_phase_time << " s";
         KASSERT(triangles.size() == triangle_count);
         std::sort(triangles.begin(), triangles.end(), [](auto const& lhs, auto const& rhs) {
             return std::tuple(lhs.x.id(), lhs.y.id(), lhs.z.id()) < std::tuple(rhs.x.id(), rhs.y.id(), rhs.z.id());
@@ -443,12 +457,9 @@ inline size_t run_cetric(DistributedGraph<>& G,
             KASSERT(false, "Duplicate triangle " << *current);
             current++;
         }
+        LOG << "[R" << rank << "] "
+            << "Verification finished " << timer.elapsed_time() << " s";
     }
-    LOG << "[R" << rank << "] "
-        << "Global phase finished " << stats.local.global_phase_time << " s";
-    timer.restart();
-    MPI_Reduce(&triangle_count, &stats.counted_triangles, 1, MPI_NODE, MPI_SUM, 0, MPI_COMM_WORLD);
-    stats.local.reduce_time = timer.elapsed_time();
     return stats.counted_triangles;
 }
 }  // namespace cetric
