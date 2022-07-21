@@ -319,13 +319,15 @@ public:
                                            NodeIterator interface_nodes_end,
                                            NodeOrdering&& node_ordering,
                                            GhostSet const& ghosts) {
-        auto queue = []() {
-            if constexpr (std::is_same_v<CommunicationPolicy, cetric::GridPolicy>) {
-                return cetric::make_indirect_queue<RankEncodedNodeId>(Merger{}, Splitter{});
-            } else {
-                return message_queue::make_buffered_queue<RankEncodedNodeId>(Merger{}, Splitter{});
-            }
-        }();
+        auto base_queue = message_queue::make_buffered_queue<RankEncodedNodeId>(Merger{}, Splitter{});
+        auto queue = IndirectMessageQueue(base_queue);
+        // auto queue = [&]() {
+        //     if constexpr (std::is_same_v<CommunicationPolicy, cetric::GridPolicy>) {
+        //         return IndirectMessageQueue(base_queue);
+        //     } else {
+        //         return base_queue;
+        //     }
+        // }();
         queue.set_threshold(threshold_);
         cetric::profiling::Timer phase_time;
         for (auto current = interface_nodes_begin; current != interface_nodes_end; current++) {
@@ -370,8 +372,9 @@ public:
                                          NodeOrdering&& node_ordering,
                                          GhostSet const& ghosts) {
         KASSERT(conf_.num_threads > 1ul);
-        auto queue =
+        auto base_queue =
             message_queue::make_concurrent_buffered_queue<RankEncodedNodeId>(conf_.num_threads, Merger{}, Splitter{});
+        auto queue = IndirectMessageQueue(base_queue);
         queue.set_threshold(threshold_);
         cetric::profiling::Timer phase_time;
         std::atomic<size_t> nodes_queued = 0;
@@ -410,8 +413,7 @@ public:
         }
         while (true) {
             if (write_jobs == 0 && nodes_queued == 0) {
-                // atomic_debug(fmt::format("No more polling, enqueued: {}, done: {}", pool.enqueued(),
-                // pool.done()));
+                atomic_debug(fmt::format("No more polling, enqueued: {}, done: {}", pool.enqueued(), pool.done()));
                 break;
             }
             queue.check_for_overflow_and_flush();

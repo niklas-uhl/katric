@@ -28,18 +28,18 @@ PEID datatype_to_PEID<graph::RankEncodedNodeId>(graph::RankEncodedNodeId const& 
 }
 
 using namespace graph;
-template <typename T, class Merger, class Splitter>
+template <typename QueueType>
 class IndirectMessageQueue {
 public:
-    IndirectMessageQueue(Merger&& merger, Splitter&& splitter)
-        : rank_(), size_(), queue_(std::move(merger), std::move(splitter)) {
+    using value_type = typename QueueType::value_type;
+    IndirectMessageQueue(QueueType& queue) : rank_(), size_(), queue_(queue) {
         MPI_Comm_rank(MPI_COMM_WORLD, &rank_);
         MPI_Comm_size(MPI_COMM_WORLD, &size_);
         grid_size_ = std::round(std::sqrt(size_));
     };
-    void post_message(std::vector<T>&& message, PEID receiver, bool direct_send = false) {
-        message.push_back(PEID_to_datatype<T>(rank_));
-        message.push_back(PEID_to_datatype<T>(receiver));
+    void post_message(std::vector<value_type>&& message, PEID receiver, bool direct_send = false) {
+        message.push_back(PEID_to_datatype<value_type>(rank_));
+        message.push_back(PEID_to_datatype<value_type>(receiver));
         PEID proxy;
         if (direct_send) {
             proxy = receiver;
@@ -60,7 +60,7 @@ public:
     void poll(MessageHandler&& on_message) {
         // static_assert(std::is_invocable_v<MessageHandler, typename std::vector<T>::iterator,
         //                                   typename std::vector<T>::iterator, PEID>);
-        queue_.poll([&](SharedVectorSpan<T> span, PEID /*sender*/) {
+        queue_.poll([&](SharedVectorSpan<value_type> span, PEID /*sender*/) {
             auto begin = span.begin();
             auto end = span.end();
             PEID receiver = datatype_to_PEID(*(end - 1));
@@ -82,7 +82,7 @@ public:
     void terminate(MessageHandler&& on_message) {
         // static_assert(std::is_invocable_v<MessageHandler, typename std::vector<T>::iterator,
         //                                   typename std::vector<T>::iterator, PEID>);
-        queue_.terminate([&](SharedVectorSpan<T> span, PEID /*sender*/) {
+        queue_.terminate([&](SharedVectorSpan<value_type> span, PEID /*sender*/) {
             auto begin = span.begin();
             auto end = span.end();
             PEID receiver = datatype_to_PEID(*(end - 1));
@@ -102,6 +102,10 @@ public:
 
     size_t overflows() const {
         return queue_.overflows();
+    }
+
+    void check_for_overflow_and_flush() {
+        queue_.check_for_overflow_and_flush();
     }
 
     const message_queue::MessageStatistics& stats() {
@@ -143,10 +147,10 @@ private:
     PEID rank_;
     PEID size_;
     PEID grid_size_;
-    message_queue::BufferedMessageQueue<T, Merger, Splitter> queue_;
+    QueueType& queue_;
 };
-template <class T, typename Merger, typename Splitter>
-auto make_indirect_queue(Merger&& merger, Splitter&& splitter) {
-    return IndirectMessageQueue<T, Merger, Splitter>(std::forward<Merger>(merger), std::forward<Splitter>(splitter));
-}
+// template <class QueueType, class T, typename Merger, typename Splitter>
+// auto make_indirect_queue(Merger&& merger, Splitter&& splitter) {
+//     return IndirectMessageQueue<QueueType>(std::forward<Merger>(merger), std::forward<Splitter>(splitter));
+// }
 }  // namespace cetric

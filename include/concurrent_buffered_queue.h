@@ -30,31 +30,35 @@ class ConcurrentBufferedMessageQueue {
     // static_assert(std::is_invocable_v<Merger, std::vector<T>&, std::vector<T>, int>);
 
 public:
-    ConcurrentBufferedMessageQueue(size_t num_threads, Merger&& merge, Splitter&& split)
-        : queue_(), buffers_(queue_.size()), merge(merge), split(split), num_worker_threads_(num_threads - 1) {}
+  using merger = Merger;
+  using splitter = Splitter;
+  using value_type = T;
 
-    void post_message(std::vector<T>&& message, PEID receiver, int tag = 0) {
-        num_writing_threads_++;
-        {
-            if (buffer_ocupacy_ >= threshold_) {
-                waiting_threads_++;
-                // atomic_debug("Waiting");
-                {
-                    std::unique_lock lock(mutex_);
-                    cv_buffer_full_.wait(lock, [this]() { return buffer_ocupacy_ < threshold_; });
-                }
-                waiting_threads_--;
-                // atomic_debug("Waiting finished");
-            }
-            auto& buffer = buffers_[receiver];
-            std::stringstream out;
-            // out << "message from thread " << tbb::this_task_arena::current_thread_index() << " for rank " << receiver
-            //     << ": " << message;
-            // atomic_debug(out.str());
-            size_t added_elements = merge(buffer, std::forward<std::vector<T>>(message), tag);
-            buffer_ocupacy_ += added_elements;
-        }
-        num_writing_threads_--;
+  ConcurrentBufferedMessageQueue(size_t num_threads, Merger&& merge, Splitter&& split)
+      : queue_(), buffers_(queue_.size()), merge(merge), split(split), num_worker_threads_(num_threads - 1) {}
+
+  void post_message(std::vector<T>&& message, PEID receiver, int tag = 0) {
+      num_writing_threads_++;
+      {
+          if (buffer_ocupacy_ >= threshold_) {
+              waiting_threads_++;
+              // atomic_debug("Waiting");
+              {
+                  std::unique_lock lock(mutex_);
+                  cv_buffer_full_.wait(lock, [this]() { return buffer_ocupacy_ < threshold_; });
+              }
+              waiting_threads_--;
+              // atomic_debug("Waiting finished");
+          }
+          auto& buffer = buffers_[receiver];
+          std::stringstream out;
+          // out << "message from thread " << tbb::this_task_arena::current_thread_index() << " for rank " << receiver
+          //     << ": " << message;
+          // atomic_debug(out.str());
+          size_t added_elements = merge(buffer, std::forward<std::vector<T>>(message), tag);
+          buffer_ocupacy_ += added_elements;
+      }
+      num_writing_threads_--;
     }
 
     void check_for_overflow_and_flush() {
