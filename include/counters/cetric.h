@@ -122,7 +122,9 @@ inline size_t run_patric(DistributedGraph<>& G,
                          PEID rank,
                          PEID size,
                          CommunicationPolicy&&) {
-    bool debug = true;
+    size_t threshold = get_threshold(G, conf);
+    stats.local.global_phase_threshold= threshold;
+    bool debug = false;
     if (conf.num_threads > 1) {
         G.find_ghost_ranks(execution_policy::parallel{});
     } else {
@@ -130,6 +132,7 @@ inline size_t run_patric(DistributedGraph<>& G,
     }
     node_set ghosts;
     tlx::MultiTimer phase_timer;
+    ConditionalBarrier(true);
     phase_timer.start("primary_load_balancing");
     if ((conf.gen.generator.empty() && conf.primary_cost_function != "N") ||
         (!conf.gen.generator.empty() && conf.primary_cost_function != "none")) {
@@ -169,6 +172,7 @@ inline size_t run_patric(DistributedGraph<>& G,
     ConditionalBarrier(conf.global_synchronization);
     phase_timer.start("local_phase");
     auto ctr = cetric::CetricEdgeIterator(G, conf, rank, size, CommunicationPolicy{});
+    ctr.set_threshold(threshold);
     size_t triangle_count = 0;
     tbb::concurrent_vector<Triangle<RankEncodedNodeId>> triangles;
     tbb::combinable<size_t> triangle_count_local_phase{0};
@@ -240,8 +244,10 @@ inline size_t run_cetric(DistributedGraph<>& G,
                          PEID rank,
                          PEID size,
                          CommunicationPolicy&&) {
+    size_t threshold = get_threshold(G, conf);
+    stats.local.global_phase_threshold = threshold;
     tlx::MultiTimer phase_timer;
-    bool debug = true;
+    bool debug = false;
     if (conf.num_threads > 1) {
         G.find_ghost_ranks(execution_policy::parallel{});
     } else {
@@ -288,6 +294,7 @@ inline size_t run_cetric(DistributedGraph<>& G,
     ConditionalBarrier(conf.global_synchronization);
     phase_timer.start("local_phase");
     auto ctr = cetric::CetricEdgeIterator(G, conf, rank, size, CommunicationPolicy{});
+    ctr.set_threshold(threshold);
     size_t triangle_count = 0;
     tbb::concurrent_vector<Triangle<RankEncodedNodeId>> triangles;
     tbb::combinable<size_t> triangle_count_local_phase{0};
@@ -363,6 +370,7 @@ inline size_t run_cetric(DistributedGraph<>& G,
         phase_timer.start("global_phase");
         ghost_degrees = AuxiliaryNodeData<Degree>();
         cetric::CetricEdgeIterator ctr_global(G_global_phase, conf, rank, size, CommunicationPolicy{});
+        ctr.set_threshold(threshold);
         ctr_global.run_local(
             [&](Triangle<RankEncodedNodeId> t) {
                 (void)t;
@@ -411,6 +419,7 @@ inline size_t run_cetric(DistributedGraph<>& G,
         phase_timer.start("global_phase");
         ghost_degrees = AuxiliaryNodeData<Degree>();
         cetric::CetricEdgeIterator ctr_global(G_compact, conf, rank, size, CommunicationPolicy{});
+        ctr.set_threshold(threshold);
         ctr_global.run_distributed(
             [&](Triangle<RankEncodedNodeId> t) {
                 (void)t;

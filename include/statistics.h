@@ -106,6 +106,7 @@ struct Statistics {
             skipped_nodes = rhs.skipped_nodes.load();
             local_triangles = rhs.local_triangles.load();
             type3_triangles = rhs.type3_triangles.load();
+            global_phase_threshold = rhs.global_phase_threshold;
             local_time = rhs.local_time;
             local_wall_time = rhs.local_wall_time;
         }
@@ -123,6 +124,7 @@ struct Statistics {
             skipped_nodes = rhs.skipped_nodes.load();
             local_triangles = rhs.local_triangles.load();
             type3_triangles = rhs.type3_triangles.load();
+            global_phase_threshold = rhs.global_phase_threshold;
             local_time = rhs.local_time;
             local_wall_time = rhs.local_wall_time;
             return *this;
@@ -141,6 +143,7 @@ struct Statistics {
         std::atomic<size_t> skipped_nodes = 0;
         std::atomic<size_t> local_triangles = 0;
         std::atomic<size_t> type3_triangles = 0;
+        size_t global_phase_threshold = 0;
         double local_wall_time = 0;
         double local_time = 0;
 
@@ -161,7 +164,7 @@ struct Statistics {
                     CEREAL_NVP(preprocessing_global_phase), CEREAL_NVP(primary_load_balancing),
                     CEREAL_NVP(secondary_load_balancing), CEREAL_NVP(local_phase_time), CEREAL_NVP(contraction_time),
                     CEREAL_NVP(global_phase_time), CEREAL_NVP(reduce_time), CEREAL_NVP(message_statistics),
-                    CEREAL_NVP(local_wall_time), CEREAL_NVP(local_time));
+                    CEREAL_NVP(global_phase_threshold), CEREAL_NVP(local_wall_time), CEREAL_NVP(local_time));
             archive(cereal::make_nvp("skipped_nodes", skipped_nodes.load()),
                     cereal::make_nvp("local_triangles", local_triangles.load()),
                     cereal::make_nvp("type3_triangles", type3_triangles.load()));
@@ -173,7 +176,7 @@ struct Statistics {
                     CEREAL_NVP(preprocessing_global_phase), CEREAL_NVP(primary_load_balancing),
                     CEREAL_NVP(secondary_load_balancing), CEREAL_NVP(local_phase_time), CEREAL_NVP(contraction_time),
                     CEREAL_NVP(global_phase_time), CEREAL_NVP(reduce_time), CEREAL_NVP(message_statistics),
-                    CEREAL_NVP(local_wall_time), CEREAL_NVP(local_time));
+                    CEREAL_NVP(global_phase_threshold), CEREAL_NVP(local_wall_time), CEREAL_NVP(local_time));
             size_t skipped_nodes_tmp;
             size_t local_triangles_tmp;
             size_t type3_triangles_tmp;
