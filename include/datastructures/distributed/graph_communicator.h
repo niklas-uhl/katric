@@ -12,6 +12,7 @@
 #include <google/dense_hash_map>
 #include <google/dense_hash_set>
 #include <optional>
+#include <tlx/multi_timer.hpp>
 #include <tuple>
 #include <vector>
 #include "../../communicator.h"
@@ -38,17 +39,24 @@ public:
     template <typename DegreeFunc>
     void get_ghost_degree(DegreeFunc&& on_degree_receive,
                           cetric::profiling::MessageStatistics& stats,
-                          bool sparse) {
+                          bool sparse,
+                          bool compact) {
         get_ghost_data([this](auto node) { return RankEncodedNodeId{G.degree(node)}; },
                        [&on_degree_receive](auto node, auto data) { on_degree_receive(node, data.id()); }, stats,
-                       sparse);
+                       sparse, compact);
     }
 
     template <typename DataFunc, typename ReceiveFunc>
     void get_ghost_data(DataFunc&& get_data,
                         ReceiveFunc&& on_receive,
                         cetric::profiling::MessageStatistics& stats,
-                        bool sparse) {
+                        bool sparse,
+                        bool compact) {
+        if (compact) {
+            get_ghost_data_compact(std::forward<DataFunc>(get_data), std::forward<ReceiveFunc>(on_receive), stats,
+                                   sparse);
+            return;
+        }
         //  assert(G.ghost_ranks_available());
         send_buffers.clear();
         receive_buffers.clear();
@@ -84,6 +92,62 @@ public:
                 on_receive(node, buffer[i + 1]);
             }
         }
+    }
+    template <typename DataFunc, typename ReceiveFunc>
+    void get_ghost_data_compact(DataFunc&& get_data,
+                                ReceiveFunc&& on_receive,
+                                cetric::profiling::MessageStatistics& stats,
+                                bool sparse) {
+        //  assert(G.ghost_ranks_available());
+        // tlx::MultiTimer timer;
+        // timer.start("copy_degree");
+        send_buffers.clear();
+        receive_buffers.clear();
+        std::vector<std::vector<RankEncodedNodeId>> send_buffers_vec;
+        if (!sparse) {
+            send_buffers_vec.resize(size_);
+        }
+        for (auto node : G.local_nodes()) {
+            neighboring_PEs.clear();
+            if (G.is_interface_node(node)) {
+                auto data = get_data(node);
+                for (auto neighbor : G.adj(node).neighbors()) {
+                    if (neighbor.rank() != rank_) {
+                        PEID rank = neighbor.rank();
+                        if (neighboring_PEs.find(rank) == neighboring_PEs.end()) {
+                            // atomic_debug(fmt::format("Sending degree of {} to rank {}", node, rank));
+                            if (sparse) {
+                                send_buffers[rank].emplace_back(node);
+                                send_buffers[rank].emplace_back(data);
+                            } else {
+                                send_buffers_vec[rank].emplace_back(node);
+                                send_buffers_vec[rank].emplace_back(data);
+                            }
+                            neighboring_PEs.insert(rank);
+                        }
+                    }
+                }
+            }
+        }
+        // timer.start("all2all");
+        std::vector<RankEncodedNodeId> recv_vec;
+        CompactBuffer recv_buf(recv_vec, rank_, size_);
+        if (sparse) {
+            CommunicationUtility::sparse_all_to_all<RankEncodedNodeId>(send_buffers, recv_buf, rank_, size_,
+                                                                       message_tag_, stats);
+        } else {
+            CommunicationUtility::all_to_all(send_buffers_vec, recv_buf, rank_, size_, message_tag_, stats);
+        }
+        // timer.start("process");
+        for (size_t i = 0; i < recv_vec.size(); i += 2) {
+            RankEncodedNodeId node = recv_vec[i];
+            on_receive(node, recv_vec[i + 1]);
+        }
+        // timer.stop();
+        // std::stringstream out;
+        // out << "[R" << rank_ << "] ";
+        // timer.print("info", out);
+        // std::cout << out.str();
     }
 
     // template <typename OnDegreeFunc>
@@ -237,7 +301,7 @@ private:
         stats.send_volume += G.edge_heads.size();
         stats.receive_volume += head.size();
         errcode = MPI_Alltoallv(G.edge_heads.data(), send_counts.data(), send_displs.data(), MPI_NODE, head.data(),
-                      recv_counts.data(), recv_displs.data(), MPI_NODE, MPI_COMM_WORLD);
+                                recv_counts.data(), recv_displs.data(), MPI_NODE, MPI_COMM_WORLD);
         check_mpi_error(errcode, __FILE__, __LINE__);
         G.edge_heads.shrink_to_fit();
 

@@ -6,6 +6,7 @@
 #include <datastructures/auxiliary_node_data.h>
 #include <datastructures/distributed/graph_communicator.h>
 #include <load_balancing.h>
+#include <mpi.h>
 #include <statistics.h>
 #include <tbb/combinable.h>
 #include <tbb/concurrent_vector.h>
@@ -48,7 +49,7 @@ inline void preprocessing(DistributedGraph<NodeIndexer>& G,
         ghost_degree = AuxiliaryNodeData<Degree>{ghosts.begin(), ghosts.end()};
         DegreeCommunicator comm(G, conf.rank, conf.PEs, as_int(MessageTag::Orientation));
         comm.get_ghost_degree([&](RankEncodedNodeId node, Degree degree) { ghost_degree[node] = degree; },
-                              stats.message_statistics, !conf.dense_degree_exchange);
+                              stats.message_statistics, !conf.dense_degree_exchange, conf.compact_degree_exchange);
 
         phase_timer.start("orientation");
         auto nodes = G.local_nodes();
@@ -156,6 +157,7 @@ inline size_t run_patric(DistributedGraph<>& G,
             G.find_ghost_ranks(execution_policy::sequential{});
         }
     }
+    ConditionalBarrier(conf.global_synchronization);
     AuxiliaryNodeData<Degree> ghost_degrees;
     LOG << "[R" << rank << "] "
         << "Primary load balancing finished ";
@@ -164,6 +166,7 @@ inline size_t run_patric(DistributedGraph<>& G,
     preprocessing(G, stats.local.preprocessing_local_phase, ghost_degrees, ghosts, conf, Phase::Local);
     LOG << "[R" << rank << "] "
         << "Preprocessing finished";
+    ConditionalBarrier(conf.global_synchronization);
     phase_timer.start("local_phase");
     auto ctr = cetric::CetricEdgeIterator(G, conf, rank, size, CommunicationPolicy{});
     size_t triangle_count = 0;
@@ -186,6 +189,7 @@ inline size_t run_patric(DistributedGraph<>& G,
     triangle_count += triangle_count_local_phase.combine(std::plus<>{});
     LOG << "[R" << rank << "] "
         << "Local phase finished ";
+    ConditionalBarrier(conf.global_synchronization);
     phase_timer.start("global_phase");
     tbb::combinable<size_t> triangle_count_global_phase{0};
     ctr.run_distributed(
@@ -276,10 +280,12 @@ inline size_t run_cetric(DistributedGraph<>& G,
         << "Primary load balancing finished ";
     // G.expand_ghosts();
 
+    ConditionalBarrier(conf.global_synchronization);
     phase_timer.start("preprocessing");
     preprocessing(G, stats.local.preprocessing_local_phase, ghost_degrees, ghosts, conf, Phase::Local);
     LOG << "[R" << rank << "] "
         << "Preprocessing finished ";
+    ConditionalBarrier(conf.global_synchronization);
     phase_timer.start("local_phase");
     auto ctr = cetric::CetricEdgeIterator(G, conf, rank, size, CommunicationPolicy{});
     size_t triangle_count = 0;
@@ -302,6 +308,7 @@ inline size_t run_cetric(DistributedGraph<>& G,
     triangle_count += triangle_count_local_phase.combine(std::plus<>{});
     LOG << "[R" << rank << "] "
         << "Local phase finished ";
+    ConditionalBarrier(conf.global_synchronization);
     phase_timer.start("contraction");
     auto nodes = G.local_nodes();
     if (conf.local_parallel) {
@@ -321,6 +328,7 @@ inline size_t run_cetric(DistributedGraph<>& G,
     ghosts = decltype(ghosts){};
     // atomic_debug(fmt::format("Found {} triangles in local phase",
     // triangle_count_local_phase.combine(std::plus<>{})));
+    ConditionalBarrier(conf.global_synchronization);
     phase_timer.start("secondary_load_balancing");
     tbb::combinable<size_t> triangle_count_global_phase{0};
     if (conf.secondary_cost_function != "none") {
@@ -347,9 +355,11 @@ inline size_t run_cetric(DistributedGraph<>& G,
         }
         LOG << "[R" << rank << "] "
             << "Secondary load balancing finished ";
+        ConditionalBarrier(conf.global_synchronization);
         phase_timer.start("preprocessing");
         preprocessing(G_global_phase, stats.local.preprocessing_global_phase, ghost_degrees, ghosts, conf,
                       Phase::Global);
+        ConditionalBarrier(conf.global_synchronization);
         phase_timer.start("global_phase");
         ghost_degrees = AuxiliaryNodeData<Degree>();
         cetric::CetricEdgeIterator ctr_global(G_global_phase, conf, rank, size, CommunicationPolicy{});
@@ -394,8 +404,10 @@ inline size_t run_cetric(DistributedGraph<>& G,
         // atomic_debug(
         // fmt::format("Found {} triangles in global phase 2", triangle_count_global_phase.combine(std::plus<>{})));
     } else {
+        ConditionalBarrier(conf.global_synchronization);
         phase_timer.start("preprocessing");
         preprocessing(G_compact, stats.local.preprocessing_global_phase, ghost_degrees, ghosts, conf, Phase::Global);
+        ConditionalBarrier(conf.global_synchronization);
         phase_timer.start("global_phase");
         ghost_degrees = AuxiliaryNodeData<Degree>();
         cetric::CetricEdgeIterator ctr_global(G_compact, conf, rank, size, CommunicationPolicy{});
