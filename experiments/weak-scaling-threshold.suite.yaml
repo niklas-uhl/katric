@@ -1,4 +1,4 @@
-name: weak-scaling-parameters
+name: weak-scaling-threshold
 ncores: [128, 256, 512, 1024, 2048, 4096]
 threads_per_rank: [4]
 graphs:
@@ -21,11 +21,13 @@ config: {
   local-parallel: True,
   global-parallel: [True],
   local-degree-of-parallelism: [2],
-  dense-degree-exchange: [False, True],
-  compact-degree-exchange: [False, True],
-  global-synchronization: [False, True],
-  binary-rank-search: [False, True],
+  dense-degree-exchange: [False],
+  compact-degree-exchange: [True],
+  global-synchronization: [True],
   global-degree-of-parallelism: [3],
   skip-local-neighborhood: [False],
+  threshold: [local-nodes, local-edges, none],
+  binary-rank-search: [False, True],
+  threshold-scale: [0.5, 1, 2],
   primary-cost-function: [none],
 }
