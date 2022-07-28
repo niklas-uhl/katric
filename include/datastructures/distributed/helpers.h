@@ -51,18 +51,21 @@ void gather_PE_ranges(NodeId local_from,
     MPI_Type_free(&MPI_RANGE);
 }
 
-PEID get_PE_from_node_ranges(NodeId node, const std::vector<std::pair<NodeId, NodeId>>& ranges) {
-    NodeId local_from;
-    NodeId local_to;
-    for (size_t i = 0; i < ranges.size(); ++i) {
-        std::tie(local_from, local_to) = ranges[i];
-        if (local_from <= node && node < local_to) {
-            return i;
-        }
+template<bool binary_search>
+inline PEID get_PE_from_node_ranges(NodeId node, std::vector<std::pair<NodeId, NodeId>> const& ranges) {
+    std::vector<std::pair<NodeId, NodeId>>::const_iterator it;
+    if constexpr (binary_search) {
+        it = std::upper_bound(
+            ranges.begin(), ranges.end(), node,
+            [](NodeId const& value, std::pair<NodeId, NodeId> const& elem) { return value < elem.second; });
+    } else {
+        it = std::find_if(ranges.begin(), ranges.end(), [node](std::pair<NodeId, NodeId> const& elem) {
+            return node >= elem.first && node < elem.second;
+        });
     }
-    std::stringstream out;
-    out << "Node " << node << " not assigned to any PE";
-    throw std::runtime_error(out.str());
+    KASSERT(it != ranges.end(), "Node " << node << " not assigned to any PE");
+    size_t rank = it - ranges.begin();
+    return rank;
 }
 
 }  // namespace cetric

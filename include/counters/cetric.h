@@ -122,16 +122,24 @@ inline size_t run_patric(DistributedGraph<>& G,
                          PEID rank,
                          PEID size,
                          CommunicationPolicy&&) {
+    tlx::MultiTimer phase_timer;
     size_t threshold = get_threshold(G, conf);
-    stats.local.global_phase_threshold= threshold;
+    stats.local.global_phase_threshold = threshold;
     bool debug = false;
     if (conf.num_threads > 1) {
-        G.find_ghost_ranks(execution_policy::parallel{});
+        if (conf.binary_rank_search) {
+            G.find_ghost_ranks<true>(execution_policy::parallel{});
+        } else {
+            G.find_ghost_ranks<true>(execution_policy::parallel{});
+        }
     } else {
-        G.find_ghost_ranks(execution_policy::sequential{});
+        if (conf.binary_rank_search) {
+            G.find_ghost_ranks<true>(execution_policy::sequential{});
+        } else {
+            G.find_ghost_ranks<false>(execution_policy::sequential{});
+        }
     }
     node_set ghosts;
-    tlx::MultiTimer phase_timer;
     ConditionalBarrier(true);
     phase_timer.start("primary_load_balancing");
     if ((conf.gen.generator.empty() && conf.primary_cost_function != "N") ||
@@ -155,9 +163,17 @@ inline size_t run_patric(DistributedGraph<>& G,
                               : std::make_pair(tmp.node_info.front().global_id, tmp.node_info.back().global_id + 1);
         G = DistributedGraph(std::move(tmp), std::move(node_range), rank, size);
         if (conf.num_threads > 1) {
-            G.find_ghost_ranks(execution_policy::parallel{});
+            if (conf.binary_rank_search) {
+                G.find_ghost_ranks<true>(execution_policy::parallel{});
+            } else {
+                G.find_ghost_ranks<true>(execution_policy::parallel{});
+            }
         } else {
-            G.find_ghost_ranks(execution_policy::sequential{});
+            if (conf.binary_rank_search) {
+                G.find_ghost_ranks<true>(execution_policy::sequential{});
+            } else {
+                G.find_ghost_ranks<false>(execution_policy::sequential{});
+            }
         }
     }
     ConditionalBarrier(conf.global_synchronization);
@@ -244,16 +260,26 @@ inline size_t run_cetric(DistributedGraph<>& G,
                          PEID rank,
                          PEID size,
                          CommunicationPolicy&&) {
+    tlx::MultiTimer phase_timer;
+    phase_timer.start("ghost_ranks");
     size_t threshold = get_threshold(G, conf);
     stats.local.global_phase_threshold = threshold;
-    tlx::MultiTimer phase_timer;
     bool debug = false;
     if (conf.num_threads > 1) {
-        G.find_ghost_ranks(execution_policy::parallel{});
+        if (conf.binary_rank_search) {
+            G.find_ghost_ranks<true>(execution_policy::parallel{});
+        } else {
+            G.find_ghost_ranks<true>(execution_policy::parallel{});
+        }
     } else {
-        G.find_ghost_ranks(execution_policy::sequential{});
+        if (conf.binary_rank_search) {
+            G.find_ghost_ranks<true>(execution_policy::sequential{});
+        } else {
+            G.find_ghost_ranks<false>(execution_policy::sequential{});
+        }
     }
     node_set ghosts;
+    ConditionalBarrier(true);
     phase_timer.start("primary_load_balancing");
     if ((conf.gen.generator.empty() && conf.primary_cost_function != "N") ||
         (!conf.gen.generator.empty() && conf.primary_cost_function != "none")) {
@@ -276,9 +302,17 @@ inline size_t run_cetric(DistributedGraph<>& G,
                               : std::make_pair(tmp.node_info.front().global_id, tmp.node_info.back().global_id + 1);
         G = DistributedGraph(std::move(tmp), std::move(node_range), rank, size);
         if (conf.num_threads > 1) {
-            G.find_ghost_ranks(execution_policy::parallel{});
+            if (conf.binary_rank_search) {
+                G.find_ghost_ranks<true>(execution_policy::parallel{});
+            } else {
+                G.find_ghost_ranks<true>(execution_policy::parallel{});
+            }
         } else {
-            G.find_ghost_ranks(execution_policy::sequential{});
+            if (conf.binary_rank_search) {
+                G.find_ghost_ranks<true>(execution_policy::sequential{});
+            } else {
+                G.find_ghost_ranks<false>(execution_policy::sequential{});
+            }
         }
     }
     AuxiliaryNodeData<Degree> ghost_degrees;
@@ -356,9 +390,17 @@ inline size_t run_cetric(DistributedGraph<>& G,
                               : std::make_pair(tmp.node_info.front().global_id, tmp.node_info.back().global_id + 1);
         auto G_global_phase = DistributedGraph<SparseNodeIndexer>(std::move(tmp), std::move(node_range), rank, size);
         if (conf.num_threads > 1) {
-            G_global_phase.find_ghost_ranks(execution_policy::parallel{});
+            if (conf.binary_rank_search) {
+                G.find_ghost_ranks<true>(execution_policy::parallel{});
+            } else {
+                G.find_ghost_ranks<true>(execution_policy::parallel{});
+            }
         } else {
-            G_global_phase.find_ghost_ranks(execution_policy::sequential{});
+            if (conf.binary_rank_search) {
+                G.find_ghost_ranks<true>(execution_policy::sequential{});
+            } else {
+                G.find_ghost_ranks<false>(execution_policy::sequential{});
+            }
         }
         LOG << "[R" << rank << "] "
             << "Secondary load balancing finished ";

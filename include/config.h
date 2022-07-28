@@ -95,6 +95,7 @@ struct Config {
     bool dense_degree_exchange = false;
     bool compact_degree_exchange = false;
     bool global_synchronization = false;
+    bool binary_rank_search = false;
 
     bool degree_filtering = false;
     bool orient_locally = false;
@@ -125,10 +126,10 @@ struct Config {
                 CEREAL_NVP(global_parallel), CEREAL_NVP(local_parallel), CEREAL_NVP(threshold),
                 CEREAL_NVP(local_degree_of_parallelism), CEREAL_NVP(global_degree_of_parallelism),
                 CEREAL_NVP(dense_degree_exchange), CEREAL_NVP(compact_degree_exchange),
-                CEREAL_NVP(global_synchronization), CEREAL_NVP(threshold_scale), CEREAL_NVP(primary_cost_function),
-                CEREAL_NVP(secondary_cost_function), CEREAL_NVP(orient_locally), CEREAL_NVP(pseudo2core),
-                CEREAL_NVP(dense_load_balancing), CEREAL_NVP(flag_intersection), CEREAL_NVP(skip_local_neighborhood),
-                CEREAL_NVP(git_commit));
+                CEREAL_NVP(global_synchronization), CEREAL_NVP(binary_rank_search), CEREAL_NVP(threshold_scale),
+                CEREAL_NVP(primary_cost_function), CEREAL_NVP(secondary_cost_function), CEREAL_NVP(orient_locally),
+                CEREAL_NVP(pseudo2core), CEREAL_NVP(dense_load_balancing), CEREAL_NVP(flag_intersection),
+                CEREAL_NVP(skip_local_neighborhood), CEREAL_NVP(git_commit));
         if (input_file.empty()) {
             archive(cereal::make_nvp("gen", gen.generator),                  //
                     cereal::make_nvp("gen_n", gen.n),                        //

@@ -53,7 +53,7 @@ protected:
 
 TEST_P(Orientation, GlobalDegree) {
     cetric::profiling::MessageStatistics dummy;
-    G.find_ghost_ranks();
+    G.find_ghost_ranks<true>();
     std::unordered_set<cetric::graph::RankEncodedNodeId> ghosts;
     find_ghosts(G, ghosts);
     auto ghost_degree = cetric::AuxiliaryNodeData<Degree>{ghosts.begin(), ghosts.end()};
@@ -81,7 +81,7 @@ TEST_P(Orientation, GlobalDegree) {
 
 TEST_P(Orientation, LocalDegree) {
     cetric::profiling::MessageStatistics dummy;
-    G.find_ghost_ranks();
+    G.find_ghost_ranks<true>();
     cetric::node_ordering::degree_outward ord(G);
     for (auto node : G.local_nodes()) {
         G.orient(node, ord);
