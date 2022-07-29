@@ -73,12 +73,20 @@ def get_queue(cores, tasks_per_node):
     nodes = required_nodes(cores, tasks_per_node)
     if nodes <= 16:
         return "micro"
-    else:
+    elif nodes <= 768:
         return "general"
+    else:
+        return "large"
 
 
 def required_nodes(cores, tasks_per_node):
     return int(max(int(m.ceil(float(cores) / tasks_per_node)), 1))
+
+def required_islands(cores):
+    if cores > 768:
+        return 2
+    else:
+        return 1
 
 
 class SBatchRunner:
@@ -131,6 +139,7 @@ class SBatchRunner:
                     subs["job_queue"] = "test"
                 else:
                     subs["job_queue"] = get_queue(ncores, tasks_per_node)
+                subs["islands"] = required_islands(ncores)
                 subs["account"] = project
                 time_limit = 0
                 commands = []

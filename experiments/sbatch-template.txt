@@ -6,6 +6,7 @@
 #SBATCH --time=${time_string}
 #SBATCH --get-user-env
 #SBATCH --account=${account}
+#SBATCH --switches=${islands}
 #SBATCH --ear=off
 
 module load slurm_setup
