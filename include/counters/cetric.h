@@ -130,7 +130,7 @@ inline size_t run_patric(DistributedGraph<>& G,
         if (conf.binary_rank_search) {
             G.find_ghost_ranks<true>(execution_policy::parallel{});
         } else {
-            G.find_ghost_ranks<true>(execution_policy::parallel{});
+            G.find_ghost_ranks<false>(execution_policy::parallel{});
         }
     } else {
         if (conf.binary_rank_search) {
@@ -166,7 +166,7 @@ inline size_t run_patric(DistributedGraph<>& G,
             if (conf.binary_rank_search) {
                 G.find_ghost_ranks<true>(execution_policy::parallel{});
             } else {
-                G.find_ghost_ranks<true>(execution_policy::parallel{});
+                G.find_ghost_ranks<false>(execution_policy::parallel{});
             }
         } else {
             if (conf.binary_rank_search) {
@@ -269,7 +269,7 @@ inline size_t run_cetric(DistributedGraph<>& G,
         if (conf.binary_rank_search) {
             G.find_ghost_ranks<true>(execution_policy::parallel{});
         } else {
-            G.find_ghost_ranks<true>(execution_policy::parallel{});
+            G.find_ghost_ranks<false>(execution_policy::parallel{});
         }
     } else {
         if (conf.binary_rank_search) {
@@ -305,7 +305,7 @@ inline size_t run_cetric(DistributedGraph<>& G,
             if (conf.binary_rank_search) {
                 G.find_ghost_ranks<true>(execution_policy::parallel{});
             } else {
-                G.find_ghost_ranks<true>(execution_policy::parallel{});
+                G.find_ghost_ranks<false>(execution_policy::parallel{});
             }
         } else {
             if (conf.binary_rank_search) {
@@ -393,7 +393,7 @@ inline size_t run_cetric(DistributedGraph<>& G,
             if (conf.binary_rank_search) {
                 G.find_ghost_ranks<true>(execution_policy::parallel{});
             } else {
-                G.find_ghost_ranks<true>(execution_policy::parallel{});
+                G.find_ghost_ranks<false>(execution_policy::parallel{});
             }
         } else {
             if (conf.binary_rank_search) {
