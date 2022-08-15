@@ -29,10 +29,10 @@ PEID datatype_to_PEID<graph::RankEncodedNodeId>(graph::RankEncodedNodeId const& 
 
 using namespace graph;
 template <typename QueueType>
-class IndirectMessageQueue {
+class IndirectMessageQueueAdaptor {
 public:
     using value_type = typename QueueType::value_type;
-    IndirectMessageQueue(QueueType& queue) : rank_(), size_(), queue_(queue) {
+    IndirectMessageQueueAdaptor(QueueType& queue) : rank_(), size_(), queue_(queue) {
         MPI_Comm_rank(MPI_COMM_WORLD, &rank_);
         MPI_Comm_size(MPI_COMM_WORLD, &size_);
         grid_size_ = std::round(std::sqrt(size_));
@@ -147,6 +147,52 @@ private:
     PEID rank_;
     PEID size_;
     PEID grid_size_;
+    QueueType& queue_;
+};
+
+template <typename QueueType>
+class DirectMessageQueueAdaptor {
+public:
+    using value_type = typename QueueType::value_type;
+    DirectMessageQueueAdaptor(QueueType& queue) : queue_(queue) {
+    };
+    void post_message(std::vector<value_type>&& message, PEID receiver, bool direct_send = false) {
+      queue_.post_message(std::move(message), receiver);
+    }
+
+    void set_threshold(size_t threshold) {
+        queue_.set_threshold(threshold);
+    }
+
+    template <typename MessageHandler>
+    void poll(MessageHandler&& on_message) {
+        // static_assert(std::is_invocable_v<MessageHandler, typename std::vector<T>::iterator,
+        //                                   typename std::vector<T>::iterator, PEID>);
+      queue_.poll(on_message);
+    }
+
+    template <typename MessageHandler>
+    void terminate(MessageHandler&& on_message) {
+      queue_.terminate(on_message);
+    }
+
+    size_t overflows() const {
+        return queue_.overflows();
+    }
+
+    void check_for_overflow_and_flush() {
+        queue_.check_for_overflow_and_flush();
+    }
+
+    const message_queue::MessageStatistics& stats() {
+        return queue_.stats();
+    }
+
+    void reset() {
+        queue_.reset();
+    }
+
+private:
     QueueType& queue_;
 };
 // template <class QueueType, class T, typename Merger, typename Splitter>
