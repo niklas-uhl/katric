@@ -15,4 +15,4 @@ graphs:
     path: com-amazon.metis
     format: metis
     triangles: 667129
-partitions: ../experiments/partitions/
+partitions: ./partitions/
