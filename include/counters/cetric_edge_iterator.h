@@ -138,6 +138,21 @@ struct Splitter {
         }
     }
 };
+template <typename GraphType>
+size_t get_threshold(const GraphType& G, Config const& conf) {
+    switch (conf.threshold) {
+        case Threshold::local_nodes:
+            return conf.threshold_scale * G.local_node_count();
+            break;
+        case Threshold::local_edges:
+            return conf.threshold_scale * G.local_edge_count();
+            break;
+        case Threshold::none:
+            return std::numeric_limits<size_t>::max();
+            break;
+    }
+    return 0;
+}
 template <class GraphType, class CommunicationPolicy>
 class CetricEdgeIterator {
 public:
@@ -154,18 +169,10 @@ public:
           is_v_neighbor_(/*G.local_node_count() + G.ghost_count(), false*/),
           interface_nodes_(),
           pe_min_degree(),
-          threshold_() {
-        switch (conf.threshold) {
-            case Threshold::local_nodes:
-                threshold_ = conf.threshold_scale * G.local_node_count();
-                break;
-            case Threshold::local_edges:
-                threshold_ = conf.threshold_scale * G.local_edge_count();
-                break;
-            case Threshold::none:
-                threshold_ = std::numeric_limits<size_t>::max();
-                break;
-        }
+          threshold_(std::numeric_limits<size_t>::max()) {}
+
+    void set_threshold(size_t threshold) {
+        threshold_ = threshold;
     }
 
     template <typename TriangleFunc, typename NodeOrdering>

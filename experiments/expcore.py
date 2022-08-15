@@ -1,6 +1,8 @@
+from asyncio import threads
+from genericpath import isfile
 import subprocess
 import logging
-import os
+import os, re
 from pathlib import Path
 import yaml
 import sys
@@ -13,7 +15,7 @@ class InputGraph:
         self.name = name
         self.triangles = triangles
 
-    def args(self, p):
+    def args(self, mpi_rank, threads_per_rank):
         raise NotImplementedError()
 
 
@@ -23,10 +25,21 @@ class FileInputGraph(InputGraph):
         self.path = path
         self.format = format
         self.triangles = triangles
+        self.partitions = {}
+        self.partitioned = False
 
-    def args(self, p):
+    def args(self, mpi_ranks, threads_per_rank):
         file_args = [str(self.path), "--input-format", self.format]
+        if self.partitioned and mpi_ranks > 1:
+            partition_file = self.partitions.get(mpi_ranks, None)
+            if not partition_file:
+                logging.error(f"Could not load partitioning for p={mpi_ranks} for input {self.name}")
+                sys.exit(1)
+            file_args += ["--partitioning", partition_file]
         return file_args
+
+    def add_partitions(self, partitions):
+        self.partitions.update(partitions)
 
     def exists(self):
         if self.format == "metis":
@@ -65,7 +78,8 @@ class GenInputGraph(InputGraph):
                 f"Generator {self.generator} requires the following parameters: {required_parameters}"
             )
 
-    def args(self, p):
+    def args(self, mpi_ranks, threads_per_rank):
+        p = mpi_ranks * threads_per_rank
         arg_list = ["--gen"]
         if self.generator == 'rgg':
             arg_list.append('rgg_2d')
@@ -157,8 +171,23 @@ def load_inputs_from_yaml(yaml_path):
             inputs[graph.name] = graph
     if "includes" in data:
         for rec in data["includes"]:
-            inputs.update(load_inputs_from_yaml(Path(yaml_path).parent / rec))
-    return inputs
+            sub_inputs, sub_partitions = load_inputs_from_yaml(Path(yaml_path).parent / rec)
+            inputs.update(sub_inputs)
+            partitions.update(sub_partitions)
+    partitions = {}
+    if "partitions" in data:
+        root = Path(yaml_path).parent / data["partitions"]
+        for file in os.listdir(root):
+            if os.path.isfile(os.path.join(root, file)):
+                m = re.match(r"(.*)_k([0-9]+)", file)
+                if not m:
+                    logging.warn(f"Invalid partition name {file}")
+                key = (m.group(1), int(m.group(2)))
+                if not key[0] in partitions:
+                    partitions[key[0]] = {}
+                partitions[key[0]][key[1]] = os.path.join(root, file)
+    print(partitions)
+    return (inputs, partitions)
 
 
 class ExperimentSuite:
@@ -190,16 +219,24 @@ class ExperimentSuite:
     def get_input_time_limit(self, input_name):
         return self.input_time_limit.get(input_name, self.time_limit)
 
-    def load_inputs(self, input_dict):
+    def load_inputs(self, input_dict, partitions):
         inputs_new = []
         for graph in self.inputs:
             if isinstance(graph, str):
-                input = input_dict.get(graph)
-                if not input:
-                    logging.warn(f"Could not load input for {graph}")
-                inputs_new.append(input)
+                graph = {"name": graph, "partitioned": False}
+            elif isinstance(graph, tuple):
+                graph_name, partitioned = graph
+                graph = {"name": graph_name, "partitioned": partitioned}
             else:
                 inputs_new.append(graph)
+                continue
+            input = input_dict.get(graph["name"])
+            if graph["partitioned"]:
+                input.add_partitions(partitions.get(graph["name"], {}))
+                input.partitioned = graph["partitioned"]
+            if not input:
+                logging.warn(f"Could not load input for {graph_name}")
+            inputs_new.append(input)
         self.inputs = inputs_new
 
     def __repr__(self):
@@ -222,7 +259,8 @@ def load_suite_from_yaml(path):
             inputs.append(graph)
         else:
             if "name" in graph:
-                inputs.append(graph["name"])
+                partitioned = graph.get("partitioned", False)
+                inputs.append((graph["name"], partitioned))
             elif "generator" in graph:
                 generator = graph.pop("generator")
                 inputs.append(GenInputGraph(generator, **graph))
@@ -289,7 +327,7 @@ def cetric_command(input, mpi_ranks, threads_per_rank, **kwargs):
     command = [str(app)]
     if input:
         if isinstance(input, InputGraph):
-            command = command + input.args(mpi_ranks * threads_per_rank)
+            command = command + input.args(mpi_ranks, threads_per_rank)
         else:
             command.append(str(input))
     flags = ["--num-threads", str(threads_per_rank)]

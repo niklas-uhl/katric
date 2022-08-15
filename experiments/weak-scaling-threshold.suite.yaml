@@ -1,0 +1,33 @@
+name: weak-scaling-threshold
+ncores: [128, 256, 512, 1024, 2048, 4096]
+threads_per_rank: [4]
+graphs:
+  - generator: rgg
+    n: 20
+    m: 24
+    scale_weak: True
+  - generator: rhg
+    n: 20
+    m: 24
+    gamma: 3.0
+    scale_weak: True
+      #- generator: gnm
+      #n: 20
+      #m: 24
+      #scale_weak: True
+time_limit: 20
+config: {
+  algorithm: [cetric],
+  local-parallel: True,
+  global-parallel: [True],
+  local-degree-of-parallelism: [2],
+  dense-degree-exchange: [False],
+  compact-degree-exchange: [True],
+  global-synchronization: [True],
+  global-degree-of-parallelism: [3],
+  skip-local-neighborhood: [False],
+  threshold: [local-nodes, local-edges, none],
+  binary-rank-search: [False, True],
+  threshold-scale: [0.5, 1, 2],
+  primary-cost-function: [none],
+}

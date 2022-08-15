@@ -76,6 +76,7 @@ public:
                                 AuxiliaryNodeData<Degree>&,
                                 AuxiliaryNodeData<Degree>&,
                                 bool,
+                                bool,
                                 cetric::profiling::MessageStatistics&) {}
 
     static inline void init_local_outdegree(Graph& G,
@@ -83,8 +84,9 @@ public:
                                             AuxiliaryNodeData<Degree>& degree,
                                             AuxiliaryNodeData<Degree>& out_degree,
                                             bool dense_degree_exchange,
+                                            bool compact_degree_exchange,
                                             cetric::profiling::MessageStatistics& stats) {
-        init_degree(G, ghosts, degree, out_degree, dense_degree_exchange, stats);
+        init_degree(G, ghosts, degree, out_degree, dense_degree_exchange, compact_degree_exchange, stats);
         if (out_degree.size() == 0) {
             out_degree =
                 AuxiliaryNodeData<Degree>(RankEncodedNodeId{G.node_range().first, static_cast<uint16_t>(G.rank())},
@@ -110,6 +112,7 @@ public:
                                    AuxiliaryNodeData<Degree>& degree,
                                    AuxiliaryNodeData<Degree>&,
                                    bool dense_degree_exchange,
+                                   bool compact_degree_exchange,
                                    cetric::profiling::MessageStatistics& stats) {
         // (void)cache;
         DegreeCommunicator comm(G, G.rank(), G.size(), as_int(MessageTag::CostFunction));
@@ -123,7 +126,7 @@ public:
                     KASSERT(ghosts.find(node) != ghosts.end());
                     degree[node] = deg;
                 },
-                stats, !dense_degree_exchange);
+                stats, !dense_degree_exchange, compact_degree_exchange);
         }
     }
 
@@ -132,9 +135,10 @@ public:
                                 AuxiliaryNodeData<Degree>& degree,
                                 AuxiliaryNodeData<Degree>& out_degree,
                                 bool dense_degree_exchange,
+                                bool compact_degree_exchange,
                                 cetric::profiling::MessageStatistics& stats) {
-        init_degree(G, ghosts, degree, out_degree, dense_degree_exchange, stats);
-        init_local_outdegree(G, ghosts, degree, out_degree, dense_degree_exchange, stats);
+        init_degree(G, ghosts, degree, out_degree, dense_degree_exchange, compact_degree_exchange, stats);
+        init_local_outdegree(G, ghosts, degree, out_degree, dense_degree_exchange, compact_degree_exchange, stats);
         if (ghosts.size() == 0) {
             find_ghosts(G, ghosts);
         }
@@ -146,7 +150,7 @@ public:
                                     KASSERT(ghosts.find(node) != ghosts.end());
                                     out_degree[node] = data.id();
                                 },
-                                stats, !dense_degree_exchange);
+                                stats, !dense_degree_exchange, compact_degree_exchange);
             // comm.get_ghost_degree([&](RankEncodedNodeId node, Degree deg) { degree[node] = deg; }, stats);
         }
         //     DegreeCommunicator<Graph> comm(G, G.rank(), G.size(), as_int(MessageTag::CostFunction));
@@ -254,7 +258,7 @@ struct CostFunctionRegistry {
         std::unordered_map<
             std::string,
             std::pair<std::function<void(GraphType, node_set&, AuxiliaryNodeData<Degree>&, AuxiliaryNodeData<Degree>&,
-                                         bool, cetric::profiling::MessageStatistics&)>,
+                                         bool, bool, cetric::profiling::MessageStatistics&)>,
                       std::function<size_t(RefType, GraphType, RankEncodedNodeId)>>>
             cost_functions = {
                 {"N",
@@ -312,7 +316,8 @@ struct CostFunctionRegistry {
         AuxiliaryNodeData<Degree> outdegree;
         node_set ghosts;
         cetric::profiling::Timer t;
-        init(G, ghosts, degree, outdegree, conf.dense_degree_exchange, stats.message_statistics);
+        init(G, ghosts, degree, outdegree, conf.dense_degree_exchange, conf.compact_degree_exchange,
+             stats.message_statistics);
         stats.cost_function_communication_time += t.elapsed_time();
         return CostFunction<Graph>(G, name, degree, outdegree, cost, stats, ExecutionPolicy{});
     }

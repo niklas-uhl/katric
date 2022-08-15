@@ -533,7 +533,7 @@ public:
         tlx::vector_free(G.edge_heads);
     }
 
-    template <typename ExecutionPolicy = execution_policy::sequential>
+    template <bool binary_search, typename ExecutionPolicy = execution_policy::sequential>
     void find_ghost_ranks(ExecutionPolicy&& = {}) {
         if (ghost_ranks_available()) {
             return;
@@ -547,7 +547,7 @@ public:
             tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&ranges, this](auto const& r) {
                 for (auto node : r) {
                     for (auto& neighbor : this->adj(node).neighbors()) {
-                        PEID rank = get_PE_from_node_ranges(neighbor.id(), ranges);
+                        PEID rank = get_PE_from_node_ranges<binary_search>(neighbor.id(), ranges);
                         neighbor.set_rank(rank);
                     }
                 }
@@ -555,7 +555,7 @@ public:
         } else {
             for (auto node : nodes) {
                 for (auto& neighbor : this->adj(node).neighbors()) {
-                    PEID rank = get_PE_from_node_ranges(neighbor.id(), ranges);
+                    PEID rank = get_PE_from_node_ranges<binary_search>(neighbor.id(), ranges);
                     neighbor.set_rank(rank);
                 }
             }

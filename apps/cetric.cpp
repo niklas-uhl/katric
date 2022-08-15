@@ -50,6 +50,7 @@ cetric::Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
 
     app.add_option("--input-format", conf.input_format)
         ->transform(CLI::CheckedTransformer(graphio::input_types, CLI::ignore_case));
+    app.add_option("--partitioning", conf.partitioning);
 
     app.add_option("--iterations", conf.iterations);
 
@@ -78,6 +79,9 @@ cetric::Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
 
     app.add_flag("--dense-load-balancing", conf.dense_load_balancing);
     app.add_flag("--dense-degree-exchange", conf.dense_degree_exchange);
+    app.add_flag("--compact-degree-exchange", conf.compact_degree_exchange);
+    app.add_flag("--global-synchronization", conf.global_synchronization);
+    app.add_flag("--binary-rank-search", conf.binary_rank_search);
 
     app.add_option("--algorithm", conf.algorithm)
         ->transform(CLI::CheckedTransformer(cetric::algorithm_map, CLI::ignore_case));
@@ -112,6 +116,9 @@ cetric::Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
         }
         MPI_Finalize();
         exit(retval);
+    }
+    if (!conf.partitioning.empty()) {
+        conf.partitioned_input = true;
     }
     if (conf.primary_cost_function == "none" && conf.gen.generator.empty()) {
         int retval;
@@ -166,6 +173,18 @@ private:
     graphio::IOResult load_graph() {
         if (conf_.gen.generator == "") {
             auto G = graphio::read_local_graph(conf_.input_file, conf_.input_format, conf_.rank, conf_.PEs);
+            if (conf_.partitioned_input) {
+                auto partitioning = graphio::read_local_partition(conf_.partitioning, G.info.local_from, G.info.local_to, conf_.rank, conf_.PEs);
+                G.G = graphio::apply_partition(std::move(G.G), partitioning, MPI_COMM_WORLD);
+                graphio::relabel_consecutively(G.G, MPI_COMM_WORLD);
+                if (G.G.local_node_count() != 0) {
+                    G.info.local_from = G.G.node_info.front().global_id;
+                    G.info.local_to = G.G.node_info.back().global_id + 1;
+                } else {
+                    G.info.local_from = std::numeric_limits<NodeId>::max();
+                    G.info.local_to = std::numeric_limits<NodeId>::max();
+                }
+            }
             // atomic_debug(G.edge_heads);
             return G;
         } else {

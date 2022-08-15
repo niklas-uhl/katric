@@ -6,6 +6,7 @@
 #include <datastructures/auxiliary_node_data.h>
 #include <datastructures/distributed/graph_communicator.h>
 #include <load_balancing.h>
+#include <mpi.h>
 #include <statistics.h>
 #include <tbb/combinable.h>
 #include <tbb/concurrent_vector.h>
@@ -16,6 +17,7 @@
 #include <limits>
 #include <numeric>
 #include <sparsehash/dense_hash_set>
+#include <sstream>
 #include <utility>
 #include "atomic_debug.h"
 #include "cost_function.h"
@@ -35,20 +37,21 @@ enum class Phase { Local, Global };
 
 template <typename NodeIndexer, typename GhostSet>
 inline void preprocessing(DistributedGraph<NodeIndexer>& G,
-                          cetric::profiling::Statistics& stats,
+                          cetric::profiling::PreprocessingStatistics& stats,
                           AuxiliaryNodeData<Degree>& ghost_degree,
                           GhostSet& ghosts,
                           const Config& conf,
                           Phase phase) {
-    cetric::profiling::Timer timer;
+    tlx::MultiTimer phase_timer;
     if (phase == Phase::Global || conf.algorithm == Algorithm::Patric) {
+        phase_timer.start("degree_exchange");
         find_ghosts(G, ghosts);
         ghost_degree = AuxiliaryNodeData<Degree>{ghosts.begin(), ghosts.end()};
         DegreeCommunicator comm(G, conf.rank, conf.PEs, as_int(MessageTag::Orientation));
         comm.get_ghost_degree([&](RankEncodedNodeId node, Degree degree) { ghost_degree[node] = degree; },
-                              stats.local.preprocessing.message_statistics, !conf.dense_degree_exchange);
+                              stats.message_statistics, !conf.dense_degree_exchange, conf.compact_degree_exchange);
 
-        timer.restart();
+        phase_timer.start("orientation");
         auto nodes = G.local_nodes();
         if (conf.num_threads > 1) {
             tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G, &ghost_degree](auto const& r) {
@@ -61,8 +64,7 @@ inline void preprocessing(DistributedGraph<NodeIndexer>& G,
                 G.orient(node, node_ordering::degree(G, ghost_degree));
             }
         }
-        stats.local.preprocessing.orientation_time += timer.elapsed_time();
-        timer.restart();
+        phase_timer.start("sorting");
         if (conf.num_threads > 1) {
             tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G, &conf](auto const& r) {
                 for (auto node : r) {
@@ -83,10 +85,7 @@ inline void preprocessing(DistributedGraph<NodeIndexer>& G,
             }
         }
     } else {
-        // G.orient(node_ordering::degree_outward(G));
-        // stats.local.preprocessing.orientation_time += timer.elapsed_time();
-        // timer.restart();
-        // G.sort_neighborhoods(node_ordering::degree_outward(G), execution_policy::sequential{});
+        phase_timer.start("orientation");
         auto nodes = G.local_nodes();
         if (conf.num_threads > 1) {
             tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G](auto const& r) {
@@ -99,8 +98,7 @@ inline void preprocessing(DistributedGraph<NodeIndexer>& G,
                 G.orient(node, node_ordering::degree_outward(G));
             }
         }
-        stats.local.preprocessing.orientation_time += timer.elapsed_time();
-        timer.restart();
+        phase_timer.start("sorting");
         if (conf.num_threads > 1) {
             tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G](auto const& r) {
                 for (auto node : r) {
@@ -113,7 +111,8 @@ inline void preprocessing(DistributedGraph<NodeIndexer>& G,
             }
         }
     }
-    stats.local.preprocessing.sorting_time += timer.elapsed_time();
+    phase_timer.stop();
+    stats.ingest(phase_timer);
 }
 
 template <class CommunicationPolicy>
@@ -123,14 +122,26 @@ inline size_t run_patric(DistributedGraph<>& G,
                          PEID rank,
                          PEID size,
                          CommunicationPolicy&&) {
-    bool debug = true;
+    tlx::MultiTimer phase_timer;
+    size_t threshold = get_threshold(G, conf);
+    stats.local.global_phase_threshold = threshold;
+    bool debug = false;
     if (conf.num_threads > 1) {
-        G.find_ghost_ranks(execution_policy::parallel{});
+        if (conf.binary_rank_search) {
+            G.find_ghost_ranks<true>(execution_policy::parallel{});
+        } else {
+            G.find_ghost_ranks<false>(execution_policy::parallel{});
+        }
     } else {
-        G.find_ghost_ranks(execution_policy::sequential{});
+        if (conf.binary_rank_search) {
+            G.find_ghost_ranks<true>(execution_policy::sequential{});
+        } else {
+            G.find_ghost_ranks<false>(execution_policy::sequential{});
+        }
     }
     node_set ghosts;
-    cetric::profiling::Timer timer;
+    ConditionalBarrier(true);
+    phase_timer.start("primary_load_balancing");
     if ((conf.gen.generator.empty() && conf.primary_cost_function != "N") ||
         (!conf.gen.generator.empty() && conf.primary_cost_function != "none")) {
         auto cost_function = [&]() {
@@ -152,21 +163,32 @@ inline size_t run_patric(DistributedGraph<>& G,
                               : std::make_pair(tmp.node_info.front().global_id, tmp.node_info.back().global_id + 1);
         G = DistributedGraph(std::move(tmp), std::move(node_range), rank, size);
         if (conf.num_threads > 1) {
-            G.find_ghost_ranks(execution_policy::parallel{});
+            if (conf.binary_rank_search) {
+                G.find_ghost_ranks<true>(execution_policy::parallel{});
+            } else {
+                G.find_ghost_ranks<false>(execution_policy::parallel{});
+            }
         } else {
-            G.find_ghost_ranks(execution_policy::sequential{});
+            if (conf.binary_rank_search) {
+                G.find_ghost_ranks<true>(execution_policy::sequential{});
+            } else {
+                G.find_ghost_ranks<false>(execution_policy::sequential{});
+            }
         }
     }
+    ConditionalBarrier(conf.global_synchronization);
     AuxiliaryNodeData<Degree> ghost_degrees;
-    stats.local.primary_load_balancing.phase_time += timer.elapsed_time();
     LOG << "[R" << rank << "] "
-        << "Primary load balancing finished " << stats.local.primary_load_balancing.phase_time << " s";
+        << "Primary load balancing finished ";
     // G.expand_ghosts();
-    preprocessing(G, stats, ghost_degrees, ghosts, conf, Phase::Local);
+    phase_timer.start("preprocessing");
+    preprocessing(G, stats.local.preprocessing_local_phase, ghost_degrees, ghosts, conf, Phase::Local);
     LOG << "[R" << rank << "] "
         << "Preprocessing finished";
-    timer.restart();
+    ConditionalBarrier(conf.global_synchronization);
+    phase_timer.start("local_phase");
     auto ctr = cetric::CetricEdgeIterator(G, conf, rank, size, CommunicationPolicy{});
+    ctr.set_threshold(threshold);
     size_t triangle_count = 0;
     tbb::concurrent_vector<Triangle<RankEncodedNodeId>> triangles;
     tbb::combinable<size_t> triangle_count_local_phase{0};
@@ -185,12 +207,11 @@ inline size_t run_patric(DistributedGraph<>& G,
         },
         stats, node_ordering::id());
     triangle_count += triangle_count_local_phase.combine(std::plus<>{});
-    stats.local.local_phase_time += timer.elapsed_time();
     LOG << "[R" << rank << "] "
-        << "Local phase finished " << stats.local.local_phase_time << " s";
-    timer.restart();
+        << "Local phase finished ";
+    ConditionalBarrier(conf.global_synchronization);
+    phase_timer.start("global_phase");
     tbb::combinable<size_t> triangle_count_global_phase{0};
-    timer.restart();
     ctr.run_distributed(
         [&](Triangle<RankEncodedNodeId> t) {
             (void)t;
@@ -204,16 +225,14 @@ inline size_t run_patric(DistributedGraph<>& G,
         },
         stats, node_ordering::id());
     triangle_count += triangle_count_global_phase.combine(std::plus<>{});
-    stats.local.global_phase_time = timer.elapsed_time();
     LOG << "[R" << rank << "] "
-        << "Global phase finished " << stats.local.global_phase_time << " s";
-    timer.restart();
+        << "Global phase finished ";
+    phase_timer.start("reduction");
     MPI_Reduce(&triangle_count, &stats.counted_triangles, 1, MPI_NODE, MPI_SUM, 0, MPI_COMM_WORLD);
-    stats.local.reduce_time = timer.elapsed_time();
+    phase_timer.stop();
     if constexpr (KASSERT_ENABLED(kassert::assert::normal)) {
-        timer.restart();
         LOG << "[R" << rank << "] "
-            << "Verification started" << stats.local.local_phase_time << " s";
+            << "Verification started";
         KASSERT(triangles.size() == triangle_count);
         std::sort(triangles.begin(), triangles.end(), [](auto const& lhs, auto const& rhs) {
             return std::tuple(lhs.x.id(), lhs.y.id(), lhs.z.id()) < std::tuple(rhs.x.id(), rhs.y.id(), rhs.z.id());
@@ -228,8 +247,9 @@ inline size_t run_patric(DistributedGraph<>& G,
             current++;
         }
         LOG << "[R" << rank << "] "
-            << "Verification finished " << timer.elapsed_time() << " s";
+            << "Verification finished";
     }
+    stats.local.ingest(phase_timer);
     return stats.counted_triangles;
 }
 
@@ -240,14 +260,27 @@ inline size_t run_cetric(DistributedGraph<>& G,
                          PEID rank,
                          PEID size,
                          CommunicationPolicy&&) {
-    bool debug = true;
+    tlx::MultiTimer phase_timer;
+    phase_timer.start("ghost_ranks");
+    size_t threshold = get_threshold(G, conf);
+    stats.local.global_phase_threshold = threshold;
+    bool debug = false;
     if (conf.num_threads > 1) {
-        G.find_ghost_ranks(execution_policy::parallel{});
+        if (conf.binary_rank_search) {
+            G.find_ghost_ranks<true>(execution_policy::parallel{});
+        } else {
+            G.find_ghost_ranks<false>(execution_policy::parallel{});
+        }
     } else {
-        G.find_ghost_ranks(execution_policy::sequential{});
+        if (conf.binary_rank_search) {
+            G.find_ghost_ranks<true>(execution_policy::sequential{});
+        } else {
+            G.find_ghost_ranks<false>(execution_policy::sequential{});
+        }
     }
     node_set ghosts;
-    cetric::profiling::Timer timer;
+    ConditionalBarrier(true);
+    phase_timer.start("primary_load_balancing");
     if ((conf.gen.generator.empty() && conf.primary_cost_function != "N") ||
         (!conf.gen.generator.empty() && conf.primary_cost_function != "none")) {
         auto cost_function = [&]() {
@@ -269,21 +302,33 @@ inline size_t run_cetric(DistributedGraph<>& G,
                               : std::make_pair(tmp.node_info.front().global_id, tmp.node_info.back().global_id + 1);
         G = DistributedGraph(std::move(tmp), std::move(node_range), rank, size);
         if (conf.num_threads > 1) {
-            G.find_ghost_ranks(execution_policy::parallel{});
+            if (conf.binary_rank_search) {
+                G.find_ghost_ranks<true>(execution_policy::parallel{});
+            } else {
+                G.find_ghost_ranks<false>(execution_policy::parallel{});
+            }
         } else {
-            G.find_ghost_ranks(execution_policy::sequential{});
+            if (conf.binary_rank_search) {
+                G.find_ghost_ranks<true>(execution_policy::sequential{});
+            } else {
+                G.find_ghost_ranks<false>(execution_policy::sequential{});
+            }
         }
     }
     AuxiliaryNodeData<Degree> ghost_degrees;
-    stats.local.primary_load_balancing.phase_time += timer.elapsed_time();
     LOG << "[R" << rank << "] "
-        << "Primary load balancing finished " << stats.local.primary_load_balancing.phase_time << " s";
+        << "Primary load balancing finished ";
     // G.expand_ghosts();
-    preprocessing(G, stats, ghost_degrees, ghosts, conf, Phase::Local);
+
+    ConditionalBarrier(conf.global_synchronization);
+    phase_timer.start("preprocessing");
+    preprocessing(G, stats.local.preprocessing_local_phase, ghost_degrees, ghosts, conf, Phase::Local);
     LOG << "[R" << rank << "] "
-        << "Preprocessing finished";
-    timer.restart();
+        << "Preprocessing finished ";
+    ConditionalBarrier(conf.global_synchronization);
+    phase_timer.start("local_phase");
     auto ctr = cetric::CetricEdgeIterator(G, conf, rank, size, CommunicationPolicy{});
+    ctr.set_threshold(threshold);
     size_t triangle_count = 0;
     tbb::concurrent_vector<Triangle<RankEncodedNodeId>> triangles;
     tbb::combinable<size_t> triangle_count_local_phase{0};
@@ -302,10 +347,10 @@ inline size_t run_cetric(DistributedGraph<>& G,
         },
         stats, node_ordering::degree_outward(G));
     triangle_count += triangle_count_local_phase.combine(std::plus<>{});
-    stats.local.local_phase_time += timer.elapsed_time();
     LOG << "[R" << rank << "] "
-        << "Local phase finished " << stats.local.local_phase_time << " s";
-    timer.restart();
+        << "Local phase finished ";
+    ConditionalBarrier(conf.global_synchronization);
+    phase_timer.start("contraction");
     auto nodes = G.local_nodes();
     if (conf.local_parallel) {
         tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G](auto const& r) {
@@ -319,15 +364,15 @@ inline size_t run_cetric(DistributedGraph<>& G,
         }
     }
     auto G_compact = G.compact();
-    stats.local.contraction_time += timer.elapsed_time();
     LOG << "[R" << rank << "] "
-        << "Contraction finished " << stats.local.contraction_time << " s";
+        << "Contraction finished ";
     ghosts = decltype(ghosts){};
     // atomic_debug(fmt::format("Found {} triangles in local phase",
     // triangle_count_local_phase.combine(std::plus<>{})));
+    ConditionalBarrier(conf.global_synchronization);
+    phase_timer.start("secondary_load_balancing");
     tbb::combinable<size_t> triangle_count_global_phase{0};
     if (conf.secondary_cost_function != "none") {
-        timer.restart();
         auto cost_function = [&]() {
             if (conf.num_threads > 1) {
                 return CostFunctionRegistry<decltype(G_compact)>::get(conf.secondary_cost_function, G_compact, conf,
@@ -345,17 +390,29 @@ inline size_t run_cetric(DistributedGraph<>& G,
                               : std::make_pair(tmp.node_info.front().global_id, tmp.node_info.back().global_id + 1);
         auto G_global_phase = DistributedGraph<SparseNodeIndexer>(std::move(tmp), std::move(node_range), rank, size);
         if (conf.num_threads > 1) {
-            G_global_phase.find_ghost_ranks(execution_policy::parallel{});
+            if (conf.binary_rank_search) {
+                G.find_ghost_ranks<true>(execution_policy::parallel{});
+            } else {
+                G.find_ghost_ranks<false>(execution_policy::parallel{});
+            }
         } else {
-            G_global_phase.find_ghost_ranks(execution_policy::sequential{});
+            if (conf.binary_rank_search) {
+                G.find_ghost_ranks<true>(execution_policy::sequential{});
+            } else {
+                G.find_ghost_ranks<false>(execution_policy::sequential{});
+            }
         }
-        stats.local.secondary_load_balancing.phase_time += timer.elapsed_time();
         LOG << "[R" << rank << "] "
-            << "Secondary load balancing finished " << stats.local.secondary_load_balancing.phase_time << " s";
-        preprocessing(G_global_phase, stats, ghost_degrees, ghosts, conf, Phase::Global);
+            << "Secondary load balancing finished ";
+        ConditionalBarrier(conf.global_synchronization);
+        phase_timer.start("preprocessing");
+        preprocessing(G_global_phase, stats.local.preprocessing_global_phase, ghost_degrees, ghosts, conf,
+                      Phase::Global);
+        ConditionalBarrier(conf.global_synchronization);
+        phase_timer.start("global_phase");
         ghost_degrees = AuxiliaryNodeData<Degree>();
-        timer.restart();
         cetric::CetricEdgeIterator ctr_global(G_global_phase, conf, rank, size, CommunicationPolicy{});
+        ctr.set_threshold(threshold);
         ctr_global.run_local(
             [&](Triangle<RankEncodedNodeId> t) {
                 (void)t;
@@ -397,28 +454,14 @@ inline size_t run_cetric(DistributedGraph<>& G,
         // atomic_debug(
         // fmt::format("Found {} triangles in global phase 2", triangle_count_global_phase.combine(std::plus<>{})));
     } else {
-        preprocessing(G_compact, stats, ghost_degrees, ghosts, conf, Phase::Global);
+        ConditionalBarrier(conf.global_synchronization);
+        phase_timer.start("preprocessing");
+        preprocessing(G_compact, stats.local.preprocessing_global_phase, ghost_degrees, ghosts, conf, Phase::Global);
+        ConditionalBarrier(conf.global_synchronization);
+        phase_timer.start("global_phase");
         ghost_degrees = AuxiliaryNodeData<Degree>();
-        // }
-        timer.restart();
-        // if (conf.secondary_cost_function != "none") {
-        //     auto ctr_dist = cetric::CetricEdgeIterator(G, conf, rank, size, CommunicationPolicy{});
-        //     ctr_dist.run(
-        //         [&](Triangle<RankEncodedNodeId> t) {
-        //             (void)t;
-        //             t.normalize();
-        //             if constexpr (KASSERT_ASSERTION_LEVEL >= kassert::assert::normal) {
-        //                 triangles.push_back(t);
-        //             }
-        //             // atomic_debug(t);
-        //             triangle_count++;
-        //             // triangle_count_global_phase.local()++;
-        //         },
-        //         stats, node_ordering::id());
-        // } else {
-        // atomic_debug(fmt::format("local nodes: {}", G.local_nodes()));
-        // atomic_debug(fmt::format("ghost degrees: {}", ghost_degrees));
         cetric::CetricEdgeIterator ctr_global(G_compact, conf, rank, size, CommunicationPolicy{});
+        ctr.set_threshold(threshold);
         ctr_global.run_distributed(
             [&](Triangle<RankEncodedNodeId> t) {
                 (void)t;
@@ -434,16 +477,14 @@ inline size_t run_cetric(DistributedGraph<>& G,
         // }
     }
     triangle_count += triangle_count_global_phase.combine(std::plus<>{});
-    stats.local.global_phase_time = timer.elapsed_time();
     LOG << "[R" << rank << "] "
-        << "Global phase finished " << stats.local.global_phase_time << " s";
-    timer.restart();
+        << "Global phase finished ";
+    phase_timer.start("reduce");
     MPI_Reduce(&triangle_count, &stats.counted_triangles, 1, MPI_NODE, MPI_SUM, 0, MPI_COMM_WORLD);
-    stats.local.reduce_time = timer.elapsed_time();
+    phase_timer.stop();
     if constexpr (KASSERT_ENABLED(kassert::assert::normal)) {
-        timer.restart();
         LOG << "[R" << rank << "] "
-            << "Verification started" << stats.local.local_phase_time << " s";
+            << "Verification started";
         KASSERT(triangles.size() == triangle_count);
         std::sort(triangles.begin(), triangles.end(), [](auto const& lhs, auto const& rhs) {
             return std::tuple(lhs.x.id(), lhs.y.id(), lhs.z.id()) < std::tuple(rhs.x.id(), rhs.y.id(), rhs.z.id());
@@ -458,8 +499,9 @@ inline size_t run_cetric(DistributedGraph<>& G,
             current++;
         }
         LOG << "[R" << rank << "] "
-            << "Verification finished " << timer.elapsed_time() << " s";
+            << "Verification finished ";
     }
+    stats.local.ingest(phase_timer);
     return stats.counted_triangles;
 }
 }  // namespace cetric

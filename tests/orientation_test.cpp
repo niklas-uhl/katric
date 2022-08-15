@@ -53,12 +53,13 @@ protected:
 
 TEST_P(Orientation, GlobalDegree) {
     cetric::profiling::MessageStatistics dummy;
-    G.find_ghost_ranks();
+    G.find_ghost_ranks<true>();
     std::unordered_set<cetric::graph::RankEncodedNodeId> ghosts;
     find_ghosts(G, ghosts);
     auto ghost_degree = cetric::AuxiliaryNodeData<Degree>{ghosts.begin(), ghosts.end()};
     DegreeCommunicator comm(G, conf.rank, conf.PEs, as_int(MessageTag::Orientation));
-    comm.get_ghost_degree([&](RankEncodedNodeId node, Degree degree) { ghost_degree[node] = degree; }, dummy, true);
+    comm.get_ghost_degree([&](RankEncodedNodeId node, Degree degree) { ghost_degree[node] = degree; }, dummy, true,
+                          true);
     cetric::node_ordering::degree ord(G, ghost_degree);
     for (auto node : G.local_nodes()) {
         G.orient(node, ord);
@@ -80,7 +81,7 @@ TEST_P(Orientation, GlobalDegree) {
 
 TEST_P(Orientation, LocalDegree) {
     cetric::profiling::MessageStatistics dummy;
-    G.find_ghost_ranks();
+    G.find_ghost_ranks<true>();
     cetric::node_ordering::degree_outward ord(G);
     for (auto node : G.local_nodes()) {
         G.orient(node, ord);
@@ -106,7 +107,8 @@ TEST_P(Orientation, LocalDegree) {
 //     G.expand_ghosts();
 //     DegreeCommunicator comm(G, conf.rank, conf.PEs, as_int(MessageTag::Orientation));
 //     comm.get_ghost_degree(
-//         [&](NodeId global_id, Degree degree) { G.get_ghost_payload(G.to_local_id(global_id)).degree = degree; }, dummy);
+//         [&](NodeId global_id, Degree degree) { G.get_ghost_payload(G.to_local_id(global_id)).degree = degree; },
+//         dummy);
 //     G.get_graph_payload().ghost_degree_available = true;
 
 //     G.orient([&](NodeId a, NodeId b) {
@@ -118,9 +120,11 @@ TEST_P(Orientation, LocalDegree) {
 //     G.for_each_local_node([&](NodeId node) {
 //         std::vector<Edge> edges;
 //         G.for_each_local_out_edge(node,
-//                                   [&](Edge e) { edges.emplace_back(G.to_global_id(e.tail), G.to_global_id(e.head)); });
+//                                   [&](Edge e) { edges.emplace_back(G.to_global_id(e.tail), G.to_global_id(e.head));
+//                                   });
 //         G.for_each_local_in_edge(node,
-//                                  [&](Edge e) { edges.emplace_back(G.to_global_id(e.head), G.to_global_id(e.tail)); });
+//                                  [&](Edge e) { edges.emplace_back(G.to_global_id(e.head), G.to_global_id(e.tail));
+//                                  });
 //         EXPECT_THAT(edges, testing::UnorderedElementsAreArray(G_full[G.to_global_id(node)]));
 //         edges.clear();
 //         G.for_each_edge(node, [&](Edge e) { edges.emplace_back(G.to_global_id(e.tail), G.to_global_id(e.head)); });
@@ -134,9 +138,11 @@ TEST_P(Orientation, LocalDegree) {
 //     G.for_each_local_node([&](NodeId node) {
 //         std::vector<Edge> edges;
 //         G.for_each_local_out_edge(node,
-//                                   [&](Edge e) { edges.emplace_back(G.to_global_id(e.tail), G.to_global_id(e.head)); });
+//                                   [&](Edge e) { edges.emplace_back(G.to_global_id(e.tail), G.to_global_id(e.head));
+//                                   });
 //         G.for_each_local_in_edge(node,
-//                                  [&](Edge e) { edges.emplace_back(G.to_global_id(e.head), G.to_global_id(e.tail)); });
+//                                  [&](Edge e) { edges.emplace_back(G.to_global_id(e.head), G.to_global_id(e.tail));
+//                                  });
 //         EXPECT_THAT(edges, testing::UnorderedElementsAreArray(G_full[G.to_global_id(node)]));
 //         edges.clear();
 //         G.for_each_edge(node, [&](Edge e) { edges.emplace_back(G.to_global_id(e.tail), G.to_global_id(e.head)); });

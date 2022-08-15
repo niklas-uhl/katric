@@ -1,0 +1,31 @@
+name: weak-scaling-parameters
+ncores: [128, 256, 512, 1024, 2048, 4096]
+threads_per_rank: [4]
+graphs:
+  - generator: rgg
+    n: 20
+    m: 24
+    scale_weak: True
+  - generator: rhg
+    n: 20
+    m: 24
+    gamma: 3.0
+    scale_weak: True
+      #- generator: gnm
+      #n: 20
+      #m: 24
+      #scale_weak: True
+time_limit: 20
+config: {
+  algorithm: [cetric],
+  local-parallel: True,
+  global-parallel: [True],
+  local-degree-of-parallelism: [2],
+  dense-degree-exchange: [False, True],
+  compact-degree-exchange: [False, True],
+  global-synchronization: [False, True],
+  binary-rank-search: [False, True],
+  global-degree-of-parallelism: [3],
+  skip-local-neighborhood: [False],
+  primary-cost-function: [none],
+}

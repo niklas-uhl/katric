@@ -9,10 +9,14 @@
 #include <cstddef>
 #include <google/dense_hash_map>
 #include <iterator>
+#include <kassert/kassert.hpp>
+#include <numeric>
 #include <sparsehash/dense_hash_map>
 #include <type_traits>
+#include "atomic_debug.h"
 #include "message_statistics.h"
 #include "mpi_traits.h"
+#include "tlx/multi_timer.hpp"
 #include "util.h"
 
 template <class, class = void>
@@ -115,6 +119,7 @@ public:
     VectorView<T>& operator[](PEID rank) {
         return views_[rank];
     };
+
     void set_extent(PEID rank, size_t begin, size_t end) {
         views_[rank] = VectorView<T>(data_, begin, end);
     };
@@ -134,6 +139,61 @@ VectorView<T> slice(std::vector<T>& vector, size_t pos, size_t n) {
 
 struct CommunicationUtility {
 public:
+    template <class T>
+    static void all_to_all(std::vector<std::vector<T>> const& send_buf,
+                           CompactBuffer<T>& recv_buf,
+                           PEID rank [[maybe_unused]],
+                           PEID size,
+                           int message_tag [[maybe_unused]],
+                           cetric::profiling::MessageStatistics& stats [[maybe_unused]]) {
+        // tlx::MultiTimer timer;
+        // timer.start("count allocation");
+        MPI_Datatype mpi_type;
+        if constexpr (mpi_traits<T>::builtin) {
+            mpi_type = mpi_traits<T>::mpi_type;
+        } else {
+            mpi_type = mpi_traits<T>::register_type();
+        }
+        std::vector<int> send_counts(size);
+        std::vector<int> send_displs(size);
+        std::vector<int> recv_counts(size);
+        std::vector<int> recv_displs(size);
+        int total_send_count = 0;
+        KASSERT(send_buf.size() == static_cast<size_t>(size));
+        // timer.start("count_computation");
+        for (size_t i = 0; i < send_buf.size(); ++i) {
+            send_counts[i] = send_buf[i].size();
+            total_send_count += send_counts[i];
+        }
+        std::exclusive_scan(send_counts.begin(), send_counts.end(), send_displs.begin(), 0);
+        // timer.start("count_exchange");
+        MPI_Alltoall(send_counts.data(), 1, MPI_INT, recv_counts.data(), 1, MPI_INT, MPI_COMM_WORLD);
+        // timer.start("count_computation");
+        std::exclusive_scan(recv_counts.begin(), recv_counts.end(), recv_displs.begin(), 0);
+        int total_receive_count = recv_displs.back() + recv_counts.back();
+        // timer.start("send_buf_allocation");
+        std::vector<T> send_data(total_send_count);
+        // timer.start("copy");
+        for (size_t i = 0; i < send_buf.size(); ++i) {
+            std::copy(send_buf[i].begin(), send_buf[i].end(), send_data.begin() + send_displs[i]);
+        }
+        // timer.start("receive_allocation");
+        recv_buf.data().resize(total_receive_count);
+        // timer.start("Alltoallv");
+        MPI_Alltoallv(send_data.data(), send_counts.data(), send_displs.data(), mpi_type, recv_buf.data().data(),
+                      recv_counts.data(), recv_displs.data(), mpi_type, MPI_COMM_WORLD);
+
+        // timer.start("extent");
+        for (size_t i = 0; i < send_buf.size(); ++i) {
+            recv_buf.set_extent(i, recv_displs[i], recv_displs[i] + recv_counts[i]);
+        }
+        // timer.stop();
+        // std::stringstream out;
+        // out << "[R" << rank << "] ";
+        // timer.print("alltoall", out);
+        // std::cout << out.str();
+    }
+
     template <typename T>
     using hashed_view_buffer = google::dense_hash_map<PEID, VectorView<T>>;
     template <typename T>

@@ -129,6 +129,12 @@ inline void check_mpi_error(int errcode, const std::string& file, int line) {
     }
 }
 
+inline void ConditionalBarrier(bool active, MPI_Comm comm = MPI_COMM_WORLD) {
+    if (active) {
+        MPI_Barrier(comm);
+    }
+}
+
 constexpr unsigned long long log2(unsigned long long x) {
 #if defined __has_builtin
 #if __has_builtin(__builtin_clzl)
