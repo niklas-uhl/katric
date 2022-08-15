@@ -21,9 +21,12 @@ def load_suites(suite_files, search_paths):
 
 def load_inputs(input_descriptions):
     inputs = {}
+    partitions = {}
     for path in input_descriptions:
-        inputs.update(expcore.load_inputs_from_yaml(path))
-    return inputs
+        sub_inputs, sub_partitions = expcore.load_inputs_from_yaml(path)
+        inputs.update(sub_inputs)
+        partitions.update(sub_partitions)
+    return (inputs, partitions)
 
 
 def main():
@@ -72,11 +75,11 @@ def main():
     args = parser.parse_args()
     print(args.search_dirs)
     suites = load_suites(args.suite_files, args.search_dirs)
-    inputs = load_inputs(args.input_descriptions + default_inputs)
+    inputs, partitions = load_inputs(args.input_descriptions + default_inputs)
     for suitename in args.suite:
         suite = suites.get(suitename)
         if suite:
-            suite.load_inputs(inputs)
+            suite.load_inputs(inputs, partitions)
 
     if args.list:
         for name in suites.keys():

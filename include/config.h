@@ -77,6 +77,8 @@ struct Config {
     std::string input_file;
     std::string output_file;
     graphio::InputFormat input_format;
+    std::string partitioning;
+    bool partitioned_input = false;
     size_t buffer_threshold = std::numeric_limits<size_t>::max();
     double max_degree_threshold_alpha = 1.0;
     bool empty_pending_buffers_on_overflow = false;
@@ -121,15 +123,15 @@ struct Config {
 
     template <class Archive>
     void serialize(Archive& archive) {
-        archive(CEREAL_NVP(input_file), CEREAL_NVP(hostname), CEREAL_NVP(PEs), CEREAL_NVP(num_threads),
-                CEREAL_NVP(grainsize), CEREAL_NVP(cache_input), CEREAL_NVP(algorithm), CEREAL_NVP(communication_policy),
-                CEREAL_NVP(global_parallel), CEREAL_NVP(local_parallel), CEREAL_NVP(threshold),
-                CEREAL_NVP(local_degree_of_parallelism), CEREAL_NVP(global_degree_of_parallelism),
-                CEREAL_NVP(dense_degree_exchange), CEREAL_NVP(compact_degree_exchange),
-                CEREAL_NVP(global_synchronization), CEREAL_NVP(binary_rank_search), CEREAL_NVP(threshold_scale),
-                CEREAL_NVP(primary_cost_function), CEREAL_NVP(secondary_cost_function), CEREAL_NVP(orient_locally),
-                CEREAL_NVP(pseudo2core), CEREAL_NVP(dense_load_balancing), CEREAL_NVP(flag_intersection),
-                CEREAL_NVP(skip_local_neighborhood), CEREAL_NVP(git_commit));
+        archive(CEREAL_NVP(input_file), CEREAL_NVP(partitioning), CEREAL_NVP(partitioned_input), CEREAL_NVP(hostname),
+                CEREAL_NVP(PEs), CEREAL_NVP(num_threads), CEREAL_NVP(grainsize), CEREAL_NVP(cache_input),
+                CEREAL_NVP(algorithm), CEREAL_NVP(communication_policy), CEREAL_NVP(global_parallel),
+                CEREAL_NVP(local_parallel), CEREAL_NVP(threshold), CEREAL_NVP(local_degree_of_parallelism),
+                CEREAL_NVP(global_degree_of_parallelism), CEREAL_NVP(dense_degree_exchange),
+                CEREAL_NVP(compact_degree_exchange), CEREAL_NVP(global_synchronization), CEREAL_NVP(binary_rank_search),
+                CEREAL_NVP(threshold_scale), CEREAL_NVP(primary_cost_function), CEREAL_NVP(secondary_cost_function),
+                CEREAL_NVP(orient_locally), CEREAL_NVP(pseudo2core), CEREAL_NVP(dense_load_balancing),
+                CEREAL_NVP(flag_intersection), CEREAL_NVP(skip_local_neighborhood), CEREAL_NVP(git_commit));
         if (input_file.empty()) {
             archive(cereal::make_nvp("gen", gen.generator),                  //
                     cereal::make_nvp("gen_n", gen.n),                        //

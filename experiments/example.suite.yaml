@@ -4,7 +4,8 @@ threads_per_rank: [1, 2, 4, 8, 16]
 graphs:
   - hiv
   #- metis-sample
-  - com-amazon
+  - name: com-amazon
+    partitioned: True
   #- generator: rgg
   #  n: 12
   #  radius: 0.55
@@ -19,7 +20,7 @@ time_limit: 10
 config: {
   algorithm: [cetric],
   local-parallel: True,
-  global-parallel: [False, True],
+  global-parallel: [True],
   #flag-intersection: [True, False],
   #skip-local-neighborhood: [True, False],
   #primary-cost-function: [N, D, DPD, IDPD],
