@@ -327,14 +327,13 @@ public:
                                            NodeOrdering&& node_ordering,
                                            GhostSet const& ghosts) {
         auto base_queue = message_queue::make_buffered_queue<RankEncodedNodeId>(Merger{}, Splitter{});
-        auto queue = IndirectMessageQueue(base_queue);
-        // auto queue = [&]() {
-        //     if constexpr (std::is_same_v<CommunicationPolicy, cetric::GridPolicy>) {
-        //         return IndirectMessageQueue(base_queue);
-        //     } else {
-        //         return base_queue;
-        //     }
-        // }();
+        auto queue = [&]() {
+            if constexpr (std::is_same_v<CommunicationPolicy, cetric::GridPolicy>) {
+                return IndirectMessageQueueAdaptor(base_queue);
+            } else {
+                return DirectMessageQueueAdaptor(base_queue);
+            }
+        }();
         queue.set_threshold(threshold_);
         cetric::profiling::Timer phase_time;
         for (auto current = interface_nodes_begin; current != interface_nodes_end; current++) {
@@ -379,9 +378,14 @@ public:
                                          NodeOrdering&& node_ordering,
                                          GhostSet const& ghosts) {
         KASSERT(conf_.num_threads > 1ul);
-        auto base_queue =
-            message_queue::make_concurrent_buffered_queue<RankEncodedNodeId>(conf_.num_threads, Merger{}, Splitter{});
-        auto queue = IndirectMessageQueue(base_queue);
+        auto base_queue = message_queue::make_concurrent_buffered_queue<RankEncodedNodeId>(conf_.num_threads - 1, Merger{}, Splitter{});
+        auto queue = [&]() {
+            if constexpr (std::is_same_v<CommunicationPolicy, cetric::GridPolicy>) {
+                return IndirectMessageQueueAdaptor(base_queue);
+            } else {
+                return DirectMessageQueueAdaptor(base_queue);
+            }
+        }();
         queue.set_threshold(threshold_);
         cetric::profiling::Timer phase_time;
         std::atomic<size_t> nodes_queued = 0;
