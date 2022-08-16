@@ -142,8 +142,10 @@ inline size_t run_patric(DistributedGraph<>& G,
     node_set ghosts;
     ConditionalBarrier(true);
     phase_timer.start("primary_load_balancing");
-    if ((conf.gen.generator.empty() && conf.primary_cost_function != "N") ||
-        (!conf.gen.generator.empty() && conf.primary_cost_function != "none")) {
+    bool no_load_balancing_required = (conf.partitioned_input && conf.primary_cost_function == "none") or
+                                      (conf.gen.generator.empty() && conf.primary_cost_function == "N") or
+                                      (!conf.gen.generator.empty() && conf.primary_cost_function == "none");
+    if (!no_load_balancing_required) {
         auto cost_function = [&]() {
             if (conf.num_threads > 1) {
                 return CostFunctionRegistry<DistributedGraph<>>::get(conf.primary_cost_function, G, conf,
