@@ -1,0 +1,36 @@
+name: partitioned_no_lb
+ncores: [512, 1024, 2048, 4096, 8192, 16384]
+threads_per_rank: [1, 2, 4, 8]
+graphs:
+        - name: webbase-2001
+          time_limit: 25
+          partitioned: True
+        - name: europe
+          time_limit: 3
+          partitioned: True
+        - name: usa
+          time_limit: 3
+          partitioned: True
+        - name: uk-2007-05
+          time_limit: 25
+          partitioned: True
+        - name: live-journal
+          time_limit: 15
+          partitioned: True
+        - name: twitter
+          time_limit: 25
+          partitioned: True
+#time_limit: 15
+config: {
+  algorithm: [cetric, patric],
+  local-parallel: True,
+  global-parallel: [True],
+  local-degree-of-parallelism: [2],
+  dense-degree-exchange: [False],
+  global-synchronization: True,
+  binary-rank-search: True,
+  global-degree-of-parallelism: [3],
+  skip-local-neighborhood: [False],
+  primary-cost-function: [none],
+}
+

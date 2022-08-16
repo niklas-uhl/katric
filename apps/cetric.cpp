@@ -28,11 +28,11 @@
 #include "cereal/cereal.hpp"
 #include "counters/cetric_edge_iterator.h"
 #include "datastructures/distributed/distributed_graph.h"
+#include "git_hash.h"
 #include "graph-io/graph_definitions.h"
 #include "parse_parameters.h"
 #include "statistics.h"
 #include "timer.h"
-#include "git_hash.h"
 
 cetric::Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
     (void)size;
@@ -120,10 +120,11 @@ cetric::Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
     if (!conf.partitioning.empty()) {
         conf.partitioned_input = true;
     }
-    if (conf.primary_cost_function == "none" && conf.gen.generator.empty()) {
+    if (conf.primary_cost_function == "none" && conf.gen.generator.empty() && !conf.partitioned_input) {
         int retval;
         if (rank == 0) {
-            CLI::RequiredError e("Primary cost function 'none' is only allowed for generated graphs.");
+            CLI::RequiredError e(
+                "Primary cost function 'none' is only allowed for generated or prepartitioned graphs.");
             retval = app.exit(e);
         } else {
             retval = 1;
@@ -174,7 +175,8 @@ private:
         if (conf_.gen.generator == "") {
             auto G = graphio::read_local_graph(conf_.input_file, conf_.input_format, conf_.rank, conf_.PEs);
             if (conf_.partitioned_input) {
-                auto partitioning = graphio::read_local_partition(conf_.partitioning, G.info.local_from, G.info.local_to, conf_.rank, conf_.PEs);
+                auto partitioning = graphio::read_local_partition(conf_.partitioning, G.info.local_from,
+                                                                  G.info.local_to, conf_.rank, conf_.PEs);
                 G.G = graphio::apply_partition(std::move(G.G), partitioning, MPI_COMM_WORLD);
                 graphio::relabel_consecutively(G.G, MPI_COMM_WORLD);
                 if (G.G.local_node_count() != 0) {
