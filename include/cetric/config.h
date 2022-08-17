@@ -88,6 +88,7 @@ struct Config {
     Algorithm            algorithm                         = Algorithm::Cetric;
     Threshold            threshold                         = Threshold::local_nodes;
     double               threshold_scale                   = 1.0;
+    double               high_degree_threshold_scale       = 1.0;
     std::string          communication_policy              = "new";
     bool                 local_parallel                    = false;
     bool                 global_parallel                   = false;
@@ -144,6 +145,7 @@ struct Config {
             CEREAL_NVP(global_synchronization),
             CEREAL_NVP(binary_rank_search),
             CEREAL_NVP(threshold_scale),
+            CEREAL_NVP(high_degree_threshold_scale),
             CEREAL_NVP(primary_cost_function),
             CEREAL_NVP(secondary_cost_function),
             CEREAL_NVP(orient_locally),

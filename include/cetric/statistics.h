@@ -121,6 +121,7 @@ struct Statistics {
             reduce_time                = rhs.reduce_time;
             message_statistics         = rhs.message_statistics;
             skipped_nodes              = rhs.skipped_nodes.load();
+            nodes_parallel2d           = rhs.nodes_parallel2d.load();
             local_triangles            = rhs.local_triangles.load();
             type3_triangles            = rhs.type3_triangles.load();
             global_phase_threshold     = rhs.global_phase_threshold;
@@ -139,6 +140,7 @@ struct Statistics {
             reduce_time                = rhs.reduce_time;
             message_statistics         = rhs.message_statistics;
             skipped_nodes              = rhs.skipped_nodes.load();
+            nodes_parallel2d           = rhs.nodes_parallel2d.load();
             local_triangles            = rhs.local_triangles.load();
             type3_triangles            = rhs.type3_triangles.load();
             global_phase_threshold     = rhs.global_phase_threshold;
@@ -159,6 +161,7 @@ struct Statistics {
         double                           reduce_time       = 0;
         message_queue::MessageStatistics message_statistics;
         std::atomic<size_t>              skipped_nodes          = 0;
+        std::atomic<size_t>              nodes_parallel2d       = 0;
         std::atomic<size_t>              local_triangles        = 0;
         std::atomic<size_t>              type3_triangles        = 0;
         size_t                           global_phase_threshold = 0;
@@ -198,6 +201,7 @@ struct Statistics {
             );
             archive(
                 cereal::make_nvp("skipped_nodes", skipped_nodes.load()),
+                cereal::make_nvp("nodes_parallel2d", nodes_parallel2d.load()),
                 cereal::make_nvp("local_triangles", local_triangles.load()),
                 cereal::make_nvp("type3_triangles", type3_triangles.load())
             );
@@ -223,14 +227,17 @@ struct Statistics {
                 CEREAL_NVP(local_time)
             );
             size_t skipped_nodes_tmp;
+            size_t nodes_parallel2d_tmp;
             size_t local_triangles_tmp;
             size_t type3_triangles_tmp;
             archive(
                 cereal::make_nvp("skipped_nodes", skipped_nodes_tmp),
+                cereal::make_nvp("nodes_parallel2d", nodes_parallel2d_tmp),
                 cereal::make_nvp("local_triangles", local_triangles_tmp),
                 cereal::make_nvp("type3_triangles", type3_triangles_tmp)
             );
             skipped_nodes.store(skipped_nodes_tmp);
+            nodes_parallel2d.store(nodes_parallel2d_tmp);
             local_triangles.store(local_triangles_tmp);
             type3_triangles.store(type3_triangles_tmp);
         }

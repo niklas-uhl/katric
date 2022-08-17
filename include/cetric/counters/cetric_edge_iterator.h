@@ -6,6 +6,7 @@
 #define PARALLEL_TRIANGLE_COUNTER_PARALLEL_GHOST_NODE_ITERATOR_H
 
 #include <algorithm>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
@@ -17,7 +18,9 @@
 #include <boost/iterator/function_output_iterator.hpp>
 #include <boost/range/adaptor/filtered.hpp>
 #include <boost/range/iterator_range_core.hpp>
+#include <gmpxx.h>
 #include <message-queue/buffered_queue.h>
+#include <mpi.h>
 #include <tbb/concurrent_vector.h>
 #include <tbb/enumerable_thread_specific.h>
 #include <tbb/parallel_for_each.h>
@@ -175,7 +178,11 @@ public:
           is_v_neighbor_(/*G.local_node_count() + G.ghost_count(), false*/),
           interface_nodes_(),
           pe_min_degree(),
-          threshold_(std::numeric_limits<size_t>::max()) {}
+          threshold_(std::numeric_limits<size_t>::max()) {
+        EdgeId total_edge_count = G.local_edge_count();
+        MPI_Allreduce(MPI_IN_PLACE, &total_edge_count, 1, MPI_NODE, MPI_SUM, MPI_COMM_WORLD);
+        high_degree_threshold_ = conf_.high_degree_threshold_scale * sqrt(total_edge_count / 2.0);
+    }
 
     void set_threshold(size_t threshold) {
         threshold_ = threshold;
@@ -200,6 +207,10 @@ public:
         cetric::profiling::Timer phase_time;
         interface_nodes.clear();
         for (auto v: G.local_nodes()) {
+            if (conf_.pseudo2core && G.outdegree(v) < 2) {
+                stats.local.skipped_nodes++;
+                continue;
+            }
             if (G.template is_interface_node_if_sorted_by_rank<AdjacencyType::out>(v)) {
                 interface_nodes.emplace_back(v);
             }
@@ -254,6 +265,20 @@ public:
         interface_nodes.clear();
         auto nodes = G.local_nodes();
 
+        auto partition_neighborhood_2d = [this](RankEncodedNodeId node [[maybe_unused]]) {
+            if (conf_.local_degree_of_parallelism > 2) {
+                return true;
+            } else if (conf_.local_degree_of_parallelism > 1) {
+                bool partition = G.outdegree(node) > high_degree_threshold_;
+                if (partition) {
+                    atomic_debug("High degree node");
+                }
+                return partition;
+            } else {
+                return false;
+            }
+        };
+
         auto handle_neighbor_range = [&node_ordering,
                                       this,
                                       &emit,
@@ -296,23 +321,43 @@ public:
                 );
             }
         };
+        std::atomic<size_t> skipped_nodes = 0;
         tbb::parallel_for(
             tbb::blocked_range(nodes.begin(), nodes.end()),
-            [this, &interface_nodes, &node_ordering, &emit, &stats, handle_neighbor_range](auto const& nodes_r) {
+            [this,
+             &interface_nodes,
+             &node_ordering,
+             &emit,
+             &stats,
+             handle_neighbor_range,
+             partition_neighborhood_2d,
+             &skipped_nodes](auto const& nodes_r) {
                 for (auto v: nodes_r) {
+                    if (conf_.pseudo2core && G.outdegree(v) < 2) {
+                        skipped_nodes++;
+                        continue;
+                    }
                     if (G.template is_interface_node_if_sorted_by_rank<AdjacencyType::out>(v)) {
                         interface_nodes.local().emplace_back(v);
                     }
                     auto v_neighbors_size =
                         std::distance(G.out_adj(v).neighbors().begin(), G.out_adj(v).neighbors().end());
-                    tbb::parallel_for(
-                        tbb::blocked_range(size_t{0}, static_cast<size_t>(v_neighbors_size)),
-                        [&handle_neighbor_range, v=v](auto const& neighbor_range) { handle_neighbor_range(v, neighbor_range); }
-                    );
+                    if (partition_neighborhood_2d(v)) {
+                        stats.local.nodes_parallel2d++;
+                        tbb::parallel_for(
+                            tbb::blocked_range(size_t{0}, static_cast<size_t>(v_neighbors_size)),
+                            [&handle_neighbor_range, v = v](auto const& neighbor_range) {
+                                handle_neighbor_range(v, neighbor_range);
+                            }
+                        );
+                    } else {
+                        handle_neighbor_range(v, tbb::blocked_range(size_t{0}, static_cast<size_t>(v_neighbors_size)));
+                    }
                 }
             }
         );
         stats.local.local_phase_time += phase_time.elapsed_time();
+        stats.local.skipped_nodes += skipped_nodes;
     }
 
     template <typename TriangleFunc, typename NodeOrdering>
@@ -406,24 +451,24 @@ public:
         for (auto current = interface_nodes_begin; current != interface_nodes_end; current++) {
             RankEncodedNodeId v = *current;
             // iterate over neighborhood and delegate to other PEs if necessary
-            // if (conf_.pseudo2core && G.outdegree(v) < 2) {
-            //     stats.local.skipped_nodes++;
-            // } else {
-            for (RankEncodedEdge edge: G.out_adj(v).edges()) {
-                RankEncodedNodeId u = edge.head;
-                if (/*conf_.algorithm == Algorithm::Cetric || */ u.rank() != rank_) {
-                    // assert(G.is_local_from_local(v));
-                    // assert(G.is_local(G.to_global_id(v)));
-                    // assert(!G.is_local(G.to_global_id(u)));
-                    // assert(!G.is_local_from_local(u));
-                    PEID u_rank = u.rank();
-                    assert(u_rank != rank_);
-                    if (last_proc_[G.to_local_idx(v)] != u_rank) {
-                        enqueue_for_sending(queue, v, u_rank, emit, stats);
+            if (conf_.pseudo2core && G.outdegree(v) < 2) {
+                stats.local.skipped_nodes++;
+            } else {
+                for (RankEncodedEdge edge: G.out_adj(v).edges()) {
+                    RankEncodedNodeId u = edge.head;
+                    if (/*conf_.algorithm == Algorithm::Cetric || */ u.rank() != rank_) {
+                        // assert(G.is_local_from_local(v));
+                        // assert(G.is_local(G.to_global_id(v)));
+                        // assert(!G.is_local(G.to_global_id(u)));
+                        // assert(!G.is_local_from_local(u));
+                        PEID u_rank = u.rank();
+                        assert(u_rank != rank_);
+                        if (last_proc_[G.to_local_idx(v)] != u_rank) {
+                            enqueue_for_sending(queue, v, u_rank, emit, stats);
+                        }
                     }
                 }
             }
-            // }
             // timer.start("Communication");
             queue.poll([&](SharedVectorSpan<RankEncodedNodeId> span, PEID sender [[maybe_unused]]) {
                 handle_buffer(span.begin(), span.end(), emit, stats, node_ordering, ghosts);
@@ -453,14 +498,16 @@ public:
         std::atomic<size_t>      nodes_queued = 0;
         std::atomic<size_t>      write_jobs   = 0;
         ThreadPool               pool(conf_.num_threads - 1);
+        std::atomic<size_t>      skipped_nodes = 0;
         for (auto current = interface_nodes_begin; current != interface_nodes_end; current++) {
             RankEncodedNodeId v = *current;
             nodes_queued++;
-            auto task = [v, this, &stats, emit, &queue, &pool, &nodes_queued, &write_jobs]() {
-                // if (conf_.pseudo2core && G.outdegree(v) < 2) {
-                //     stats.local.skipped_nodes++;
-                //     return;
-                // }
+            auto task = [v, this, &stats, emit, &queue, &pool, &nodes_queued, &write_jobs, &skipped_nodes]() {
+                if (conf_.pseudo2core && G.outdegree(v) < 2) {
+                    skipped_nodes++;
+                    nodes_queued--;
+                    return;
+                }
                 for (RankEncodedEdge edge: G.out_adj(v).edges()) {
                     RankEncodedNodeId u = edge.head;
                     if (/*conf_.algorithm == Algorithm::Cetric || */ u.rank() != rank_) {
@@ -503,6 +550,7 @@ public:
         // atomic_debug(fmt::format("Finished Pool, enqueued: {}, done: {}", pool.enqueued(), pool.done()));
         stats.local.global_phase_time += phase_time.elapsed_time();
         stats.local.message_statistics.add(queue.stats());
+        stats.local.skipped_nodes += skipped_nodes;
         queue.reset();
     }
 
@@ -849,6 +897,7 @@ private:
     tbb::enumerable_thread_specific<std::vector<RankEncodedNodeId>> interface_nodes_;
     std::vector<Degree>                                             pe_min_degree;
     size_t                                                          threshold_;
+    size_t                                                          high_degree_threshold_;
 };
 
 } // namespace cetric

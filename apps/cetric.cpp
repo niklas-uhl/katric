@@ -100,6 +100,7 @@ cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::P
     app.add_option("--threshold", conf.threshold)
         ->transform(CLI::CheckedTransformer(cetric::threshold_map, CLI::ignore_case));
     app.add_option("--threshold-scale", conf.threshold_scale);
+    app.add_option("--high-degree-threshold-scale", conf.high_degree_threshold_scale);
 
     parse_gen_parameters(app, conf);
 
@@ -257,8 +258,8 @@ int main(int argc, char* argv[]) {
         std::exit(1);
     }
     bool                     debug = false;
-    cetric::PEID                     rank;
-    cetric::PEID                     size;
+    cetric::PEID             rank;
+    cetric::PEID             size;
     backward::SignalHandling sh;
     {
         backward::MPIErrorHandler mpi_error_handler(MPI_COMM_WORLD);
@@ -286,9 +287,9 @@ int main(int argc, char* argv[]) {
         for (size_t iter = 0; iter < conf.iterations; ++iter) {
             MPI_Barrier(MPI_COMM_WORLD);
 
-            cetric::graph::DistributedGraph<>            G;
-            cetric::profiling::Statistics stats(rank, size);
-            cetric::profiling::Timer      timer;
+            cetric::graph::DistributedGraph<> G;
+            cetric::profiling::Statistics     stats(rank, size);
+            cetric::profiling::Timer          timer;
             LOG << "[R" << rank << "] "
                 << "Loading from cache";
             graphio::IOResult input = input_cache.get();
@@ -296,7 +297,12 @@ int main(int argc, char* argv[]) {
                 << "Finished loading from cache";
             // atomic_debug(G_local.node_info);
             //  atomic_debug(G_local.edge_heads);
-            G = cetric::graph::DistributedGraph<>(std::move(input.G), {input.info.local_from, input.info.local_to}, rank, size);
+            G = cetric::graph::DistributedGraph<>(
+                std::move(input.G),
+                {input.info.local_from, input.info.local_to},
+                rank,
+                size
+            );
             // atomic_debug(G);
             LOG << "[R" << rank << "] "
                 << "Finished conversion";
