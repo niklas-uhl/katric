@@ -1,11 +1,9 @@
-#include "datastructures/graph_definitions.h"
 #include <algorithm>
 #include <filesystem>
 #include <iterator>
 #include <numeric>
 #include <vector>
 
-#include <datastructures/distributed/distributed_graph.h>
 #include <gmock/gmock-matchers.h>
 #include <graph-io/distributed_graph_io.h>
 #include <graph-io/graph_io.h>
@@ -13,6 +11,9 @@
 #include <graph-io/parsing.h>
 #include <gtest/gtest.h>
 #include <mpi.h>
+
+#include "cetric/datastructures/distributed/distributed_graph.h"
+#include "cetric/datastructures/graph_definitions.h"
 
 TEST(DistributedGraphTest, loading_works) {
     using namespace graphio;

@@ -5,10 +5,6 @@
 #ifndef PARALLEL_TRIANGLE_COUNTER_COMM_UTILS_H
 #define PARALLEL_TRIANGLE_COUNTER_COMM_UTILS_H
 
-#include "atomic_debug.h"
-#include "message_statistics.h"
-#include "mpi_traits.h"
-#include "util.h"
 #include <cstddef>
 #include <google/dense_hash_map>
 #include <iterator>
@@ -19,8 +15,13 @@
 #include <kassert/kassert.hpp>
 #include <mpi.h>
 
+#include "atomic_debug.h"
+#include "message_statistics.h"
+#include "mpi_traits.h"
 #include "tlx/multi_timer.hpp"
+#include "util.h"
 
+namespace cetric {
 template <class, class = void>
 struct has_data : std::false_type {};
 
@@ -808,5 +809,6 @@ private:
     size_t                   threshold_;
     bool                     empty_pending_buffers_on_overflow;
 };
+} // namespace cetric
 
 #endif // PARALLEL_TRIANGLE_COUNTER_COMM_UTILS_H

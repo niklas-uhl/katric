@@ -1,7 +1,6 @@
 #ifndef GRAPH_DEFINITIONS_H_8XAL43DH
 #define GRAPH_DEFINITIONS_H_8XAL43DH
 
-#include "message-queue/mpi_datatype.h"
 #include <algorithm>
 #include <cassert>
 #include <cinttypes>
@@ -12,11 +11,13 @@
 #include <sparsehash/dense_hash_map>
 #include <sparsehash/dense_hash_set>
 
-#include <atomic_debug.h>
 #include <fmt/core.h>
 #include <fmt/ostream.h>
 #include <graph-io/graph_definitions.h>
 #include <hash/murmur2_hash.hpp>
+
+#include "cetric/atomic_debug.h"
+#include "message-queue/mpi_datatype.h"
 
 namespace cetric {
 namespace graph {

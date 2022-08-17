@@ -1,9 +1,6 @@
 #ifndef NEW_LOAD_BALANCING_H_CYE8RYEL
 #define NEW_LOAD_BALANCING_H_CYE8RYEL
 
-#include "datastructures/graph_definitions.h"
-#include "timer.h"
-#include "util.h"
 #include <algorithm>
 #include <cstddef>
 #include <iterator>
@@ -13,13 +10,16 @@
 #include <string>
 #include <vector>
 
-#include <config.h>
-#include <cost_function.h>
+#include <debug_assert.hpp>
 #include <fmt/core.h>
 #include <graph-io/local_graph_view.h>
 #include <mpi.h>
 
-#include "debug_assert.hpp"
+#include "cetric/config.h"
+#include "cetric/cost_function.h"
+#include "cetric/datastructures/graph_definitions.h"
+#include "cetric/timer.h"
+#include "cetric/util.h"
 
 namespace cetric {
 namespace load_balancing {

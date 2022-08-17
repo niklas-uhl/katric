@@ -5,15 +5,6 @@
 #ifndef PARALLEL_TRIANGLE_COUNTER_PARALLEL_GHOST_NODE_ITERATOR_H
 #define PARALLEL_TRIANGLE_COUNTER_PARALLEL_GHOST_NODE_ITERATOR_H
 
-#include "concurrent_buffered_queue.h"
-#include "datastructures/auxiliary_node_data.h"
-#include "datastructures/distributed/distributed_graph.h"
-#include "datastructures/distributed/helpers.h"
-#include "datastructures/span.h"
-#include "indirect_message_queue.h"
-#include "message-queue/buffered_queue.h"
-#include "thread_pool.h"
-#include "util.h"
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -26,17 +17,26 @@
 #include <boost/iterator/function_output_iterator.hpp>
 #include <boost/range/adaptor/filtered.hpp>
 #include <boost/range/iterator_range_core.hpp>
-#include <config.h>
-#include <datastructures/graph_definitions.h>
-#include <statistics.h>
+#include <message-queue/buffered_queue.h>
 #include <tbb/concurrent_vector.h>
 #include <tbb/enumerable_thread_specific.h>
 #include <tbb/parallel_for_each.h>
 #include <tbb/task_group.h>
-#include <timer.h>
 #include <tlx/meta/has_member.hpp>
+#include <tlx/meta/has_method.hpp>
 
-#include "tlx/meta/has_method.hpp"
+#include "cetric/concurrent_buffered_queue.h"
+#include "cetric/config.h"
+#include "cetric/datastructures/auxiliary_node_data.h"
+#include "cetric/datastructures/distributed/distributed_graph.h"
+#include "cetric/datastructures/distributed/helpers.h"
+#include "cetric/datastructures/graph_definitions.h"
+#include "cetric/datastructures/span.h"
+#include "cetric/indirect_message_queue.h"
+#include "cetric/statistics.h"
+#include "cetric/thread_pool.h"
+#include "cetric/timer.h"
+#include "cetric/util.h"
 
 namespace cetric {
 using namespace graph;
@@ -253,89 +253,63 @@ public:
         cetric::profiling::Timer phase_time;
         interface_nodes.clear();
         auto nodes = G.local_nodes();
+
+        auto handle_neighbor_range = [&node_ordering,
+                                      this,
+                                      &emit,
+                                      &stats](RankEncodedNodeId v, tbb::blocked_range<size_t> const& neighbor_range) {
+            for (size_t neighbor_index = neighbor_range.begin(); neighbor_index != neighbor_range.end();
+                 neighbor_index++) {
+                auto u = *(G.out_adj(v).neighbors().begin() + neighbor_index);
+                KASSERT(*(G.out_adj(v).neighbors().begin() + neighbor_index) == u);
+                if (u.rank() != rank_) {
+                    if (conf_.algorithm == Algorithm::Patric) {
+                        // neighbor_index++;
+                        continue;
+                    }
+                    // atomic_debug(
+                    //     fmt::format("Remaining neighbors {}",
+                    //                 boost::make_iterator_range(G.out_adj(v).neighbors().begin() +
+                    //                 neighbor_index,
+                    //                                            G.out_adj(v).neighbors().end())));
+                    // TODO: we should be able to break here when the edges are properly sorted
+                    KASSERT(std::all_of(
+                        G.out_adj(v).neighbors().begin() + neighbor_index,
+                        G.out_adj(v).neighbors().end(),
+                        [rank = this->rank_](RankEncodedNodeId node) { return node.rank() != rank; }
+                    ));
+                    break;
+                }
+                auto v_neighbors = G.out_adj(v).neighbors();
+                auto u_neighbors = G.out_adj(u).neighbors();
+                auto offset      = (conf_.algorithm == Algorithm::Cetric) * neighbor_index;
+                std::set_intersection(
+                    v_neighbors.begin() + offset,
+                    v_neighbors.end(),
+                    u_neighbors.begin(),
+                    u_neighbors.end(),
+                    boost::function_output_iterator([&](RankEncodedNodeId w) {
+                        stats.local.local_triangles++;
+                        emit(Triangle<RankEncodedNodeId>{v, u, w});
+                    }),
+                    node_ordering
+                );
+            }
+        };
         tbb::parallel_for(
             tbb::blocked_range(nodes.begin(), nodes.end()),
-            [this, &interface_nodes, &node_ordering, &emit, &stats](auto const& nodes_r) {
+            [this, &interface_nodes, &node_ordering, &emit, &stats, handle_neighbor_range](auto const& nodes_r) {
                 for (auto v: nodes_r) {
                     if (G.template is_interface_node_if_sorted_by_rank<AdjacencyType::out>(v)) {
                         interface_nodes.local().emplace_back(v);
                     }
-                    auto v_neighbors_size = std::ranges::distance(G.out_adj(v).neighbors());
+                    auto v_neighbors_size =
+                        std::distance(G.out_adj(v).neighbors().begin(), G.out_adj(v).neighbors().end());
                     tbb::parallel_for(
                         tbb::blocked_range(size_t{0}, static_cast<size_t>(v_neighbors_size)),
-                        [&node_ordering, v = v, this, &emit, &stats](tbb::blocked_range<size_t> const& neighbor_range) {
-                            for (size_t neighbor_index = neighbor_range.begin(); neighbor_index != neighbor_range.end();
-                                 neighbor_index++) {
-                                auto u = *(G.out_adj(v).neighbors().begin() + neighbor_index);
-                                KASSERT(*(G.out_adj(v).neighbors().begin() + neighbor_index) == u);
-                                if (u.rank() != rank_) {
-                                    if (conf_.algorithm == Algorithm::Patric) {
-                                        // neighbor_index++;
-                                        continue;
-                                    }
-                                    // atomic_debug(
-                                    //     fmt::format("Remaining neighbors {}",
-                                    //                 boost::make_iterator_range(G.out_adj(v).neighbors().begin() +
-                                    //                 neighbor_index,
-                                    //                                            G.out_adj(v).neighbors().end())));
-                                    // TODO: we should be able to break here when the edges are properly sorted
-                                    KASSERT(std::all_of(
-                                        G.out_adj(v).neighbors().begin() + neighbor_index,
-                                        G.out_adj(v).neighbors().end(),
-                                        [rank = this->rank_](RankEncodedNodeId node) { return node.rank() != rank; }
-                                    ));
-                                    break;
-                                }
-                                auto v_neighbors = G.out_adj(v).neighbors();
-                                auto u_neighbors = G.out_adj(u).neighbors();
-                                auto offset      = (conf_.algorithm == Algorithm::Cetric) * neighbor_index;
-                                std::set_intersection(
-                                    v_neighbors.begin() + offset,
-                                    v_neighbors.end(),
-                                    u_neighbors.begin(),
-                                    u_neighbors.end(),
-                                    boost::function_output_iterator([&](RankEncodedNodeId w) {
-                                        stats.local.local_triangles++;
-                                        emit(Triangle<RankEncodedNodeId>{v, u, w});
-                                    }),
-                                    node_ordering
-                                );
-                            }
-                        }
+                        [&handle_neighbor_range, v=v](auto const& neighbor_range) { handle_neighbor_range(v, neighbor_range); }
                     );
                 }
-                //     for (size_t neighbor_index = 0; neighbor_index < v_neighbors_size; neighbor_index++) {
-                //         auto u = *(G.out_adj(v).neighbors().begin() + neighbor_index);
-                //         KASSERT(*(G.out_adj(v).neighbors().begin() + neighbor_index) == u);
-                //         if (u.rank() != rank_) {
-                //             if (conf_.algorithm == Algorithm::Patric) {
-                //                 // neighbor_index++;
-                //                 continue;
-                //             }
-                //             // atomic_debug(
-                //             //     fmt::format("Remaining neighbors {}",
-                //             //                 boost::make_iterator_range(G.out_adj(v).neighbors().begin() +
-                //             neighbor_index,
-                //             //                                            G.out_adj(v).neighbors().end())));
-                //             // TODO: we should be able to break here when the edges are properly sorted
-                //             KASSERT(std::all_of(
-                //                 G.out_adj(v).neighbors().begin() + neighbor_index, G.out_adj(v).neighbors().end(),
-                //                 [rank = this->rank_](RankEncodedNodeId node) { return node.rank() != rank; }));
-                //             break;
-                //         }
-                //         auto v_neighbors = G.out_adj(v).neighbors();
-                //         auto u_neighbors = G.out_adj(u).neighbors();
-                //         auto offset = (conf_.algorithm == Algorithm::Cetric) * neighbor_index;
-                //         std::set_intersection(v_neighbors.begin() + offset, v_neighbors.end(), u_neighbors.begin(),
-                //                               u_neighbors.end(),
-                //                               boost::function_output_iterator([&](RankEncodedNodeId w) {
-                //                                   stats.local.local_triangles++;
-                //                                   emit(Triangle<RankEncodedNodeId>{v, u, w});
-                //                               }),
-                //                               node_ordering);
-                //         // neighbor_index++;
-                //     }
-                // }
             }
         );
         stats.local.local_phase_time += phase_time.elapsed_time();
@@ -473,8 +447,7 @@ public:
         GhostSet const&                ghosts
     ) {
         KASSERT(conf_.num_threads > 1ul);
-        auto queue =
-            message_queue::make_concurrent_buffered_queue<RankEncodedNodeId>(conf_.num_threads, Merger{}, Splitter{});
+        auto queue = cetric::make_concurrent_buffered_queue<RankEncodedNodeId>(conf_.num_threads, Merger{}, Splitter{});
         queue.set_threshold(threshold_);
         cetric::profiling::Timer phase_time;
         std::atomic<size_t>      nodes_queued = 0;

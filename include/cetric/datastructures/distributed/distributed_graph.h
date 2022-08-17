@@ -5,8 +5,6 @@
 #ifndef PARALLEL_TRIANGLE_COUNTER_DISTRIBUTED_GRAPH_H
 #define PARALLEL_TRIANGLE_COUNTER_DISTRIBUTED_GRAPH_H
 
-#include "datastructures/distributed/helpers.h"
-#include "fmt/core.h"
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
@@ -33,18 +31,20 @@
 #include <boost/range/counting_range.hpp>
 #include <boost/range/iterator_range.hpp>
 #include <boost/range/iterator_range_core.hpp>
-#include <communicator.h>
-#include <datastructures/graph_definitions.h>
+#include <debug_assert.hpp>
 #include <default_hash.hpp>
+#include <fmt/core.h>
 #include <graph-io/local_graph_view.h>
 #include <kassert/kassert.hpp>
 #include <tbb/blocked_range.h>
 #include <tbb/parallel_for_each.h>
 #include <tbb/partitioner.h>
 #include <tlx/vector_free.hpp>
-#include <util.h>
 
-#include "debug_assert.hpp"
+#include "cetric/communicator.h"
+#include "cetric/datastructures/distributed/helpers.h"
+#include "cetric/datastructures/graph_definitions.h"
+#include "cetric/util.h"
 
 namespace cetric {
 namespace load_balancing {

@@ -1,14 +1,15 @@
 #pragma once
 
-#include "datastructures/graph.h"
 #include <algorithm>
 #include <iostream>
 
 #include <cyclic_range_adaptor.hpp>
-#include <datastructures/graph_definitions.h>
 #include <tbb/blocked_range.h>
 #include <tbb/parallel_for.h>
 #include <tbb/partitioner.h>
+
+#include "cetric/datastructures/graph.h"
+#include "cetric/datastructures/graph_definitions.h"
 
 namespace cetric::shared_memory {
 enum class Partition { one_dimensional, two_dimensional };

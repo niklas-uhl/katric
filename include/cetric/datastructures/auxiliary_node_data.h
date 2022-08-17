@@ -9,9 +9,10 @@
 #include <boost/range/adaptor/transformed.hpp>
 #include <boost/range/iterator_range_core.hpp>
 #include <boost/range/join.hpp>
-#include <datastructures/graph_definitions.h>
 #include <fmt/ranges.h>
 #include <kassert/kassert.hpp>
+
+#include "cetric/datastructures/graph_definitions.h"
 
 namespace cetric {
 template <typename T>

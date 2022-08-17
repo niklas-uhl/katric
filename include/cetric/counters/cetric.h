@@ -1,12 +1,6 @@
 #ifndef CETRIC_H_1MZUS6LP
 #define CETRIC_H_1MZUS6LP
 
-#include "atomic_debug.h"
-#include "cost_function.h"
-#include "datastructures/distributed/distributed_graph.h"
-#include "datastructures/distributed/helpers.h"
-#include "datastructures/graph_definitions.h"
-#include "graph-io/local_graph_view.h"
 #include <cstddef>
 #include <limits>
 #include <numeric>
@@ -14,25 +8,31 @@
 #include <sstream>
 #include <utility>
 
-#include <config.h>
-#include <counters/cetric_edge_iterator.h>
-#include <datastructures/auxiliary_node_data.h>
-#include <datastructures/distributed/graph_communicator.h>
-#include <load_balancing.h>
+#include <debug_assert.hpp>
+#include <graph-io/local_graph_view.h>
+#include <kassert/internal/assertion_macros.hpp>
+#include <kassert/kassert.hpp>
 #include <mpi.h>
-#include <statistics.h>
 #include <tbb/combinable.h>
 #include <tbb/concurrent_vector.h>
 #include <tbb/task_arena.h>
-#include <timer.h>
-#include <util.h>
+#include <tlx/algorithm/multiway_merge.hpp>
+#include <tlx/logger.hpp>
+#include <tlx/multi_timer.hpp>
 
-#include "debug_assert.hpp"
-#include "kassert/internal/assertion_macros.hpp"
-#include "kassert/kassert.hpp"
-#include "tlx/algorithm/multiway_merge.hpp"
-#include "tlx/logger.hpp"
-#include "tlx/multi_timer.hpp"
+#include "cetric/atomic_debug.h"
+#include "cetric/config.h"
+#include "cetric/cost_function.h"
+#include "cetric/counters/cetric_edge_iterator.h"
+#include "cetric/datastructures/auxiliary_node_data.h"
+#include "cetric/datastructures/distributed/distributed_graph.h"
+#include "cetric/datastructures/distributed/graph_communicator.h"
+#include "cetric/datastructures/distributed/helpers.h"
+#include "cetric/datastructures/graph_definitions.h"
+#include "cetric/load_balancing.h"
+#include "cetric/statistics.h"
+#include "cetric/timer.h"
+#include "cetric/util.h"
 
 namespace cetric {
 enum class Phase { Local, Global };

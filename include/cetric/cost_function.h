@@ -5,11 +5,6 @@
 #ifndef PARALLEL_TRIANGLE_COUNTER_COST_FUNCTION_H
 #define PARALLEL_TRIANGLE_COUNTER_COST_FUNCTION_H
 
-#include "atomic_debug.h"
-#include "communicator.h"
-#include "fmt/core.h"
-#include "timer.h"
-#include "util.h"
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -21,12 +16,18 @@
 #include <unordered_map>
 #include <utility>
 
-#include <datastructures/auxiliary_node_data.h>
-#include <datastructures/distributed/distributed_graph.h>
-#include <datastructures/distributed/graph_communicator.h>
-#include <datastructures/graph_definitions.h>
+#include <fmt/core.h>
 #include <graph-io/local_graph_view.h>
-#include <statistics.h>
+
+#include "cetric/atomic_debug.h"
+#include "cetric/communicator.h"
+#include "cetric/datastructures/auxiliary_node_data.h"
+#include "cetric/datastructures/distributed/distributed_graph.h"
+#include "cetric/datastructures/distributed/graph_communicator.h"
+#include "cetric/datastructures/graph_definitions.h"
+#include "cetric/statistics.h"
+#include "cetric/timer.h"
+#include "cetric/util.h"
 
 // using namespace cetric::graph;
 

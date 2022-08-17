@@ -35,7 +35,7 @@ IncludeBlocks: Regroup
 IncludeCategories:
   - Regex: '".*test_assertions\.hpp"'
     Priority: 0
-  - Regex: '".*\.hpp"'
+  - Regex: '".*\.(h|hpp)"'
     Priority: 3
   - Regex: '<.*\.(h|hpp)>'
     Priority: 2

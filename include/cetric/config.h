@@ -10,10 +10,11 @@
 
 #include <cereal/cereal.hpp>
 #include <cereal/types/optional.hpp>
-#include <datastructures/graph_definitions.h>
 #include <graph-io/definitions.h>
 #include <graph-io/gen_parameters.h>
-#include <util.h>
+
+#include "cetric/datastructures/graph_definitions.h"
+#include "cetric/util.h"
 
 namespace cetric {
 enum class CacheInput { Filesystem, InMemory, None };

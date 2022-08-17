@@ -1,14 +1,15 @@
-#include "datastructures/distributed/distributed_graph.h"
-#include "datastructures/graph_definitions.h"
 #include <cstddef>
 
 #include <graph-io/distributed_graph_io.h>
 #include <graph-io/local_graph_view.h>
 #include <graph-io/parsing.h>
 #include <gtest/gtest.h>
-#include <load_balancing.h>
+#include "cetric/load_balancing.h"
 #include <mpi.h>
-#include <util.h>
+#include "cetric/util.h"
+
+#include "cetric/datastructures/distributed/distributed_graph.h"
+#include "cetric/datastructures/graph_definitions.h"
 
 namespace {
 using namespace cetric;

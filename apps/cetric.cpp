@@ -1,10 +1,5 @@
-#include "counters/cetric_edge_iterator.h"
-#include "datastructures/distributed/distributed_graph.h"
-#include "git_hash.h"
-#include "graph-io/graph_definitions.h"
-#include "parse_parameters.h"
-#include "statistics.h"
-#include "timer.h"
+#include "cetric/counters/cetric.h"
+
 #include <algorithm>
 #include <cstddef>
 #include <cstdio>
@@ -19,9 +14,10 @@
 #include <sstream>
 
 #include <CLI/CLI.hpp>
+#include <CLI/Validators.hpp>
+#include <backward.hpp>
 #include <cereal/archives/json.hpp>
-#include <config.h>
-#include <counters/cetric.h>
+#include <cereal/cereal.hpp>
 #include <graph-io/definitions.h>
 #include <graph-io/distributed_graph_io.h>
 #include <graph-io/local_graph_view.h>
@@ -30,13 +26,18 @@
 #include <tbb/global_control.h>
 #include <tbb/task_arena.h>
 #include <unistd.h>
-#include <util.h>
 
-#include "CLI/Validators.hpp"
-#include "backward.hpp"
-#include "cereal/cereal.hpp"
+#include "./parse_parameters.h"
+#include "cetric/config.h"
+#include "cetric/counters/cetric_edge_iterator.h"
+#include "cetric/datastructures/distributed/distributed_graph.h"
+#include "cetric/statistics.h"
+#include "cetric/timer.h"
+#include "cetric/util.h"
+#include "git_hash.h"
+#include "graph-io/graph_definitions.h"
 
-cetric::Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
+cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::PEID size) {
     (void)size;
 
     CLI::App       app("Parallel Triangle Counter");
@@ -190,8 +191,8 @@ private:
                     G.info.local_from = G.G.node_info.front().global_id;
                     G.info.local_to   = G.G.node_info.back().global_id + 1;
                 } else {
-                    G.info.local_from = std::numeric_limits<NodeId>::max();
-                    G.info.local_to   = std::numeric_limits<NodeId>::max();
+                    G.info.local_from = std::numeric_limits<cetric::NodeId>::max();
+                    G.info.local_to   = std::numeric_limits<cetric::NodeId>::max();
                 }
             }
             // atomic_debug(G.edge_heads);
@@ -200,10 +201,10 @@ private:
             return graphio::gen_local_graph(conf_.gen, conf_.rank, conf_.PEs);
         }
     }
-    const cetric::Config&         conf_;
-    std::string                   cache_file_;
-    std::optional<LocalGraphView> G_;
-    graphio::internal::GraphInfo  info_;
+    const cetric::Config&                  conf_;
+    std::string                            cache_file_;
+    std::optional<graphio::LocalGraphView> G_;
+    graphio::internal::GraphInfo           info_;
 };
 
 void print_summary(
@@ -256,8 +257,8 @@ int main(int argc, char* argv[]) {
         std::exit(1);
     }
     bool                     debug = false;
-    PEID                     rank;
-    PEID                     size;
+    cetric::PEID                     rank;
+    cetric::PEID                     size;
     backward::SignalHandling sh;
     {
         backward::MPIErrorHandler mpi_error_handler(MPI_COMM_WORLD);
@@ -285,7 +286,7 @@ int main(int argc, char* argv[]) {
         for (size_t iter = 0; iter < conf.iterations; ++iter) {
             MPI_Barrier(MPI_COMM_WORLD);
 
-            DistributedGraph<>            G;
+            cetric::graph::DistributedGraph<>            G;
             cetric::profiling::Statistics stats(rank, size);
             cetric::profiling::Timer      timer;
             LOG << "[R" << rank << "] "
@@ -295,7 +296,7 @@ int main(int argc, char* argv[]) {
                 << "Finished loading from cache";
             // atomic_debug(G_local.node_info);
             //  atomic_debug(G_local.edge_heads);
-            G = DistributedGraph<>(std::move(input.G), {input.info.local_from, input.info.local_to}, rank, size);
+            G = cetric::graph::DistributedGraph<>(std::move(input.G), {input.info.local_from, input.info.local_to}, rank, size);
             // atomic_debug(G);
             LOG << "[R" << rank << "] "
                 << "Finished conversion";

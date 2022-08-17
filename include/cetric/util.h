@@ -16,19 +16,21 @@
 #include <sstream>
 #include <vector>
 
-#include <atomic_debug.h>
 #include <backward.hpp>
-#include <datastructures/graph_definitions.h>
 #include <debug_assert.hpp>
 #include <fmt/core.h>
 #include <fmt/ostream.h>
 #include <fmt/ranges.h>
 #include <graph-io/local_graph_view.h>
 #include <mpi.h>
-#include <mpi_traits.h>
 #include <tlx/logger.hpp>
 #include <unistd.h>
 
+#include "cetric/atomic_debug.h"
+#include "cetric/datastructures/graph_definitions.h"
+#include "cetric/mpi_traits.h"
+
+namespace cetric {
 using PEID = int;
 
 inline void print_stacktrace(std::ostream& os = std::cerr) {
@@ -176,6 +178,7 @@ namespace execution_policy {
 struct sequential {};
 struct parallel {};
 } // namespace execution_policy
+} // namespace cetric
 
 template <>
 struct mpi_traits<graphio::LocalGraphView::NodeInfo> {

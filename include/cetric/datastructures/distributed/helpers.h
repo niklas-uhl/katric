@@ -1,10 +1,11 @@
 #pragma once
 
-#include "datastructures/graph_definitions.h"
 #include <tuple>
 #include <vector>
 
 #include <mpi.h>
+
+#include "cetric/datastructures/graph_definitions.h"
 namespace cetric {
 using NodeId = graph::NodeId;
 

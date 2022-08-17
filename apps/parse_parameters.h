@@ -5,12 +5,12 @@
 #ifndef PARALLEL_TRIANGLE_COUNTER_PARSE_PARAMETERS_H
 #define PARALLEL_TRIANGLE_COUNTER_PARSE_PARAMETERS_H
 
-#include "config.h"
 #include <memory>
 
 #include <CLI/CLI.hpp>
+#include <CLI/Validators.hpp>
 
-#include "CLI/Validators.hpp"
+#include "cetric/config.h"
 
 inline std::shared_ptr<CLI::App> parse_parameters(const std::string& app_name, cetric::Config& conf) {
     auto app = std::make_shared<CLI::App>(app_name);

@@ -5,8 +5,6 @@
 #ifndef PARALLEL_TRIANGLE_COUNTER_GRAPH_COMMUNICATOR_H
 #define PARALLEL_TRIANGLE_COUNTER_GRAPH_COMMUNICATOR_H
 
-#include "../../communicator.h"
-#include "../graph_definitions.h"
 #include <cstddef>
 #include <google/dense_hash_map>
 #include <google/dense_hash_set>
@@ -15,10 +13,14 @@
 #include <vector>
 
 #include <graph-io/local_graph_view.h>
-#include <statistics.h>
 #include <tlx/multi_timer.hpp>
-#include <util.h>
 
+#include "cetric/communicator.h"
+#include "cetric/datastructures/graph_definitions.h"
+#include "cetric/statistics.h"
+#include "cetric/util.h"
+
+namespace cetric {
 using namespace cetric::graph;
 
 template <class Graph>
@@ -404,4 +406,5 @@ private:
         return G_balanced;
     }
 };
+} // namespace cetric
 #endif // PARALLEL_TRIANGLE_COUNTER_GRAPH_COMMUNICATOR_H

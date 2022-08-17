@@ -1,8 +1,9 @@
-#include "datastructures/graph_definitions.h"
 #include <cstdint>
 #include <limits>
 
 #include <catch2/catch_test_macros.hpp>
+
+#include "cetric/datastructures/graph_definitions.h"
 
 TEST_CASE("Rank encoding works") {
     cetric::graph::RankEncodedNodeId node_id{42};

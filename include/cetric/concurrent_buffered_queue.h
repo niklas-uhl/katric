@@ -1,9 +1,5 @@
 #pragma once
 
-#include "fmt/core.h"
-#include "fmt/ranges.h"
-#include "message-queue/debug_print.h"
-#include "message-queue/queue.h"
 #include <atomic>
 #include <condition_variable>
 #include <cstddef>
@@ -14,14 +10,16 @@
 #include <type_traits>
 #include <unordered_map>
 
+#include <backward.hpp>
+#include <fmt/core.h>
+#include <fmt/ranges.h>
+#include <message-queue/queue.h>
 #include <tbb/concurrent_hash_map.h>
 #include <tbb/concurrent_unordered_map.h>
 #include <tbb/concurrent_vector.h>
 #include <tbb/spin_rw_mutex.h>
 
-#include "backward.hpp"
-
-namespace message_queue {
+namespace cetric {
 
 template <class T, typename Merger, typename Splitter>
 class ConcurrentBufferedMessageQueue {
@@ -39,7 +37,7 @@ public:
           split(split),
           num_worker_threads_(num_threads - 1) {}
 
-    void post_message(std::vector<T>&& message, PEID receiver, int tag = 0) {
+    void post_message(std::vector<T>&& message, message_queue::PEID receiver, int tag = 0) {
         num_writing_threads_++;
         {
             if (buffer_ocupacy_ >= threshold_) {
@@ -81,7 +79,7 @@ public:
         }
     }
 
-    size_t flush_impl(PEID receiver) {
+    size_t flush_impl(message_queue::PEID receiver) {
         auto&  buffer           = buffers_[receiver];
         size_t removed_elements = 0;
         if (!buffer.empty()) {
@@ -95,7 +93,7 @@ public:
         return removed_elements;
     }
 
-    void flush(PEID receiver) {
+    void flush(message_queue::PEID receiver) {
         buffer_ocupacy_ -= flush_impl(receiver);
     }
 
@@ -109,13 +107,15 @@ public:
 
     template <typename MessageHandler>
     void poll(MessageHandler&& on_message) {
-        queue_.poll([&](std::vector<T> message, PEID sender) { split(std::move(message), on_message, sender); });
+        queue_.poll([&](std::vector<T> message, message_queue::PEID sender) {
+            split(std::move(message), on_message, sender);
+        });
     }
 
     template <typename MessageHandler>
     void terminate(MessageHandler&& on_message) {
         queue_.terminate_impl(
-            [&](std::vector<T> message, PEID sender) {
+            [&](std::vector<T> message, message_queue::PEID sender) {
                 // atomic_debug(fmt::format("Got message from {}", sender));
                 split(std::move(message), on_message, sender);
             },
@@ -131,7 +131,7 @@ public:
         return overflows_;
     }
 
-    const MessageStatistics& stats() {
+    const message_queue::MessageStatistics& stats() {
         return queue_.stats();
     }
 
@@ -143,7 +143,7 @@ public:
     }
 
 private:
-    MessageQueue<T>                        queue_;
+    message_queue::MessageQueue<T>         queue_;
     std::vector<tbb::concurrent_vector<T>> buffers_;
     std::mutex                             mutex_;
     Merger                                 merge;
@@ -166,4 +166,4 @@ auto make_concurrent_buffered_queue(size_t num_threads, Merger&& merger, Splitte
     );
 }
 
-} // namespace message_queue
+} // namespace cetric

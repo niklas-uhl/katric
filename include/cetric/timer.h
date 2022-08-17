@@ -5,7 +5,6 @@
 #ifndef PARALLEL_TRIANGLE_COUNTER_TIMER_H
 #define PARALLEL_TRIANGLE_COUNTER_TIMER_H
 
-#include "util.h"
 #include <chrono>
 #include <iostream>
 #include <string>
@@ -14,6 +13,9 @@
 #include <mpi.h>
 #include <tlx/multi_timer.hpp>
 
+#include "cetric/util.h"
+
+namespace cetric {
 class Timer {
 public:
     explicit Timer(std::string name, bool report = true)
@@ -102,6 +104,7 @@ void report_time(const std::string& name, Task task) {
     task();
     t.report_elapsed_time();
 }
+} // namespace cetric
 
 namespace cetric {
 namespace profiling {
