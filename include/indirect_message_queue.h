@@ -1,12 +1,13 @@
 #pragma once
 
-#include <mpi.h>
-#include <sstream>
-#include <type_traits>
 #include "counters/cetric_edge_iterator.h"
 #include "datastructures/graph_definitions.h"
 #include "datastructures/span.h"
 #include "message-queue/buffered_queue.h"
+#include <sstream>
+#include <type_traits>
+
+#include <mpi.h>
 
 namespace cetric {
 template <typename T>
@@ -32,7 +33,9 @@ template <typename T, class Merger, class Splitter>
 class IndirectMessageQueue {
 public:
     IndirectMessageQueue(Merger&& merger, Splitter&& splitter)
-        : rank_(), size_(), queue_(std::move(merger), std::move(splitter)) {
+        : rank_(),
+          size_(),
+          queue_(std::move(merger), std::move(splitter)) {
         MPI_Comm_rank(MPI_COMM_WORLD, &rank_);
         MPI_Comm_size(MPI_COMM_WORLD, &size_);
         grid_size_ = std::round(std::sqrt(size_));
@@ -61,15 +64,15 @@ public:
         // static_assert(std::is_invocable_v<MessageHandler, typename std::vector<T>::iterator,
         //                                   typename std::vector<T>::iterator, PEID>);
         queue_.poll([&](SharedVectorSpan<T> span, PEID /*sender*/) {
-            auto begin = span.begin();
-            auto end = span.end();
-            PEID receiver = datatype_to_PEID(*(end - 1));
+            auto begin           = span.begin();
+            auto end             = span.end();
+            PEID receiver        = datatype_to_PEID(*(end - 1));
             PEID original_sender = datatype_to_PEID(*(end - 2));
             if (receiver == rank_) {
                 auto received_message = span.subspan(0, span.size() - 2);
                 on_message(received_message, original_sender);
             } else {
-                auto proxy = get_proxy(rank_, receiver);
+                auto              proxy = get_proxy(rank_, receiver);
                 std::stringstream out;
                 out << "Redirecting message to " << receiver << " via " << proxy;
                 // atomic_debug(out.str());
@@ -83,15 +86,15 @@ public:
         // static_assert(std::is_invocable_v<MessageHandler, typename std::vector<T>::iterator,
         //                                   typename std::vector<T>::iterator, PEID>);
         queue_.terminate([&](SharedVectorSpan<T> span, PEID /*sender*/) {
-            auto begin = span.begin();
-            auto end = span.end();
-            PEID receiver = datatype_to_PEID(*(end - 1));
+            auto begin           = span.begin();
+            auto end             = span.end();
+            PEID receiver        = datatype_to_PEID(*(end - 1));
             PEID original_sender = datatype_to_PEID(*(end - 2));
             if (receiver == rank_) {
                 auto received_message = span.subspan(0, span.size() - 2);
                 on_message(received_message, original_sender);
             } else {
-                auto proxy = get_proxy(rank_, receiver);
+                auto              proxy = get_proxy(rank_, receiver);
                 std::stringstream out;
                 out << "Redirecting message to " << receiver << " via " << proxy;
                 // atomic_debug(out.str());
@@ -114,8 +117,8 @@ public:
 
 private:
     struct GridPosition {
-        int row;
-        int column;
+        int  row;
+        int  column;
         bool operator==(const GridPosition& rhs) {
             return row == rhs.row && column == rhs.column;
         }
@@ -128,9 +131,9 @@ private:
         return grid_position.row * grid_size_ + grid_position.column;
     }
     PEID get_proxy(PEID from, PEID to) {
-        auto from_pos = get_grid_position(from);
-        auto to_pos = get_grid_position(to);
-        GridPosition proxy = {from_pos.row, to_pos.column};
+        auto         from_pos = get_grid_position(from);
+        auto         to_pos   = get_grid_position(to);
+        GridPosition proxy    = {from_pos.row, to_pos.column};
         if (get_rank(proxy) >= size_) {
             proxy = {from_pos.column, to_pos.column};
         }
@@ -140,13 +143,13 @@ private:
         assert(get_rank(proxy) < size_);
         return get_rank(proxy);
     }
-    PEID rank_;
-    PEID size_;
-    PEID grid_size_;
+    PEID                                                     rank_;
+    PEID                                                     size_;
+    PEID                                                     grid_size_;
     message_queue::BufferedMessageQueue<T, Merger, Splitter> queue_;
 };
 template <class T, typename Merger, typename Splitter>
 auto make_indirect_queue(Merger&& merger, Splitter&& splitter) {
     return IndirectMessageQueue<T, Merger, Splitter>(std::forward<Merger>(merger), std::forward<Splitter>(splitter));
 }
-}  // namespace cetric
+} // namespace cetric

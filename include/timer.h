@@ -5,17 +5,20 @@
 #ifndef PARALLEL_TRIANGLE_COUNTER_TIMER_H
 #define PARALLEL_TRIANGLE_COUNTER_TIMER_H
 
+#include "util.h"
 #include <chrono>
-#include <string>
 #include <iostream>
+#include <string>
 #include <utility>
+
 #include <mpi.h>
 #include <tlx/multi_timer.hpp>
-#include "util.h"
 
 class Timer {
 public:
-    explicit Timer(std::string name, bool report = true): name(std::move(name)), start(std::chrono::system_clock::now()) {
+    explicit Timer(std::string name, bool report = true)
+        : name(std::move(name)),
+          start(std::chrono::system_clock::now()) {
         restart(report);
     }
     void restart(bool report = true) {
@@ -31,19 +34,22 @@ public:
     }
 
     double elapsed_time() {
-        auto end = std::chrono::system_clock::now();
+        auto                                      end            = std::chrono::system_clock::now();
         std::chrono::duration<double, std::milli> execution_time = end - start;
         return execution_time.count();
     }
 
 private:
-    std::string name;
+    std::string                                        name;
     std::chrono::time_point<std::chrono::system_clock> start;
 };
 
 class MPITimer {
 public:
-    explicit MPITimer(std::string  name, PEID rank, PEID size [[maybe_unused]], bool report = true): name(std::move(name)), start(MPI_Wtime()), rank(rank) {
+    explicit MPITimer(std::string name, PEID rank, PEID size [[maybe_unused]], bool report = true)
+        : name(std::move(name)),
+          start(MPI_Wtime()),
+          rank(rank) {
         restart(report);
     }
     void restart(bool report = true) {
@@ -72,7 +78,7 @@ public:
     }
 
     double local_elapsed_time_and_stop() {
-        auto end = MPI_Wtime();
+        auto end       = MPI_Wtime();
         execution_time = end - start;
         return execution_time;
     }
@@ -85,12 +91,12 @@ public:
 
 private:
     std::string name;
-    double start;
-    double execution_time;
-    PEID rank;
+    double      start;
+    double      execution_time;
+    PEID        rank;
 };
 
-template<typename Task>
+template <typename Task>
 void report_time(const std::string& name, Task task) {
     Timer t(name);
     task();
@@ -98,29 +104,26 @@ void report_time(const std::string& name, Task task) {
 }
 
 namespace cetric {
-    namespace profiling {
-        class Timer {
-            public:
-
-                explicit Timer(): start(MPI_Wtime()) {
-                    restart();
-                }
-
-                void restart() {
-                    start = MPI_Wtime();
-                }
-
-                double elapsed_time() const {
-                    auto end = MPI_Wtime();
-                    return end - start;
-                }
-
-            private:
-                double start;
-
-        };
+namespace profiling {
+class Timer {
+public:
+    explicit Timer() : start(MPI_Wtime()) {
+        restart();
     }
-}
 
+    void restart() {
+        start = MPI_Wtime();
+    }
 
-#endif //PARALLEL_TRIANGLE_COUNTER_TIMER_H
+    double elapsed_time() const {
+        auto end = MPI_Wtime();
+        return end - start;
+    }
+
+private:
+    double start;
+};
+} // namespace profiling
+} // namespace cetric
+
+#endif // PARALLEL_TRIANGLE_COUNTER_TIMER_H

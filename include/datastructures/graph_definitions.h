@@ -1,35 +1,36 @@
 #ifndef GRAPH_DEFINITIONS_H_8XAL43DH
 #define GRAPH_DEFINITIONS_H_8XAL43DH
 
-#include <atomic_debug.h>
-#include <graph-io/graph_definitions.h>
+#include "message-queue/mpi_datatype.h"
 #include <algorithm>
 #include <cassert>
 #include <cinttypes>
 #include <cstdint>
 #include <functional>
-#include <hash/murmur2_hash.hpp>
 #include <limits>
 #include <ostream>
 #include <sparsehash/dense_hash_map>
 #include <sparsehash/dense_hash_set>
-#include "message-queue/mpi_datatype.h"
 
+#include <atomic_debug.h>
 #include <fmt/core.h>
 #include <fmt/ostream.h>
+#include <graph-io/graph_definitions.h>
+#include <hash/murmur2_hash.hpp>
 
 namespace cetric {
 namespace graph {
 
-using NodeId = std::uint64_t;
+using NodeId                      = std::uint64_t;
 static constexpr size_t RANK_BITS = 16;
 class RankEncodedNodeId {
 public:
-    static constexpr std::uint64_t NON_RANK_BITS = sizeof(std::uint64_t) * 8 - RANK_BITS;
-    static constexpr std::uint64_t rank_mask = ((1ull << RANK_BITS) - 1) << NON_RANK_BITS;
+    static constexpr std::uint64_t     NON_RANK_BITS = sizeof(std::uint64_t) * 8 - RANK_BITS;
+    static constexpr std::uint64_t     rank_mask     = ((1ull << RANK_BITS) - 1) << NON_RANK_BITS;
     static constexpr RankEncodedNodeId sentinel() {
-        return RankEncodedNodeId{(1l << (cetric::graph::RankEncodedNodeId::NON_RANK_BITS + 1)) - 1,
-                                 std::numeric_limits<uint16_t>::max()};
+        return RankEncodedNodeId{
+            (1l << (cetric::graph::RankEncodedNodeId::NON_RANK_BITS + 1)) - 1,
+            std::numeric_limits<uint16_t>::max()};
     }
 
     explicit constexpr RankEncodedNodeId(std::uint64_t id) : value_(id | rank_mask) {}
@@ -136,14 +137,14 @@ using EdgeId = std::uint64_t;
 using Degree = NodeId;
 //#ifdef MPI_VERSION
 #ifdef MPI_UNINT64_T
-#define MPI_NODE MPI_UINT64_T
+    #define MPI_NODE MPI_UINT64_T
 #else
 static_assert(sizeof(unsigned long long) == 8, "We expect an unsigned long long to have 64 bit");
-#define MPI_NODE MPI_UNSIGNED_LONG_LONG
+    #define MPI_NODE MPI_UNSIGNED_LONG_LONG
 #endif
 //#endif
 
-using Edge = graphio::Edge<>;
+using Edge            = graphio::Edge<>;
 using RankEncodedEdge = graphio::Edge<RankEncodedNodeId>;
 
 template <typename NodeIdType = NodeId>
@@ -176,8 +177,8 @@ inline std::ostream& operator<<(std::ostream& out, const Triangle<NodeIdType>& t
     out << "(" << t.x << ", " << t.y << ", " << t.z << ")";
     return out;
 }
-}  // namespace graph
-}  // namespace cetric
+} // namespace graph
+} // namespace cetric
 
 template <>
 struct std::hash<cetric::graph::RankEncodedNodeId> {
@@ -219,7 +220,7 @@ struct node_map : public google::dense_hash_map<graph::RankEncodedNodeId, T, has
         this->set_empty_key(graph::RankEncodedNodeId::sentinel());
     }
 };
-}  // namespace cetric
+} // namespace cetric
 
 // template <>
 // struct std::numeric_limits<cetric::graph::RankEncodedNodeId> {

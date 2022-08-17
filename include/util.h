@@ -5,34 +5,35 @@
 #ifndef PARALLEL_TRIANGLE_COUNTER_UTIL_H
 #define PARALLEL_TRIANGLE_COUNTER_UTIL_H
 
-#include <atomic_debug.h>
-#include <datastructures/graph_definitions.h>
-#include <fmt/core.h>
-#include <fmt/ostream.h>
-#include <fmt/ranges.h>
-#include <graph-io/local_graph_view.h>
-#include <mpi.h>
-#include <mpi_traits.h>
-#include <unistd.h>
 #include <array>
-#include <backward.hpp>
 #include <cstddef>
 #include <cstdlib>
-#include <debug_assert.hpp>
 #include <exception>
 #include <iostream>
 #include <istream>
 #include <iterator>
 #include <ostream>
 #include <sstream>
-#include <tlx/logger.hpp>
 #include <vector>
+
+#include <atomic_debug.h>
+#include <backward.hpp>
+#include <datastructures/graph_definitions.h>
+#include <debug_assert.hpp>
+#include <fmt/core.h>
+#include <fmt/ostream.h>
+#include <fmt/ranges.h>
+#include <graph-io/local_graph_view.h>
+#include <mpi.h>
+#include <mpi_traits.h>
+#include <tlx/logger.hpp>
+#include <unistd.h>
 
 using PEID = int;
 
 inline void print_stacktrace(std::ostream& os = std::cerr) {
     backward::StackTrace stacktrace;
-    backward::Printer printer;
+    backward::Printer    printer;
     stacktrace.load_here(32);
     printer.print(stacktrace, os);
 }
@@ -44,13 +45,13 @@ inline std::string get_stacktrace() {
 }
 
 #define MODULE_A_LEVEL 0
-#define PRINT_TRACE 1
+#define PRINT_TRACE    1
 struct debug_module : debug_assert::default_handler, debug_assert::set_level<MODULE_A_LEVEL> {
     static void handle(const debug_assert::source_location& loc, const char* expr, const char* msg = nullptr) noexcept {
         PEID rank;
         MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-        std::string rank_prefix = fmt::format("[R{}]", rank);
-        std::string prefix = "[debug assert]";
+        std::string       rank_prefix = fmt::format("[R{}]", rank);
+        std::string       prefix      = "[debug assert]";
         std::stringstream out;
         out << rank_prefix << prefix << " " << loc.file_name << ":" << loc.line_number << ": ";
 
@@ -73,35 +74,35 @@ struct debug_module : debug_assert::default_handler, debug_assert::set_level<MOD
 };
 
 #ifndef DEBUG_BARRIER
-#ifndef NDEBUG
-#define DEBUG_BARRIER(rank)                                                                    \
-    {                                                                                          \
-        if (std::getenv("DEBUG_BARRIER") != nullptr) {                                         \
-            std::string value(std::getenv("DEBUG_BARRIER"));                                   \
-            std::string delimiter = ":";                                                       \
-            size_t pos = 0;                                                                    \
-            std::string token;                                                                 \
-            std::vector<int> PEs;                                                              \
-            while ((pos = value.find(delimiter)) != std::string::npos) {                       \
-                token = value.substr(0, pos);                                                  \
-                PEs.push_back(std::atoi(token.c_str()));                                       \
-                value.erase(0, pos + delimiter.length());                                      \
-            }                                                                                  \
-            PEs.push_back(std::atoi(value.c_str()));                                           \
-            if (std::find(PEs.begin(), PEs.end(), rank) != PEs.end()) {                        \
-                volatile int i = 0;                                                            \
-                char hostname[256];                                                            \
-                gethostname(hostname, sizeof(hostname));                                       \
-                printf("PID %d on %s (rank %d) ready for attach\n", getpid(), hostname, rank); \
-                fflush(stdout);                                                                \
-                while (0 == i)                                                                 \
-                    sleep(5);                                                                  \
-            }                                                                                  \
-        }                                                                                      \
-    };
-#else
-#define DEBUG_BARRIER(rank)
-#endif
+    #ifndef NDEBUG
+        #define DEBUG_BARRIER(rank)                                                                    \
+            {                                                                                          \
+                if (std::getenv("DEBUG_BARRIER") != nullptr) {                                         \
+                    std::string      value(std::getenv("DEBUG_BARRIER"));                              \
+                    std::string      delimiter = ":";                                                  \
+                    size_t           pos       = 0;                                                    \
+                    std::string      token;                                                            \
+                    std::vector<int> PEs;                                                              \
+                    while ((pos = value.find(delimiter)) != std::string::npos) {                       \
+                        token = value.substr(0, pos);                                                  \
+                        PEs.push_back(std::atoi(token.c_str()));                                       \
+                        value.erase(0, pos + delimiter.length());                                      \
+                    }                                                                                  \
+                    PEs.push_back(std::atoi(value.c_str()));                                           \
+                    if (std::find(PEs.begin(), PEs.end(), rank) != PEs.end()) {                        \
+                        volatile int i = 0;                                                            \
+                        char         hostname[256];                                                    \
+                        gethostname(hostname, sizeof(hostname));                                       \
+                        printf("PID %d on %s (rank %d) ready for attach\n", getpid(), hostname, rank); \
+                        fflush(stdout);                                                                \
+                        while (0 == i)                                                                 \
+                            sleep(5);                                                                  \
+                    }                                                                                  \
+                }                                                                                      \
+            };
+    #else
+        #define DEBUG_BARRIER(rank)
+    #endif
 #endif
 
 struct MPIException : public std::exception {
@@ -121,7 +122,7 @@ private:
 inline void check_mpi_error(int errcode, const std::string& file, int line) {
     if (errcode != MPI_SUCCESS) {
         std::array<char, MPI_MAX_ERROR_STRING> buf;
-        int resultlen;
+        int                                    resultlen;
         MPI_Error_string(errcode, buf.data(), &resultlen);
         std::string msg(buf.begin(), buf.begin() + resultlen);
         msg = msg + " in " + file + ":" + std::to_string(line);
@@ -136,10 +137,10 @@ inline void ConditionalBarrier(bool active, MPI_Comm comm = MPI_COMM_WORLD) {
 }
 
 constexpr unsigned long long log2(unsigned long long x) {
-#if defined __has_builtin
-#if __has_builtin(__builtin_clzl)
-#define builtin_clzl(y) __builtin_clzl(y)
-#endif
+#if defined                  __has_builtin
+    #if __has_builtin(__builtin_clzl)
+        #define builtin_clzl(y) __builtin_clzl(y)
+    #endif
 #endif
 #ifdef builtin_clzl
     return 8 * sizeof(unsigned long long) - builtin_clzl(x) - 1;
@@ -157,7 +158,7 @@ std::ostream& operator<<(std::ostream& out, const std::vector<T>& v) {
         out << "[]";
     } else {
         out << "[";
-        for (const auto& elem : v) {
+        for (const auto& elem: v) {
             out << elem << ", ";
             ;
         }
@@ -174,7 +175,7 @@ std::ostream& operator<<(std::ostream& out, const std::pair<T, V>& p) {
 namespace execution_policy {
 struct sequential {};
 struct parallel {};
-}  // namespace execution_policy
+} // namespace execution_policy
 
 template <>
 struct mpi_traits<graphio::LocalGraphView::NodeInfo> {
@@ -187,4 +188,4 @@ struct mpi_traits<graphio::LocalGraphView::NodeInfo> {
     static constexpr bool builtin = false;
 };
 
-#endif  // PARALLEL_TRIANGLE_COUNTER_UTIL_H
+#endif // PARALLEL_TRIANGLE_COUNTER_UTIL_H

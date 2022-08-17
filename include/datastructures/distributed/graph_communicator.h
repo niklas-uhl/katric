@@ -5,18 +5,19 @@
 #ifndef PARALLEL_TRIANGLE_COUNTER_GRAPH_COMMUNICATOR_H
 #define PARALLEL_TRIANGLE_COUNTER_GRAPH_COMMUNICATOR_H
 
-#include <graph-io/local_graph_view.h>
-#include <statistics.h>
-#include <util.h>
+#include "../../communicator.h"
+#include "../graph_definitions.h"
 #include <cstddef>
 #include <google/dense_hash_map>
 #include <google/dense_hash_set>
 #include <optional>
-#include <tlx/multi_timer.hpp>
 #include <tuple>
 #include <vector>
-#include "../../communicator.h"
-#include "../graph_definitions.h"
+
+#include <graph-io/local_graph_view.h>
+#include <statistics.h>
+#include <tlx/multi_timer.hpp>
+#include <util.h>
 
 using namespace cetric::graph;
 
@@ -37,34 +38,43 @@ public:
     }
 
     template <typename DegreeFunc>
-    void get_ghost_degree(DegreeFunc&& on_degree_receive,
-                          cetric::profiling::MessageStatistics& stats,
-                          bool sparse,
-                          bool compact) {
-        get_ghost_data([this](auto node) { return RankEncodedNodeId{G.degree(node)}; },
-                       [&on_degree_receive](auto node, auto data) { on_degree_receive(node, data.id()); }, stats,
-                       sparse, compact);
+    void get_ghost_degree(
+        DegreeFunc&& on_degree_receive, cetric::profiling::MessageStatistics& stats, bool sparse, bool compact
+    ) {
+        get_ghost_data(
+            [this](auto node) { return RankEncodedNodeId{G.degree(node)}; },
+            [&on_degree_receive](auto node, auto data) { on_degree_receive(node, data.id()); },
+            stats,
+            sparse,
+            compact
+        );
     }
 
     template <typename DataFunc, typename ReceiveFunc>
-    void get_ghost_data(DataFunc&& get_data,
-                        ReceiveFunc&& on_receive,
-                        cetric::profiling::MessageStatistics& stats,
-                        bool sparse,
-                        bool compact) {
+    void get_ghost_data(
+        DataFunc&&                            get_data,
+        ReceiveFunc&&                         on_receive,
+        cetric::profiling::MessageStatistics& stats,
+        bool                                  sparse,
+        bool                                  compact
+    ) {
         if (compact) {
-            get_ghost_data_compact(std::forward<DataFunc>(get_data), std::forward<ReceiveFunc>(on_receive), stats,
-                                   sparse);
+            get_ghost_data_compact(
+                std::forward<DataFunc>(get_data),
+                std::forward<ReceiveFunc>(on_receive),
+                stats,
+                sparse
+            );
             return;
         }
         //  assert(G.ghost_ranks_available());
         send_buffers.clear();
         receive_buffers.clear();
-        for (auto node : G.local_nodes()) {
+        for (auto node: G.local_nodes()) {
             neighboring_PEs.clear();
             if (G.is_interface_node(node)) {
                 auto data = get_data(node);
-                for (auto neighbor : G.adj(node).neighbors()) {
+                for (auto neighbor: G.adj(node).neighbors()) {
                     if (neighbor.rank() != rank_) {
                         PEID rank = neighbor.rank();
                         if (neighboring_PEs.find(rank) == neighboring_PEs.end()) {
@@ -78,13 +88,27 @@ public:
             }
         }
         if (sparse) {
-            CommunicationUtility::sparse_all_to_all(send_buffers, receive_buffers, MPI_NODE, rank_, size_, stats,
-                                                    message_tag_);
+            CommunicationUtility::sparse_all_to_all(
+                send_buffers,
+                receive_buffers,
+                MPI_NODE,
+                rank_,
+                size_,
+                stats,
+                message_tag_
+            );
         } else {
-            CommunicationUtility::all_to_all(send_buffers, receive_buffers, MPI_NODE, rank_, size_, stats,
-                                             message_tag_);
+            CommunicationUtility::all_to_all(
+                send_buffers,
+                receive_buffers,
+                MPI_NODE,
+                rank_,
+                size_,
+                stats,
+                message_tag_
+            );
         }
-        for (const auto& elem : receive_buffers) {
+        for (const auto& elem: receive_buffers) {
             const std::vector<RankEncodedNodeId>& buffer = elem.second;
             assert(buffer.size() % 2 == 0);
             for (size_t i = 0; i < buffer.size(); i += 2) {
@@ -94,10 +118,9 @@ public:
         }
     }
     template <typename DataFunc, typename ReceiveFunc>
-    void get_ghost_data_compact(DataFunc&& get_data,
-                                ReceiveFunc&& on_receive,
-                                cetric::profiling::MessageStatistics& stats,
-                                bool sparse) {
+    void get_ghost_data_compact(
+        DataFunc&& get_data, ReceiveFunc&& on_receive, cetric::profiling::MessageStatistics& stats, bool sparse
+    ) {
         //  assert(G.ghost_ranks_available());
         // tlx::MultiTimer timer;
         // timer.start("copy_degree");
@@ -107,11 +130,11 @@ public:
         if (!sparse) {
             send_buffers_vec.resize(size_);
         }
-        for (auto node : G.local_nodes()) {
+        for (auto node: G.local_nodes()) {
             neighboring_PEs.clear();
             if (G.is_interface_node(node)) {
                 auto data = get_data(node);
-                for (auto neighbor : G.adj(node).neighbors()) {
+                for (auto neighbor: G.adj(node).neighbors()) {
                     if (neighbor.rank() != rank_) {
                         PEID rank = neighbor.rank();
                         if (neighboring_PEs.find(rank) == neighboring_PEs.end()) {
@@ -131,10 +154,16 @@ public:
         }
         // timer.start("all2all");
         std::vector<RankEncodedNodeId> recv_vec;
-        CompactBuffer recv_buf(recv_vec, rank_, size_);
+        CompactBuffer                  recv_buf(recv_vec, rank_, size_);
         if (sparse) {
-            CommunicationUtility::sparse_all_to_all<RankEncodedNodeId>(send_buffers, recv_buf, rank_, size_,
-                                                                       message_tag_, stats);
+            CommunicationUtility::sparse_all_to_all<RankEncodedNodeId>(
+                send_buffers,
+                recv_buf,
+                rank_,
+                size_,
+                message_tag_,
+                stats
+            );
         } else {
             CommunicationUtility::all_to_all(send_buffers_vec, recv_buf, rank_, size_, message_tag_, stats);
         }
@@ -202,13 +231,13 @@ public:
     // }
 
 private:
-    const Graph& G;
-    PEID rank_;
-    PEID size_;
+    const Graph&                                                 G;
+    PEID                                                         rank_;
+    PEID                                                         size_;
     google::dense_hash_map<PEID, std::vector<RankEncodedNodeId>> send_buffers;
     google::dense_hash_map<PEID, std::vector<RankEncodedNodeId>> receive_buffers;
-    google::dense_hash_set<PEID> neighboring_PEs;
-    int message_tag_;
+    google::dense_hash_set<PEID>                                 neighboring_PEs;
+    int                                                          message_tag_;
 };
 
 class GraphCommunicator {
@@ -219,12 +248,14 @@ public:
     };
 
     template <class Map>
-    static LocalGraphView relocate(LocalGraphView&& G,
-                                   const Map& nodes_to_send,
-                                   cetric::profiling::MessageStatistics& stats,
-                                   [[maybe_unused]] PEID rank,
-                                   PEID size,
-                                   bool sparse = true) {
+    static LocalGraphView relocate(
+        LocalGraphView&&                      G,
+        const Map&                            nodes_to_send,
+        cetric::profiling::MessageStatistics& stats,
+        [[maybe_unused]] PEID                 rank,
+        PEID                                  size,
+        bool                                  sparse = true
+    ) {
         if (sparse) {
             return relocate_sparse_impl(std::forward<LocalGraphView>(G), nodes_to_send, stats, rank, size);
         } else {
@@ -234,16 +265,18 @@ public:
 
 private:
     template <class Map>
-    static LocalGraphView relocate_full_impl(LocalGraphView&& G,
-                                             const Map& nodes_to_send,
-                                             cetric::profiling::MessageStatistics& stats,
-                                             [[maybe_unused]] PEID rank,
-                                             PEID size) {
+    static LocalGraphView relocate_full_impl(
+        LocalGraphView&&                      G,
+        const Map&                            nodes_to_send,
+        cetric::profiling::MessageStatistics& stats,
+        [[maybe_unused]] PEID                 rank,
+        PEID                                  size
+    ) {
         std::vector<std::pair<NodeId, EdgeId>> to_send(size);
-        for (const auto& kv : nodes_to_send) {
-            PEID pe = kv.first;
+        for (const auto& kv: nodes_to_send) {
+            PEID             pe    = kv.first;
             const NodeRange& range = kv.second;
-            to_send[pe].first = range.to - range.from + 1;
+            to_send[pe].first      = range.to - range.from + 1;
             for (NodeId node = range.from; node <= range.to; ++node) {
                 to_send[pe].second += G.node_info[node].degree;
             }
@@ -279,9 +312,17 @@ private:
 
         stats.send_volume += G.node_info.size() * 2;
         stats.receive_volume += node_info_recv.size() * 2;
-        errcode =
-            MPI_Alltoallv(G.node_info.data(), send_counts.data(), send_displs.data(), mpi_node_info,
-                          node_info_recv.data(), recv_counts.data(), recv_displs.data(), mpi_node_info, MPI_COMM_WORLD);
+        errcode = MPI_Alltoallv(
+            G.node_info.data(),
+            send_counts.data(),
+            send_displs.data(),
+            mpi_node_info,
+            node_info_recv.data(),
+            recv_counts.data(),
+            recv_displs.data(),
+            mpi_node_info,
+            MPI_COMM_WORLD
+        );
         check_mpi_error(errcode, __FILE__, __LINE__);
         G.node_info.resize(0);
         G.node_info.shrink_to_fit();
@@ -300,44 +341,67 @@ private:
         std::vector<NodeId> head(recv_displs[size - 1] + recv_counts[size - 1]);
         stats.send_volume += G.edge_heads.size();
         stats.receive_volume += head.size();
-        errcode = MPI_Alltoallv(G.edge_heads.data(), send_counts.data(), send_displs.data(), MPI_NODE, head.data(),
-                                recv_counts.data(), recv_displs.data(), MPI_NODE, MPI_COMM_WORLD);
+        errcode = MPI_Alltoallv(
+            G.edge_heads.data(),
+            send_counts.data(),
+            send_displs.data(),
+            MPI_NODE,
+            head.data(),
+            recv_counts.data(),
+            recv_displs.data(),
+            MPI_NODE,
+            MPI_COMM_WORLD
+        );
         check_mpi_error(errcode, __FILE__, __LINE__);
         G.edge_heads.shrink_to_fit();
 
         LocalGraphView G_balanced;
-        G_balanced.node_info = std::move(node_info_recv);
+        G_balanced.node_info  = std::move(node_info_recv);
         G_balanced.edge_heads = std::move(head);
 
         return G_balanced;
     }
 
     template <class Map>
-    static LocalGraphView relocate_sparse_impl(LocalGraphView&& G,
-                                               const Map& nodes_to_send,
-                                               cetric::profiling::MessageStatistics& stats,
-                                               [[maybe_unused]] PEID rank,
-                                               PEID size) {
+    static LocalGraphView relocate_sparse_impl(
+        LocalGraphView&&                      G,
+        const Map&                            nodes_to_send,
+        cetric::profiling::MessageStatistics& stats,
+        [[maybe_unused]] PEID                 rank,
+        PEID                                  size
+    ) {
         std::vector<std::pair<PEID, VectorView<LocalGraphView::NodeInfo>>> to_send_node_info;
-        std::vector<std::pair<PEID, VectorView<NodeId>>> to_send_head;
-        auto idx = G.build_indexer();
-        for (const auto& kv : nodes_to_send) {
-            PEID pe = kv.first;
+        std::vector<std::pair<PEID, VectorView<NodeId>>>                   to_send_head;
+        auto                                                               idx = G.build_indexer();
+        for (const auto& kv: nodes_to_send) {
+            PEID             pe    = kv.first;
             const NodeRange& range = kv.second;
             to_send_node_info.emplace_back(pe, slice(G.node_info, range.from, range.to - range.from + 1));
             auto edge_begin = idx.neighborhood_index_range(range.from).first;
-            auto edge_end = idx.neighborhood_index_range(range.to).second;
+            auto edge_end   = idx.neighborhood_index_range(range.to).second;
             to_send_head.emplace_back(pe, slice(G.edge_heads, edge_begin, edge_end - edge_begin));
         }
 
         LocalGraphView G_balanced;
-        CompactBuffer node_recv_buffer(G_balanced.node_info, rank, size);
+        CompactBuffer  node_recv_buffer(G_balanced.node_info, rank, size);
         CommunicationUtility::sparse_all_to_all<LocalGraphView::NodeInfo>(
-            to_send_node_info, node_recv_buffer, rank, size, as_int(MessageTag::LoadBalancing), stats);
+            to_send_node_info,
+            node_recv_buffer,
+            rank,
+            size,
+            as_int(MessageTag::LoadBalancing),
+            stats
+        );
         CompactBuffer edge_recv_buffer(G_balanced.edge_heads, rank, size);
-        CommunicationUtility::sparse_all_to_all<NodeId>(to_send_head, edge_recv_buffer, rank, size,
-                                                        as_int(MessageTag::LoadBalancing), stats);
+        CommunicationUtility::sparse_all_to_all<NodeId>(
+            to_send_head,
+            edge_recv_buffer,
+            rank,
+            size,
+            as_int(MessageTag::LoadBalancing),
+            stats
+        );
         return G_balanced;
     }
 };
-#endif  // PARALLEL_TRIANGLE_COUNTER_GRAPH_COMMUNICATOR_H
+#endif // PARALLEL_TRIANGLE_COUNTER_GRAPH_COMMUNICATOR_H

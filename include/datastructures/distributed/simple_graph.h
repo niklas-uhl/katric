@@ -5,36 +5,45 @@
 #ifndef PARALLEL_TRIANGLE_COUNTER_SIMPLE_GRAPH_H
 #define PARALLEL_TRIANGLE_COUNTER_SIMPLE_GRAPH_H
 
+#include <google/dense_hash_set>
 #include <string>
 #include <vector>
-#include <google/dense_hash_set>
+
 #include <datastructures/graph.h>
 
 class SimpleDistributedGraph {
 public:
-
     struct GhostData {
-        PEID rank;
+        PEID   rank;
         NodeId global_id;
         NodeId node_info;
     };
     struct LocalData {
-        LocalData(bool is_interface) : is_interface(is_interface) { }
-        LocalData(): LocalData(false) { }
+        LocalData(bool is_interface) : is_interface(is_interface) {}
+        LocalData() : LocalData(false) {}
         bool is_interface;
     };
     friend struct LoadBalancer;
     friend class DistributedGraph;
 
-    SimpleDistributedGraph(std::vector<EdgeId> first_out, std::vector<NodeId> head, NodeId first_node, NodeId total_node_count, const std::vector<std::pair<NodeId, NodeId>>& ranges, PEID rank, PEID size):
-    first_out_(std::move(first_out)),
-    head_(std::move(head)),
-    first_node_(first_node),
-    total_node_count_(total_node_count),
-    global_to_local_map(),
-    ghost_data_(),
-    local_data_(first_out_.size() - 1),
-    rank_(rank), size_(size) {
+    SimpleDistributedGraph(
+        std::vector<EdgeId>                           first_out,
+        std::vector<NodeId>                           head,
+        NodeId                                        first_node,
+        NodeId                                        total_node_count,
+        const std::vector<std::pair<NodeId, NodeId>>& ranges,
+        PEID                                          rank,
+        PEID                                          size
+    )
+        : first_out_(std::move(first_out)),
+          head_(std::move(head)),
+          first_node_(first_node),
+          total_node_count_(total_node_count),
+          global_to_local_map(),
+          ghost_data_(),
+          local_data_(first_out_.size() - 1),
+          rank_(rank),
+          size_(size) {
         auto get_pe = [&](NodeId node) {
             NodeId local_from;
             NodeId local_to;
@@ -50,7 +59,7 @@ public:
         NodeId ghost_counter = local_node_count();
         for_each_local_node([&](NodeId node) {
             EdgeId begin = first_out_[node];
-            EdgeId end = first_out_[node + 1];
+            EdgeId end   = first_out_[node + 1];
             for (EdgeId edge_id = begin; edge_id < end; edge_id++) {
                 NodeId head = head_[edge_id];
                 NodeId local_head;
@@ -58,7 +67,7 @@ public:
                     local_data_[node].is_interface = true;
                     if (global_to_local_map.find(head) == global_to_local_map.end()) {
                         global_to_local_map[head] = ghost_counter;
-                        GhostData data {get_pe(head), head, 0};
+                        GhostData data{get_pe(head), head, 0};
                         ghost_data_.emplace_back(data);
                         ghost_counter++;
                     }
@@ -71,40 +80,43 @@ public:
         });
     }
 
-    explicit SimpleDistributedGraph(PEID rank, PEID size) : SimpleDistributedGraph({0}, {}, 0, 0, {}, rank, size) {
+    explicit SimpleDistributedGraph(PEID rank, PEID size) : SimpleDistributedGraph({0}, {}, 0, 0, {}, rank, size) {}
 
-    }
+    SimpleDistributedGraph(
+        std::vector<EdgeId>                    first_out,
+        std::vector<NodeId>                    head,
+        NodeId                                 first_node,
+        NodeId                                 total_node_count,
+        google::dense_hash_map<NodeId, NodeId> global_to_local_map,
+        std::vector<GhostData>                 ghost_data,
+        std::vector<LocalData>                 local_data,
+        PEID                                   rank,
+        PEID                                   size
+    )
+        : first_out_(std::move(first_out)),
+          head_(std::move(head)),
+          first_node_(first_node),
+          total_node_count_(total_node_count),
+          global_to_local_map(std::move(global_to_local_map)),
+          ghost_data_(std::move(ghost_data)),
+          local_data_(std::move(local_data)),
+          rank_(rank),
+          size_(size) {}
 
-    SimpleDistributedGraph(std::vector<EdgeId> first_out, std::vector<NodeId> head,
-                           NodeId first_node, NodeId total_node_count,
-                           google::dense_hash_map<NodeId, NodeId> global_to_local_map,
-                           std::vector<GhostData> ghost_data,
-                           std::vector<LocalData> local_data,
-                           PEID rank, PEID size):
-            first_out_(std::move(first_out)),
-            head_(std::move(head)),
-            first_node_(first_node),
-            total_node_count_(total_node_count),
-            global_to_local_map(std::move(global_to_local_map)),
-            ghost_data_(std::move(ghost_data)),
-            local_data_(std::move(local_data)),
-            rank_(rank), size_(size) {
-    }
-
-    template<typename NodeFunc>
+    template <typename NodeFunc>
     inline void for_each_local_node(NodeFunc on_node) const {
         for (NodeId node = 0; node < local_node_count(); ++node) {
             on_node(node);
         }
     }
 
-    template<typename EdgeFunc>
+    template <typename EdgeFunc>
     inline void for_each_edge(NodeId node, EdgeFunc on_edge) const {
         EdgeId begin = first_out_[node];
-        EdgeId end = first_out_[node + 1];
+        EdgeId end   = first_out_[node + 1];
         for (size_t edge_id = begin; edge_id < end; ++edge_id) {
             NodeId head = head_[edge_id];
-            Edge edge {node, head};
+            Edge   edge{node, head};
             on_edge(edge);
         }
     }
@@ -153,7 +165,7 @@ public:
         if (is_local(global_node_id)) {
             return global_node_id - first_node_;
         } else {
-            assert (global_to_local_map.find(global_node_id) != global_to_local_map.end());
+            assert(global_to_local_map.find(global_node_id) != global_to_local_map.end());
             return global_to_local_map.find(global_node_id)->second;
         }
     }
@@ -171,15 +183,15 @@ public:
     }
 
 private:
-    std::vector<EdgeId> first_out_;
-    std::vector<NodeId> head_;
-    NodeId first_node_;
-    NodeId total_node_count_;
+    std::vector<EdgeId>                    first_out_;
+    std::vector<NodeId>                    head_;
+    NodeId                                 first_node_;
+    NodeId                                 total_node_count_;
     google::dense_hash_map<NodeId, NodeId> global_to_local_map;
-    std::vector<GhostData> ghost_data_;
-    std::vector<LocalData> local_data_;
-    PEID rank_;
-    PEID size_;
+    std::vector<GhostData>                 ghost_data_;
+    std::vector<LocalData>                 local_data_;
+    PEID                                   rank_;
+    PEID                                   size_;
 };
 
-#endif //PARALLEL_TRIANGLE_COUNTER_SIMPLE_GRAPH_H
+#endif // PARALLEL_TRIANGLE_COUNTER_SIMPLE_GRAPH_H

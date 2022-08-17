@@ -1,9 +1,10 @@
 #ifndef MESSAGE_STATISTICS_H
 #define MESSAGE_STATISTICS_H
 
-#include <mpi.h>
-#include <cereal/cereal.hpp>
 #include <cstddef>
+
+#include <cereal/cereal.hpp>
+#include <mpi.h>
 
 namespace cetric {
 namespace profiling {
@@ -18,8 +19,12 @@ struct MessageStatistics {
 
     template <class Archive>
     void serialize(Archive& archive) {
-        archive(CEREAL_NVP(sent_messages), CEREAL_NVP(received_messages), CEREAL_NVP(send_volume),
-                CEREAL_NVP(receive_volume));
+        archive(
+            CEREAL_NVP(sent_messages),
+            CEREAL_NVP(received_messages),
+            CEREAL_NVP(send_volume),
+            CEREAL_NVP(receive_volume)
+        );
     }
 
     void add(const MessageStatistics& rhs) {
@@ -29,7 +34,7 @@ struct MessageStatistics {
         receive_volume += rhs.receive_volume;
     }
 };
-}  // namespace profiling
-}  // namespace cetric
+} // namespace profiling
+} // namespace cetric
 
 #endif /* MESSAGE_STATISTICS_H */

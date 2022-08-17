@@ -5,26 +5,6 @@
 #ifndef PARALLEL_TRIANGLE_COUNTER_PARALLEL_GHOST_NODE_ITERATOR_H
 #define PARALLEL_TRIANGLE_COUNTER_PARALLEL_GHOST_NODE_ITERATOR_H
 
-#include <config.h>
-#include <datastructures/graph_definitions.h>
-#include <statistics.h>
-#include <tbb/concurrent_vector.h>
-#include <tbb/enumerable_thread_specific.h>
-#include <tbb/parallel_for_each.h>
-#include <tbb/task_group.h>
-#include <timer.h>
-#include <algorithm>
-#include <boost/iterator/function_output_iterator.hpp>
-#include <boost/range/adaptor/filtered.hpp>
-#include <boost/range/iterator_range_core.hpp>
-#include <cstddef>
-#include <cstdint>
-#include <limits>
-#include <memory>
-#include <iterator>
-#include <thread>
-#include <tlx/meta/has_member.hpp>
-#include <type_traits>
 #include "concurrent_buffered_queue.h"
 #include "datastructures/auxiliary_node_data.h"
 #include "datastructures/distributed/distributed_graph.h"
@@ -33,8 +13,30 @@
 #include "indirect_message_queue.h"
 #include "message-queue/buffered_queue.h"
 #include "thread_pool.h"
-#include "tlx/meta/has_method.hpp"
 #include "util.h"
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <iterator>
+#include <limits>
+#include <memory>
+#include <thread>
+#include <type_traits>
+
+#include <boost/iterator/function_output_iterator.hpp>
+#include <boost/range/adaptor/filtered.hpp>
+#include <boost/range/iterator_range_core.hpp>
+#include <config.h>
+#include <datastructures/graph_definitions.h>
+#include <statistics.h>
+#include <tbb/concurrent_vector.h>
+#include <tbb/enumerable_thread_specific.h>
+#include <tbb/parallel_for_each.h>
+#include <tbb/task_group.h>
+#include <timer.h>
+#include <tlx/meta/has_member.hpp>
+
+#include "tlx/meta/has_method.hpp"
 
 namespace cetric {
 using namespace graph;
@@ -61,7 +63,8 @@ private:
 template <typename GraphType>
 struct degree {
     explicit degree(GraphType const& G, AuxiliaryNodeData<Degree> const& ghost_degree)
-        : G_(G), ghost_degree_(ghost_degree) {
+        : G_(G),
+          ghost_degree_(ghost_degree) {
         // KASSERT(ghost_degree_.size() > 0ul);
     }
     inline bool operator()(RankEncodedNodeId const& lhs, RankEncodedNodeId const& rhs) const {
@@ -75,7 +78,7 @@ struct degree {
     }
 
 private:
-    GraphType const& G_;
+    GraphType const&                 G_;
     AuxiliaryNodeData<Degree> const& ghost_degree_;
 };
 template <typename GraphType>
@@ -94,7 +97,7 @@ struct degree_outward {
 private:
     GraphType const& G_;
 };
-}  // namespace node_ordering
+} // namespace node_ordering
 
 struct MessageQueuePolicy {};
 struct GridPolicy {};
@@ -108,15 +111,14 @@ static_assert(has_grow_by_v<tbb::concurrent_vector<RankEncodedNodeId>>);
 
 struct Merger {
     template <template <typename...> typename VectorType>
-    size_t operator()(VectorType<RankEncodedNodeId>& buffer,
-                      std::vector<RankEncodedNodeId> msg,
-                      int tag [[maybe_unused]]) {
+    size_t
+    operator()(VectorType<RankEncodedNodeId>& buffer, std::vector<RankEncodedNodeId> msg, int tag [[maybe_unused]]) {
         if constexpr (has_grow_by_v<VectorType<RankEncodedNodeId>>) {
             auto insert_position = buffer.grow_by(msg.size() + 1);
             std::copy(msg.begin(), msg.end(), insert_position);
             *(insert_position + msg.size()) = RankEncodedNodeId::sentinel();
         } else {
-            for (auto elem : msg) {
+            for (auto elem: msg) {
                 buffer.push_back(elem);
             }
             buffer.push_back(RankEncodedNodeId::sentinel());
@@ -132,9 +134,14 @@ struct Splitter {
         std::vector<RankEncodedNodeId>::iterator slice_begin = buffer_ptr->begin();
         while (slice_begin != buffer_ptr->end()) {
             auto slice_end = std::find(slice_begin, buffer_ptr->end(), RankEncodedNodeId::sentinel());
-            on_message(SharedVectorSpan(buffer_ptr, std::distance(buffer_ptr->begin(), slice_begin),
-                                        std::distance(buffer_ptr->begin(), slice_end)),
-                       sender);
+            on_message(
+                SharedVectorSpan(
+                    buffer_ptr,
+                    std::distance(buffer_ptr->begin(), slice_begin),
+                    std::distance(buffer_ptr->begin(), slice_end)
+                ),
+                sender
+            );
             slice_begin = slice_end + 1;
         }
     }
@@ -157,11 +164,9 @@ size_t get_threshold(const GraphType& G, Config const& conf) {
 template <class GraphType, class CommunicationPolicy>
 class CetricEdgeIterator {
 public:
-    CetricEdgeIterator(GraphType& G,
-                       const Config& conf,
-                       PEID rank,
-                       PEID size,
-                       CommunicationPolicy&& = CommunicationPolicy{})
+    CetricEdgeIterator(
+        GraphType& G, const Config& conf, PEID rank, PEID size, CommunicationPolicy&& = CommunicationPolicy{}
+    )
         : G(G),
           conf_(conf),
           rank_(rank),
@@ -186,18 +191,20 @@ public:
     }
 
     template <typename TriangleFunc, typename NodeOrdering>
-    inline void run_local_sequential(TriangleFunc emit,
-                                     cetric::profiling::Statistics& stats,
-                                     std::vector<RankEncodedNodeId>& interface_nodes,
-                                     NodeOrdering&& node_ordering) {
+    inline void run_local_sequential(
+        TriangleFunc                    emit,
+        cetric::profiling::Statistics&  stats,
+        std::vector<RankEncodedNodeId>& interface_nodes,
+        NodeOrdering&&                  node_ordering
+    ) {
         cetric::profiling::Timer phase_time;
         interface_nodes.clear();
-        for (auto v : G.local_nodes()) {
+        for (auto v: G.local_nodes()) {
             if (G.template is_interface_node_if_sorted_by_rank<AdjacencyType::out>(v)) {
                 interface_nodes.emplace_back(v);
             }
             size_t neighbor_index = 0;
-            for (RankEncodedNodeId u : G.out_adj(v).neighbors()) {
+            for (RankEncodedNodeId u: G.out_adj(v).neighbors()) {
                 KASSERT(*(G.out_adj(v).neighbors().begin() + neighbor_index) == u);
                 if (u.rank() != rank_) {
                     if (conf_.algorithm == Algorithm::Patric) {
@@ -209,20 +216,27 @@ public:
                     //                 boost::make_iterator_range(G.out_adj(v).neighbors().begin() + neighbor_index,
                     //                                            G.out_adj(v).neighbors().end())));
                     // TODO: we should be able to break here when the edges are properly sorted
-                    KASSERT(std::all_of(G.out_adj(v).neighbors().begin() + neighbor_index,
-                                        G.out_adj(v).neighbors().end(),
-                                        [rank = this->rank_](RankEncodedNodeId node) { return node.rank() != rank; }));
+                    KASSERT(std::all_of(
+                        G.out_adj(v).neighbors().begin() + neighbor_index,
+                        G.out_adj(v).neighbors().end(),
+                        [rank = this->rank_](RankEncodedNodeId node) { return node.rank() != rank; }
+                    ));
                     break;
                 }
                 auto v_neighbors = G.out_adj(v).neighbors();
                 auto u_neighbors = G.out_adj(u).neighbors();
-                auto offset = (conf_.algorithm == Algorithm::Cetric) * neighbor_index;
-                std::set_intersection(v_neighbors.begin() + offset, v_neighbors.end(), u_neighbors.begin(),
-                                      u_neighbors.end(), boost::function_output_iterator([&](RankEncodedNodeId w) {
-                                          stats.local.local_triangles++;
-                                          emit(Triangle<RankEncodedNodeId>{v, u, w});
-                                      }),
-                                      node_ordering);
+                auto offset      = (conf_.algorithm == Algorithm::Cetric) * neighbor_index;
+                std::set_intersection(
+                    v_neighbors.begin() + offset,
+                    v_neighbors.end(),
+                    u_neighbors.begin(),
+                    u_neighbors.end(),
+                    boost::function_output_iterator([&](RankEncodedNodeId w) {
+                        stats.local.local_triangles++;
+                        emit(Triangle<RankEncodedNodeId>{v, u, w});
+                    }),
+                    node_ordering
+                );
                 neighbor_index++;
             }
         }
@@ -230,87 +244,100 @@ public:
     }
 
     template <typename TriangleFunc, typename NodeOrdering>
-    inline void run_local_parallel(TriangleFunc emit,
-                                   cetric::profiling::Statistics& stats,
-                                   tbb::enumerable_thread_specific<std::vector<RankEncodedNodeId>>& interface_nodes,
-                                   NodeOrdering&& node_ordering) {
+    inline void run_local_parallel(
+        TriangleFunc                                                     emit,
+        cetric::profiling::Statistics&                                   stats,
+        tbb::enumerable_thread_specific<std::vector<RankEncodedNodeId>>& interface_nodes,
+        NodeOrdering&&                                                   node_ordering
+    ) {
         cetric::profiling::Timer phase_time;
         interface_nodes.clear();
         auto nodes = G.local_nodes();
-        tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [this, &interface_nodes, &node_ordering,
-                                                                           &emit, &stats](auto const& nodes_r) {
-            for (auto v : nodes_r) {
-                if (G.template is_interface_node_if_sorted_by_rank<AdjacencyType::out>(v)) {
-                    interface_nodes.local().emplace_back(v);
-                }
-                auto v_neighbors_size = std::ranges::distance(G.out_adj(v).neighbors());
-                tbb::parallel_for(
-                    tbb::blocked_range(size_t{0}, static_cast<size_t>(v_neighbors_size)),
-                    [&node_ordering, v = v, this, &emit, &stats](tbb::blocked_range<size_t> const& neighbor_range) {
-                        for (size_t neighbor_index = neighbor_range.begin(); neighbor_index != neighbor_range.end();
-                             neighbor_index++) {
-                            auto u = *(G.out_adj(v).neighbors().begin() + neighbor_index);
-                            KASSERT(*(G.out_adj(v).neighbors().begin() + neighbor_index) == u);
-                            if (u.rank() != rank_) {
-                                if (conf_.algorithm == Algorithm::Patric) {
-                                    // neighbor_index++;
-                                    continue;
+        tbb::parallel_for(
+            tbb::blocked_range(nodes.begin(), nodes.end()),
+            [this, &interface_nodes, &node_ordering, &emit, &stats](auto const& nodes_r) {
+                for (auto v: nodes_r) {
+                    if (G.template is_interface_node_if_sorted_by_rank<AdjacencyType::out>(v)) {
+                        interface_nodes.local().emplace_back(v);
+                    }
+                    auto v_neighbors_size = std::ranges::distance(G.out_adj(v).neighbors());
+                    tbb::parallel_for(
+                        tbb::blocked_range(size_t{0}, static_cast<size_t>(v_neighbors_size)),
+                        [&node_ordering, v = v, this, &emit, &stats](tbb::blocked_range<size_t> const& neighbor_range) {
+                            for (size_t neighbor_index = neighbor_range.begin(); neighbor_index != neighbor_range.end();
+                                 neighbor_index++) {
+                                auto u = *(G.out_adj(v).neighbors().begin() + neighbor_index);
+                                KASSERT(*(G.out_adj(v).neighbors().begin() + neighbor_index) == u);
+                                if (u.rank() != rank_) {
+                                    if (conf_.algorithm == Algorithm::Patric) {
+                                        // neighbor_index++;
+                                        continue;
+                                    }
+                                    // atomic_debug(
+                                    //     fmt::format("Remaining neighbors {}",
+                                    //                 boost::make_iterator_range(G.out_adj(v).neighbors().begin() +
+                                    //                 neighbor_index,
+                                    //                                            G.out_adj(v).neighbors().end())));
+                                    // TODO: we should be able to break here when the edges are properly sorted
+                                    KASSERT(std::all_of(
+                                        G.out_adj(v).neighbors().begin() + neighbor_index,
+                                        G.out_adj(v).neighbors().end(),
+                                        [rank = this->rank_](RankEncodedNodeId node) { return node.rank() != rank; }
+                                    ));
+                                    break;
                                 }
-                                // atomic_debug(
-                                //     fmt::format("Remaining neighbors {}",
-                                //                 boost::make_iterator_range(G.out_adj(v).neighbors().begin() +
-                                //                 neighbor_index,
-                                //                                            G.out_adj(v).neighbors().end())));
-                                // TODO: we should be able to break here when the edges are properly sorted
-                                KASSERT(std::all_of(
-                                    G.out_adj(v).neighbors().begin() + neighbor_index, G.out_adj(v).neighbors().end(),
-                                    [rank = this->rank_](RankEncodedNodeId node) { return node.rank() != rank; }));
-                                break;
+                                auto v_neighbors = G.out_adj(v).neighbors();
+                                auto u_neighbors = G.out_adj(u).neighbors();
+                                auto offset      = (conf_.algorithm == Algorithm::Cetric) * neighbor_index;
+                                std::set_intersection(
+                                    v_neighbors.begin() + offset,
+                                    v_neighbors.end(),
+                                    u_neighbors.begin(),
+                                    u_neighbors.end(),
+                                    boost::function_output_iterator([&](RankEncodedNodeId w) {
+                                        stats.local.local_triangles++;
+                                        emit(Triangle<RankEncodedNodeId>{v, u, w});
+                                    }),
+                                    node_ordering
+                                );
                             }
-                            auto v_neighbors = G.out_adj(v).neighbors();
-                            auto u_neighbors = G.out_adj(u).neighbors();
-                            auto offset = (conf_.algorithm == Algorithm::Cetric) * neighbor_index;
-                            std::set_intersection(v_neighbors.begin() + offset, v_neighbors.end(), u_neighbors.begin(),
-                                                  u_neighbors.end(),
-                                                  boost::function_output_iterator([&](RankEncodedNodeId w) {
-                                                      stats.local.local_triangles++;
-                                                      emit(Triangle<RankEncodedNodeId>{v, u, w});
-                                                  }),
-                                                  node_ordering);
                         }
-                    });
+                    );
+                }
+                //     for (size_t neighbor_index = 0; neighbor_index < v_neighbors_size; neighbor_index++) {
+                //         auto u = *(G.out_adj(v).neighbors().begin() + neighbor_index);
+                //         KASSERT(*(G.out_adj(v).neighbors().begin() + neighbor_index) == u);
+                //         if (u.rank() != rank_) {
+                //             if (conf_.algorithm == Algorithm::Patric) {
+                //                 // neighbor_index++;
+                //                 continue;
+                //             }
+                //             // atomic_debug(
+                //             //     fmt::format("Remaining neighbors {}",
+                //             //                 boost::make_iterator_range(G.out_adj(v).neighbors().begin() +
+                //             neighbor_index,
+                //             //                                            G.out_adj(v).neighbors().end())));
+                //             // TODO: we should be able to break here when the edges are properly sorted
+                //             KASSERT(std::all_of(
+                //                 G.out_adj(v).neighbors().begin() + neighbor_index, G.out_adj(v).neighbors().end(),
+                //                 [rank = this->rank_](RankEncodedNodeId node) { return node.rank() != rank; }));
+                //             break;
+                //         }
+                //         auto v_neighbors = G.out_adj(v).neighbors();
+                //         auto u_neighbors = G.out_adj(u).neighbors();
+                //         auto offset = (conf_.algorithm == Algorithm::Cetric) * neighbor_index;
+                //         std::set_intersection(v_neighbors.begin() + offset, v_neighbors.end(), u_neighbors.begin(),
+                //                               u_neighbors.end(),
+                //                               boost::function_output_iterator([&](RankEncodedNodeId w) {
+                //                                   stats.local.local_triangles++;
+                //                                   emit(Triangle<RankEncodedNodeId>{v, u, w});
+                //                               }),
+                //                               node_ordering);
+                //         // neighbor_index++;
+                //     }
+                // }
             }
-            //     for (size_t neighbor_index = 0; neighbor_index < v_neighbors_size; neighbor_index++) {
-            //         auto u = *(G.out_adj(v).neighbors().begin() + neighbor_index);
-            //         KASSERT(*(G.out_adj(v).neighbors().begin() + neighbor_index) == u);
-            //         if (u.rank() != rank_) {
-            //             if (conf_.algorithm == Algorithm::Patric) {
-            //                 // neighbor_index++;
-            //                 continue;
-            //             }
-            //             // atomic_debug(
-            //             //     fmt::format("Remaining neighbors {}",
-            //             //                 boost::make_iterator_range(G.out_adj(v).neighbors().begin() + neighbor_index,
-            //             //                                            G.out_adj(v).neighbors().end())));
-            //             // TODO: we should be able to break here when the edges are properly sorted
-            //             KASSERT(std::all_of(
-            //                 G.out_adj(v).neighbors().begin() + neighbor_index, G.out_adj(v).neighbors().end(),
-            //                 [rank = this->rank_](RankEncodedNodeId node) { return node.rank() != rank; }));
-            //             break;
-            //         }
-            //         auto v_neighbors = G.out_adj(v).neighbors();
-            //         auto u_neighbors = G.out_adj(u).neighbors();
-            //         auto offset = (conf_.algorithm == Algorithm::Cetric) * neighbor_index;
-            //         std::set_intersection(v_neighbors.begin() + offset, v_neighbors.end(), u_neighbors.begin(),
-            //                               u_neighbors.end(), boost::function_output_iterator([&](RankEncodedNodeId w) {
-            //                                   stats.local.local_triangles++;
-            //                                   emit(Triangle<RankEncodedNodeId>{v, u, w});
-            //                               }),
-            //                               node_ordering);
-            //         // neighbor_index++;
-            //     }
-            // }
-        });
+        );
         stats.local.local_phase_time += phase_time.elapsed_time();
     }
 
@@ -321,49 +348,78 @@ public:
     }
 
     template <typename TriangleFunc, typename NodeIterator, typename NodeOrdering>
-    inline void run_distributed(TriangleFunc emit,
-                                cetric::profiling::Statistics& stats,
-                                NodeIterator interface_nodes_begin,
-                                NodeIterator interface_ndoes_end,
-                                NodeOrdering&& node_ordering) {
+    inline void run_distributed(
+        TriangleFunc                   emit,
+        cetric::profiling::Statistics& stats,
+        NodeIterator                   interface_nodes_begin,
+        NodeIterator                   interface_ndoes_end,
+        NodeOrdering&&                 node_ordering
+    ) {
         std::set<RankEncodedNodeId> ghosts;
-        run_distributed(emit, stats, interface_nodes_begin, interface_ndoes_end,
-                        std::forward<NodeOrdering>(node_ordering), ghosts);
+        run_distributed(
+            emit,
+            stats,
+            interface_nodes_begin,
+            interface_ndoes_end,
+            std::forward<NodeOrdering>(node_ordering),
+            ghosts
+        );
     }
 
     template <typename TriangleFunc, typename NodeOrdering, typename GhostSet>
-    inline void run_distributed(TriangleFunc emit,
-                                cetric::profiling::Statistics& stats,
-                                NodeOrdering&& node_ordering,
-                                GhostSet const& ghosts) {
+    inline void run_distributed(
+        TriangleFunc emit, cetric::profiling::Statistics& stats, NodeOrdering&& node_ordering, GhostSet const& ghosts
+    ) {
         auto all_interface_nodes = tbb::flatten2d(interface_nodes_);
-        run_distributed(emit, stats, all_interface_nodes.begin(), all_interface_nodes.end(),
-                        std::forward<NodeOrdering>(node_ordering), ghosts);
+        run_distributed(
+            emit,
+            stats,
+            all_interface_nodes.begin(),
+            all_interface_nodes.end(),
+            std::forward<NodeOrdering>(node_ordering),
+            ghosts
+        );
     }
 
     template <typename TriangleFunc, typename NodeIterator, typename NodeOrdering, typename GhostSet>
-    inline void run_distributed(TriangleFunc emit,
-                                cetric::profiling::Statistics& stats,
-                                NodeIterator interface_nodes_begin,
-                                NodeIterator interface_nodes_end,
-                                NodeOrdering&& node_ordering,
-                                GhostSet const& ghosts) {
+    inline void run_distributed(
+        TriangleFunc                   emit,
+        cetric::profiling::Statistics& stats,
+        NodeIterator                   interface_nodes_begin,
+        NodeIterator                   interface_nodes_end,
+        NodeOrdering&&                 node_ordering,
+        GhostSet const&                ghosts
+    ) {
         if (conf_.global_parallel && conf_.num_threads > 1) {
-            run_distributed_parallel(emit, stats, interface_nodes_begin, interface_nodes_end,
-                                     std::forward<NodeOrdering>(node_ordering), ghosts);
+            run_distributed_parallel(
+                emit,
+                stats,
+                interface_nodes_begin,
+                interface_nodes_end,
+                std::forward<NodeOrdering>(node_ordering),
+                ghosts
+            );
         } else {
-            run_distributed_sequential(emit, stats, interface_nodes_begin, interface_nodes_end,
-                                       std::forward<NodeOrdering>(node_ordering), ghosts);
+            run_distributed_sequential(
+                emit,
+                stats,
+                interface_nodes_begin,
+                interface_nodes_end,
+                std::forward<NodeOrdering>(node_ordering),
+                ghosts
+            );
         }
     }
 
     template <typename TriangleFunc, typename NodeIterator, typename NodeOrdering, typename GhostSet>
-    inline void run_distributed_sequential(TriangleFunc emit,
-                                           cetric::profiling::Statistics& stats,
-                                           NodeIterator interface_nodes_begin,
-                                           NodeIterator interface_nodes_end,
-                                           NodeOrdering&& node_ordering,
-                                           GhostSet const& ghosts) {
+    inline void run_distributed_sequential(
+        TriangleFunc                   emit,
+        cetric::profiling::Statistics& stats,
+        NodeIterator                   interface_nodes_begin,
+        NodeIterator                   interface_nodes_end,
+        NodeOrdering&&                 node_ordering,
+        GhostSet const&                ghosts
+    ) {
         auto queue = []() {
             if constexpr (std::is_same_v<CommunicationPolicy, cetric::GridPolicy>) {
                 return cetric::make_indirect_queue<RankEncodedNodeId>(Merger{}, Splitter{});
@@ -379,7 +435,7 @@ public:
             // if (conf_.pseudo2core && G.outdegree(v) < 2) {
             //     stats.local.skipped_nodes++;
             // } else {
-            for (RankEncodedEdge edge : G.out_adj(v).edges()) {
+            for (RankEncodedEdge edge: G.out_adj(v).edges()) {
                 RankEncodedNodeId u = edge.head;
                 if (/*conf_.algorithm == Algorithm::Cetric || */ u.rank() != rank_) {
                     // assert(G.is_local_from_local(v));
@@ -408,20 +464,22 @@ public:
     }
 
     template <typename TriangleFunc, typename NodeIterator, typename NodeOrdering, typename GhostSet>
-    inline void run_distributed_parallel(TriangleFunc emit,
-                                         cetric::profiling::Statistics& stats,
-                                         NodeIterator interface_nodes_begin,
-                                         NodeIterator interface_nodes_end,
-                                         NodeOrdering&& node_ordering,
-                                         GhostSet const& ghosts) {
+    inline void run_distributed_parallel(
+        TriangleFunc                   emit,
+        cetric::profiling::Statistics& stats,
+        NodeIterator                   interface_nodes_begin,
+        NodeIterator                   interface_nodes_end,
+        NodeOrdering&&                 node_ordering,
+        GhostSet const&                ghosts
+    ) {
         KASSERT(conf_.num_threads > 1ul);
         auto queue =
             message_queue::make_concurrent_buffered_queue<RankEncodedNodeId>(conf_.num_threads, Merger{}, Splitter{});
         queue.set_threshold(threshold_);
         cetric::profiling::Timer phase_time;
-        std::atomic<size_t> nodes_queued = 0;
-        std::atomic<size_t> write_jobs = 0;
-        ThreadPool pool(conf_.num_threads - 1);
+        std::atomic<size_t>      nodes_queued = 0;
+        std::atomic<size_t>      write_jobs   = 0;
+        ThreadPool               pool(conf_.num_threads - 1);
         for (auto current = interface_nodes_begin; current != interface_nodes_end; current++) {
             RankEncodedNodeId v = *current;
             nodes_queued++;
@@ -430,7 +488,7 @@ public:
                 //     stats.local.skipped_nodes++;
                 //     return;
                 // }
-                for (RankEncodedEdge edge : G.out_adj(v).edges()) {
+                for (RankEncodedEdge edge: G.out_adj(v).edges()) {
                     RankEncodedNodeId u = edge.head;
                     if (/*conf_.algorithm == Algorithm::Cetric || */ u.rank() != rank_) {
                         // assert(G.is_local_from_local(v));
@@ -481,13 +539,11 @@ public:
         run(emit, stats, std::forward<NodeOrdering>(node_ordering), ghosts);
     }
     template <typename TriangleFunc, typename NodeOrdering, typename GhostSet>
-    inline void run(TriangleFunc emit,
-                    cetric::profiling::Statistics& stats,
-                    NodeOrdering&& node_ordering,
-                    GhostSet const& ghosts) {
+    inline void
+    run(TriangleFunc emit, cetric::profiling::Statistics& stats, NodeOrdering&& node_ordering, GhostSet const& ghosts) {
         run_local(emit, stats, node_ordering);
         cetric::profiling::Timer phase_time;
-        for (auto node : G.local_nodes()) {
+        for (auto node: G.local_nodes()) {
             G.remove_internal_edges(node);
         }
         stats.local.contraction_time += phase_time.elapsed_time();
@@ -548,15 +604,17 @@ private:
     }
 
     template <typename MessageQueue, typename TriangleFunc>
-    void enqueue_for_sending(MessageQueue& queue,
-                             RankEncodedNodeId v,
-                             PEID u_rank,
-                             TriangleFunc emit [[maybe_unused]],
-                             cetric::profiling::Statistics& stats [[maybe_unused]]) {
+    void enqueue_for_sending(
+        MessageQueue&                  queue,
+        RankEncodedNodeId              v,
+        PEID                           u_rank,
+        TriangleFunc                   emit [[maybe_unused]],
+        cetric::profiling::Statistics& stats [[maybe_unused]]
+    ) {
         std::vector<RankEncodedNodeId> buffer;
         buffer.emplace_back(v);
         // size_t send_count = 0;
-        for (RankEncodedEdge e : G.out_adj(v).edges()) {
+        for (RankEncodedEdge e: G.out_adj(v).edges()) {
             assert(conf_.algorithm == Algorithm::Patric || e.head.rank() != rank_);
             // using payload_type = typename GraphType::payload_type;
             // if constexpr (std::is_convertible_v<decltype(payload_type{}.degree), Degree>) {
@@ -577,13 +635,15 @@ private:
     }
 
     template <typename MessageQueue, typename TriangleFunc>
-    void enqueue_for_sending_async(MessageQueue& queue,
-                                   RankEncodedNodeId v,
-                                   PEID u_rank,
-                                   ThreadPool& thread_pool [[maybe_unused]],
-                                   std::atomic<size_t>& write_jobs,
-                                   TriangleFunc emit [[maybe_unused]],
-                                   cetric::profiling::Statistics& stats [[maybe_unused]]) {
+    void enqueue_for_sending_async(
+        MessageQueue&                  queue,
+        RankEncodedNodeId              v,
+        PEID                           u_rank,
+        ThreadPool&                    thread_pool [[maybe_unused]],
+        std::atomic<size_t>&           write_jobs,
+        TriangleFunc                   emit [[maybe_unused]],
+        cetric::profiling::Statistics& stats [[maybe_unused]]
+    ) {
         // atomic_debug(fmt::format("rank {}", u_rank));
         // atomic_debug(u_rank);
         write_jobs++;
@@ -593,7 +653,7 @@ private:
             buffer.emplace_back(v);
             // size_t send_count = 0;
             // atomic_debug(u_rank);
-            for (RankEncodedNodeId node : G.out_adj(v).neighbors()) {
+            for (RankEncodedNodeId node: G.out_adj(v).neighbors()) {
                 assert(conf_.algorithm == Algorithm::Patric || node.rank() != rank_);
                 if (send_neighbor(node, u_rank)) {
                     buffer.emplace_back(node);
@@ -607,33 +667,45 @@ private:
     }
 
     template <typename IterType, typename TriangleFunc, typename NodeOrdering, typename GhostSet>
-    void handle_buffer(IterType begin,
-                       IterType end,
-                       TriangleFunc emit,
-                       cetric::profiling::Statistics& stats,
-                       NodeOrdering&& node_ordering,
-                       GhostSet const& ghosts) {
+    void handle_buffer(
+        IterType                       begin,
+        IterType                       end,
+        TriangleFunc                   emit,
+        cetric::profiling::Statistics& stats,
+        NodeOrdering&&                 node_ordering,
+        GhostSet const&                ghosts
+    ) {
         RankEncodedNodeId v = *begin;
         process_neighborhood(v, begin + 1, end, emit, stats, std::forward<NodeOrdering>(node_ordering), ghosts);
     }
 
     template <typename TriangleFunc, typename NodeOrdering, typename GhostSet>
-    void handle_buffer_hybrid(SharedVectorSpan<RankEncodedNodeId> span,
-                              ThreadPool& thread_pool,
-                              TriangleFunc emit,
-                              cetric::profiling::Statistics& stats,
-                              NodeOrdering&& node_ordering,
-                              GhostSet const& ghosts) {
+    void handle_buffer_hybrid(
+        SharedVectorSpan<RankEncodedNodeId> span,
+        ThreadPool&                         thread_pool,
+        TriangleFunc                        emit,
+        cetric::profiling::Statistics&      stats,
+        NodeOrdering&&                      node_ordering,
+        GhostSet const&                     ghosts
+    ) {
         thread_pool.enqueue(
             [this, emit, span = std::move(span), &stats, &node_ordering, &ghosts] {
                 RankEncodedNodeId v = *span.begin();
                 // atomic_debug(
                 //     fmt::format("Spawn task for {} on thread {}", v,
                 //     tbb::this_task_arena::current_thread_index()));
-                process_neighborhood(v, span.begin() + 1, span.end(), emit, stats,
-                                     std::forward<NodeOrdering>(node_ordering), ghosts);
+                process_neighborhood(
+                    v,
+                    span.begin() + 1,
+                    span.end(),
+                    emit,
+                    stats,
+                    std::forward<NodeOrdering>(node_ordering),
+                    ghosts
+                );
             },
-            ThreadPool::Priority::high);
+            ThreadPool::Priority::high
+        );
     }
     // template <typename NodeBufferIter>
     // void distributed_pre_intersect(RankEncodedNodeId v, NodeBufferIter begin, NodeBufferIter end) {
@@ -672,13 +744,15 @@ private:
     // }
 
     template <typename IntersectFunc, typename NodeBufferIter, typename NodeOrdering, typename GhostSet>
-    void intersect_from_message(RankEncodedNodeId u,
-                                RankEncodedNodeId v,
-                                NodeBufferIter begin,
-                                NodeBufferIter end,
-                                IntersectFunc on_intersection,
-                                NodeOrdering&& node_ordering,
-                                GhostSet const& ghosts) {
+    void intersect_from_message(
+        RankEncodedNodeId u,
+        RankEncodedNodeId v,
+        NodeBufferIter    begin,
+        NodeBufferIter    end,
+        IntersectFunc     on_intersection,
+        NodeOrdering&&    node_ordering,
+        GhostSet const&   ghosts
+    ) {
         // if (conf_.flag_intersection) {
         //     G.for_each_local_out_edge(u_local, [&](RankEncodedEdge uw) {
         //         RankEncodedNodeId w = uw.head.id();
@@ -689,33 +763,53 @@ private:
         // } else {
         auto u_neighbors = G.out_adj(u).neighbors();
         if (!ghosts.empty()) {
-            auto filtered_neighbors = boost::adaptors::filter(
-                boost::make_iterator_range(begin, end),
-                [&ghosts](RankEncodedNodeId node) { return ghosts.find(node) != ghosts.end(); });
+            auto filtered_neighbors =
+                boost::adaptors::filter(boost::make_iterator_range(begin, end), [&ghosts](RankEncodedNodeId node) {
+                    return ghosts.find(node) != ghosts.end();
+                });
             // atomic_debug(fmt::format("intersecting {} and {}", u_neighbors, filtered_neighbors));
-            std::set_intersection(u_neighbors.begin(), u_neighbors.end(), filtered_neighbors.begin(),
-                                  filtered_neighbors.end(), boost::make_function_output_iterator(on_intersection),
-                                  node_ordering);
+            std::set_intersection(
+                u_neighbors.begin(),
+                u_neighbors.end(),
+                filtered_neighbors.begin(),
+                filtered_neighbors.end(),
+                boost::make_function_output_iterator(on_intersection),
+                node_ordering
+            );
         } else {
-            std::set_intersection(u_neighbors.begin(), u_neighbors.end(), begin, end,
-                                  boost::make_function_output_iterator(on_intersection), node_ordering);
+            std::set_intersection(
+                u_neighbors.begin(),
+                u_neighbors.end(),
+                begin,
+                end,
+                boost::make_function_output_iterator(on_intersection),
+                node_ordering
+            );
         }
         if (conf_.skip_local_neighborhood && conf_.algorithm == Algorithm::Patric) {
             auto v_neighbors = G.out_adj(v).neighbors();
-            std::set_intersection(u_neighbors.begin(), u_neighbors.end(), v_neighbors.begin(), v_neighbors.end(),
-                                  boost::make_function_output_iterator(on_intersection), node_ordering);
+            std::set_intersection(
+                u_neighbors.begin(),
+                u_neighbors.end(),
+                v_neighbors.begin(),
+                v_neighbors.end(),
+                boost::make_function_output_iterator(on_intersection),
+                node_ordering
+            );
         }
         // }
     }
 
     template <typename TriangleFunc, typename NodeBufferIter, typename NodeOrdering, typename GhostSet>
-    void process_neighborhood(RankEncodedNodeId v,
-                              NodeBufferIter begin,
-                              NodeBufferIter end,
-                              TriangleFunc emit,
-                              cetric::profiling::Statistics& stats,
-                              NodeOrdering&& node_ordering,
-                              GhostSet const& ghosts) {
+    void process_neighborhood(
+        RankEncodedNodeId              v,
+        NodeBufferIter                 begin,
+        NodeBufferIter                 end,
+        TriangleFunc                   emit,
+        cetric::profiling::Statistics& stats,
+        NodeOrdering&&                 node_ordering,
+        GhostSet const&                ghosts
+    ) {
         std::vector<RankEncodedNodeId> buffer{begin, end};
         // atomic_debug(fmt::format("Handling message {}", buffer));
         assert(v.rank() != rank_);
@@ -724,21 +818,23 @@ private:
             if (conf_.skip_local_neighborhood) {
                 auto neighbors = G.out_adj(v).neighbors();
                 if (conf_.num_threads > 1 && conf_.global_parallel && conf_.global_degree_of_parallelism > 2) {
-                    tbb::parallel_for(tbb::blocked_range(neighbors.begin(), neighbors.end()),
-                                      [&on_node](auto const& r) {
-                                          for (auto node : r) {
-                                              on_node(node);
-                                          }
-                                      });
+                    tbb::parallel_for(
+                        tbb::blocked_range(neighbors.begin(), neighbors.end()),
+                        [&on_node](auto const& r) {
+                            for (auto node: r) {
+                                on_node(node);
+                            }
+                        }
+                    );
                 } else {
-                    for (auto node : G.out_adj(v).neighbors()) {
+                    for (auto node: G.out_adj(v).neighbors()) {
                         on_node(node);
                     }
                 }
             } else {
                 if (conf_.num_threads > 1 && conf_.global_parallel && conf_.global_degree_of_parallelism > 2) {
                     tbb::parallel_for(tbb::blocked_range(begin, end), [&on_node, this](auto const& r) {
-                        for (auto u : r) {
+                        for (auto u: r) {
                             if (u.rank() == rank_) {
                                 on_node(u);
                             }
@@ -757,25 +853,30 @@ private:
         for_each_local_receiver([&](RankEncodedNodeId u) {
             assert(u.rank() == rank_);
             intersect_from_message(
-                u, v, begin, end,
+                u,
+                v,
+                begin,
+                end,
                 [&](RankEncodedNodeId local_intersection) {
                     emit(Triangle<RankEncodedNodeId>{v, u, local_intersection});
                     stats.local.type3_triangles++;
                 },
-                node_ordering, ghosts);
+                node_ordering,
+                ghosts
+            );
         });
         // distributed_post_intersect(v, begin, end);
     }
-    GraphType& G;
-    const Config& conf_;
-    PEID rank_;
-    PEID size_;
-    std::vector<PEID> last_proc_;
-    std::vector<bool> is_v_neighbor_;
+    GraphType&                                                      G;
+    const Config&                                                   conf_;
+    PEID                                                            rank_;
+    PEID                                                            size_;
+    std::vector<PEID>                                               last_proc_;
+    std::vector<bool>                                               is_v_neighbor_;
     tbb::enumerable_thread_specific<std::vector<RankEncodedNodeId>> interface_nodes_;
-    std::vector<Degree> pe_min_degree;
-    size_t threshold_;
+    std::vector<Degree>                                             pe_min_degree;
+    size_t                                                          threshold_;
 };
 
-}  // namespace cetric
-#endif  // PARALLEL_TRIANGLE_COUNTER_PARALLEL_NODE_ITERATOR_H
+} // namespace cetric
+#endif // PARALLEL_TRIANGLE_COUNTER_PARALLEL_NODE_ITERATOR_H

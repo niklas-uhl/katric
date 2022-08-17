@@ -15,18 +15,18 @@ public:
     enum class Priority { high = 0, normal };
 
 private:
-    std::array<std::deque<Job>, 2> jobs_;
-    std::vector<std::thread> threads_;
+    std::array<std::deque<Job>, 2>              jobs_;
+    std::vector<std::thread>                    threads_;
     std::unordered_map<std::thread::id, size_t> thread_id_map_;
-    std::mutex mutex_;
-    std::condition_variable cv_jobs_;
-    std::condition_variable cv_finished_;
+    std::mutex                                  mutex_;
+    std::condition_variable                     cv_jobs_;
+    std::condition_variable                     cv_finished_;
 
-    std::atomic<size_t> busy_ = 0;
-    std::atomic<size_t> idle_ = 0;
-    std::atomic<size_t> done_ = 0;
-    std::atomic<size_t> enqueued_ = 0;
-    std::atomic<bool> terminate_ = false;
+    std::atomic<size_t> busy_      = 0;
+    std::atomic<size_t> idle_      = 0;
+    std::atomic<size_t> done_      = 0;
+    std::atomic<size_t> enqueued_  = 0;
+    std::atomic<bool>   terminate_ = false;
 
 public:
     ThreadPool(size_t num_threads) : threads_(num_threads) {
