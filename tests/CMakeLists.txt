@@ -65,3 +65,12 @@ nuhl_add_mpi_test(communicator_test CORES 2 4 8 16)
 
 add_executable(rank_encoded_node_id_test rank_encoded_node_id_test.cpp)
 target_link_libraries(rank_encoded_node_id_test PRIVATE Catch2::Catch2WithMain cetric-lib)
+
+add_library(catch2_main_with_backward EXCLUDE_FROM_ALL catch2_main_with_backward.cpp)
+target_link_libraries(catch2_main_with_backward PUBLIC Catch2::Catch2)
+target_include_directories(catch2_main_with_backward PUBLIC ${BACKWARD_INCLUDE_DIRS})
+target_link_libraries(catch2_main_with_backward PUBLIC ${BACKWARD_LIBRARIES})
+target_compile_definitions(catch2_main_with_backward PUBLIC ${BACKWARD_DEFINITIONS})
+
+add_executable(intersection_test intersection_test.cpp)
+target_link_libraries(intersection_test PRIVATE catch2_main_with_backward cetric-lib)

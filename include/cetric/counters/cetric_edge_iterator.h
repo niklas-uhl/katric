@@ -269,11 +269,7 @@ public:
             if (conf_.local_degree_of_parallelism > 2) {
                 return true;
             } else if (conf_.local_degree_of_parallelism > 1) {
-                bool partition = G.outdegree(node) > high_degree_threshold_;
-                if (partition) {
-                    atomic_debug("High degree node");
-                }
-                return partition;
+                return G.outdegree(node) > high_degree_threshold_;
             } else {
                 return false;
             }
