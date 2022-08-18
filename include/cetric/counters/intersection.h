@@ -5,47 +5,95 @@
 #include <iostream>
 #include <stack>
 
+#include "cetric/config.h"
+#include "cetric/util.h"
+
 namespace cetric {
 
-template <class InputIt1, class InputIt2, class OutputIt, class Compare>
-OutputIt
-merge_intersection(InputIt1 first1, InputIt1 last1, InputIt2 first2, InputIt2 last2, OutputIt d_first, Compare comp) {
-    return std::set_intersection(first1, last1, first2, last2, d_first, comp);
+template <class InputIt1, class InputIt2, class OnIntersection, class Compare>
+void intersection(
+    InputIt1         first1,
+    InputIt1         last1,
+    InputIt2         first2,
+    InputIt2         last2,
+    OnIntersection&& on_intersection,
+    Compare          comp,
+    Config const&    conf
+) {
+    switch (conf.intersection_method) {
+        case IntersectionMethod::merge:
+            merge_intersection(first1, last1, first2, last2, on_intersection, comp);
+            break;
+        case IntersectionMethod::binary_search:
+            binary_search_intersection(first1, last1, first2, last2, on_intersection, comp);
+            break;
+        case IntersectionMethod::binary:
+            binary_intersection(first1, last1, first2, last2, on_intersection, comp, conf.binary_intersection_cutoff);
+            break;
+        case IntersectionMethod::hybrid:
+            auto dist1 = last1 - first1;
+            auto dist2 = last2 - first2;
+            if (dist2 < dist1) {
+                std::swap(dist1, dist2);
+            }
+            if (dist1 * log2(dist2) < conf.hybrid_cutoff_scale * (dist1 + dist2)) {
+              binary_search_intersection(first1, last1, first2, last2,
+                                         on_intersection, comp);
+            } else {
+              merge_intersection(first1, last1, first2, last2, on_intersection,
+                                 comp);
+            }
+            break;
+    }
 }
 
-template <class InputIt1, class InputIt2, class OutputIt, class Compare>
-OutputIt binary_search_intersection(
-    InputIt1 first1, InputIt1 last1, InputIt2 first2, InputIt2 last2, OutputIt d_first, Compare comp
+template <class InputIt1, class InputIt2, class OnIntersection, class Compare>
+void merge_intersection(
+    InputIt1 first1, InputIt1 last1, InputIt2 first2, InputIt2 last2, OnIntersection&& on_intersection, Compare comp
 ) {
-    auto dist1 = std::distance(first1, last1);
-    auto dist2 = std::distance(first2, last2);
+    while (first1 != last1 && first2 != last2) {
+        if (comp(*first1, *first2)) {
+            ++first1;
+        } else if (comp(*first2, *first1)) {
+            ++first2;
+        } else {
+            on_intersection(*first1);
+            ++first1;
+            ++first2;
+        }
+    }
+}
+
+template <class InputIt1, class InputIt2, class OnIntersection, class Compare>
+void binary_search_intersection(
+    InputIt1 first1, InputIt1 last1, InputIt2 first2, InputIt2 last2, OnIntersection&& on_intersection, Compare comp
+) {
+    auto dist1 = last1 - first1;
+    auto dist2 = last2 - first2;
     if (dist1 <= dist2) {
         for (auto current = first1; current != last1; ++current) {
             if (std::binary_search(first2, last2, *current, comp)) {
-                *d_first = *current;
-                d_first++;
+                on_intersection(*current);
             }
         }
     } else {
         for (auto current = first2; current != last2; ++current) {
             if (std::binary_search(first1, last1, *current, comp)) {
-                *d_first = *current;
-                d_first++;
+                on_intersection(*current);
             }
         }
     }
-    return d_first;
 }
 
-template <class InputIt1, class InputIt2, class OutputIt, class Compare>
-OutputIt binary_intersection(
-    InputIt1 _first1,
-    InputIt1 _last1,
-    InputIt2 _first2,
-    InputIt2 _last2,
-    OutputIt d_first,
-    Compare  comp,
-    size_t   recursion_threshold = 1000
+template <class InputIt1, class InputIt2, class OnIntersection, class Compare>
+void binary_intersection(
+    InputIt1         _first1,
+    InputIt1         _last1,
+    InputIt2         _first2,
+    InputIt2         _last2,
+    OnIntersection&& on_intersection,
+    Compare          comp,
+    size_t           recursion_threshold = 1000
 ) {
 #if !defined(CETRIC_BINARY_INTERSECTION_RECURSIVE)
     struct Task {
@@ -59,8 +107,8 @@ OutputIt binary_intersection(
     };
     std::stack<Task> stack;
     {
-        size_t dist1 = std::distance(_first1, _last1);
-        size_t dist2 = std::distance(_first2, _last2);
+        size_t dist1 = _last1 - _first1;
+        size_t dist2 = _last2 - _first2;
         stack.emplace(Task{0, dist1, 0, dist2});
     }
 
@@ -74,7 +122,7 @@ OutputIt binary_intersection(
         auto last2  = _first2 + task.last2;
 
         if (task.dist1() <= recursion_threshold && task.dist2() <= recursion_threshold) {
-            d_first = merge_intersection(first1, last1, first2, last2, d_first, comp);
+            merge_intersection(first1, last1, first2, last2, on_intersection, comp);
             continue;
         }
         if (task.dist1() == 0 || task.dist2() == 0) {
@@ -86,26 +134,21 @@ OutputIt binary_intersection(
 
             // avoid endless recursion
             if (!(pivot1 == last1 && pivot2 == last2)) {
-                stack.emplace(Task{
-                    task.first1,
-                    task.first1 + std::distance(first1, pivot1),
-                    task.first2,
-                    task.first2 + std::distance(first2, pivot2)});
+                stack.emplace(
+                    Task{task.first1, task.first1 + (pivot1 - first1), task.first2, task.first2 + (pivot2 - first2)}
+                );
                 /* d_first = binary_intersection(first1, pivot1, first2, pivot2, d_first, comp); */
             }
             if (!(pivot2 == last2) && !comp(*pivot1, *pivot2)) {
                 // duplicates may lead to undefined behavior
-                *d_first = *pivot1;
-                d_first++;
+                on_intersection(*pivot1);
                 pivot1++;
                 pivot2++;
             }
             if (!(pivot1 == first1 && pivot2 == first2)) {
-                stack.emplace(Task{
-                    task.first1 + std::distance(first1, pivot1),
-                    task.last1,
-                    task.first2 + std::distance(first2, pivot2),
-                    task.last2});
+                stack.emplace(
+                    Task{task.first1 + (pivot1 - first1), task.last1, task.first2 + (pivot2 - first2), task.last2}
+                );
                 /* d_first = binary_intersection(pivot1, last1, pivot2, last2,
                  * d_first, comp); */
             }
@@ -113,38 +156,34 @@ OutputIt binary_intersection(
             auto pivot2 = first2 + task.dist2() / 2;
             auto pivot1 = std::lower_bound(first1, last1, *pivot2, comp);
             if (!(pivot2 == last2 && pivot1 == last1)) {
-                stack.emplace(Task{
-                    task.first1,
-                    task.first1 + std::distance(first1, pivot1),
-                    task.first2,
-                    task.first2 + std::distance(first2, pivot2)});
+                stack.emplace(
+                    Task{task.first1, task.first1 + (pivot1 - first1), task.first2, task.first2 + (pivot2 - first2)}
+                );
             }
             if (!(pivot1 == last1) && !comp(*pivot2, *pivot1)) {
-                *d_first = *pivot2;
+                on_intersection(*pivot2);
                 pivot1++;
                 pivot2++;
-                d_first++;
             }
             if (!(pivot2 == first2 && pivot1 == first1)) {
-                stack.emplace(Task{
-                    task.first1 + std::distance(first1, pivot1),
-                    task.last1,
-                    task.first2 + std::distance(first2, pivot2),
-                    task.last2});
+                stack.emplace(
+                    Task{task.first1 + (pivot1 - first1), task.last1, task.first2 + (pivot2 - first2), task.last2}
+                );
             }
         }
     }
 
 #else
-  size_t dist1 = std::distance(_first1, _last1);
-  size_t dist2 = std::distance(_first2, _last2);
+    size_t dist1 = _last1 - _first1;
+    size_t dist2 = _last2 - _first2;
 
-  // if both lists get too small, we use merge intersection
-  if (dist1 <= recursion_threshold && dist2 <= recursion_threshold) {
-    return merge_intersection(_first1, _last1, _first2, _last2, d_first, comp);
+    // if both lists get too small, we use merge intersection
+    if (dist1 <= recursion_threshold && dist2 <= recursion_threshold) {
+        merge_intersection(_first1, _last1, _first2, _last2, on_intersection, comp);
+        return;
     }
     if (dist1 == 0 || dist2 == 0) {
-        return d_first;
+        return;
     }
 
     // use smaller list for splitting
@@ -154,36 +193,33 @@ OutputIt binary_intersection(
 
         // avoid endless recursion
         if (!(pivot1 == _last1 && pivot2 == _last2)) {
-            d_first = binary_intersection(_first1, pivot1, _first2, pivot2, d_first, comp);
+            binary_intersection(_first1, pivot1, _first2, pivot2, on_intersection, comp);
         }
         if (!(pivot2 == _last2) && !comp(*pivot1, *pivot2)) {
             // duplicates may lead to undefined behavior
-            *d_first = *pivot1;
+            on_intersection(*pivot1);
             pivot1++;
             pivot2++;
-            d_first++;
         }
         if (!(pivot1 == _first1 && pivot2 == _first2)) {
-            d_first = binary_intersection(pivot1, _last1, pivot2, _last2, d_first, comp);
+            binary_intersection(pivot1, _last1, pivot2, _last2, on_intersection, comp);
         }
     } else {
         auto pivot2 = _first2 + dist2 / 2;
         auto pivot1 = std::lower_bound(_first1, _last1, *pivot2, comp);
         if (!(pivot2 == _last2 && pivot1 == _last1)) {
-            d_first = binary_intersection(_first2, pivot2, _first1, pivot1, d_first, comp);
+            binary_intersection(_first2, pivot2, _first1, pivot1, on_intersection, comp);
         }
         if (!(pivot1 == _last1) && !comp(*pivot2, *pivot1)) {
-            *d_first = *pivot2;
+            on_intersection(*pivot2);
             pivot1++;
             pivot2++;
-            d_first++;
         }
         if (!(pivot2 == _first2 && pivot1 == _first1)) {
-            d_first = binary_intersection(pivot2, _last2, pivot1, _last1, d_first, comp);
+            binary_intersection(pivot2, _last2, pivot1, _last1, on_intersection, comp);
         }
     }
 #endif
-    return d_first;
 }
 
 } // namespace cetric

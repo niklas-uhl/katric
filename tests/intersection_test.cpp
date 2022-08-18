@@ -50,7 +50,7 @@ TEST_CASE("intersection works", "[simple]") {
             v1.end(),
             v2.begin(),
             v2.end(),
-            std::back_inserter(result),
+            [&result](auto const& val) { result.push_back(val); },
             std::less<>{}
         );
         REQUIRE_THAT(result, Catch::Matchers::Equals(expected));
@@ -61,7 +61,7 @@ TEST_CASE("intersection works", "[simple]") {
             v1.end(),
             v2.begin(),
             v2.end(),
-            std::back_inserter(result),
+            [&result](auto const& val) { result.push_back(val); },
             std::less<>{}
         );
         REQUIRE_THAT(result, Catch::Matchers::Equals(expected));
@@ -72,7 +72,7 @@ TEST_CASE("intersection works", "[simple]") {
             v1.end(),
             v2.begin(),
             v2.end(),
-            std::back_inserter(result),
+            [&result](auto const& val) { result.push_back(val); },
             std::less<>{}
         );
         REQUIRE_THAT(result, Catch::Matchers::UnorderedEquals(expected));
@@ -124,7 +124,7 @@ TEST_CASE("intersection works with random values", "[random]") {
             v1.end(),
             v2.begin(),
             v2.end(),
-            std::back_inserter(result),
+            [&result](auto const& val) { result.push_back(val); },
             std::less<>{}
         );
         REQUIRE_THAT(result, Catch::Matchers::Equals(expected));
@@ -135,7 +135,7 @@ TEST_CASE("intersection works with random values", "[random]") {
             v1.end(),
             v2.begin(),
             v2.end(),
-            std::back_inserter(result),
+            [&result](auto const& val) { result.push_back(val); },
             std::less<>{}
         );
         REQUIRE_THAT(result, Catch::Matchers::Equals(expected));
@@ -146,7 +146,7 @@ TEST_CASE("intersection works with random values", "[random]") {
             v1.end(),
             v2.begin(),
             v2.end(),
-            std::back_inserter(result),
+            [&result](auto const& val) { result.push_back(val); },
             std::less<>{}
         );
         REQUIRE_THAT(result, Catch::Matchers::UnorderedEquals(expected));

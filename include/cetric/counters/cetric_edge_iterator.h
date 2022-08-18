@@ -30,6 +30,7 @@
 
 #include "cetric/concurrent_buffered_queue.h"
 #include "cetric/config.h"
+#include "cetric/counters/intersection.h"
 #include "cetric/datastructures/auxiliary_node_data.h"
 #include "cetric/datastructures/distributed/distributed_graph.h"
 #include "cetric/datastructures/distributed/helpers.h"
@@ -237,16 +238,17 @@ public:
                 auto v_neighbors = G.out_adj(v).neighbors();
                 auto u_neighbors = G.out_adj(u).neighbors();
                 auto offset      = (conf_.algorithm == Algorithm::Cetric) * neighbor_index;
-                std::set_intersection(
+                cetric::intersection(
                     v_neighbors.begin() + offset,
                     v_neighbors.end(),
                     u_neighbors.begin(),
                     u_neighbors.end(),
-                    boost::function_output_iterator([&](RankEncodedNodeId w) {
+                    [&](RankEncodedNodeId w) {
                         stats.local.local_triangles++;
                         emit(Triangle<RankEncodedNodeId>{v, u, w});
-                    }),
-                    node_ordering
+                    },
+                    node_ordering,
+                    conf_
                 );
                 neighbor_index++;
             }
@@ -304,16 +306,17 @@ public:
                 auto v_neighbors = G.out_adj(v).neighbors();
                 auto u_neighbors = G.out_adj(u).neighbors();
                 auto offset      = (conf_.algorithm == Algorithm::Cetric) * neighbor_index;
-                std::set_intersection(
+                cetric::intersection(
                     v_neighbors.begin() + offset,
                     v_neighbors.end(),
                     u_neighbors.begin(),
                     u_neighbors.end(),
-                    boost::function_output_iterator([&](RankEncodedNodeId w) {
+                    [&](RankEncodedNodeId w) {
                         stats.local.local_triangles++;
                         emit(Triangle<RankEncodedNodeId>{v, u, w});
-                    }),
-                    node_ordering
+                    },
+                    node_ordering,
+                    conf_
                 );
             }
         };
@@ -780,38 +783,42 @@ private:
         // } else {
         auto u_neighbors = G.out_adj(u).neighbors();
         if (!ghosts.empty()) {
-            auto filtered_neighbors =
+            auto filtered_neighbors_it =
                 boost::adaptors::filter(boost::make_iterator_range(begin, end), [&ghosts](RankEncodedNodeId node) {
                     return ghosts.find(node) != ghosts.end();
                 });
+            std::vector<RankEncodedNodeId> filtered_neighbors(filtered_neighbors_it.begin(), filtered_neighbors_it.end());
             // atomic_debug(fmt::format("intersecting {} and {}", u_neighbors, filtered_neighbors));
-            std::set_intersection(
+            cetric::intersection(
                 u_neighbors.begin(),
                 u_neighbors.end(),
                 filtered_neighbors.begin(),
                 filtered_neighbors.end(),
-                boost::make_function_output_iterator(on_intersection),
-                node_ordering
+                on_intersection,
+                node_ordering,
+                conf_
             );
         } else {
-            std::set_intersection(
+            cetric::intersection(
                 u_neighbors.begin(),
                 u_neighbors.end(),
                 begin,
                 end,
-                boost::make_function_output_iterator(on_intersection),
-                node_ordering
+                on_intersection,
+                node_ordering,
+                conf_
             );
         }
         if (conf_.skip_local_neighborhood && conf_.algorithm == Algorithm::Patric) {
             auto v_neighbors = G.out_adj(v).neighbors();
-            std::set_intersection(
+            cetric::intersection(
                 u_neighbors.begin(),
                 u_neighbors.end(),
                 v_neighbors.begin(),
                 v_neighbors.end(),
-                boost::make_function_output_iterator(on_intersection),
-                node_ordering
+                on_intersection,
+                node_ordering,
+                conf_
             );
         }
         // }

@@ -62,10 +62,22 @@ void load_minimal(const Archive& ar [[maybe_unused]], Threshold& threshold, cons
     threshold = threshold_map.at(value);
 }
 
+enum class IntersectionMethod { merge, binary_search, binary, hybrid };
+static const std::map<std::string, IntersectionMethod> intersection_method_map{
+    {"merge", IntersectionMethod::merge},
+    {"binary-search", IntersectionMethod::binary_search},
+    {"binary", IntersectionMethod::binary},
+    {"hybrid", IntersectionMethod::hybrid}};
+
 template <class Archive>
-std::string save_minimal(const Archive& ar [[maybe_unused]], const Threshold& threshold) {
-    for (const auto& kv: threshold_map) {
-        if (kv.second == threshold) {
+void load_minimal(const Archive& ar [[maybe_unused]], IntersectionMethod& method, const std::string& value) {
+    method = intersection_method_map.at(value);
+}
+
+template <class Archive>
+std::string save_minimal(const Archive& ar [[maybe_unused]], const IntersectionMethod& method) {
+    for (const auto& kv: intersection_method_map) {
+        if (kv.second == method) {
             return kv.first;
         }
     }
@@ -94,6 +106,9 @@ struct Config {
     bool                 global_parallel                   = false;
     size_t               local_degree_of_parallelism       = 1;
     size_t               global_degree_of_parallelism      = 1;
+    IntersectionMethod   intersection_method               = IntersectionMethod::merge;
+    size_t               binary_intersection_cutoff        = 1000;
+    double               hybrid_cutoff_scale               = 1.0;
 
     bool dense_degree_exchange   = false;
     bool compact_degree_exchange = false;
@@ -140,6 +155,9 @@ struct Config {
             CEREAL_NVP(threshold),
             CEREAL_NVP(local_degree_of_parallelism),
             CEREAL_NVP(global_degree_of_parallelism),
+            CEREAL_NVP(intersection_method),
+            CEREAL_NVP(binary_intersection_cutoff),
+            CEREAL_NVP(hybrid_cutoff_scale),
             CEREAL_NVP(dense_degree_exchange),
             CEREAL_NVP(compact_degree_exchange),
             CEREAL_NVP(global_synchronization),

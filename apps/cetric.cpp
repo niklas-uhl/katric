@@ -41,6 +41,7 @@ cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::P
     (void)size;
 
     CLI::App       app("Parallel Triangle Counter");
+    app.option_defaults()->always_capture_default();
     cetric::Config conf;
     conf.git_commit = cetric::git_hash;
 
@@ -101,6 +102,11 @@ cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::P
         ->transform(CLI::CheckedTransformer(cetric::threshold_map, CLI::ignore_case));
     app.add_option("--threshold-scale", conf.threshold_scale);
     app.add_option("--high-degree-threshold-scale", conf.high_degree_threshold_scale);
+
+    app.add_option("--intersection-method", conf.intersection_method)
+        ->transform(CLI::CheckedTransformer(cetric::intersection_method_map, CLI::ignore_case));
+    app.add_option("--binary-intersection-cutoff", conf.binary_intersection_cutoff);
+    app.add_option("--hybrid-cutoff-scale", conf.hybrid_cutoff_scale);
 
     parse_gen_parameters(app, conf);
 
