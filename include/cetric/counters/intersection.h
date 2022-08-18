@@ -38,49 +38,30 @@ OutputIt binary_search_intersection(
 template <class InputIt1, class InputIt2, class OutputIt, class Compare>
 OutputIt
 binary_intersection(InputIt1 first1, InputIt1 last1, InputIt2 first2, InputIt2 last2, OutputIt d_first, Compare comp) {
-    std::vector v1(first1, last1);
-    std::vector v2(first2, last2);
+    constexpr size_t recursion_threshold = 5;
 
-    /* std::cout << "v1 = ["; */
-    /* size_t i = 0; */
-    /* for (auto const& elem: v1) { */
-    /*     if (i > 0) { */
-    /*         std::cout << ", "; */
-    /*     } */
-    /*     std::cout << elem; */
-    /*     i++; */
-    /* } */
-    /* std::cout << "]\n"; */
+    size_t dist1 = std::distance(first1, last1);
+    size_t dist2 = std::distance(first2, last2);
 
-    /* std::cout << "v2 = ["; */
-    /* i = 0; */
-    /* for (auto const& elem: v2) { */
-    /*     if (i > 0) { */
-    /*         std::cout << ", "; */
-    /*     } */
-    /*     std::cout << elem; */
-    /*     i++; */
-    /* } */
-    /* std::cout << "]\n"; */
-
-    auto dist1 = std::distance(first1, last1);
-    auto dist2 = std::distance(first2, last2);
+    // if both lists get too small, we use merge intersection
+    if (dist1 <= recursion_threshold && dist2 <= recursion_threshold) {
+        return merge_intersection(first1, last1, first2, last2, d_first, comp);
+    }
     if (dist1 == 0 || dist2 == 0) {
         return d_first;
     }
+
+    // use smaller list for splitting
     if (dist1 <= dist2) {
         auto pivot1 = first1 + dist1 / 2;
         auto pivot2 = std::lower_bound(first2, last2, *pivot1, comp);
-        /* if (pivot2 == last2) { */
-        /*     return d_first; */
-        /* } */
-        /* std::cout << "[left] pivot1 := " << *pivot1 << ", pivot2 := " << *pivot2 */
-        /*           << std::endl; */
+
+        // avoid endless recursion
         if (!(pivot1 == last1 && pivot2 == last2)) {
-          d_first = binary_intersection(first1, pivot1, first2, pivot2, d_first,
-                                        comp);
+            d_first = binary_intersection(first1, pivot1, first2, pivot2, d_first, comp);
         }
         if (!(pivot2 == last2) && !comp(*pivot1, *pivot2)) {
+            // duplicates may lead to undefined behavior
             *d_first = *pivot1;
             pivot1++;
             pivot2++;
@@ -92,7 +73,6 @@ binary_intersection(InputIt1 first1, InputIt1 last1, InputIt2 first2, InputIt2 l
     } else {
         auto pivot2 = first2 + dist2 / 2;
         auto pivot1 = std::lower_bound(first1, last1, *pivot2, comp);
-        /* std::cout << "[right] pivot1 := " << *pivot1 << ", pivot2 := " << *pivot2 << std::endl; */
         if (!(pivot2 == last2 && pivot1 == last1)) {
             d_first = binary_intersection(first2, pivot2, first1, pivot1, d_first, comp);
         }
