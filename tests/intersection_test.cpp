@@ -26,7 +26,10 @@ TEST_CASE("intersection works", "[simple]") {
         make_input({1}, {}, {}),
         make_input({1}, {1}, {1}),
         make_input({1}, {42}, {}),
-        make_input({13, 46, 54, 58, 64}, {6, 21, 43, 47, 75}, {})
+        make_input({13, 46, 54, 58, 64}, {6, 21, 43, 47, 75}, {}),
+        make_input({1, 2, 5, 9, 10}, {1, 2, 4, 5, 6, 7, 8}, {1, 2, 5}),
+        make_input({2, 3, 4, 7, 10}, {3, 5, 6}, {3}),
+        make_input({1, 2, 3, 4, 5}, {6, 7, 8, 9, 10, 11, 12}, {})
     );
 
     auto v1       = std::get<0>(inputs);
@@ -72,24 +75,23 @@ TEST_CASE("intersection works", "[simple]") {
             std::back_inserter(result),
             std::less<>{}
         );
-        REQUIRE_THAT(result, Catch::Matchers::Equals(expected));
+        REQUIRE_THAT(result, Catch::Matchers::UnorderedEquals(expected));
     }
 }
 
 TEST_CASE("intersection works with random values", "[random]") {
-    constexpr size_t    max_length   = 10000;
-    std::vector<size_t> vector_sizes = GENERATE(take(100, chunk(2, random(size_t{0}, max_length))));
+    constexpr size_t    max_length   = 1000;
+    std::vector<size_t> vector_sizes = GENERATE(take(100, chunk(3, random(size_t{0}, max_length))));
     auto                v1_size      = vector_sizes[0];
     auto                v2_size      = vector_sizes[1];
 
-    std::random_device                    dev;
-    std::default_random_engine            eng(dev());
-    std::uniform_int_distribution<size_t> dist(1, max_length / 10);
+    std::default_random_engine            eng(vector_sizes[3]);
+    std::uniform_int_distribution<size_t> dist(1, std::max(size_t{10}, max_length / 10));
 
     auto gen = [&dist, &eng]() {
         return dist(eng);
     };
-    auto gen_input = [&](size_t size) {
+    auto gen_input = [&gen](size_t size) {
         std::vector<size_t> v(size);
         std::generate(v.begin(), v.end(), gen);
         std::sort(v.begin(), v.end());
@@ -147,6 +149,6 @@ TEST_CASE("intersection works with random values", "[random]") {
             std::back_inserter(result),
             std::less<>{}
         );
-        REQUIRE_THAT(result, Catch::Matchers::Equals(expected));
+        REQUIRE_THAT(result, Catch::Matchers::UnorderedEquals(expected));
     }
 }

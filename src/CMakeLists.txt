@@ -26,6 +26,10 @@ target_include_directories(cetric-lib PUBLIC ${BACKWARD_INCLUDE_DIRS})
 target_link_libraries(cetric-lib PUBLIC ${BACKWARD_LIBRARIES})
 target_compile_definitions(cetric-lib PUBLIC ${BACKWARD_DEFINITIONS})
 
+option(CETRIC_BINARY_INTERSECTION_RECURSIVE "Use recursion in binary search intersection" OFF)
+if (CETRIC_BINARY_INTERSECTION_RECURSIVE)
+  target_compile_definitions(cetric-lib PUBLIC -DCETRIC_BINARY_INTERSECTION_RECURSIVE)
+endif()
 
 target_compile_options(cetric-lib PUBLIC -Wall -Wextra -pedantic)
 
