@@ -4,6 +4,7 @@ set(FILE_LIST
   shared_memory_edge_iterator.cpp
 )
 
+
 add_library(cetric-lib ${FILE_LIST} ${HEADER_LIST})
 
 target_include_directories(cetric-lib PUBLIC ${PROJECT_SOURCE_DIR}/include/)
@@ -13,6 +14,7 @@ target_link_libraries(cetric-lib PUBLIC MPI::MPI_CXX)
 target_link_libraries(cetric-lib PUBLIC tlx)
 target_link_libraries(cetric-lib PUBLIC sparsehash)
 target_link_libraries(cetric-lib PUBLIC cereal::cereal)
+target_link_libraries(cetric-lib PUBLIC magic_enum::magic_enum)
 target_link_libraries(cetric-lib PUBLIC debug_assert)
 target_link_libraries(cetric-lib PUBLIC fmt::fmt)
 target_link_libraries(cetric-lib PUBLIC message-queue)
@@ -33,6 +35,7 @@ if (CETRIC_BINARY_INTERSECTION_RECURSIVE)
 endif()
 
 target_compile_options(cetric-lib PUBLIC -Wall -Wextra -pedantic)
+add_sanitizers(cetric-lib)
 
 source_group(
   TREE "${PROJECT_SOURCE_DIR}/include"

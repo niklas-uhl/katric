@@ -34,3 +34,9 @@
 [submodule "extern/utils_tm"]
 	path = extern/utils_tm
 	url = https://github.com/toobiased/utils_tm
+[submodule "extern/magic_enum"]
+	path = extern/magic_enum
+	url = https://github.com/Neargye/magic_enum
+[submodule "extern/sanitizers-cmake"]
+	path = extern/sanitizers-cmake
+	url = https://github.com/arsenm/sanitizers-cmake

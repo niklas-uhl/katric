@@ -281,53 +281,53 @@ public:
             }
         };
 
-        auto handle_neighbor_range =
-            [&node_ordering,
-             this,
-             &emit,
-             &stats](RankEncodedNodeId v, tbb::blocked_range<size_t> const& neighbor_range, bool spawn = false) {
-                for (size_t neighbor_index = neighbor_range.begin(); neighbor_index != neighbor_range.end();
-                     neighbor_index++) {
-                    auto u = *(G.out_adj(v).neighbors().begin() + neighbor_index);
-                    KASSERT(*(G.out_adj(v).neighbors().begin() + neighbor_index) == u);
-                    if (u.rank() != rank_) {
-                        if (conf_.algorithm == Algorithm::Patric) {
-                            // neighbor_index++;
-                            continue;
-                        }
-                        // atomic_debug(
-                        //     fmt::format("Remaining neighbors {}",
-                        //                 boost::make_iterator_range(G.out_adj(v).neighbors().begin() +
-                        //                 neighbor_index,
-                        //                                            G.out_adj(v).neighbors().end())));
-                        // TODO: we should be able to break here when the edges are properly sorted
-                        KASSERT(std::all_of(
-                            G.out_adj(v).neighbors().begin() + neighbor_index,
-                            G.out_adj(v).neighbors().end(),
-                            [rank = this->rank_](RankEncodedNodeId node) { return node.rank() != rank; }
-                        ));
-                        break;
+        auto handle_neighbor_range = [&node_ordering, this, &emit, &stats](
+                                         RankEncodedNodeId                 v,
+                                         tbb::blocked_range<size_t> const& neighbor_range,
+                                         bool                              spawn [[maybe_unused]] = false
+                                     ) {
+            for (size_t neighbor_index = neighbor_range.begin(); neighbor_index != neighbor_range.end();
+                 neighbor_index++) {
+                auto u = *(G.out_adj(v).neighbors().begin() + neighbor_index);
+                KASSERT(*(G.out_adj(v).neighbors().begin() + neighbor_index) == u);
+                if (u.rank() != rank_) {
+                    if (conf_.algorithm == Algorithm::Patric) {
+                        // neighbor_index++;
+                        continue;
                     }
-#pragma omp task if (spawn)
-                    {
-                        auto v_neighbors = G.out_adj(v).neighbors();
-                        auto u_neighbors = G.out_adj(u).neighbors();
-                        auto offset      = (conf_.algorithm == Algorithm::Cetric) * neighbor_index;
-                        cetric::intersection(
-                            v_neighbors.begin() + offset,
-                            v_neighbors.end(),
-                            u_neighbors.begin(),
-                            u_neighbors.end(),
-                            [&](RankEncodedNodeId w) {
-                                stats.local.local_triangles++;
-                                emit(Triangle<RankEncodedNodeId>{v, u, w});
-                            },
-                            node_ordering,
-                            conf_
-                        );
-                    }
+                    // atomic_debug(
+                    //     fmt::format("Remaining neighbors {}",
+                    //                 boost::make_iterator_range(G.out_adj(v).neighbors().begin() +
+                    //                 neighbor_index,
+                    //                                            G.out_adj(v).neighbors().end())));
+                    // TODO: we should be able to break here when the edges are properly sorted
+                    KASSERT(std::all_of(
+                        G.out_adj(v).neighbors().begin() + neighbor_index,
+                        G.out_adj(v).neighbors().end(),
+                        [rank = this->rank_](RankEncodedNodeId node) { return node.rank() != rank; }
+                    ));
+                    break;
                 }
-            };
+                // #pragma omp task if (spawn)
+                {
+                    auto v_neighbors = G.out_adj(v).neighbors();
+                    auto u_neighbors = G.out_adj(u).neighbors();
+                    auto offset      = (conf_.algorithm == Algorithm::Cetric) * neighbor_index;
+                    cetric::intersection(
+                        v_neighbors.begin() + offset,
+                        v_neighbors.end(),
+                        u_neighbors.begin(),
+                        u_neighbors.end(),
+                        [&](RankEncodedNodeId w) {
+                            stats.local.local_triangles++;
+                            emit(Triangle<RankEncodedNodeId>{v, u, w});
+                        },
+                        node_ordering,
+                        conf_
+                    );
+                }
+            }
+        };
         std::atomic<size_t> skipped_nodes = 0;
         // tbb::parallel_for(
         //     tbb::blocked_range(nodes.begin(), nodes.end()),
@@ -385,7 +385,7 @@ public:
                 break;
 
             case ParallelizationMethod::omp_for: {
-                // clang-format off
+// clang-format off
                 #pragma omp parallel for schedule(runtime)
                 // clang-format on
                 for (auto v: nodes) {
@@ -394,15 +394,19 @@ public:
                 break;
             }
             case ParallelizationMethod::omp_task: {
-                // clang-format off
-                #pragma omp parallel
-                #pragma omp          single
-                #pragma omp taskloop grainsize(conf_.grainsize)
-                // clang-format on
-                for (auto v: nodes) {
-                    node_loop_body(v);
-                }
-                break;
+                throw "currently unsupported";
+                //                 int grainsize = conf_.grainsize;
+                // #pragma omp parallel
+                //                 {
+                //                     // clang-format off
+                //                 #pragma omp          single
+                //                 #pragma omp taskloop grainsize(1)
+                //                     // clang-format on
+                //                     for (auto v: nodes) {
+                //                         node_loop_body(v);
+                //                     }
+                //                 }
+                //                 break;
             }
         }
         stats.local.local_phase_time += phase_time.elapsed_time();
@@ -954,7 +958,7 @@ private:
     std::vector<Degree>                                             pe_min_degree;
     size_t                                                          threshold_;
     size_t                                                          high_degree_threshold_;
-};
+}; // namespace cetric
 
 } // namespace cetric
 #endif // PARALLEL_TRIANGLE_COUNTER_PARALLEL_NODE_ITERATOR_H

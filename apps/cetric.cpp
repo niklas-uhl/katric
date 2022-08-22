@@ -22,6 +22,7 @@
 #include <graph-io/distributed_graph_io.h>
 #include <graph-io/local_graph_view.h>
 #include <kassert/kassert.hpp>
+#include <magic_enum.hpp>
 #include <mpi.h>
 #include <omp.h>
 #include <tbb/global_control.h>
@@ -29,6 +30,7 @@
 #include <unistd.h>
 
 #include "./parse_parameters.h"
+#include "CLI/Error.hpp"
 #include "cetric/config.h"
 #include "cetric/counters/cetric_edge_iterator.h"
 #include "cetric/datastructures/distributed/distributed_graph.h"
@@ -99,6 +101,13 @@ cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::P
 
     app.add_flag("--local-parallel", conf.local_parallel);
     app.add_flag("--global-parallel", conf.global_parallel);
+
+    app.add_option("--parallelization-method", conf.parallelization_method)
+        ->transform(CLI::CheckedTransformer(enum_name_to_value_map<cetric::ParallelizationMethod>(), CLI::ignore_case));
+    app.add_option("--omp-schedule", conf.omp_schedule)
+        ->transform(CLI::CheckedTransformer(enum_name_to_value_map<cetric::OMPSchedule>(), CLI::ignore_case));
+    app.add_option("--omp-chunksize", conf.omp_chunksize);
+
     app.add_option("--threshold", conf.threshold)
         ->transform(CLI::CheckedTransformer(cetric::threshold_map, CLI::ignore_case));
     app.add_option("--threshold-scale", conf.threshold_scale);
@@ -286,7 +295,27 @@ int main(int argc, char* argv[]) {
         tbb::global_control global_limit(tbb::global_control::max_allowed_parallelism, conf.num_threads + 1);
 
         omp_set_num_threads(conf.num_threads);
-        omp_set_schedule(omp_sched_dynamic, 1);
+        if (conf.omp_chunksize == 0) {
+            omp_sched_t type;
+            int         chunksize;
+            omp_get_schedule(&type, &chunksize);
+            conf.omp_chunksize = chunksize;
+        }
+        switch (conf.omp_schedule) {
+            using cetric::OMPSchedule;
+            case OMPSchedule::stat:
+                omp_set_schedule(omp_sched_static, conf.omp_chunksize);
+                break;
+            case OMPSchedule::dynamic:
+                omp_set_schedule(omp_sched_dynamic, conf.omp_chunksize);
+                break;
+            case OMPSchedule::guided:
+                omp_set_schedule(omp_sched_guided, conf.omp_chunksize);
+                break;
+            case OMPSchedule::standard:
+                omp_set_schedule(omp_sched_auto, conf.omp_chunksize);
+                break;
+        }
 
         std::optional<double>    io_time;
         cetric::profiling::Timer t;

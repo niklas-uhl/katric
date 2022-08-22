@@ -375,6 +375,7 @@ run_cetric(DistributedGraph<>& G, cetric::profiling::Statistics& stats, const Co
             }
             // atomic_debug(tbb::this_task_arena::current_thread_index());
             // triangle_count++;
+            // atomic_debug(omp_get_thread_num());
             triangle_count_local_phase.local()++;
         },
         stats,

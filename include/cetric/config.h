@@ -12,11 +12,29 @@
 #include <cereal/types/optional.hpp>
 #include <graph-io/definitions.h>
 #include <graph-io/gen_parameters.h>
+#include <magic_enum.hpp>
 
 #include "cetric/datastructures/graph_definitions.h"
 #include "cetric/util.h"
 
 namespace cetric {
+
+template <
+    class Archive,
+    cereal::traits::EnableIf<cereal::traits::is_text_archive<Archive>::value> = cereal::traits::sfinae,
+    class T>
+std::enable_if_t<std::is_enum_v<T>, std::string> save_minimal(Archive&, const T& h) {
+    return std::string(magic_enum::enum_name(h));
+}
+
+template <
+    class Archive,
+    cereal::traits::EnableIf<cereal::traits::is_text_archive<Archive>::value> = cereal::traits::sfinae,
+    class T>
+std::enable_if_t<std::is_enum_v<T>, void> load_minimal(Archive const&, T& enumType, std::string const& str) {
+    enumType = magic_enum::enum_cast<T>(str).value();
+}
+
 enum class CacheInput { Filesystem, InMemory, None };
 static const std::map<std::string, CacheInput> cache_input_map{
     {"none", CacheInput::None}, {"fs", CacheInput::Filesystem}, {"mem", CacheInput::InMemory}};
@@ -84,6 +102,7 @@ std::string save_minimal(const Archive& ar [[maybe_unused]], const IntersectionM
     return "";
 }
 enum class ParallelizationMethod { tbb, omp_for, omp_task };
+enum class OMPSchedule { stat, dynamic, guided, standard };
 
 struct Config {
     Config() = default;
@@ -105,7 +124,9 @@ struct Config {
     std::string           communication_policy              = "new";
     bool                  local_parallel                    = false;
     bool                  global_parallel                   = false;
-    ParallelizationMethod parallelization_method = ParallelizationMethod::tbb;
+    ParallelizationMethod parallelization_method            = ParallelizationMethod::tbb;
+    OMPSchedule           omp_schedule                      = OMPSchedule::standard;
+    size_t                omp_chunksize                     = 0;
     size_t                local_degree_of_parallelism       = 1;
     size_t                global_degree_of_parallelism      = 1;
     IntersectionMethod    intersection_method               = IntersectionMethod::merge;

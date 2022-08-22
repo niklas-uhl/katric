@@ -23,5 +23,6 @@ target_link_libraries(cetric PUBLIC ${BACKWARD_ENABLE})
 target_link_libraries(cetric PUBLIC ${BACKWARD_LIBRARIES})
 target_compile_definitions(cetric PUBLIC ${BACKWARD_DEFINITIONS})
 target_link_libraries(cetric PUBLIC git_hash)
+add_sanitizers(cetric)
 
 target_link_libraries(shared_memory_counter PRIVATE cetric-lib CLI11::CLI11)

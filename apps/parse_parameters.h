@@ -6,17 +6,30 @@
 #define PARALLEL_TRIANGLE_COUNTER_PARSE_PARAMETERS_H
 
 #include <memory>
+#include <string>
 
 #include <CLI/CLI.hpp>
 #include <CLI/Validators.hpp>
 
 #include "cetric/config.h"
+#include "magic_enum.hpp"
 
 inline std::shared_ptr<CLI::App> parse_parameters(const std::string& app_name, cetric::Config& conf) {
     auto app = std::make_shared<CLI::App>(app_name);
 
     app->add_option("input", conf.input_file, "The input graph")->required()->check(CLI::ExistingFile);
     return app;
+}
+
+template<typename E>
+constexpr auto enum_name_to_value_map() {
+  std::map<std::string, E> mapping;
+  constexpr auto values = magic_enum::enum_values<E>();
+  constexpr auto names = magic_enum::enum_names<E>();
+  for (unsigned i = 0; i < magic_enum::enum_count<E>(); ++i) {
+    mapping[std::string(names[i])] = values[i];
+  }
+  return mapping;
 }
 
 #ifndef CLI11_PARSE_MPI
