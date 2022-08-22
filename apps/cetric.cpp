@@ -23,6 +23,7 @@
 #include <graph-io/local_graph_view.h>
 #include <kassert/kassert.hpp>
 #include <mpi.h>
+#include <omp.h>
 #include <tbb/global_control.h>
 #include <tbb/task_arena.h>
 #include <unistd.h>
@@ -40,7 +41,7 @@
 cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::PEID size) {
     (void)size;
 
-    CLI::App       app("Parallel Triangle Counter");
+    CLI::App app("Parallel Triangle Counter");
     app.option_defaults()->always_capture_default();
     cetric::Config conf;
     conf.git_commit = cetric::git_hash;
@@ -282,7 +283,11 @@ int main(int argc, char* argv[]) {
                 fmt::format("Warning, TBB uses only {} instead of {} threads!", max_concurrency, conf.num_threads)
             );
         }
-        tbb::global_control      global_limit(tbb::global_control::max_allowed_parallelism, conf.num_threads + 1);
+        tbb::global_control global_limit(tbb::global_control::max_allowed_parallelism, conf.num_threads + 1);
+
+        omp_set_num_threads(conf.num_threads);
+        omp_set_schedule(omp_sched_dynamic, 1);
+
         std::optional<double>    io_time;
         cetric::profiling::Timer t;
         InputCache               input_cache(conf);

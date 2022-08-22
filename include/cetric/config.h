@@ -83,32 +83,34 @@ std::string save_minimal(const Archive& ar [[maybe_unused]], const IntersectionM
     }
     return "";
 }
+enum class ParallelizationMethod { tbb, omp_for, omp_task };
 
 struct Config {
     Config() = default;
-    std::string          input_file;
-    std::string          output_file;
-    graphio::InputFormat input_format;
-    std::string          partitioning;
-    bool                 partitioned_input                 = false;
-    size_t               buffer_threshold                  = std::numeric_limits<size_t>::max();
-    double               max_degree_threshold_alpha        = 1.0;
-    bool                 empty_pending_buffers_on_overflow = false;
-    size_t               iterations                        = 1;
-    std::string          primary_cost_function             = "N";
-    std::string          secondary_cost_function           = "none";
-    Algorithm            algorithm                         = Algorithm::Cetric;
-    Threshold            threshold                         = Threshold::local_nodes;
-    double               threshold_scale                   = 1.0;
-    double               high_degree_threshold_scale       = 1.0;
-    std::string          communication_policy              = "new";
-    bool                 local_parallel                    = false;
-    bool                 global_parallel                   = false;
-    size_t               local_degree_of_parallelism       = 1;
-    size_t               global_degree_of_parallelism      = 1;
-    IntersectionMethod   intersection_method               = IntersectionMethod::merge;
-    size_t               binary_intersection_cutoff        = 1000;
-    double               hybrid_cutoff_scale               = 1.0;
+    std::string           input_file;
+    std::string           output_file;
+    graphio::InputFormat  input_format;
+    std::string           partitioning;
+    bool                  partitioned_input                 = false;
+    size_t                buffer_threshold                  = std::numeric_limits<size_t>::max();
+    double                max_degree_threshold_alpha        = 1.0;
+    bool                  empty_pending_buffers_on_overflow = false;
+    size_t                iterations                        = 1;
+    std::string           primary_cost_function             = "N";
+    std::string           secondary_cost_function           = "none";
+    Algorithm             algorithm                         = Algorithm::Cetric;
+    Threshold             threshold                         = Threshold::local_nodes;
+    double                threshold_scale                   = 1.0;
+    double                high_degree_threshold_scale       = 1.0;
+    std::string           communication_policy              = "new";
+    bool                  local_parallel                    = false;
+    bool                  global_parallel                   = false;
+    ParallelizationMethod parallelization_method = ParallelizationMethod::tbb;
+    size_t                local_degree_of_parallelism       = 1;
+    size_t                global_degree_of_parallelism      = 1;
+    IntersectionMethod    intersection_method               = IntersectionMethod::merge;
+    size_t                binary_intersection_cutoff        = 1000;
+    double                hybrid_cutoff_scale               = 1.0;
 
     bool dense_degree_exchange   = false;
     bool compact_degree_exchange = false;
@@ -152,6 +154,7 @@ struct Config {
             CEREAL_NVP(communication_policy),
             CEREAL_NVP(global_parallel),
             CEREAL_NVP(local_parallel),
+            CEREAL_NVP(parallelization_method),
             CEREAL_NVP(threshold),
             CEREAL_NVP(local_degree_of_parallelism),
             CEREAL_NVP(global_degree_of_parallelism),

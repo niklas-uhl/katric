@@ -21,6 +21,7 @@
 #include <gmpxx.h>
 #include <message-queue/buffered_queue.h>
 #include <mpi.h>
+#include <omp.h>
 #include <tbb/concurrent_vector.h>
 #include <tbb/enumerable_thread_specific.h>
 #include <tbb/parallel_for_each.h>
@@ -268,6 +269,9 @@ public:
         auto nodes = G.local_nodes();
 
         auto partition_neighborhood_2d = [this](RankEncodedNodeId node [[maybe_unused]]) {
+            if (conf_.parallelization_method == ParallelizationMethod::omp_for) {
+                return false;
+            }
             if (conf_.local_degree_of_parallelism > 2) {
                 return true;
             } else if (conf_.local_degree_of_parallelism > 1) {
@@ -277,84 +281,130 @@ public:
             }
         };
 
-        auto handle_neighbor_range = [&node_ordering,
-                                      this,
-                                      &emit,
-                                      &stats](RankEncodedNodeId v, tbb::blocked_range<size_t> const& neighbor_range) {
-            for (size_t neighbor_index = neighbor_range.begin(); neighbor_index != neighbor_range.end();
-                 neighbor_index++) {
-                auto u = *(G.out_adj(v).neighbors().begin() + neighbor_index);
-                KASSERT(*(G.out_adj(v).neighbors().begin() + neighbor_index) == u);
-                if (u.rank() != rank_) {
-                    if (conf_.algorithm == Algorithm::Patric) {
-                        // neighbor_index++;
-                        continue;
-                    }
-                    // atomic_debug(
-                    //     fmt::format("Remaining neighbors {}",
-                    //                 boost::make_iterator_range(G.out_adj(v).neighbors().begin() +
-                    //                 neighbor_index,
-                    //                                            G.out_adj(v).neighbors().end())));
-                    // TODO: we should be able to break here when the edges are properly sorted
-                    KASSERT(std::all_of(
-                        G.out_adj(v).neighbors().begin() + neighbor_index,
-                        G.out_adj(v).neighbors().end(),
-                        [rank = this->rank_](RankEncodedNodeId node) { return node.rank() != rank; }
-                    ));
-                    break;
-                }
-                auto v_neighbors = G.out_adj(v).neighbors();
-                auto u_neighbors = G.out_adj(u).neighbors();
-                auto offset      = (conf_.algorithm == Algorithm::Cetric) * neighbor_index;
-                cetric::intersection(
-                    v_neighbors.begin() + offset,
-                    v_neighbors.end(),
-                    u_neighbors.begin(),
-                    u_neighbors.end(),
-                    [&](RankEncodedNodeId w) {
-                        stats.local.local_triangles++;
-                        emit(Triangle<RankEncodedNodeId>{v, u, w});
-                    },
-                    node_ordering,
-                    conf_
-                );
-            }
-        };
-        std::atomic<size_t> skipped_nodes = 0;
-        tbb::parallel_for(
-            tbb::blocked_range(nodes.begin(), nodes.end()),
-            [this,
-             &interface_nodes,
-             &node_ordering,
+        auto handle_neighbor_range =
+            [&node_ordering,
+             this,
              &emit,
-             &stats,
-             handle_neighbor_range,
-             partition_neighborhood_2d,
-             &skipped_nodes](auto const& nodes_r) {
-                for (auto v: nodes_r) {
-                    if (conf_.pseudo2core && G.outdegree(v) < 2) {
-                        skipped_nodes++;
-                        continue;
+             &stats](RankEncodedNodeId v, tbb::blocked_range<size_t> const& neighbor_range, bool spawn = false) {
+                for (size_t neighbor_index = neighbor_range.begin(); neighbor_index != neighbor_range.end();
+                     neighbor_index++) {
+                    auto u = *(G.out_adj(v).neighbors().begin() + neighbor_index);
+                    KASSERT(*(G.out_adj(v).neighbors().begin() + neighbor_index) == u);
+                    if (u.rank() != rank_) {
+                        if (conf_.algorithm == Algorithm::Patric) {
+                            // neighbor_index++;
+                            continue;
+                        }
+                        // atomic_debug(
+                        //     fmt::format("Remaining neighbors {}",
+                        //                 boost::make_iterator_range(G.out_adj(v).neighbors().begin() +
+                        //                 neighbor_index,
+                        //                                            G.out_adj(v).neighbors().end())));
+                        // TODO: we should be able to break here when the edges are properly sorted
+                        KASSERT(std::all_of(
+                            G.out_adj(v).neighbors().begin() + neighbor_index,
+                            G.out_adj(v).neighbors().end(),
+                            [rank = this->rank_](RankEncodedNodeId node) { return node.rank() != rank; }
+                        ));
+                        break;
                     }
-                    if (G.template is_interface_node_if_sorted_by_rank<AdjacencyType::out>(v)) {
-                        interface_nodes.local().emplace_back(v);
+#pragma omp task if (spawn)
+                    {
+                        auto v_neighbors = G.out_adj(v).neighbors();
+                        auto u_neighbors = G.out_adj(u).neighbors();
+                        auto offset      = (conf_.algorithm == Algorithm::Cetric) * neighbor_index;
+                        cetric::intersection(
+                            v_neighbors.begin() + offset,
+                            v_neighbors.end(),
+                            u_neighbors.begin(),
+                            u_neighbors.end(),
+                            [&](RankEncodedNodeId w) {
+                                stats.local.local_triangles++;
+                                emit(Triangle<RankEncodedNodeId>{v, u, w});
+                            },
+                            node_ordering,
+                            conf_
+                        );
                     }
-                    auto v_neighbors_size =
-                        std::distance(G.out_adj(v).neighbors().begin(), G.out_adj(v).neighbors().end());
+                }
+            };
+        std::atomic<size_t> skipped_nodes = 0;
+        // tbb::parallel_for(
+        //     tbb::blocked_range(nodes.begin(), nodes.end()),
+        //     [this,
+        //      &interface_nodes,
+        //      &node_ordering,
+        //      &emit,
+        //      &stats,
+        //      handle_neighbor_range,
+        //      partition_neighborhood_2d,
+        //      &skipped_nodes](auto const& nodes_r) {
+        // #define CETRIC_OMP_TASK_PARALLEL 1
+        // #if !defined(CETRIC_OMP_TASK_PARALLEL)
+        //     #pragma omp for schedule(runtime) i
+        // #else
+        //     #pragma omp          single
+        //     #pragma omp taskloop grainsize(conf_.grainsize)
+        // #endif
+        auto node_loop_body = [&](RankEncodedNodeId const& v) {
+            if (conf_.pseudo2core && G.outdegree(v) < 2) {
+                skipped_nodes++;
+                // continue;
+            } else {
+                if (G.template is_interface_node_if_sorted_by_rank<AdjacencyType::out>(v)) {
+                    interface_nodes.local().emplace_back(v);
+                }
+                auto v_neighbors_size = std::distance(G.out_adj(v).neighbors().begin(), G.out_adj(v).neighbors().end());
+                if (conf_.parallelization_method == ParallelizationMethod::tbb && partition_neighborhood_2d(v)) {
+                    stats.local.nodes_parallel2d++;
+                    tbb::parallel_for(
+                        tbb::blocked_range(size_t{0}, static_cast<size_t>(v_neighbors_size)),
+                        [&handle_neighbor_range, v = v](auto const& neighbor_range) {
+                            handle_neighbor_range(v, neighbor_range);
+                        }
+                    );
+                } else {
                     if (partition_neighborhood_2d(v)) {
                         stats.local.nodes_parallel2d++;
-                        tbb::parallel_for(
-                            tbb::blocked_range(size_t{0}, static_cast<size_t>(v_neighbors_size)),
-                            [&handle_neighbor_range, v = v](auto const& neighbor_range) {
-                                handle_neighbor_range(v, neighbor_range);
-                            }
-                        );
-                    } else {
-                        handle_neighbor_range(v, tbb::blocked_range(size_t{0}, static_cast<size_t>(v_neighbors_size)));
                     }
+                    handle_neighbor_range(
+                        v,
+                        tbb::blocked_range(size_t{0}, static_cast<size_t>(v_neighbors_size)),
+                        partition_neighborhood_2d(v)
+                    );
                 }
             }
-        );
+        };
+        switch (conf_.parallelization_method) {
+            case ParallelizationMethod::tbb:
+                tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&](auto const& r) {
+                    for (auto v: r) {
+                        node_loop_body(v);
+                    }
+                });
+                break;
+
+            case ParallelizationMethod::omp_for: {
+                // clang-format off
+                #pragma omp parallel for schedule(runtime)
+                // clang-format on
+                for (auto v: nodes) {
+                    node_loop_body(v);
+                }
+                break;
+            }
+            case ParallelizationMethod::omp_task: {
+                // clang-format off
+                #pragma omp parallel
+                #pragma omp          single
+                #pragma omp taskloop grainsize(conf_.grainsize)
+                // clang-format on
+                for (auto v: nodes) {
+                    node_loop_body(v);
+                }
+                break;
+            }
+        }
         stats.local.local_phase_time += phase_time.elapsed_time();
         stats.local.skipped_nodes += skipped_nodes;
     }
@@ -787,7 +837,10 @@ private:
                 boost::adaptors::filter(boost::make_iterator_range(begin, end), [&ghosts](RankEncodedNodeId node) {
                     return ghosts.find(node) != ghosts.end();
                 });
-            std::vector<RankEncodedNodeId> filtered_neighbors(filtered_neighbors_it.begin(), filtered_neighbors_it.end());
+            std::vector<RankEncodedNodeId> filtered_neighbors(
+                filtered_neighbors_it.begin(),
+                filtered_neighbors_it.end()
+            );
             // atomic_debug(fmt::format("intersecting {} and {}", u_neighbors, filtered_neighbors));
             cetric::intersection(
                 u_neighbors.begin(),
