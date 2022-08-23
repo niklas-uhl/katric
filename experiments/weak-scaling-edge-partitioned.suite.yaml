@@ -29,6 +29,7 @@ config:
     global-degree-of-parallelism: [3]
     skip-local-neighborhood: [False]
     primary-cost-function: [none]
-    parallelization-method: omp_for
-    omp-schedule: [stat, dynamic, guided]
-    omp-chunksize: [0, 100, 1000]
+    edge-partitioning: True
+    tbb-partitioner: [standard, stat, affinity]
+    grainsize: [1, 1000, 10000]
+
