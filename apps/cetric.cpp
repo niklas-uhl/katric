@@ -109,6 +109,9 @@ cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::P
         ->transform(CLI::CheckedTransformer(enum_name_to_value_map<cetric::OMPSchedule>(), CLI::ignore_case));
     app.add_option("--omp-chunksize", conf.omp_chunksize);
 
+    app.add_option("--tbb-partitioner", conf.tbb_partitioner)
+        ->transform(CLI::CheckedTransformer(enum_name_to_value_map<cetric::TBBPartitioner>(), CLI::ignore_case));
+
     app.add_option("--threshold", conf.threshold)
         ->transform(CLI::CheckedTransformer(cetric::threshold_map, CLI::ignore_case));
     app.add_option("--threshold-scale", conf.threshold_scale);

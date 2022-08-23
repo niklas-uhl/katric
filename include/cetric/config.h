@@ -103,6 +103,7 @@ std::string save_minimal(const Archive& ar [[maybe_unused]], const IntersectionM
 }
 enum class ParallelizationMethod { tbb, omp_for, omp_task };
 enum class OMPSchedule { stat, dynamic, guided, standard };
+enum class TBBPartitioner { stat, simple, standard, affinity };
 
 struct Config {
     Config() = default;
@@ -126,6 +127,7 @@ struct Config {
     bool                  global_parallel                   = false;
     ParallelizationMethod parallelization_method            = ParallelizationMethod::tbb;
     bool                  edge_partitioning                 = false;
+    TBBPartitioner        tbb_partitioner                   = TBBPartitioner::standard;
     OMPSchedule           omp_schedule                      = OMPSchedule::standard;
     size_t                omp_chunksize                     = 0;
     size_t                local_degree_of_parallelism       = 1;
@@ -178,6 +180,7 @@ struct Config {
             CEREAL_NVP(local_parallel),
             CEREAL_NVP(parallelization_method),
             CEREAL_NVP(edge_partitioning),
+            CEREAL_NVP(tbb_partitioner),
             CEREAL_NVP(omp_schedule),
             CEREAL_NVP(omp_chunksize),
             CEREAL_NVP(threshold),

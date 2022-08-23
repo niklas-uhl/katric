@@ -22,7 +22,7 @@
 #include <type_traits>
 #include <vector>
 
-#include <EliasFano.h>
+// #include <EliasFano.h>
 #include <boost/iterator/counting_iterator.hpp>
 #include <boost/iterator/iterator_categories.hpp>
 #include <boost/iterator/transform_iterator.hpp>
@@ -156,10 +156,11 @@ class DistributedGraph;
 template <typename NodeIndexer>
 class EdgeLocator {
 public:
-    EdgeLocator(DistributedGraph<NodeIndexer> const& G) : G(G), ef(G.local_node_count(), G.local_edge_count()) {
-        for (size_t i = 0; i < G.local_node_count(); i++) {
-            ef.push_back(G.first_out_[i]);
-        }
+  EdgeLocator(DistributedGraph<NodeIndexer> const& G) : G(G) /*, ef(G.local_node_count(), G.local_edge_count()) */ {
+        // for (size_t i = 0; i < G.local_node_count(); i++) {
+        //     ef.push_back(G.first_out_[i]);
+        // }
+        // ef.buildRankSelect();
     }
 
     RankEncodedNodeId get_edge_head(EdgeId edge_id) const {
@@ -185,7 +186,7 @@ public:
         return G.template get_edge_range_for_idx<adj>(idx).second;
     }
     DistributedGraph<NodeIndexer> const& G;
-    util::EliasFano<3>                   ef;
+    // util::EliasFano<5>                   ef;
 };
 
 template <typename NodeIndexer>
