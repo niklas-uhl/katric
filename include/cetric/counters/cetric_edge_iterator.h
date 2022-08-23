@@ -22,6 +22,9 @@
 #include <message-queue/buffered_queue.h>
 #include <mpi.h>
 #include <omp.h>
+#include <oneapi/tbb/parallel_for.h>
+#include <oneapi/tbb/partitioner.h>
+#include <oneapi/tbb/task_arena.h>
 #include <tbb/concurrent_vector.h>
 #include <tbb/enumerable_thread_specific.h>
 #include <tbb/parallel_for_each.h>
@@ -29,6 +32,7 @@
 #include <tlx/meta/has_member.hpp>
 #include <tlx/meta/has_method.hpp>
 
+#include "cetric/atomic_debug.h"
 #include "cetric/concurrent_buffered_queue.h"
 #include "cetric/config.h"
 #include "cetric/counters/intersection.h"
@@ -42,6 +46,7 @@
 #include "cetric/thread_pool.h"
 #include "cetric/timer.h"
 #include "cetric/util.h"
+#include "kassert/kassert.hpp"
 
 namespace cetric {
 using namespace graph;
@@ -192,6 +197,15 @@ public:
 
     template <typename TriangleFunc, typename NodeOrdering>
     inline void run_local(TriangleFunc emit, cetric::profiling::Statistics& stats, NodeOrdering&& node_ordering) {
+        if (conf_.edge_partitioning) {
+            run_local_parallel_edge_partitioned(
+                emit,
+                stats,
+                interface_nodes_,
+                std::forward<NodeOrdering>(node_ordering)
+            );
+            return;
+        }
         if (conf_.local_parallel && conf_.num_threads > 1) {
             run_local_parallel(emit, stats, interface_nodes_, std::forward<NodeOrdering>(node_ordering));
         } else {
@@ -255,6 +269,100 @@ public:
             }
         }
         stats.local.local_phase_time += phase_time.elapsed_time();
+    }
+
+    template <typename TriangleFunc, typename NodeOrdering>
+    inline void run_local_parallel_edge_partitioned(
+        TriangleFunc                                                     emit,
+        cetric::profiling::Statistics&                                   stats,
+        tbb::enumerable_thread_specific<std::vector<RankEncodedNodeId>>& interface_nodes,
+        NodeOrdering&&                                                   node_ordering
+    ) {
+        cetric::profiling::Timer phase_time;
+        interface_nodes.clear();
+
+        tbb::task_arena            arena(conf_.num_threads, 0);
+        tbb::blocked_range<EdgeId> edge_ids(EdgeId{0}, G.local_edge_count(), conf_.grainsize);
+
+        auto        edge_locator = G.build_edge_locator();
+        auto const& node_indexer = G.node_indexer();
+
+        // tbb::concurrent_vector<tbb::concurrent_vector<RankEncodedEdge>> edges(G.local_node_count());
+        // for (auto node: G.local_nodes()) {
+        //     for (auto edge: G.out_adj(node).edges()) {
+        //         auto idx = node_indexer.get_index(node);
+        //         edges[idx].push_back(edge);
+        //     }
+        // }
+
+        // tbb::concurrent_vector<tbb::concurrent_vector<RankEncodedEdge>> processed_edges(G.local_node_count());
+
+        arena.execute([&] {
+            tbb::parallel_for(
+                edge_ids,
+                [&](auto const& edge_id_range) {
+                    auto tail_idx        = edge_locator.edge_tail_idx(edge_id_range.begin());
+                    auto tail            = node_indexer.get_node(tail_idx);
+                    auto tail_first_edge = edge_locator.template first_edge_id_for_idx<AdjacencyType::out>(tail_idx);
+                    auto tail_last_edge  = edge_locator.template last_edge_id_for_idx<AdjacencyType::out>(tail_idx);
+                    // atomic_debug(fmt::format(
+                    //     "[t{}] processing edges {} to {}",
+                    //     tbb::this_task_arena::current_thread_index(),
+                    //     std::max(edge_id_range.begin(), tail_first_edge),
+                    //     edge_id_range.end()
+                    // ));
+                    for (auto edge_id = std::max(edge_id_range.begin(), tail_first_edge); edge_id < edge_id_range.end();
+                         edge_id++) {
+                        while (edge_id >= tail_last_edge) {
+                            tail_idx++;
+                            tail_first_edge = edge_locator.template first_edge_id_for_idx<AdjacencyType::out>(tail_idx);
+                            edge_id         = tail_first_edge;
+                            if (edge_id >= edge_id_range.end()) {
+                                goto finish;
+                            }
+                            tail           = node_indexer.get_node(tail_idx);
+                            tail_last_edge = edge_locator.template last_edge_id_for_idx<AdjacencyType::out>(tail_idx);
+                        }
+                        KASSERT(tail_first_edge <= edge_id);
+                        KASSERT(edge_id < tail_last_edge);
+                        auto v = tail;
+                        auto u = edge_locator.get_edge_head(edge_id);
+                        // processed_edges[tail_idx].push_back(RankEncodedEdge{u, v});
+                        if (u.rank() != rank_) {
+                            continue;
+                        }
+                        auto v_neighbors = G.out_adj(v).neighbors();
+                        auto u_neighbors = G.out_adj(u).neighbors();
+                        auto offset      = edge_id - tail_first_edge;
+                        // atomic_debug(
+                        //     fmt::format("[t{}] intersecting {} {}", tbb::this_task_arena::current_thread_index(), v,
+                        //     u)
+                        // );
+                        cetric::intersection(
+                            v_neighbors.begin() + offset,
+                            v_neighbors.end(),
+                            u_neighbors.begin(),
+                            u_neighbors.end(),
+                            [&](RankEncodedNodeId w) {
+                                stats.local.local_triangles++;
+                                emit(Triangle<RankEncodedNodeId>{v, u, w});
+                            },
+                            node_ordering,
+                            conf_
+                        );
+                    }
+                finish:
+                    return;
+                },
+                tbb::auto_partitioner{}
+            );
+        });
+        // for (size_t i = 0; i < edges.size(); ++i) {
+        //     KASSERT(edges[i].size() == processed_edges[i].size(), "Failed for " << i);
+        // }
+
+        stats.local.local_phase_time += phase_time.elapsed_time();
+        // stats.local.skipped_nodes += skipped_nodes;
     }
 
     template <typename TriangleFunc, typename NodeOrdering>

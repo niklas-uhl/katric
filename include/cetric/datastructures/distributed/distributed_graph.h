@@ -22,6 +22,7 @@
 #include <type_traits>
 #include <vector>
 
+#include <EliasFano.h>
 #include <boost/iterator/counting_iterator.hpp>
 #include <boost/iterator/iterator_categories.hpp>
 #include <boost/iterator/transform_iterator.hpp>
@@ -146,12 +147,52 @@ struct SparseNodeIndexer {
     node_map<size_t>               idx_map;
     PEID                           rank;
 };
+
 enum class AdjacencyType { out, in, full };
 
 template <typename NodeIndexer = ContinuousNodeIndexer>
+class DistributedGraph;
+
+template <typename NodeIndexer>
+class EdgeLocator {
+public:
+    EdgeLocator(DistributedGraph<NodeIndexer> const& G) : G(G), ef(G.local_node_count(), G.local_edge_count()) {
+        for (size_t i = 0; i < G.local_node_count(); i++) {
+            ef.push_back(G.first_out_[i]);
+        }
+    }
+
+    RankEncodedNodeId get_edge_head(EdgeId edge_id) const {
+        return G.head_[edge_id];
+    }
+
+    size_t edge_tail_idx(EdgeId edge_id) const {
+        auto it = std::upper_bound(G.first_out_.begin(), G.first_out_.end(), edge_id);
+        KASSERT(it != G.first_out_.end());
+        auto idx = (it - G.first_out_.begin()) - 1;
+        KASSERT(G.first_out_[idx] <= edge_id);
+        KASSERT(edge_id < G.first_out_[idx + 1]);
+        return idx;
+        // return ef.predecessorPosition(edge_id);
+    }
+
+    template <AdjacencyType adj>
+    EdgeId first_edge_id_for_idx(size_t idx) const {
+        return G.template get_edge_range_for_idx<adj>(idx).first;
+    }
+    template <AdjacencyType adj>
+    EdgeId last_edge_id_for_idx(size_t idx) const {
+        return G.template get_edge_range_for_idx<adj>(idx).second;
+    }
+    DistributedGraph<NodeIndexer> const& G;
+    util::EliasFano<3>                   ef;
+};
+
+template <typename NodeIndexer>
 class DistributedGraph {
     friend class cetric::load_balancing::LoadBalancer;
     friend class GraphBuilder;
+    friend class EdgeLocator<NodeIndexer>;
     friend class CompactGraph;
     template <typename Idx>
     friend class DistributedGraph;
@@ -223,10 +264,9 @@ public:
             head_.cbegin() + begin,
             head_.cbegin() + end};
     }
+
     template <AdjacencyType adj_type>
-    inline std::pair<EdgeId, EdgeId> get_edge_range(RankEncodedNodeId node) const {
-        KASSERT(node.rank() == rank_, "Node " << node << " is not local.");
-        auto   idx = to_local_idx(node);
+    inline std::pair<EdgeId, EdgeId> get_edge_range_for_idx(size_t idx) const {
         EdgeId begin;
         EdgeId end;
         if constexpr (adj_type == AdjacencyType::full) {
@@ -242,6 +282,13 @@ public:
             auto end   = first_out_[idx] + first_out_offset_[idx];
             return {begin, end};
         }
+    }
+
+    template <AdjacencyType adj_type>
+    inline std::pair<EdgeId, EdgeId> get_edge_range(RankEncodedNodeId node) const {
+        KASSERT(node.rank() == rank_, "Node " << node << " is not local.");
+        auto idx = to_local_idx(node);
+        return get_edge_range_for_idx<adj_type>(idx);
     }
 
     template <AdjacencyType adj_type>
@@ -734,6 +781,14 @@ public:
                 KASSERT(neighbor.id() <= max_node_id, "neighbor " << neighbor << " of node " << node << " is invalid!");
             }
         }
+    }
+
+    NodeIndexer const& node_indexer() const {
+        return node_indexer_;
+    }
+
+    EdgeLocator<NodeIndexer> build_edge_locator() const {
+        return EdgeLocator{*this};
     }
 
 private:

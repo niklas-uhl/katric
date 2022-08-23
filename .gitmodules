@@ -40,3 +40,6 @@
 [submodule "extern/sanitizers-cmake"]
 	path = extern/sanitizers-cmake
 	url = https://github.com/arsenm/sanitizers-cmake
+[submodule "extern/bytehamster_util"]
+	path = extern/bytehamster_util
+	url = https://github.com/ByteHamster/Util

@@ -125,6 +125,7 @@ struct Config {
     bool                  local_parallel                    = false;
     bool                  global_parallel                   = false;
     ParallelizationMethod parallelization_method            = ParallelizationMethod::tbb;
+    bool                  edge_partitioning                 = false;
     OMPSchedule           omp_schedule                      = OMPSchedule::standard;
     size_t                omp_chunksize                     = 0;
     size_t                local_degree_of_parallelism       = 1;
@@ -176,6 +177,9 @@ struct Config {
             CEREAL_NVP(global_parallel),
             CEREAL_NVP(local_parallel),
             CEREAL_NVP(parallelization_method),
+            CEREAL_NVP(edge_partitioning),
+            CEREAL_NVP(omp_schedule),
+            CEREAL_NVP(omp_chunksize),
             CEREAL_NVP(threshold),
             CEREAL_NVP(local_degree_of_parallelism),
             CEREAL_NVP(global_degree_of_parallelism),
