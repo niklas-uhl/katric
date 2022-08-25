@@ -4,10 +4,10 @@
 
 #pragma once
 
-#include <graph-io/local_graph_view.h>
-#include <tbb/blocked_range.h>
-#include <tbb/parallel_for_each.h>
-#include <tbb/partitioner.h>
+#include "../util.h"
+#include "fmt/core.h"
+#include "graph-io/graph.h"
+#include "graph_definitions.h"
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
@@ -22,11 +22,13 @@
 #include <tuple>
 #include <type_traits>
 #include <vector>
-#include "../util.h"
+
+#include <graph-io/local_graph_view.h>
+#include <tbb/blocked_range.h>
+#include <tbb/parallel_for_each.h>
+#include <tbb/partitioner.h>
+
 #include "debug_assert.hpp"
-#include "fmt/core.h"
-#include "graph-io/graph.h"
-#include "graph_definitions.h"
 
 namespace cetric {
 namespace graph {
@@ -35,7 +37,7 @@ namespace intersection_policy {
 struct merge {};
 struct binary_search {};
 struct hybrid {};
-}  // namespace intersection_policy
+} // namespace intersection_policy
 
 class AdjacencyGraph {
     friend class GraphBuilder;
@@ -45,10 +47,10 @@ public:
     class NodeIterator {
     public:
         using iterator_category = std::forward_iterator_tag;
-        using difference_type = std::ptrdiff_t;
-        using value_type = NodeId;
-        using pointer = NodeId*;
-        using reference = NodeId&;
+        using difference_type   = std::ptrdiff_t;
+        using value_type        = NodeId;
+        using pointer           = NodeId*;
+        using reference         = NodeId&;
         explicit NodeIterator(NodeId node) : node_(node) {}
         bool operator==(const NodeIterator& rhs) const {
             return this->node_ == rhs.node_;
@@ -105,12 +107,13 @@ public:
     class EdgeIterator {
     public:
         explicit EdgeIterator(NodeId tail, std::vector<NodeId>::const_iterator iter)
-            : tail_(tail), iter_(std::move(iter)) {}
+            : tail_(tail),
+              iter_(std::move(iter)) {}
         using iterator_category = std::forward_iterator_tag;
-        using difference_type = std::ptrdiff_t;
-        using value_type = Edge;
-        using pointer = Edge*;
-        using reference = Edge&;
+        using difference_type   = std::ptrdiff_t;
+        using value_type        = Edge;
+        using pointer           = Edge*;
+        using reference         = Edge&;
         bool operator==(const EdgeIterator& rhs) const {
             return this->tail_ == rhs.tail_ && this->iter_ == rhs.iter_;
         }
@@ -146,16 +149,18 @@ public:
         }
 
     private:
-        NodeId tail_;
+        NodeId                              tail_;
         std::vector<NodeId>::const_iterator iter_;
     };
 
     class EdgeRange {
     public:
-        explicit EdgeRange(NodeId tail,
-                           std::vector<NodeId>::const_iterator&& begin,
-                           std::vector<NodeId>::const_iterator&& end)
-            : tail_(tail), begin_(std::move(begin)), end_(std::move(end)) {}
+        explicit EdgeRange(
+            NodeId tail, std::vector<NodeId>::const_iterator&& begin, std::vector<NodeId>::const_iterator&& end
+        )
+            : tail_(tail),
+              begin_(std::move(begin)),
+              end_(std::move(end)) {}
         EdgeIterator begin() const {
             return EdgeIterator(tail_, begin_);
         };
@@ -164,7 +169,7 @@ public:
         };
 
     private:
-        NodeId tail_;
+        NodeId                              tail_;
         std::vector<NodeId>::const_iterator begin_;
         std::vector<NodeId>::const_iterator end_;
     };
@@ -172,7 +177,8 @@ public:
     class NeighborRange {
     public:
         explicit NeighborRange(std::vector<NodeId>::const_iterator&& begin, std::vector<NodeId>::const_iterator&& end)
-            : begin_(std::move(begin)), end_(std::move(end)) {}
+            : begin_(std::move(begin)),
+              end_(std::move(end)) {}
         auto begin() const {
             return begin_;
         };
@@ -201,9 +207,9 @@ public:
     }
 
     template <typename NodeFunc, typename Partitioner = tbb::auto_partitioner>
-    inline void parallel_for_each_local_node(NodeFunc on_node,
-                                             size_t grainsize = 1,
-                                             Partitioner&& partitioner = Partitioner{}) const {
+    inline void parallel_for_each_local_node(
+        NodeFunc on_node, size_t grainsize = 1, Partitioner&& partitioner = Partitioner{}
+    ) const {
         tbb::parallel_for(
             tbb::blocked_range<NodeId>(0, local_node_count(), grainsize),
             [&](auto const& r) {
@@ -211,7 +217,8 @@ public:
                     on_node(node);
                 }
             },
-            partitioner);
+            partitioner
+        );
     }
 
     NodeRange local_nodes() const {
@@ -219,51 +226,69 @@ public:
     }
 
     template <typename NodeFunc, typename Comp = std::less<>, typename IntersectionPolicy = intersection_policy::merge>
-    inline void intersect_neighborhoods(NodeId u,
-                                        NodeId v,
-                                        NodeFunc on_intersection,
-                                        Comp&& comp = {},
-                                        IntersectionPolicy&& = {}) const {
+    inline void intersect_neighborhoods(
+        NodeId u, NodeId v, NodeFunc on_intersection, Comp&& comp = {}, IntersectionPolicy&& = {}
+    ) const {
         auto u_neighbors = out_neighbors(u);
         auto v_neighbors = out_neighbors(v);
-        intersect_neighborhoods(u_neighbors.begin(), u_neighbors.end(), v_neighbors.begin(), v_neighbors.end(),
-                                on_intersection, std::move(comp), IntersectionPolicy{});
+        intersect_neighborhoods(
+            u_neighbors.begin(),
+            u_neighbors.end(),
+            v_neighbors.begin(),
+            v_neighbors.end(),
+            on_intersection,
+            std::move(comp),
+            IntersectionPolicy{}
+        );
     }
 
-    template <typename Iterator,
-              typename NodeFunc,
-              typename Comp = std::less<>,
-              typename IntersectionPolicy = intersection_policy::merge>
-    inline void intersect_neighborhoods(Iterator u_begin,
-                                        Iterator u_end,
-                                        NodeId v,
-                                        NodeFunc on_intersection,
-                                        Comp&& comp = {},
-                                        IntersectionPolicy&& = {}) const {
+    template <
+        typename Iterator,
+        typename NodeFunc,
+        typename Comp               = std::less<>,
+        typename IntersectionPolicy = intersection_policy::merge>
+    inline void intersect_neighborhoods(
+        Iterator u_begin,
+        Iterator u_end,
+        NodeId   v,
+        NodeFunc on_intersection,
+        Comp&&   comp        = {},
+        IntersectionPolicy&& = {}
+    ) const {
         auto v_neighbors = out_neighbors(v);
-        intersect_neighborhoods(u_begin, u_end, v_neighbors.begin(), v_neighbors.end(), on_intersection,
-                                std::move(comp), IntersectionPolicy{});
+        intersect_neighborhoods(
+            u_begin,
+            u_end,
+            v_neighbors.begin(),
+            v_neighbors.end(),
+            on_intersection,
+            std::move(comp),
+            IntersectionPolicy{}
+        );
     }
 
-    template <typename Iterator,
-              typename NodeFunc,
-              typename Comp = std::less<>,
-              typename IntersectionPolicy = intersection_policy::merge>
-    inline void intersect_neighborhoods(Iterator u_begin,
-                                        Iterator u_end,
-                                        Iterator v_begin,
-                                        Iterator v_end,
-                                        NodeFunc on_intersection,
-                                        Comp&& comp = {},
-                                        IntersectionPolicy&& = {}) const {
+    template <
+        typename Iterator,
+        typename NodeFunc,
+        typename Comp               = std::less<>,
+        typename IntersectionPolicy = intersection_policy::merge>
+    inline void intersect_neighborhoods(
+        Iterator u_begin,
+        Iterator u_end,
+        Iterator v_begin,
+        Iterator v_end,
+        NodeFunc on_intersection,
+        Comp&&   comp        = {},
+        IntersectionPolicy&& = {}
+    ) const {
         if constexpr (std::is_same_v<IntersectionPolicy, intersection_policy::merge>) {
             intersect_neighborhoods_merge(u_begin, u_end, v_begin, v_end, on_intersection, std::move(comp));
         } else if constexpr (std::is_same_v<IntersectionPolicy, intersection_policy::binary_search>) {
             intersect_neighborhoods_binary(u_begin, u_end, v_begin, v_end, on_intersection, std::move(comp));
         } else {
-            auto u_degree = std::distance(u_begin, u_end);
-            auto v_degree = std::distance(v_begin, v_end);
-            size_t merge_time = u_degree + v_degree;
+            auto   u_degree    = std::distance(u_begin, u_end);
+            auto   v_degree    = std::distance(v_begin, v_end);
+            size_t merge_time  = u_degree + v_degree;
             size_t binary_time = std::min(u_degree, v_degree) * std::log2(std::max(u_degree, v_degree));
             if (merge_time < binary_time) {
                 intersect_neighborhoods_merge(u_begin, u_end, v_begin, v_end, on_intersection, std::move(comp));
@@ -274,12 +299,9 @@ public:
     }
 
     template <typename Iterator, typename NodeFunc, typename Comp = std::less<>>
-    inline void intersect_neighborhoods_merge(Iterator u_begin,
-                                              Iterator u_end,
-                                              Iterator v_begin,
-                                              Iterator v_end,
-                                              NodeFunc on_intersection,
-                                              Comp&& comp = {}) const {
+    inline void intersect_neighborhoods_merge(
+        Iterator u_begin, Iterator u_end, Iterator v_begin, Iterator v_end, NodeFunc on_intersection, Comp&& comp = {}
+    ) const {
         auto u_current_edge = u_begin;
         auto v_current_edge = v_begin;
         while (u_current_edge != u_end && v_current_edge != v_end) {
@@ -299,19 +321,16 @@ public:
     }
 
     template <typename Iterator, typename NodeFunc, typename Comp = std::less<>>
-    inline void intersect_neighborhoods_binary(Iterator u_begin,
-                                               Iterator u_end,
-                                               Iterator v_begin,
-                                               Iterator v_end,
-                                               NodeFunc on_intersection,
-                                               Comp&& comp = {}) const {
+    inline void intersect_neighborhoods_binary(
+        Iterator u_begin, Iterator u_end, Iterator v_begin, Iterator v_end, NodeFunc on_intersection, Comp&& comp = {}
+    ) const {
         if (std::distance(u_begin, u_end) > std::distance(v_begin, v_end)) {
             std::swap(u_begin, v_begin);
             std::swap(u_end, v_end);
         }
         for (auto current = u_begin; current != u_end; current++) {
-            NodeId node = *current;
-            bool found = std::binary_search(v_begin, v_end, node, comp);
+            NodeId node  = *current;
+            bool   found = std::binary_search(v_begin, v_end, node, comp);
             if (found) {
                 on_intersection(node);
             }
@@ -321,7 +340,7 @@ public:
     template <typename NodeFunc, typename Iter>
     inline void intersect_neighborhoods(NodeId u, Iter begin, Iter end, NodeFunc on_intersection) const {
         EdgeId u_current_edge = first_out_[u] + first_out_offset_[u];
-        EdgeId u_end = first_out_[u] + degree_[u];
+        EdgeId u_end          = first_out_[u] + degree_[u];
         while (u_current_edge != u_end && begin != end) {
             NodeId u_node = head_[u_current_edge];
             NodeId v_node = *begin;
@@ -347,16 +366,15 @@ public:
         // EdgeId end = first_out_[node] + first_out_[node + 1];
         for (size_t edge_id = begin; edge_id < end; ++edge_id) {
             NodeId head = head_[edge_id];
-            Edge edge{node, head};
+            Edge   edge{node, head};
             on_edge(edge);
         }
     }
 
     template <typename EdgeFunc, typename Partitioner = tbb::auto_partitioner>
-    inline void parallel_for_each_edge(NodeId node,
-                                       EdgeFunc on_edge,
-                                       size_t grainsize = 1,
-                                       Partitioner&& partitioner = Partitioner{}) const {
+    inline void parallel_for_each_edge(
+        NodeId node, EdgeFunc on_edge, size_t grainsize = 1, Partitioner&& partitioner = Partitioner{}
+    ) const {
         EdgeId begin = first_out_[node];
         // TODO change it!!!
         EdgeId end = first_out_[node] + degree_[node];
@@ -366,29 +384,30 @@ public:
             [&](const auto& r) {
                 for (size_t edge_id = r.begin(); edge_id < r.end(); ++edge_id) {
                     NodeId head = head_[edge_id];
-                    Edge edge{node, head};
+                    Edge   edge{node, head};
                     on_edge(edge);
                 }
             },
-            partitioner);
+            partitioner
+        );
     }
 
     EdgeRange edges(NodeId node) const {
         EdgeId begin = first_out_[node];
-        EdgeId end = first_out_[node] + degree_[node];
+        EdgeId end   = first_out_[node] + degree_[node];
         return EdgeRange(node, head_.cbegin() + begin, head_.cbegin() + end);
     }
 
     NeighborRange neighbors(NodeId node) const {
         EdgeId begin = first_out_[node];
-        EdgeId end = first_out_[node] + degree_[node];
+        EdgeId end   = first_out_[node] + degree_[node];
         return NeighborRange(head_.cbegin() + begin, head_.cbegin() + end);
     }
 
     template <typename EdgeFunc>
     inline void for_each_local_out_edge(NodeId node, EdgeFunc on_edge) const {
         auto begin = first_out_[node] + first_out_offset_[node];
-        auto end = first_out_[node] + degree_[node];
+        auto end   = first_out_[node] + degree_[node];
         for (EdgeId edge_id = begin; edge_id < end; ++edge_id) {
             NodeId head = head_[edge_id];
             on_edge(Edge(node, head));
@@ -396,40 +415,40 @@ public:
     }
 
     template <typename EdgeFunc, typename Partitioner = tbb::auto_partitioner>
-    inline void parallel_for_each_local_out_edge(NodeId node,
-                                                 EdgeFunc on_edge,
-                                                 size_t grainsize = 1,
-                                                 Partitioner&& partitioner = Partitioner{}) const {
+    inline void parallel_for_each_local_out_edge(
+        NodeId node, EdgeFunc on_edge, size_t grainsize = 1, Partitioner&& partitioner = Partitioner{}
+    ) const {
         auto begin = first_out_[node] + first_out_offset_[node];
-        auto end = first_out_[node] + degree_[node];
+        auto end   = first_out_[node] + degree_[node];
         tbb::parallel_for(
             tbb::blocked_range(begin, end, grainsize),
             [&on_edge, this, node](const auto& r) {
                 for (size_t edge_id = r.begin(); edge_id < r.end(); ++edge_id) {
                     NodeId head = head_[edge_id];
-                    Edge edge{node, head};
+                    Edge   edge{node, head};
                     on_edge(edge);
                 }
             },
-            partitioner);
+            partitioner
+        );
     }
 
     EdgeRange out_edges(NodeId node) const {
         auto begin = first_out_[node] + first_out_offset_[node];
-        auto end = first_out_[node] + degree_[node];
+        auto end   = first_out_[node] + degree_[node];
         return EdgeRange(node, head_.cbegin() + begin, head_.cbegin() + end);
     }
 
     NeighborRange out_neighbors(NodeId node) const {
         auto begin = first_out_[node] + first_out_offset_[node];
-        auto end = first_out_[node] + degree_[node];
+        auto end   = first_out_[node] + degree_[node];
         return NeighborRange(head_.cbegin() + begin, head_.cbegin() + end);
     }
 
     template <typename EdgeFunc>
     inline void for_each_local_in_edge(NodeId node, EdgeFunc on_edge) const {
         auto begin = first_out_[node];
-        auto end = first_out_[node] + first_out_offset_[node];
+        auto end   = first_out_[node] + first_out_offset_[node];
         for (EdgeId edge_id = begin; edge_id < end; ++edge_id) {
             NodeId head = head_[edge_id];
             on_edge(Edge(head, node));
@@ -437,33 +456,33 @@ public:
     }
 
     template <typename EdgeFunc, typename Partitioner = tbb::auto_partitioner>
-    inline void parallel_for_each_local_in_edge(NodeId node,
-                                                EdgeFunc on_edge,
-                                                size_t grainsize = 1,
-                                                Partitioner&& partitioner = Partitioner{}) const {
+    inline void parallel_for_each_local_in_edge(
+        NodeId node, EdgeFunc on_edge, size_t grainsize = 1, Partitioner&& partitioner = Partitioner{}
+    ) const {
         auto begin = first_out_[node];
-        auto end = first_out_[node] + first_out_offset_[node];
+        auto end   = first_out_[node] + first_out_offset_[node];
         tbb::parallel_for(
             tbb::blocked_range(begin, end, grainsize),
             [&](const auto& r) {
                 for (size_t edge_id = r.begin(); edge_id < r.end(); ++edge_id) {
                     NodeId head = head_[edge_id];
-                    Edge edge{node, head};
+                    Edge   edge{node, head};
                     on_edge(edge);
                 }
             },
-            partitioner);
+            partitioner
+        );
     }
 
     EdgeRange in_edges(NodeId node) const {
         auto begin = first_out_[node];
-        auto end = first_out_[node] + first_out_offset_[node];
+        auto end   = first_out_[node] + first_out_offset_[node];
         return EdgeRange(node, head_.cbegin() + begin, head_.cbegin() + end);
     }
 
     NeighborRange in_neighbors(NodeId node) const {
         auto begin = first_out_[node];
-        auto end = first_out_[node] + first_out_offset_[node];
+        auto end   = first_out_[node] + first_out_offset_[node];
         return NeighborRange(head_.cbegin() + begin, head_.cbegin() + end);
     }
 
@@ -473,7 +492,7 @@ public:
             return node_cmp(tail, head);
         };
         auto orient_neighborhoods = [&](NodeId node) {
-            int64_t left = first_out_[node];
+            int64_t left  = first_out_[node];
             int64_t right = first_out_[node] + degree_[node] - 1;
             while (left <= right) {
                 while (left <= right && !is_outgoing(node, head_[left])) {
@@ -499,11 +518,11 @@ public:
     }
 
     template <class Comp = std::less<>, class ExecutionPolicy = execution_policy::sequential>
-    inline void sort_neighborhoods(Comp&& node_cmp = Comp{},
-                                   ExecutionPolicy&& policy [[maybe_unused]] = ExecutionPolicy{}) {
+    inline void
+    sort_neighborhoods(Comp&& node_cmp = Comp{}, ExecutionPolicy&& policy [[maybe_unused]] = ExecutionPolicy{}) {
         auto on_node = [&](NodeId node) {
-            EdgeId begin = first_out_[node];
-            EdgeId in_end = first_out_[node] + first_out_offset_[node];
+            EdgeId begin   = first_out_[node];
+            EdgeId in_end  = first_out_[node] + first_out_offset_[node];
             EdgeId out_end = first_out_[node] + degree_[node];
             std::sort(head_.begin() + begin, head_.begin() + in_end, node_cmp);
             std::sort(head_.begin() + in_end, head_.begin() + out_end, node_cmp);
@@ -516,21 +535,21 @@ public:
         for (size_t i = 0; i < first_out_.size() - 1; ++i) {
             new_first_out[permutation[i]] = degree_[i];
         }
-        std::exclusive_scan(new_first_out.begin(), new_first_out.end(), new_first_out.begin(), 0);
+        std::exclusive_scan(new_first_out.begin(), new_first_out.end(), new_first_out.begin(), EdgeId{0});
         new_first_out[new_first_out.size() - 1] = head_.size();
         std::vector<NodeId> new_head(head_.size());
         for (size_t i = 0; i < first_out_.size() - 1; ++i) {
-            auto begin = first_out_[i];
-            auto end = first_out_[i + 1];
+            auto begin  = first_out_[i];
+            auto end    = first_out_[i + 1];
             auto target = new_first_out[permutation[i]];
             for (auto current = begin; current != end; current++) {
-                auto index = current - begin;
+                auto index               = current - begin;
                 new_head[target + index] = permutation[head_[current]];
             }
             degree_[i] = new_first_out[i + 1] - new_first_out[i];
         }
         first_out_ = std::move(new_first_out);
-        head_ = std::move(new_head);
+        head_      = std::move(new_head);
     }
 
     inline Degree local_degree(NodeId node) const {
@@ -573,7 +592,7 @@ public:
         for (size_t i = 0; i < local_node_count(); ++i) {
             first_out_[i] = degree_sum;
             degree_sum += G.node_info[i].degree;
-            NodeId local_id = i;
+            NodeId local_id   = i;
             degree_[local_id] = G.node_info[i].degree;
         }
 
@@ -592,15 +611,15 @@ public:
     std::vector<EdgeId> first_out_offset_;
     std::vector<Degree> degree_;
     std::vector<NodeId> head_;
-    bool oriented_;
-    EdgeId local_edge_count_{};
+    bool                oriented_;
+    EdgeId              local_edge_count_{};
 };
 
 std::ostream& operator<<(std::ostream& os, AdjacencyGraph const& G) {
-    for (auto node : G.local_nodes()) {
+    for (auto node: G.local_nodes()) {
         os << "N(" << node << ") = [";
         size_t index = 0;
-        for (auto edge : G.edges(node)) {
+        for (auto edge: G.edges(node)) {
             if (index != 0) {
                 os << ", ";
             }
@@ -629,5 +648,5 @@ std::vector<NodeId> ordering_permutation(AdjacencyGraph const& G, Comp&& cmp = {
     return permutation;
 }
 
-}  // namespace graph
-}  // namespace cetric
+} // namespace graph
+} // namespace cetric

@@ -1,16 +1,6 @@
-#include <config.h>
-#include <counters/cetric.h>
-#include <graph-io/definitions.h>
-#include <graph-io/distributed_graph_io.h>
-#include <graph-io/local_graph_view.h>
-#include <mpi.h>
-#include <tbb/global_control.h>
-#include <tbb/task_arena.h>
-#include <unistd.h>
-#include <util.h>
-#include <CLI/CLI.hpp>
+#include "cetric/counters/cetric.h"
+
 #include <algorithm>
-#include <cereal/archives/json.hpp>
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
@@ -18,26 +8,43 @@
 #include <iomanip>
 #include <iostream>
 #include <istream>
-#include <kassert/kassert.hpp>
 #include <limits>
 #include <memory>
 #include <optional>
 #include <sstream>
-#include "CLI/Validators.hpp"
-#include "backward.hpp"
-#include "cereal/cereal.hpp"
-#include "counters/cetric_edge_iterator.h"
-#include "datastructures/distributed/distributed_graph.h"
-#include "graph-io/graph_definitions.h"
-#include "parse_parameters.h"
-#include "statistics.h"
-#include "timer.h"
-#include "git_hash.h"
 
-cetric::Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
+#include <CLI/CLI.hpp>
+#include <CLI/Validators.hpp>
+#include <backward.hpp>
+#include <cereal/archives/json.hpp>
+#include <cereal/cereal.hpp>
+#include <graph-io/definitions.h>
+#include <graph-io/distributed_graph_io.h>
+#include <graph-io/local_graph_view.h>
+#include <kassert/kassert.hpp>
+#include <magic_enum.hpp>
+#include <mpi.h>
+#include <omp.h>
+#include <tbb/global_control.h>
+#include <tbb/task_arena.h>
+#include <unistd.h>
+
+#include "./parse_parameters.h"
+#include "CLI/Error.hpp"
+#include "cetric/config.h"
+#include "cetric/counters/cetric_edge_iterator.h"
+#include "cetric/datastructures/distributed/distributed_graph.h"
+#include "cetric/statistics.h"
+#include "cetric/timer.h"
+#include "cetric/util.h"
+#include "git_hash.h"
+#include "graph-io/graph_definitions.h"
+
+cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::PEID size) {
     (void)size;
 
     CLI::App app("Parallel Triangle Counter");
+    app.option_defaults()->always_capture_default();
     cetric::Config conf;
     conf.git_commit = cetric::git_hash;
 
@@ -94,14 +101,32 @@ cetric::Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
 
     app.add_flag("--local-parallel", conf.local_parallel);
     app.add_flag("--global-parallel", conf.global_parallel);
+
+    app.add_option("--parallelization-method", conf.parallelization_method)
+        ->transform(CLI::CheckedTransformer(enum_name_to_value_map<cetric::ParallelizationMethod>(), CLI::ignore_case));
+    app.add_flag("--edge-partitioning", conf.edge_partitioning);
+    app.add_flag("--edge-partitioning-static", conf.edge_partitioning_static);
+    app.add_option("--omp-schedule", conf.omp_schedule)
+        ->transform(CLI::CheckedTransformer(enum_name_to_value_map<cetric::OMPSchedule>(), CLI::ignore_case));
+    app.add_option("--omp-chunksize", conf.omp_chunksize);
+
+    app.add_option("--tbb-partitioner", conf.tbb_partitioner)
+        ->transform(CLI::CheckedTransformer(enum_name_to_value_map<cetric::TBBPartitioner>(), CLI::ignore_case));
+
     app.add_option("--threshold", conf.threshold)
         ->transform(CLI::CheckedTransformer(cetric::threshold_map, CLI::ignore_case));
     app.add_option("--threshold-scale", conf.threshold_scale);
+    app.add_option("--high-degree-threshold-scale", conf.high_degree_threshold_scale);
+
+    app.add_option("--intersection-method", conf.intersection_method)
+        ->transform(CLI::CheckedTransformer(cetric::intersection_method_map, CLI::ignore_case));
+    app.add_option("--binary-intersection-cutoff", conf.binary_intersection_cutoff);
+    app.add_option("--hybrid-cutoff-scale", conf.hybrid_cutoff_scale);
 
     parse_gen_parameters(app, conf);
 
     CLI::Option* input_option = app.get_option("input");
-    CLI::Option* gen_option = app.get_option("--gen");
+    CLI::Option* gen_option   = app.get_option("--gen");
     input_option->excludes(gen_option);
     gen_option->excludes(input_option);
 
@@ -120,10 +145,11 @@ cetric::Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
     if (!conf.partitioning.empty()) {
         conf.partitioned_input = true;
     }
-    if (conf.primary_cost_function == "none" && conf.gen.generator.empty()) {
+    if (conf.primary_cost_function == "none" && conf.gen.generator.empty() && !conf.partitioned_input) {
         int retval;
         if (rank == 0) {
-            CLI::RequiredError e("Primary cost function 'none' is only allowed for generated graphs.");
+            CLI::RequiredError e("Primary cost function 'none' is only allowed for generated or prepartitioned graphs."
+            );
             retval = app.exit(e);
         } else {
             retval = 1;
@@ -132,7 +158,7 @@ cetric::Config parse_config(int argc, char* argv[], PEID rank, PEID size) {
         exit(retval);
     }
     conf.rank = rank;
-    conf.PEs = size;
+    conf.PEs  = size;
     return conf;
 }
 
@@ -141,13 +167,13 @@ public:
     InputCache(const cetric::Config& conf) : conf_(conf), cache_file_(), G_() {
         if (conf_.cache_input != cetric::CacheInput::None) {
             auto [G, info] = load_graph();
-            G_ = std::move(G);
-            info_ = std::move(info);
+            G_             = std::move(G);
+            info_          = std::move(info);
         }
         if (conf_.cache_input == cetric::CacheInput::Filesystem) {
             auto tmp_file = graphio::dump_to_tmp(G_.value(), conf_.rank, conf_.PEs);
-            cache_file_ = tmp_file;
-            G_ = std::nullopt;
+            cache_file_   = tmp_file;
+            G_            = std::nullopt;
         }
     }
     graphio::IOResult get() {
@@ -174,15 +200,21 @@ private:
         if (conf_.gen.generator == "") {
             auto G = graphio::read_local_graph(conf_.input_file, conf_.input_format, conf_.rank, conf_.PEs);
             if (conf_.partitioned_input) {
-                auto partitioning = graphio::read_local_partition(conf_.partitioning, G.info.local_from, G.info.local_to, conf_.rank, conf_.PEs);
+                auto partitioning = graphio::read_local_partition(
+                    conf_.partitioning,
+                    G.info.local_from,
+                    G.info.local_to,
+                    conf_.rank,
+                    conf_.PEs
+                );
                 G.G = graphio::apply_partition(std::move(G.G), partitioning, MPI_COMM_WORLD);
                 graphio::relabel_consecutively(G.G, MPI_COMM_WORLD);
                 if (G.G.local_node_count() != 0) {
                     G.info.local_from = G.G.node_info.front().global_id;
-                    G.info.local_to = G.G.node_info.back().global_id + 1;
+                    G.info.local_to   = G.G.node_info.back().global_id + 1;
                 } else {
-                    G.info.local_from = std::numeric_limits<NodeId>::max();
-                    G.info.local_to = std::numeric_limits<NodeId>::max();
+                    G.info.local_from = std::numeric_limits<cetric::NodeId>::max();
+                    G.info.local_to   = std::numeric_limits<cetric::NodeId>::max();
                 }
             }
             // atomic_debug(G.edge_heads);
@@ -191,15 +223,17 @@ private:
             return graphio::gen_local_graph(conf_.gen, conf_.rank, conf_.PEs);
         }
     }
-    const cetric::Config& conf_;
-    std::string cache_file_;
-    std::optional<LocalGraphView> G_;
-    graphio::internal::GraphInfo info_;
+    const cetric::Config&                  conf_;
+    std::string                            cache_file_;
+    std::optional<graphio::LocalGraphView> G_;
+    graphio::internal::GraphInfo           info_;
 };
 
-void print_summary(const cetric::Config& conf,
-                   std::vector<cetric::profiling::Statistics>& all_stats,
-                   std::optional<double> io_time = std::nullopt) {
+void print_summary(
+    const cetric::Config&                       conf,
+    std::vector<cetric::profiling::Statistics>& all_stats,
+    std::optional<double>                       io_time = std::nullopt
+) {
     MPI_Barrier(MPI_COMM_WORLD);
     if (!conf.json_output.empty()) {
         if (conf.rank == 0) {
@@ -244,28 +278,53 @@ int main(int argc, char* argv[]) {
         std::cerr << "The MPI implementation must support MPI_THREAD_FUNNELED" << std::endl;
         std::exit(1);
     }
-    bool debug = false;
-    PEID rank;
-    PEID size;
+    bool                     debug = false;
+    cetric::PEID             rank;
+    cetric::PEID             size;
     backward::SignalHandling sh;
     {
         backward::MPIErrorHandler mpi_error_handler(MPI_COMM_WORLD);
         MPI_Comm_rank(MPI_COMM_WORLD, &rank);
         MPI_Comm_size(MPI_COMM_WORLD, &size);
         DEBUG_BARRIER(rank);
-        cetric::Config conf = parse_config(argc, argv, rank, size);
-        size_t max_concurrency = tbb::this_task_arena::max_concurrency();
+        cetric::Config conf            = parse_config(argc, argv, rank, size);
+        size_t         max_concurrency = tbb::this_task_arena::max_concurrency();
         if (conf.num_threads == 0) {
             conf.num_threads = max_concurrency;
         }
         if (conf.num_threads > max_concurrency) {
             atomic_debug(
-                fmt::format("Warning, TBB uses only {} instead of {} threads!", max_concurrency, conf.num_threads));
+                fmt::format("Warning, TBB uses only {} instead of {} threads!", max_concurrency, conf.num_threads)
+            );
         }
         tbb::global_control global_limit(tbb::global_control::max_allowed_parallelism, conf.num_threads + 1);
-        std::optional<double> io_time;
+
+        omp_set_num_threads(conf.num_threads);
+        if (conf.omp_chunksize == 0) {
+            omp_sched_t type;
+            int         chunksize;
+            omp_get_schedule(&type, &chunksize);
+            conf.omp_chunksize = chunksize;
+        }
+        switch (conf.omp_schedule) {
+            using cetric::OMPSchedule;
+            case OMPSchedule::stat:
+                omp_set_schedule(omp_sched_static, conf.omp_chunksize);
+                break;
+            case OMPSchedule::dynamic:
+                omp_set_schedule(omp_sched_dynamic, conf.omp_chunksize);
+                break;
+            case OMPSchedule::guided:
+                omp_set_schedule(omp_sched_guided, conf.omp_chunksize);
+                break;
+            case OMPSchedule::standard:
+                omp_set_schedule(omp_sched_auto, conf.omp_chunksize);
+                break;
+        }
+
+        std::optional<double>    io_time;
         cetric::profiling::Timer t;
-        InputCache input_cache(conf);
+        InputCache               input_cache(conf);
         if (conf.cache_input != cetric::CacheInput::None) {
             io_time = t.elapsed_time();
         }
@@ -273,9 +332,9 @@ int main(int argc, char* argv[]) {
         for (size_t iter = 0; iter < conf.iterations; ++iter) {
             MPI_Barrier(MPI_COMM_WORLD);
 
-            DistributedGraph<> G;
-            cetric::profiling::Statistics stats(rank, size);
-            cetric::profiling::Timer timer;
+            cetric::graph::DistributedGraph<> G;
+            cetric::profiling::Statistics     stats(rank, size);
+            cetric::profiling::Timer          timer;
             LOG << "[R" << rank << "] "
                 << "Loading from cache";
             graphio::IOResult input = input_cache.get();
@@ -283,7 +342,12 @@ int main(int argc, char* argv[]) {
                 << "Finished loading from cache";
             // atomic_debug(G_local.node_info);
             //  atomic_debug(G_local.edge_heads);
-            G = DistributedGraph<>(std::move(input.G), {input.info.local_from, input.info.local_to}, rank, size);
+            G = cetric::graph::DistributedGraph<>(
+                std::move(input.G),
+                {input.info.local_from, input.info.local_to},
+                rank,
+                size
+            );
             // atomic_debug(G);
             LOG << "[R" << rank << "] "
                 << "Finished conversion";

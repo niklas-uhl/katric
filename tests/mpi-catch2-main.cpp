@@ -1,9 +1,9 @@
 #define CATCH_CONFIG_RUNNER
 #include <iostream>
 #include <sstream>
+
 #include <catch2/catch_session.hpp>
 #include <mpi.h>
-
 
 int main(int argc, char* argv[]) {
     MPI_Init(&argc, &argv);
@@ -29,10 +29,10 @@ int main(int argc, char* argv[]) {
     // }
 
     // std::stringstream print_rank;
-    // print_rank << "Rank "; 
+    // print_rank << "Rank ";
     // print_rank.width(2);
     // print_rank << std::right << rank << ":\n";
-    
+
     // for (int i = 0; i < size; ++i) {
     //     MPI_Barrier(MPI_COMM_WORLD);
     //     if (i == rank) {

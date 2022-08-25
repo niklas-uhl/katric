@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
-project(cetric LANGUAGES CXX)
+project(cetric LANGUAGES C CXX)
 
 if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
 
@@ -25,7 +25,7 @@ target_include_directories(sparsehash INTERFACE ${SPARSEHASH_INCLUDE_DIR})
 
 find_package(Boost REQUIRED COMPONENTS headers)
 find_package(TBB REQUIRED)
-#find_package(OpenMP REQUIRED)
+find_package(OpenMP REQUIRED)
 find_package(MPI REQUIRED)
 message(STATUS "Run: ${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} ${MPIEXEC_MAX_NUMPROCS} ${MPIEXEC_PREFLAGS} EXECUTABLE ${MPIEXEC_POSTFLAGS} ARGS")
 

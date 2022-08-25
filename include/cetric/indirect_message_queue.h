@@ -1,8 +1,10 @@
 #pragma once
 
-#include <mpi.h>
 #include <sstream>
 #include <type_traits>
+
+#include <mpi.h>
+
 #include "counters/cetric_edge_iterator.h"
 #include "datastructures/graph_definitions.h"
 #include "datastructures/span.h"
@@ -61,15 +63,15 @@ public:
         // static_assert(std::is_invocable_v<MessageHandler, typename std::vector<T>::iterator,
         //                                   typename std::vector<T>::iterator, PEID>);
         queue_.poll([&](SharedVectorSpan<value_type> span, PEID /*sender*/) {
-            auto begin = span.begin();
-            auto end = span.end();
-            PEID receiver = datatype_to_PEID(*(end - 1));
+            auto begin           = span.begin();
+            auto end             = span.end();
+            PEID receiver        = datatype_to_PEID(*(end - 1));
             PEID original_sender = datatype_to_PEID(*(end - 2));
             if (receiver == rank_) {
                 auto received_message = span.subspan(0, span.size() - 2);
                 on_message(received_message, original_sender);
             } else {
-                auto proxy = get_proxy(rank_, receiver);
+                auto              proxy = get_proxy(rank_, receiver);
                 std::stringstream out;
                 out << "Redirecting message to " << receiver << " via " << proxy;
                 // atomic_debug(out.str());
@@ -83,15 +85,15 @@ public:
         // static_assert(std::is_invocable_v<MessageHandler, typename std::vector<T>::iterator,
         //                                   typename std::vector<T>::iterator, PEID>);
         queue_.terminate([&](SharedVectorSpan<value_type> span, PEID /*sender*/) {
-            auto begin = span.begin();
-            auto end = span.end();
-            PEID receiver = datatype_to_PEID(*(end - 1));
+            auto begin           = span.begin();
+            auto end             = span.end();
+            PEID receiver        = datatype_to_PEID(*(end - 1));
             PEID original_sender = datatype_to_PEID(*(end - 2));
             if (receiver == rank_) {
                 auto received_message = span.subspan(0, span.size() - 2);
                 on_message(received_message, original_sender);
             } else {
-                auto proxy = get_proxy(rank_, receiver);
+                auto              proxy = get_proxy(rank_, receiver);
                 std::stringstream out;
                 out << "Redirecting message to " << receiver << " via " << proxy;
                 // atomic_debug(out.str());
@@ -118,8 +120,8 @@ public:
 
 private:
     struct GridPosition {
-        int row;
-        int column;
+        int  row;
+        int  column;
         bool operator==(const GridPosition& rhs) {
             return row == rhs.row && column == rhs.column;
         }
@@ -132,9 +134,9 @@ private:
         return grid_position.row * grid_size_ + grid_position.column;
     }
     PEID get_proxy(PEID from, PEID to) {
-        auto from_pos = get_grid_position(from);
-        auto to_pos = get_grid_position(to);
-        GridPosition proxy = {from_pos.row, to_pos.column};
+        auto         from_pos = get_grid_position(from);
+        auto         to_pos   = get_grid_position(to);
+        GridPosition proxy    = {from_pos.row, to_pos.column};
         if (get_rank(proxy) >= size_) {
             proxy = {from_pos.column, to_pos.column};
         }
@@ -144,9 +146,9 @@ private:
         assert(get_rank(proxy) < size_);
         return get_rank(proxy);
     }
-    PEID rank_;
-    PEID size_;
-    PEID grid_size_;
+    PEID       rank_;
+    PEID       size_;
+    PEID       grid_size_;
     QueueType& queue_;
 };
 
@@ -154,10 +156,9 @@ template <typename QueueType>
 class DirectMessageQueueAdaptor {
 public:
     using value_type = typename QueueType::value_type;
-    DirectMessageQueueAdaptor(QueueType& queue) : queue_(queue) {
-    };
+    DirectMessageQueueAdaptor(QueueType& queue) : queue_(queue){};
     void post_message(std::vector<value_type>&& message, PEID receiver, bool direct_send = false) {
-      queue_.post_message(std::move(message), receiver);
+        queue_.post_message(std::move(message), receiver);
     }
 
     void set_threshold(size_t threshold) {
@@ -168,12 +169,12 @@ public:
     void poll(MessageHandler&& on_message) {
         // static_assert(std::is_invocable_v<MessageHandler, typename std::vector<T>::iterator,
         //                                   typename std::vector<T>::iterator, PEID>);
-      queue_.poll(on_message);
+        queue_.poll(on_message);
     }
 
     template <typename MessageHandler>
     void terminate(MessageHandler&& on_message) {
-      queue_.terminate(on_message);
+        queue_.terminate(on_message);
     }
 
     size_t overflows() const {
@@ -199,4 +200,4 @@ private:
 // auto make_indirect_queue(Merger&& merger, Splitter&& splitter) {
 //     return IndirectMessageQueue<QueueType>(std::forward<Merger>(merger), std::forward<Splitter>(splitter));
 // }
-}  // namespace cetric
+} // namespace cetric

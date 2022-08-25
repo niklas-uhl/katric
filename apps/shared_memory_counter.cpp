@@ -1,21 +1,23 @@
-#include <graph-io/graph_io.h>
-#include <tbb/global_control.h>
 #include <atomic>
 #include <chrono>
 #include <map>
-#include "CLI/CLI.hpp"
-#include "CLI/Validators.hpp"
-#include "backward.hpp"
-#include "counters/shared_memory_edge_iterator.h"
-#include "datastructures/graph.h"
-#include "fmt/format.h"
-#include "fmt/ranges.h"
-#include "graph-io/graph_definitions.h"
+
+#include <CLI/CLI.hpp>
+#include <CLI/Validators.hpp>
+#include <backward.hpp>
+#include <fmt/format.h>
+#include <fmt/ranges.h>
+#include <graph-io/graph_definitions.h>
+#include <graph-io/graph_io.h>
+#include <tbb/global_control.h>
+
+#include "cetric/counters/shared_memory_edge_iterator.h"
+#include "cetric/datastructures/graph.h"
 
 int main(int argc, char* argv[]) {
     backward::SignalHandling sh;
-    CLI::App app("Parallel Triangle Counter");
-    std::string input_file;
+    CLI::App                 app("Parallel Triangle Counter");
+    std::string              input_file;
     app.add_option("input", input_file, "The input graph");
     graphio::InputFormat input_format;
     app.add_option("--input-format", input_format)
@@ -34,7 +36,8 @@ int main(int argc, char* argv[]) {
             std::map<std::string, cetric::shared_memory::Partition>{
                 {"1D", cetric::shared_memory::Partition::one_dimensional},
                 {"2D", cetric::shared_memory::Partition::two_dimensional}},
-            CLI::ignore_case));
+            CLI::ignore_case
+        ));
 
     app.add_option("--intersection_method", conf.intersection_method)
         ->transform(CLI::CheckedTransformer(
@@ -42,7 +45,8 @@ int main(int argc, char* argv[]) {
                 {"merge", cetric::shared_memory::IntersectionMethod::merge},
                 {"binary_search", cetric::shared_memory::IntersectionMethod::binary_search},
                 {"hybrid", cetric::shared_memory::IntersectionMethod::hybrid}},
-            CLI::ignore_case));
+            CLI::ignore_case
+        ));
     app.add_option("--grainsize", conf.grainsize);
     app.add_option("--partitioner", conf.partitioner)
         ->transform(CLI::CheckedTransformer(
@@ -51,7 +55,8 @@ int main(int argc, char* argv[]) {
                 {"static", cetric::shared_memory::Partitioner::static_partitioner},
                 {"simple", cetric::shared_memory::Partitioner::simple_partitioner},
                 {"affinity", cetric::shared_memory::Partitioner::affinity_partitioner}},
-            CLI::ignore_case));
+            CLI::ignore_case
+        ));
     app.add_flag("--skip_previous_edges", conf.skip_previous_edges);
     bool degree_reordering = false;
     app.add_flag("--degree_reordering", degree_reordering);
@@ -89,26 +94,26 @@ int main(int argc, char* argv[]) {
     cetric::shared_memory::SharedMemoryEdgeIterator ctr(G);
     for (size_t i = 0; i < iterations; ++i) {
         std::atomic<size_t> number_of_triangles = 0;
-        auto start = std::chrono::high_resolution_clock::now();
+        auto                start               = std::chrono::high_resolution_clock::now();
         if (!degree_reordering && conf.skip_previous_edges) {
             ctr.run([&](auto) { number_of_triangles++; }, conf, node_ordering);
         } else {
             ctr.run([&](auto) { number_of_triangles++; }, conf, std::less<>{});
         }
-        auto end = std::chrono::high_resolution_clock::now();
+        auto                          end  = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> time = end - start;
-        std::cout << "RESULT" << std::boolalpha << " input=" << input_file  //
-                  << " num_threads=" << num_threads                         //
-                  << " pinning=" << pinning                                 //
-                  << " iteration=" << i                                     //
-                  << " partition=" << conf.partition                        //
-                  << " intersection_method=" << conf.intersection_method    //
-                  << " grainsize=" << conf.grainsize                        //
-                  << " degree_reordering=" << degree_reordering             //
-                  << " skip_previous_edges=" << conf.skip_previous_edges    //
-                  << " partitioner=" << conf.partitioner                    //
-                  << " triangles=" << number_of_triangles                   //
-                  << " time=" << time.count()                               //
+        std::cout << "RESULT" << std::boolalpha << " input=" << input_file //
+                  << " num_threads=" << num_threads                        //
+                  << " pinning=" << pinning                                //
+                  << " iteration=" << i                                    //
+                  << " partition=" << conf.partition                       //
+                  << " intersection_method=" << conf.intersection_method   //
+                  << " grainsize=" << conf.grainsize                       //
+                  << " degree_reordering=" << degree_reordering            //
+                  << " skip_previous_edges=" << conf.skip_previous_edges   //
+                  << " partitioner=" << conf.partitioner                   //
+                  << " triangles=" << number_of_triangles                  //
+                  << " time=" << time.count()                              //
                   << std::endl;
     }
     return 0;

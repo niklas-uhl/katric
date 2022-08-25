@@ -1,0 +1,59 @@
+name: weak-scaling-intersection
+ncores: [128, 256, 512, 1024, 2048, 4096, 8192, 16384]
+threads_per_rank: [1, 2, 4, 8]
+graphs:
+  - generator: rgg
+    n: 18
+    m: 22
+    scale_weak: True
+  - generator: rhg
+    n: 16
+    m: 20
+    gamma: 2.9
+    scale_weak: True
+  - generator: rhg
+    n: 16
+    m: 20
+    gamma: 3.0
+    scale_weak: True
+time_limit: 20
+config:
+  - algorithm: [cetric]
+    local-parallel: True
+    global-parallel: True
+    local-degree-of-parallelism: [1]
+    dense-degree-exchange: [False]
+    compact-degree-exchange: [False]
+    global-synchronization: [True]
+    binary-rank-search: [True]
+    global-degree-of-parallelism: [3]
+    skip-local-neighborhood: [False]
+    primary-cost-function: [none]
+    intersection-method: [merge, binary-search]
+  - algorithm: [cetric]
+    local-parallel: True
+    global-parallel: True
+    local-degree-of-parallelism: [1]
+    dense-degree-exchange: [False]
+    compact-degree-exchange: [False]
+    global-synchronization: [True]
+    binary-rank-search: [True]
+    global-degree-of-parallelism: [3]
+    skip-local-neighborhood: [False]
+    primary-cost-function: [none]
+    intersection-method: [binary]
+    binary-intersection-cutoff: [500, 1000]
+  - algorithm: [cetric]
+    local-parallel: True
+    global-parallel: True
+    local-degree-of-parallelism: [1]
+    dense-degree-exchange: [False]
+    compact-degree-exchange: [False]
+    global-synchronization: [True]
+    binary-rank-search: [True]
+    global-degree-of-parallelism: [3]
+    skip-local-neighborhood: [False]
+    primary-cost-function: [none]
+    intersection-method: [hybrid]
+    hybrid-cutoff-scale: [1.0, 0.75, 0.5]
+

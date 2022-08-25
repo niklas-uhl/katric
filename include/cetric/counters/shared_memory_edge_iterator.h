@@ -1,13 +1,15 @@
 #pragma once
 
-#include <datastructures/graph_definitions.h>
+#include <algorithm>
+#include <iostream>
+
+#include <cyclic_range_adaptor.hpp>
 #include <tbb/blocked_range.h>
 #include <tbb/parallel_for.h>
 #include <tbb/partitioner.h>
-#include <algorithm>
-#include <cyclic_range_adaptor.hpp>
-#include <iostream>
-#include "datastructures/graph.h"
+
+#include "cetric/datastructures/graph.h"
+#include "cetric/datastructures/graph_definitions.h"
 
 namespace cetric::shared_memory {
 enum class Partition { one_dimensional, two_dimensional };
@@ -57,12 +59,12 @@ inline std::ostream& operator<<(std::ostream& os, Partitioner partitioner) {
 }
 
 struct Config {
-    Partition partition = Partition::two_dimensional;
+    Partition          partition           = Partition::two_dimensional;
     IntersectionMethod intersection_method = IntersectionMethod::merge;
-    Partitioner partitioner = Partitioner::auto_partitioner;
-    size_t grainsize = 1;
-    size_t num_threads = 0;
-    bool skip_previous_edges = false;
+    Partitioner        partitioner         = Partitioner::auto_partitioner;
+    size_t             grainsize           = 1;
+    size_t             num_threads         = 0;
+    bool               skip_previous_edges = false;
 };
 
 template <class Graph>
@@ -95,8 +97,11 @@ private:
                 run_dispatcher<partition, graph::intersection_policy::merge>(emit, conf, std::move(node_ordering));
                 break;
             case IntersectionMethod::binary_search:
-                run_dispatcher<partition, graph::intersection_policy::binary_search>(emit, conf,
-                                                                                     std::move(node_ordering));
+                run_dispatcher<partition, graph::intersection_policy::binary_search>(
+                    emit,
+                    conf,
+                    std::move(node_ordering)
+                );
                 break;
             case IntersectionMethod::hybrid:
                 run_dispatcher<partition, graph::intersection_policy::hybrid>(emit, conf, std::move(node_ordering));
@@ -108,29 +113,42 @@ private:
     void run_dispatcher(TriangleFunc emit, const Config& conf, NodeOrdering&& node_ordering) {
         switch (conf.partitioner) {
             case Partitioner::auto_partitioner:
-                run_dispatcher<partition, IntersectionPolicy, tbb::auto_partitioner>(emit, conf,
-                                                                                     std::move(node_ordering));
+                run_dispatcher<partition, IntersectionPolicy, tbb::auto_partitioner>(
+                    emit,
+                    conf,
+                    std::move(node_ordering)
+                );
                 break;
             case Partitioner::static_partitioner:
-                run_dispatcher<partition, IntersectionPolicy, tbb::static_partitioner>(emit, conf,
-                                                                                       std::move(node_ordering));
+                run_dispatcher<partition, IntersectionPolicy, tbb::static_partitioner>(
+                    emit,
+                    conf,
+                    std::move(node_ordering)
+                );
                 break;
             case Partitioner::affinity_partitioner:
-                run_dispatcher<partition, IntersectionPolicy, tbb::affinity_partitioner>(emit, conf,
-                                                                                         std::move(node_ordering));
+                run_dispatcher<partition, IntersectionPolicy, tbb::affinity_partitioner>(
+                    emit,
+                    conf,
+                    std::move(node_ordering)
+                );
                 break;
             case Partitioner::simple_partitioner:
-                run_dispatcher<partition, IntersectionPolicy, tbb::simple_partitioner>(emit, conf,
-                                                                                       std::move(node_ordering));
+                run_dispatcher<partition, IntersectionPolicy, tbb::simple_partitioner>(
+                    emit,
+                    conf,
+                    std::move(node_ordering)
+                );
                 break;
         }
     }
 
-    template <Partition partition,
-              typename IntersectionPolicy,
-              typename Partitioner,
-              typename TriangleFunc,
-              typename NodeOrdering>
+    template <
+        Partition partition,
+        typename IntersectionPolicy,
+        typename Partitioner,
+        typename TriangleFunc,
+        typename NodeOrdering>
     void run_dispatcher(TriangleFunc emit, const Config& conf, NodeOrdering&& node_ordering) {
         if (conf.skip_previous_edges) {
             run_dispatcher<partition, IntersectionPolicy, Partitioner, true>(emit, conf, std::move(node_ordering));
@@ -139,15 +157,16 @@ private:
         }
     }
 
-    template <Partition partition,
-              typename IntersectionPolicy,
-              typename Partitioner,
-              bool skip_previous_edges,
-              typename TriangleFunc,
-              typename NodeOrdering>
+    template <
+        Partition partition,
+        typename IntersectionPolicy,
+        typename Partitioner,
+        bool skip_previous_edges,
+        typename TriangleFunc,
+        typename NodeOrdering>
     void run_dispatcher(TriangleFunc emit, const Config& conf, NodeOrdering&& node_ordering) {
         using namespace cetric::graph;
-        auto node_range = G.local_nodes();
+        auto        node_range = G.local_nodes();
         Partitioner p;
 
         // nw::graph::cyclic_range_adaptor tbb_range(node_range.begin(), node_range.end(), conf.num_threads);
@@ -157,11 +176,11 @@ private:
             [emit, this, &conf, &p, node_ordering](auto r) {
                 (void)conf;
                 (void)p;
-                for (NodeId v : r) {
+                for (NodeId v: r) {
                     auto neighbors = G.out_neighbors(v);
                     if constexpr (partition == Partition::one_dimensional) {
                         for (auto current = neighbors.begin(); current != neighbors.end(); current++) {
-                            NodeId u = *current;
+                            NodeId                      u = *current;
                             decltype(neighbors.begin()) begin;
                             if constexpr (skip_previous_edges) {
                                 begin = current;
@@ -169,18 +188,22 @@ private:
                                 begin = G.out_neighbors(v).begin();
                             }
                             G.intersect_neighborhoods(
-                                begin, neighbors.end(), u,
+                                begin,
+                                neighbors.end(),
+                                u,
                                 [&](auto x) {
                                     emit(Triangle<>{u, v, x});
                                 },
-                                std::move(node_ordering), IntersectionPolicy{});
+                                std::move(node_ordering),
+                                IntersectionPolicy{}
+                            );
                         }
                     } else {
                         tbb::parallel_for(
                             tbb::blocked_range(neighbors.begin(), neighbors.end(), conf.grainsize),
                             [this, emit, v, node_ordering](auto r2) {
                                 for (auto current = r2.begin(); current != r2.end(); current++) {
-                                    NodeId u = *current;
+                                    NodeId                      u = *current;
                                     decltype(neighbors.begin()) begin;
                                     if constexpr (skip_previous_edges) {
                                         begin = current;
@@ -188,19 +211,25 @@ private:
                                         begin = G.out_neighbors(v).begin();
                                     }
                                     G.intersect_neighborhoods(
-                                        begin, G.out_neighbors(v).end(), u,
+                                        begin,
+                                        G.out_neighbors(v).end(),
+                                        u,
                                         [&](auto x) {
                                             emit(Triangle<>{u, v, x});
                                         },
-                                        std::move(node_ordering), IntersectionPolicy{});
+                                        std::move(node_ordering),
+                                        IntersectionPolicy{}
+                                    );
                                 }
                             },
-                            p);
+                            p
+                        );
                     }
                 }
             },
-            p);
+            p
+        );
     }
     const Graph& G;
 };
-}  // namespace cetric::shared_memory
+} // namespace cetric::shared_memory

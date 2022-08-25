@@ -1,4 +1,9 @@
-#include <datastructures/distributed/distributed_graph.h>
+#include <algorithm>
+#include <filesystem>
+#include <iterator>
+#include <numeric>
+#include <vector>
+
 #include <gmock/gmock-matchers.h>
 #include <graph-io/distributed_graph_io.h>
 #include <graph-io/graph_io.h>
@@ -6,17 +11,14 @@
 #include <graph-io/parsing.h>
 #include <gtest/gtest.h>
 #include <mpi.h>
-#include <algorithm>
-#include <filesystem>
-#include <iterator>
-#include <numeric>
-#include <vector>
-#include "datastructures/graph_definitions.h"
+
+#include "cetric/datastructures/distributed/distributed_graph.h"
+#include "cetric/datastructures/graph_definitions.h"
 
 TEST(DistributedGraphTest, loading_works) {
     using namespace graphio;
     std::vector<std::vector<Edge<>>> G_full;
-    auto input = "examples/hiv.metis";
+    auto                             input = "examples/hiv.metis";
     // auto input = GENERATE("examples/triangle.metis");
 
     // our metis parser should work sequentially, so we read the whole graph
@@ -27,7 +29,9 @@ TEST(DistributedGraphTest, loading_works) {
             G_full.resize(node_count);
             total_number_of_edges = edge_count;
         },
-        [](NodeId) {}, [&](Edge<> edge) { G_full[edge.tail].push_back(edge); });
+        [](NodeId) {},
+        [&](Edge<> edge) { G_full[edge.tail].push_back(edge); }
+    );
 
     // the MPI stuff
     int rank, size;
@@ -40,14 +44,19 @@ TEST(DistributedGraphTest, loading_works) {
     auto G_view = result.G;
     // SECTION( "view is correct" ) {
     std::vector<EdgeId> index;
-    std::exclusive_scan(G_view.node_info.begin(), G_view.node_info.end(), std::back_inserter(index), 0,
-                        [](EdgeId acc, const auto& node_info) {
-                            return acc + node_info.degree;
-                            ;
-                        });
+    std::exclusive_scan(
+        G_view.node_info.begin(),
+        G_view.node_info.end(),
+        std::back_inserter(index),
+        0,
+        [](EdgeId acc, const auto& node_info) {
+            return acc + node_info.degree;
+            ;
+        }
+    );
     for (size_t i = 0; i < G_view.node_info.size(); ++i) {
         std::vector<Edge<>> edges;
-        NodeId tail = G_view.node_info[i].global_id;
+        NodeId              tail = G_view.node_info[i].global_id;
         for (size_t edge_id = index[i]; edge_id < index[i] + G_view.node_info[i].degree; edge_id++) {
             NodeId head = G_view.edge_heads[edge_id];
             edges.emplace_back(tail, head);
@@ -57,8 +66,12 @@ TEST(DistributedGraphTest, loading_works) {
     // }
 
     // construct the "real" datastructure
-    cetric::graph::DistributedGraph G =
-        cetric::graph::DistributedGraph<>(std::move(result.G), {result.info.local_from, result.info.local_to}, rank, size);
+    cetric::graph::DistributedGraph G = cetric::graph::DistributedGraph<>(
+        std::move(result.G),
+        {result.info.local_from, result.info.local_to},
+        rank,
+        size
+    );
     // SECTION( "global and local ids are correct" ) {
     //     std::vector<NodeId> local_nodes;
     //     G.for_each_local_node([&](NodeId node) {
@@ -79,12 +92,12 @@ TEST(DistributedGraphTest, loading_works) {
     // }
     // SECTION( "all nodes are present" ) {
     std::vector<NodeId> nodes;
-    for (auto node : G.local_nodes()) {
+    for (auto node: G.local_nodes()) {
         nodes.emplace_back(node.id());
     }
 
     std::vector<int> counts(size);
-    int local_count = nodes.size();
+    int              local_count = nodes.size();
     MPI_Gather(&local_count, 1, MPI_INT, counts.data(), 1, MPI_INT, 0, MPI_COMM_WORLD);
     std::vector<int> displs;
     std::exclusive_scan(counts.begin(), counts.end(), std::back_inserter(displs), 0);
@@ -92,8 +105,17 @@ TEST(DistributedGraphTest, loading_works) {
     if (rank == 0) {
         all_nodes.resize(std::accumulate(counts.begin(), counts.end(), 0));
     }
-    MPI_Gatherv(nodes.data(), local_count, MPI_NODE, all_nodes.data(), counts.data(), displs.data(), MPI_NODE, 0,
-                MPI_COMM_WORLD);
+    MPI_Gatherv(
+        nodes.data(),
+        local_count,
+        MPI_NODE,
+        all_nodes.data(),
+        counts.data(),
+        displs.data(),
+        MPI_NODE,
+        0,
+        MPI_COMM_WORLD
+    );
     if (rank == 0) {
         auto expected_nodes = std::vector<NodeId>(G_full.size());
         std::iota(expected_nodes.begin(), expected_nodes.end(), 0);
@@ -101,16 +123,16 @@ TEST(DistributedGraphTest, loading_works) {
     }
     // }
     // SECTION( "node knows all edges" ) {
-    for (auto node : G.local_nodes()) {
+    for (auto node: G.local_nodes()) {
         std::vector<Edge<>> edges;
         EXPECT_EQ(G.degree(node), G_full[node.id()].size());
-        for (cetric::graph::RankEncodedNodeId head : G.adj(node).neighbors()) {
+        for (cetric::graph::RankEncodedNodeId head: G.adj(node).neighbors()) {
             edges.push_back(Edge<>{node.id(), head.id()});
         }
         EXPECT_EQ(G.degree(node), edges.size());
         EXPECT_THAT(edges, testing::UnorderedElementsAreArray(G_full[node.id()]));
         edges.clear();
-        for (auto edge : G.adj(node).edges()) {
+        for (auto edge: G.adj(node).edges()) {
             edges.push_back(Edge<>{edge.tail.id(), edge.head.id()});
         }
         EXPECT_EQ(G.degree(node), edges.size());
