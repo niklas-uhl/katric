@@ -169,7 +169,7 @@ public:
 
     size_t edge_tail_idx(EdgeId edge_id) const {
         auto it = std::upper_bound(G.first_out_.begin(), G.first_out_.end(), edge_id);
-        KASSERT(it != G.first_out_.end());
+        KASSERT(it != G.first_out_.end(), "Invalid edge id " << edge_id);
         auto idx = (it - G.first_out_.begin()) - 1;
         KASSERT(G.first_out_[idx] <= edge_id);
         KASSERT(edge_id < G.first_out_[idx + 1]);

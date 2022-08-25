@@ -9,9 +9,11 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <iterator>
 #include <limits>
 #include <memory>
+#include <numeric>
 #include <thread>
 #include <type_traits>
 
@@ -25,12 +27,15 @@
 #include <oneapi/tbb/parallel_for.h>
 #include <oneapi/tbb/partitioner.h>
 #include <oneapi/tbb/task_arena.h>
+#include <oneapi/tbb/task_group.h>
 #include <tbb/concurrent_vector.h>
 #include <tbb/enumerable_thread_specific.h>
 #include <tbb/parallel_for_each.h>
+#include <tbb/parallel_scan.h>
 #include <tbb/task_group.h>
 #include <tlx/meta/has_member.hpp>
 #include <tlx/meta/has_method.hpp>
+#include <tlx/thread_barrier_mutex.hpp>
 
 #include "cetric/atomic_debug.h"
 #include "cetric/concurrent_buffered_queue.h"
@@ -281,91 +286,234 @@ public:
         cetric::profiling::Timer phase_time;
         interface_nodes.clear();
 
-        tbb::task_arena            arena(conf_.num_threads, 0);
-        tbb::blocked_range<EdgeId> edge_ids(EdgeId{0}, G.local_edge_count(), conf_.grainsize);
-
         auto        edge_locator = G.build_edge_locator();
         auto const& node_indexer = G.node_indexer();
 
-        // tbb::concurrent_vector<tbb::concurrent_vector<RankEncodedEdge>> edges(G.local_node_count());
-        // for (auto node: G.local_nodes()) {
-        //     for (auto edge: G.out_adj(node).edges()) {
-        //         auto idx = node_indexer.get_index(node);
-        //         edges[idx].push_back(edge);
-        //     }
-        // }
+        if (conf_.edge_partitioning_static) {
+            std::vector<std::thread> threads(conf_.num_threads);
+            tlx::ThreadBarrierMutex  barrier(conf_.num_threads);
+            std::vector<size_t>      thread_local_cost(conf_.num_threads + 1);
+            size_t                   per_thread_cost;
+            auto                edges_per_thread = (G.local_edge_count() + conf_.num_threads - 1) / conf_.num_threads;
+            std::vector<EdgeId> first_edge(conf_.num_threads + 1);
+            for (size_t i = 0; i < conf_.num_threads; i++) {
+                threads[i] = std::thread([&, i = i] {
+                    EdgeId edge_begin = i * edges_per_thread;
+                    EdgeId edge_end   = std::min((i + 1) * edges_per_thread, G.local_edge_count());
+                    // std::cout << fmt::format("[t{}] procesing edges {} to {}\n", i, edge_begin, edge_end);
 
-        // tbb::concurrent_vector<tbb::concurrent_vector<RankEncodedEdge>> processed_edges(G.local_node_count());
+                    auto first_tail_idx  = edge_locator.edge_tail_idx(edge_begin);
+                    auto tail_idx        = first_tail_idx;
+                    auto tail            = node_indexer.get_node(tail_idx);
+                    auto tail_first_edge = edge_locator.template first_edge_id_for_idx<AdjacencyType::out>(tail_idx);
+                    auto tail_last_edge  = edge_locator.template last_edge_id_for_idx<AdjacencyType::out>(tail_idx);
 
-        auto body = [&](auto const& edge_id_range) {
-            auto tail_idx        = edge_locator.edge_tail_idx(edge_id_range.begin());
-            auto tail            = node_indexer.get_node(tail_idx);
-            auto tail_first_edge = edge_locator.template first_edge_id_for_idx<AdjacencyType::out>(tail_idx);
-            auto tail_last_edge  = edge_locator.template last_edge_id_for_idx<AdjacencyType::out>(tail_idx);
-            // atomic_debug(fmt::format(
-            //     "[t{}] processing edges {} to {}",
-            //     tbb::this_task_arena::current_thread_index(),
-            //     std::max(edge_id_range.begin(), tail_first_edge),
-            //     edge_id_range.end()
-            // ));
-            for (auto edge_id = std::max(edge_id_range.begin(), tail_first_edge); edge_id < edge_id_range.end();
-                 edge_id++) {
-                while (edge_id >= tail_last_edge) {
-                    tail_idx++;
-                    tail_first_edge = edge_locator.template first_edge_id_for_idx<AdjacencyType::out>(tail_idx);
-                    edge_id         = tail_first_edge;
-                    if (edge_id >= edge_id_range.end()) {
-                        goto finish;
+                    for (auto edge_id = edge_begin; edge_id < edge_end; edge_id++) {
+                        if (edge_id >= tail_last_edge) {
+                            tail_idx++;
+                            tail_first_edge = edge_locator.template first_edge_id_for_idx<AdjacencyType::out>(tail_idx);
+                            tail            = node_indexer.get_node(tail_idx);
+                            tail_last_edge  = edge_locator.template last_edge_id_for_idx<AdjacencyType::out>(tail_idx);
+                        }
+                        auto v    = tail;
+                        auto u    = edge_locator.get_edge_head(edge_id);
+                        auto cost = [&](RankEncodedNodeId const& v, RankEncodedNodeId const& u) -> size_t {
+                            if (edge_id < tail_first_edge) {
+                                return 0;
+                            }
+                            if (u.rank() != rank_) {
+                                return 1;
+                            }
+                            auto offset = edge_id - tail_first_edge;
+                            return 1 + G.outdegree(v) - offset + G.outdegree(u);
+                        };
+                        thread_local_cost[i] += cost(v, u);
                     }
-                    tail           = node_indexer.get_node(tail_idx);
-                    tail_last_edge = edge_locator.template last_edge_id_for_idx<AdjacencyType::out>(tail_idx);
-                }
-                KASSERT(tail_first_edge <= edge_id);
-                KASSERT(edge_id < tail_last_edge);
-                auto v = tail;
-                auto u = edge_locator.get_edge_head(edge_id);
-                // processed_edges[tail_idx].push_back(RankEncodedEdge{u, v});
-                if (u.rank() != rank_) {
-                    continue;
-                }
-                auto v_neighbors = G.out_adj(v).neighbors();
-                auto u_neighbors = G.out_adj(u).neighbors();
-                auto offset      = edge_id - tail_first_edge;
-                // atomic_debug(
-                //     fmt::format("[t{}] intersecting {} {}", tbb::this_task_arena::current_thread_index(), v,
-                //     u)
-                // );
-                cetric::intersection(
-                    v_neighbors.begin() + offset,
-                    v_neighbors.end(),
-                    u_neighbors.begin(),
-                    u_neighbors.end(),
-                    [&](RankEncodedNodeId w) {
-                        stats.local.local_triangles++;
-                        emit(Triangle<RankEncodedNodeId>{v, u, w});
-                    },
-                    node_ordering,
-                    conf_
-                );
-            }
-        finish:
-            return;
-        };
+                    barrier.wait([&] {
+                        // std::cout << fmt::format("thread local cost {}\n", thread_local_cost);
+                        std::exclusive_scan(
+                            thread_local_cost.begin(),
+                            thread_local_cost.end(),
+                            thread_local_cost.begin(),
+                            size_t{0}
+                        );
+                        auto total_cost = thread_local_cost.back();
+                        per_thread_cost = total_cost / conf_.num_threads;
+                        // std::cout << fmt::format("thread local cost {}\n", thread_local_cost);
+                        // std::cout << fmt::format("per thread cost {}\n", per_thread_cost);
+                    });
+                    if (i == 0) {
+                    }
+                    tail_idx        = first_tail_idx;
+                    tail            = node_indexer.get_node(tail_idx);
+                    tail_first_edge = edge_locator.template first_edge_id_for_idx<AdjacencyType::out>(tail_idx);
+                    tail_last_edge  = edge_locator.template last_edge_id_for_idx<AdjacencyType::out>(tail_idx);
 
-        switch (conf_.tbb_partitioner) {
-            case TBBPartitioner::stat:
-                arena.execute([&] { tbb::parallel_for(edge_ids, body, tbb::static_partitioner{}); });
-                break;
-            case TBBPartitioner::simple:
-                arena.execute([&] { tbb::parallel_for(edge_ids, body, tbb::simple_partitioner{}); });
-                break;
-            case TBBPartitioner::standard:
-                arena.execute([&] { tbb::parallel_for(edge_ids, body, tbb::auto_partitioner{}); });
-                break;
-            case TBBPartitioner::affinity:
-                tbb::affinity_partitioner partitioner;
-                arena.execute([&] { tbb::parallel_for(edge_ids, body, partitioner); });
-                break;
+                    size_t running_sum      = thread_local_cost[i];
+                    auto   running_sum_prev = running_sum;
+                    for (auto edge_id = edge_begin; edge_id < edge_end; edge_id++) {
+                        if (edge_id >= tail_last_edge) {
+                            tail_idx++;
+                            tail_first_edge = edge_locator.template first_edge_id_for_idx<AdjacencyType::out>(tail_idx);
+                            tail            = node_indexer.get_node(tail_idx);
+                            tail_last_edge  = edge_locator.template last_edge_id_for_idx<AdjacencyType::out>(tail_idx);
+                        }
+                        auto v    = tail;
+                        auto u    = edge_locator.get_edge_head(edge_id);
+                        auto cost = [&](RankEncodedNodeId const& v, RankEncodedNodeId const& u) -> size_t {
+                            if (edge_id < tail_first_edge) {
+                                return 0;
+                            }
+                            if (u.rank() != rank_) {
+                                return 1;
+                            }
+                            auto offset = edge_id - tail_first_edge;
+                            return 1 + G.outdegree(v) - offset + G.outdegree(u);
+                        };
+                        running_sum_prev = running_sum;
+                        running_sum += cost(v, u);
+                        if (running_sum_prev / per_thread_cost != running_sum / per_thread_cost) {
+                            // we found a splitter
+                            first_edge[running_sum / per_thread_cost] = edge_id;
+                        }
+                    }
+                    barrier.wait([&] {
+                        // std::cout << fmt::format("first edge {}\n", first_edge);
+                        first_edge[0]     = 0;
+                        first_edge.back() = G.local_edge_count();
+                        // std::cout << fmt::format("first edge {}\n", first_edge);
+                    });
+                    edge_begin = first_edge[i];
+                    edge_end   = first_edge[i + 1];
+                    // std::cout << fmt::format("[t{}] procesing edges {} to {}\n", i, edge_begin, edge_end);
+                    tail_idx        = edge_locator.edge_tail_idx(edge_begin);
+                    tail            = node_indexer.get_node(tail_idx);
+                    tail_first_edge = edge_locator.template first_edge_id_for_idx<AdjacencyType::out>(tail_idx);
+                    tail_last_edge  = edge_locator.template last_edge_id_for_idx<AdjacencyType::out>(tail_idx);
+                    // atomic_debug(fmt::format(
+                    //     "[t{}] processing edges {} to {}",
+                    //     tbb::this_task_arena::current_thread_index(),
+                    //     std::max(edge_id_range.begin(), tail_first_edge),
+                    //     edge_id_range.end()
+                    // ));
+                    for (auto edge_id = std::max(edge_begin, tail_first_edge); edge_id < edge_end; edge_id++) {
+                        while (edge_id >= tail_last_edge) {
+                            tail_idx++;
+                            tail_first_edge = edge_locator.template first_edge_id_for_idx<AdjacencyType::out>(tail_idx);
+                            edge_id         = tail_first_edge;
+                            if (edge_id >= edge_end) {
+                                goto finish;
+                            }
+                            tail           = node_indexer.get_node(tail_idx);
+                            tail_last_edge = edge_locator.template last_edge_id_for_idx<AdjacencyType::out>(tail_idx);
+                        }
+                        KASSERT(tail_first_edge <= edge_id);
+                        KASSERT(edge_id < tail_last_edge);
+                        auto v = tail;
+                        auto u = edge_locator.get_edge_head(edge_id);
+                        // processed_edges[tail_idx].push_back(RankEncodedEdge{u, v});
+                        if (u.rank() != rank_) {
+                            continue;
+                        }
+                        auto v_neighbors = G.out_adj(v).neighbors();
+                        auto u_neighbors = G.out_adj(u).neighbors();
+                        auto offset      = edge_id - tail_first_edge;
+                        // atomic_debug(
+                        //     fmt::format("[t{}] intersecting {} {}",
+                        //     tbb::this_task_arena::current_thread_index(), v, u)
+                        // );
+                        cetric::intersection(
+                            v_neighbors.begin() + offset,
+                            v_neighbors.end(),
+                            u_neighbors.begin(),
+                            u_neighbors.end(),
+                            [&](RankEncodedNodeId w) {
+                                stats.local.local_triangles++;
+                                emit(Triangle<RankEncodedNodeId>{v, u, w});
+                            },
+                            node_ordering,
+                            conf_
+                        );
+                    }
+                finish:
+                    return;
+                });
+            }
+            std::for_each(threads.begin(), threads.end(), [](auto& t) { t.join(); });
+        } else {
+            tbb::task_arena            arena(conf_.num_threads, 0);
+            tbb::blocked_range<EdgeId> edge_ids(EdgeId{0}, G.local_edge_count(), conf_.grainsize);
+
+            auto body = [&](auto const& edge_id_range) {
+                auto tail_idx        = edge_locator.edge_tail_idx(edge_id_range.begin());
+                auto tail            = node_indexer.get_node(tail_idx);
+                auto tail_first_edge = edge_locator.template first_edge_id_for_idx<AdjacencyType::out>(tail_idx);
+                auto tail_last_edge  = edge_locator.template last_edge_id_for_idx<AdjacencyType::out>(tail_idx);
+                // atomic_debug(fmt::format(
+                //     "[t{}] processing edges {} to {}",
+                //     tbb::this_task_arena::current_thread_index(),
+                //     std::max(edge_id_range.begin(), tail_first_edge),
+                //     edge_id_range.end()
+                // ));
+                for (auto edge_id = std::max(edge_id_range.begin(), tail_first_edge); edge_id < edge_id_range.end();
+                     edge_id++) {
+                    while (edge_id >= tail_last_edge) {
+                        tail_idx++;
+                        tail_first_edge = edge_locator.template first_edge_id_for_idx<AdjacencyType::out>(tail_idx);
+                        edge_id         = tail_first_edge;
+                        if (edge_id >= edge_id_range.end()) {
+                            goto finish;
+                        }
+                        tail           = node_indexer.get_node(tail_idx);
+                        tail_last_edge = edge_locator.template last_edge_id_for_idx<AdjacencyType::out>(tail_idx);
+                    }
+                    KASSERT(tail_first_edge <= edge_id);
+                    KASSERT(edge_id < tail_last_edge);
+                    auto v = tail;
+                    auto u = edge_locator.get_edge_head(edge_id);
+                    // processed_edges[tail_idx].push_back(RankEncodedEdge{u, v});
+                    if (u.rank() != rank_) {
+                        continue;
+                    }
+                    auto v_neighbors = G.out_adj(v).neighbors();
+                    auto u_neighbors = G.out_adj(u).neighbors();
+                    auto offset      = edge_id - tail_first_edge;
+                    // atomic_debug(
+                    //     fmt::format("[t{}] intersecting {} {}",
+                    //     tbb::this_task_arena::current_thread_index(), v, u)
+                    // );
+                    cetric::intersection(
+                        v_neighbors.begin() + offset,
+                        v_neighbors.end(),
+                        u_neighbors.begin(),
+                        u_neighbors.end(),
+                        [&](RankEncodedNodeId w) {
+                            stats.local.local_triangles++;
+                            emit(Triangle<RankEncodedNodeId>{v, u, w});
+                        },
+                        node_ordering,
+                        conf_
+                    );
+                }
+            finish:
+                return;
+            };
+
+            switch (conf_.tbb_partitioner) {
+                case TBBPartitioner::stat:
+                    arena.execute([&] { tbb::parallel_for(edge_ids, body, tbb::static_partitioner{}); });
+                    break;
+                case TBBPartitioner::simple:
+                    arena.execute([&] { tbb::parallel_for(edge_ids, body, tbb::simple_partitioner{}); });
+                    break;
+                case TBBPartitioner::standard:
+                    arena.execute([&] { tbb::parallel_for(edge_ids, body, tbb::auto_partitioner{}); });
+                    break;
+                case TBBPartitioner::affinity:
+                    tbb::affinity_partitioner partitioner;
+                    arena.execute([&] { tbb::parallel_for(edge_ids, body, partitioner); });
+                    break;
+            }
         }
         // for (size_t i = 0; i < edges.size(); ++i) {
         //     KASSERT(edges[i].size() == processed_edges[i].size(), "Failed for " << i);
@@ -506,7 +654,7 @@ public:
                 break;
             }
             case ParallelizationMethod::omp_for: {
-// clang-format off
+                // clang-format off
                 #pragma omp parallel for schedule(runtime)
                 // clang-format on
                 for (auto v: nodes) {

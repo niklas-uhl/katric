@@ -127,6 +127,7 @@ struct Config {
     bool                  global_parallel                   = false;
     ParallelizationMethod parallelization_method            = ParallelizationMethod::tbb;
     bool                  edge_partitioning                 = false;
+    bool                  edge_partitioning_static           = false;
     TBBPartitioner        tbb_partitioner                   = TBBPartitioner::standard;
     OMPSchedule           omp_schedule                      = OMPSchedule::standard;
     size_t                omp_chunksize                     = 0;
@@ -180,6 +181,7 @@ struct Config {
             CEREAL_NVP(local_parallel),
             CEREAL_NVP(parallelization_method),
             CEREAL_NVP(edge_partitioning),
+            CEREAL_NVP(edge_partitioning_static),
             CEREAL_NVP(tbb_partitioner),
             CEREAL_NVP(omp_schedule),
             CEREAL_NVP(omp_chunksize),

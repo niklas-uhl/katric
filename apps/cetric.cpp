@@ -105,6 +105,7 @@ cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::P
     app.add_option("--parallelization-method", conf.parallelization_method)
         ->transform(CLI::CheckedTransformer(enum_name_to_value_map<cetric::ParallelizationMethod>(), CLI::ignore_case));
     app.add_flag("--edge-partitioning", conf.edge_partitioning);
+    app.add_flag("--edge-partitioning-static", conf.edge_partitioning_static);
     app.add_option("--omp-schedule", conf.omp_schedule)
         ->transform(CLI::CheckedTransformer(enum_name_to_value_map<cetric::OMPSchedule>(), CLI::ignore_case));
     app.add_option("--omp-chunksize", conf.omp_chunksize);

@@ -535,7 +535,7 @@ public:
         for (size_t i = 0; i < first_out_.size() - 1; ++i) {
             new_first_out[permutation[i]] = degree_[i];
         }
-        std::exclusive_scan(new_first_out.begin(), new_first_out.end(), new_first_out.begin(), 0);
+        std::exclusive_scan(new_first_out.begin(), new_first_out.end(), new_first_out.begin(), EdgeId{0});
         new_first_out[new_first_out.size() - 1] = head_.size();
         std::vector<NodeId> new_head(head_.size());
         for (size_t i = 0; i < first_out_.size() - 1; ++i) {
