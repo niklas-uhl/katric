@@ -2,7 +2,7 @@ name: weak-scaling-example
 ncores: [4, 8, 16]
 threads_per_rank: [1, 2, 4]
 graphs:
-  - generator: rgg
+  - generator: rgg_2d
     n: 10
     m: 14
     scale_weak: True

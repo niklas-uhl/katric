@@ -2,7 +2,7 @@ name: weak-scaling-edge-partitioned
 ncores: [128, 256, 512, 1024, 2048, 4096, 8192]
 threads_per_rank: [1, 2, 4, 8]
 graphs:
-  - generator: rgg
+  - generator: rgg_2d
     n: 18
     m: 22
     scale_weak: True

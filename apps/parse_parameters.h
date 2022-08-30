@@ -54,7 +54,7 @@ inline void parse_gen_parameters(CLI::App& app, cetric::Config& conf) {
     app.add_option("--seed", conf.gen.seed);
     app.add_option("--gen", conf.gen.generator)
         ->transform(
-            CLI::IsMember({"gnm_undirected", "rdg_2d", "rdg_3d", "rgg_2d", "rgg_3d", "rhg", "ba", "grid_2d", "rmat"})
+            CLI::IsMember({"gnm", "rdg_2d", "rdg_3d", "rgg_2d", "rgg_3d", "rhg", "ba", "grid_2d", "rmat"})
         );
     app.add_option("--gen_n", conf.gen.n);
     app.add_option("--gen_m", conf.gen.m);

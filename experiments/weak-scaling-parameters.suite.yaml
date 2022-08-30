@@ -2,7 +2,7 @@ name: weak-scaling-parameters
 ncores: [128, 256, 512, 1024, 2048, 4096]
 threads_per_rank: [4]
 graphs:
-  - generator: rgg
+  - generator: rgg_2d
     n: 20
     m: 24
     scale_weak: True

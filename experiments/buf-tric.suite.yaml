@@ -15,7 +15,7 @@ graphs:
     time_limit: 3
   - name: live-journal
     time_limit: 5
-  - generator: rgg
+  - generator: rgg_2d
     n: 20
     m: 24
     scale_weak: True

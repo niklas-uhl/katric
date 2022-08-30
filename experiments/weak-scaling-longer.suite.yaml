@@ -2,7 +2,7 @@ name: weak-scaling-longer
 ncores: [512, 1024, 2048, 4096, 8192, 16384]
 threads_per_rank: [1, 2, 4, 8]
 graphs:
-  - generator: rgg
+  - generator: rgg_2d
     n: 20
     m: 24
     scale_weak: True

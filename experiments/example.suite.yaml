@@ -6,10 +6,10 @@ graphs:
   #- metis-sample
   - name: com-amazon
     partitioned: True
-  #- generator: rgg
+  #- generator: rgg_2d
   #  n: 12
   #  radius: 0.55
-  #- generator: rgg
+  #- generator: rgg_2d
   #  n: 10
   #  radius: 0.55
   #- generator: rhg

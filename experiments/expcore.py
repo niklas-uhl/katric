@@ -59,7 +59,8 @@ class GenInputGraph(InputGraph):
     parameter_list = {
         "rhg": ["m", "gamma"],
         "gnm": ["m"],
-        "rgg": ["m"],
+        "rgg_2d": ["m"],
+        "rgg_3d": ["m"],
         "rmat": ["m"],
         "rdg_2d": [],
         "rdg_3d": [],
@@ -81,18 +82,7 @@ class GenInputGraph(InputGraph):
     def args(self, mpi_ranks, threads_per_rank):
         p = mpi_ranks * threads_per_rank
         arg_list = ["--gen"]
-        if self.generator == 'rgg':
-            arg_list.append('rgg_2d')
-        elif self.generator == 'rhg':
-            arg_list.append('rhg')
-        elif self.generator == 'rdg_2d':
-            arg_list.append('rdg_2d')
-        elif self.generator == 'rdg_3d':
-            arg_list.append('rdg_3d')
-        elif self.generator == 'gnm':
-            arg_list.append('gnm_undirected')
-        elif self.generator == 'rmat':
-            arg_list.append('rmat')
+        arg_list.append(self.generator);
         arg_list.append("--gen_n")
         if self.scale_weak:
             if not math.log2(p).is_integer():
@@ -105,7 +95,7 @@ class GenInputGraph(InputGraph):
             arg_list.append(str(scaled_n))
         else:
             arg_list.append(str(self.params["n"]))
-        if self.generator == 'rgg':
+        if self.generator == 'rgg_2d':
             arg_list.append("--gen_m")
             arg_list.append(str(scaled_m))
         elif self.generator == 'rhg':
@@ -247,7 +237,9 @@ def load_suite_from_yaml(path):
     with open(path, "r") as file:
         data = yaml.safe_load(file)
     configs = []
-    if type(data["config"]) == list:
+    if "config" not in data:
+        configs = [dict()]
+    elif type(data["config"]) == list:
         for config in data["config"]:
             configs = configs + explode(config)
     else:

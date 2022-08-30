@@ -2,15 +2,15 @@ name: weak-scaling-smaller
 ncores: [128, 256, 512, 1024, 2048, 4096, 8192, 16384]
 threads_per_rank: [1, 2, 4, 8]
 graphs:
-  - generator: rgg
+  - generator: rgg_2d
     n: 14
     m: 18
     scale_weak: True
-  - generator: rgg
+  - generator: rgg_2d
     n: 16
     m: 20
     scale_weak: True
-  - generator: rgg
+  - generator: rgg_2d
     n: 18
     m: 22
     scale_weak: True
