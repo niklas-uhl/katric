@@ -1,0 +1,32 @@
+name: havoqgt
+type: havoqgt
+executable: ../../havoqgt/build/src/run_new_triangle_count
+ncores: [256, 512, 1024, 2048, 4096, 8192]
+graphs:
+  - name: europe
+    time_limit: 3
+  - name: webbase-2001
+    time_limit: 10
+  - name: uk-2007-05
+    time_limit: 15
+  - name: twitter
+    time_limit: 10
+  - name: usa
+    time_limit: 3
+  - name: live-journal
+    time_limit: 5
+  - generator: rgg_2d
+    n: 20
+    m: 24
+    scale_weak: True
+  - generator: rhg
+    n: 20
+    m: 24
+    gamma: 3.0
+    scale_weak: True
+  - generator: rhg
+    n: 20
+    m: 24
+    gamma: 2.9
+    scale_weak: True
+time_limit: 10
