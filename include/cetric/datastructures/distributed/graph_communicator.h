@@ -79,6 +79,7 @@ public:
                 for (auto neighbor: G.adj(node).neighbors()) {
                     if (neighbor.rank() != rank_) {
                         PEID rank = neighbor.rank();
+                        KASSERT(rank < size_);
                         if (neighboring_PEs.find(rank) == neighboring_PEs.end()) {
                             // atomic_debug(fmt::format("Sending degree of {} to rank {}", node, rank));
                             send_buffers[rank].emplace_back(node);

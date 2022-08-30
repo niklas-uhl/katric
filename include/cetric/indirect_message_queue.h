@@ -157,7 +157,7 @@ class DirectMessageQueueAdaptor {
 public:
     using value_type = typename QueueType::value_type;
     DirectMessageQueueAdaptor(QueueType& queue) : queue_(queue){};
-    void post_message(std::vector<value_type>&& message, PEID receiver, bool direct_send = false) {
+    void post_message(std::vector<value_type>&& message, PEID receiver, bool direct_send [[maybe_unused]] = false) {
         queue_.post_message(std::move(message), receiver);
     }
 

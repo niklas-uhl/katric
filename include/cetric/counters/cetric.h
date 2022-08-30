@@ -434,15 +434,15 @@ run_cetric(DistributedGraph<>& G, cetric::profiling::Statistics& stats, const Co
         auto G_global_phase = DistributedGraph<SparseNodeIndexer>(std::move(tmp), std::move(node_range), rank, size);
         if (conf.num_threads > 1) {
             if (conf.binary_rank_search) {
-                G.find_ghost_ranks<true>(execution_policy::parallel{});
+                G_global_phase.find_ghost_ranks<true>(execution_policy::parallel{});
             } else {
-                G.find_ghost_ranks<false>(execution_policy::parallel{});
+                G_global_phase.find_ghost_ranks<false>(execution_policy::parallel{});
             }
         } else {
             if (conf.binary_rank_search) {
-                G.find_ghost_ranks<true>(execution_policy::sequential{});
+                G_global_phase.find_ghost_ranks<true>(execution_policy::sequential{});
             } else {
-                G.find_ghost_ranks<false>(execution_policy::sequential{});
+                G_global_phase.find_ghost_ranks<false>(execution_policy::sequential{});
             }
         }
         LOG << "[R" << rank << "] "
