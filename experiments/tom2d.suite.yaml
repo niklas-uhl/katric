@@ -1,7 +1,7 @@
 name: tom2d
 type: tom2d
 executable: ../../2DTriangleCounting/build/mpitc
-ncores: [256, 512, 1024, 2048, 4096, 8192]
+ncores: [64, 256, 1024, 4096, 16384] #only works with square numbers
 graphs:
   - name: europe
     time_limit: 3
