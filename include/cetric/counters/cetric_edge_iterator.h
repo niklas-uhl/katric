@@ -258,6 +258,8 @@ public:
                 auto v_neighbors = G.out_adj(v).neighbors();
                 auto u_neighbors = G.out_adj(u).neighbors();
                 auto offset      = (conf_.algorithm == Algorithm::Cetric) * neighbor_index;
+                // for each edge (v, u) we check the open wedge (v, u, w) for w in N(u)+
+                stats.local.wedge_checks += u_neighbors.end() - u_neighbors.begin();
                 cetric::intersection(
                     v_neighbors.begin() + offset,
                     v_neighbors.end(),
@@ -342,8 +344,6 @@ public:
                         // std::cout << fmt::format("thread local cost {}\n", thread_local_cost);
                         // std::cout << fmt::format("per thread cost {}\n", per_thread_cost);
                     });
-                    if (i == 0) {
-                    }
                     tail_idx        = first_tail_idx;
                     tail            = node_indexer.get_node(tail_idx);
                     tail_first_edge = edge_locator.template first_edge_id_for_idx<AdjacencyType::out>(tail_idx);
@@ -422,6 +422,9 @@ public:
                         //     fmt::format("[t{}] intersecting {} {}",
                         //     tbb::this_task_arena::current_thread_index(), v, u)
                         // );
+                        // for each edge (v, u) we check the open wedge (v, u,
+                        // w) for w in N(u)+
+                        stats.local.wedge_checks += u_neighbors.end() - u_neighbors.begin();
                         cetric::intersection(
                             v_neighbors.begin() + offset,
                             v_neighbors.end(),
@@ -482,6 +485,9 @@ public:
                     //     fmt::format("[t{}] intersecting {} {}",
                     //     tbb::this_task_arena::current_thread_index(), v, u)
                     // );
+                    // for each edge (v, u) we check the open wedge (v, u, w)
+                    // for w in N(u)+
+                    stats.local.wedge_checks += u_neighbors.end() - u_neighbors.begin();
                     cetric::intersection(
                         v_neighbors.begin() + offset,
                         v_neighbors.end(),
@@ -579,6 +585,9 @@ public:
                     auto v_neighbors = G.out_adj(v).neighbors();
                     auto u_neighbors = G.out_adj(u).neighbors();
                     auto offset      = (conf_.algorithm == Algorithm::Cetric) * neighbor_index;
+                    // for each edge (v, u) we check the open wedge (v, u, w)
+                    // for w in N(u)+
+                    stats.local.wedge_checks += u_neighbors.end() - u_neighbors.begin();
                     cetric::intersection(
                         v_neighbors.begin() + offset,
                         v_neighbors.end(),
@@ -654,7 +663,7 @@ public:
                 break;
             }
             case ParallelizationMethod::omp_for: {
-// clang-format off
+                // clang-format off
                 #pragma omp parallel for schedule(runtime)
                 // clang-format on
                 for (auto v: nodes) {
@@ -1099,13 +1108,14 @@ private:
 
     template <typename IntersectFunc, typename NodeBufferIter, typename NodeOrdering, typename GhostSet>
     void intersect_from_message(
-        RankEncodedNodeId u,
-        RankEncodedNodeId v,
-        NodeBufferIter    begin,
-        NodeBufferIter    end,
-        IntersectFunc     on_intersection,
-        NodeOrdering&&    node_ordering,
-        GhostSet const&   ghosts
+        RankEncodedNodeId              u,
+        RankEncodedNodeId              v,
+        NodeBufferIter                 begin,
+        NodeBufferIter                 end,
+        IntersectFunc                  on_intersection,
+        cetric::profiling::Statistics& stats,
+        NodeOrdering&&                 node_ordering,
+        GhostSet const&                ghosts
     ) {
         // if (conf_.flag_intersection) {
         //     G.for_each_local_out_edge(u_local, [&](RankEncodedEdge uw) {
@@ -1125,7 +1135,10 @@ private:
                 filtered_neighbors_it.begin(),
                 filtered_neighbors_it.end()
             );
-            // atomic_debug(fmt::format("intersecting {} and {}", u_neighbors, filtered_neighbors));
+            // atomic_debug(fmt::format("intersecting {} and {}", u_neighbors,
+            // filtered_neighbors)); for each edge (v, u) we check the open wedge
+            // (v, u, w) for w in N(u)+
+            stats.local.wedge_checks += u_neighbors.end() - u_neighbors.begin();
             cetric::intersection(
                 u_neighbors.begin(),
                 u_neighbors.end(),
@@ -1136,6 +1149,9 @@ private:
                 conf_
             );
         } else {
+            // for each edge (v, u) we check the open wedge (v, u, w) for w in
+            // N(u)+
+            stats.local.wedge_checks += u_neighbors.end() - u_neighbors.begin();
             cetric::intersection(
                 u_neighbors.begin(),
                 u_neighbors.end(),
@@ -1148,6 +1164,9 @@ private:
         }
         if (conf_.skip_local_neighborhood && conf_.algorithm == Algorithm::Patric) {
             auto v_neighbors = G.out_adj(v).neighbors();
+            // for each edge (v, u) we check the open wedge (v, u, w) for w in
+            // N(u)+
+            stats.local.wedge_checks += u_neighbors.end() - u_neighbors.begin();
             cetric::intersection(
                 u_neighbors.begin(),
                 u_neighbors.end(),
@@ -1222,6 +1241,7 @@ private:
                     emit(Triangle<RankEncodedNodeId>{v, u, local_intersection});
                     stats.local.type3_triangles++;
                 },
+                stats,
                 node_ordering,
                 ghosts
             );

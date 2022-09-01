@@ -41,7 +41,7 @@ public:
           split(split),
           num_worker_threads_(num_threads - 1) {}
 
-    void post_message(std::vector<T>&& message, PEID receiver, int tag = 0) {
+    void post_message(std::vector<T>&& message, message_queue::PEID receiver, int tag = 0) {
         num_writing_threads_++;
         {
             if (buffer_ocupacy_ >= threshold_) {
