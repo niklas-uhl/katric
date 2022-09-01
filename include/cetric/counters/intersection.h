@@ -20,6 +20,11 @@ void intersection(
     Compare          comp,
     Config const&    conf
 ) {
+    KASSERT(std::adjacent_find(first1, last1) == last1);
+    KASSERT(std::is_sorted(first1, last1, comp));
+    KASSERT(std::adjacent_find(first2, last2) == last2);
+    KASSERT(std::is_sorted(first2, last2, comp));
+
     switch (conf.intersection_method) {
         case IntersectionMethod::merge:
             merge_intersection(first1, last1, first2, last2, on_intersection, comp);
@@ -37,11 +42,9 @@ void intersection(
                 std::swap(dist1, dist2);
             }
             if (dist1 * log2(dist2) < conf.hybrid_cutoff_scale * (dist1 + dist2)) {
-              binary_search_intersection(first1, last1, first2, last2,
-                                         on_intersection, comp);
+                binary_search_intersection(first1, last1, first2, last2, on_intersection, comp);
             } else {
-              merge_intersection(first1, last1, first2, last2, on_intersection,
-                                 comp);
+                merge_intersection(first1, last1, first2, last2, on_intersection, comp);
             }
             break;
     }

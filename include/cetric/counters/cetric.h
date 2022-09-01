@@ -502,7 +502,8 @@ run_cetric(DistributedGraph<>& G, cetric::profiling::Statistics& stats, const Co
                 triangle_count_global_phase.local()++;
             },
             stats,
-            node_ordering::id_outward(rank)
+            node_ordering::id() // even though the neighborhoods are sorted using id_outward, after removing the
+                                // internal edges, this is the same as id
         );
         // atomic_debug(
         // fmt::format("Found {} triangles in global phase 2", triangle_count_global_phase.combine(std::plus<>{})));
@@ -529,7 +530,9 @@ run_cetric(DistributedGraph<>& G, cetric::profiling::Statistics& stats, const Co
             stats,
             G_compact.local_nodes().begin(),
             G_compact.local_nodes().end(),
-            node_ordering::id_outward(rank)
+            node_ordering::id() // even though the neighborhoods are sorted
+                                // using id_outward, after removing the
+                                // internal edges, this is the same as id
         );
         // }
     }
