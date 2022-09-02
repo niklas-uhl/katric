@@ -48,7 +48,7 @@ config:
   global-parallel: False
   dense-degree-exchange: False
   skip-local-neighborhood: False
-  global-synchronziation: True
+  global-synchronization: True
   communication-policy: [new, grid]
   primary-cost-function: none
   intersection-method: [merge]

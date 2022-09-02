@@ -4,15 +4,17 @@ import subprocess
 import logging
 import os, re
 from pathlib import Path
+from xml.sax.handler import property_declaration_handler
 import yaml
 import sys
 import math
 import slugify
+import copy
 
 
 class InputGraph:
     def __init__(self, name, triangles=None):
-        self.name = name
+        self._name = name
         self.triangles = triangles
 
     def args(self, mpi_rank, threads_per_rank):
@@ -21,7 +23,7 @@ class InputGraph:
 
 class FileInputGraph(InputGraph):
     def __init__(self, name, path, format='metis', triangles=None):
-        self.name = slugify.slugify(name)
+        self._name = slugify.slugify(name)
         self.path = path
         self.format = format
         self.triangles = triangles
@@ -40,12 +42,16 @@ class FileInputGraph(InputGraph):
 
     def add_partitions(self, partitions):
         self.partitions.update(partitions)
+
     @property
     def name(self):
         if self.partitioned:
-            return self.name + _partitioned
+            return self._name + "_partitioned"
         else:
-            return self.name
+            return self._name
+    @name.setter
+    def name(self, value):
+        self._name = value
 
     def exists(self):
         if self.format == "metis":
@@ -57,7 +63,7 @@ class FileInputGraph(InputGraph):
             return first_out.exists() and head.exists()
 
     def __repr__(self):
-        return f"FileInputGraph({self.name, self.triangles, self.path, self.format})"
+        return f"FileInputGraph({self.name, self.triangles, self.path, self.format, self.partitioned, self.partitions, self.triangles})"
 
 
 class GenInputGraph(InputGraph):
@@ -182,7 +188,7 @@ def load_inputs_from_yaml(yaml_path):
                 if not key[0] in partitions:
                     partitions[key[0]] = {}
                 partitions[key[0]][key[1]] = os.path.join(root, file)
-    print(partitions)
+    #print(partitions)
     return (inputs, partitions)
 
 
@@ -226,14 +232,18 @@ class ExperimentSuite:
             else:
                 inputs_new.append(graph)
                 continue
-            input = input_dict.get(graph["name"])
+            input = copy.copy(input_dict.get(graph["name"]))
+            if not input:
+                logging.warn(f"Could not load input for {graph_name}")
+                continue
             if graph["partitioned"]:
                 input.add_partitions(partitions.get(graph["name"], {}))
                 input.partitioned = graph["partitioned"]
-            if not input:
-                logging.warn(f"Could not load input for {graph_name}")
+            print(input)
             inputs_new.append(input)
+            
         self.inputs = inputs_new
+        print(self.inputs)
 
     def __repr__(self):
         return f"ExperimentSuite({self.name}, {self.cores}, {self.inputs}, {self.configs}, {self.time_limit}, {self.input_time_limit})"

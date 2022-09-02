@@ -73,7 +73,7 @@ def main():
     parser.add_argument('--test', action='store_true')
 
     args = parser.parse_args()
-    print(args.search_dirs)
+    # print(args.search_dirs)
     suites = load_suites(args.suite_files, args.search_dirs)
     inputs, partitions = load_inputs(args.input_descriptions + default_inputs)
     for suitename in args.suite:

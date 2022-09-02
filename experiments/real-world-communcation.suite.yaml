@@ -29,7 +29,7 @@ config:
   global-degree-of-parallelism: [1, 2]
   dense-degree-exchange: False
   skip-local-neighborhood: False
-  global-synchronziation: True
+  global-synchronization: True
   communication-policy: [new, grid]
   primary-cost-function: ["none", "IDPD"]
   intersection-method: [merge]
