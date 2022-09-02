@@ -1,0 +1,36 @@
+name: real-world
+ncores: [64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384]
+threads_per_rank: [1, 2, 4]
+graphs:
+    - name: webbase-2001
+      time_limit: 10
+    - name: europe
+      time_limit: 3
+    - name: usa
+      time_limit: 3
+    - name: uk-2007-05
+      time_limit: 10
+    - name: live-journal
+      time_limit: 5
+    - name: twitter
+      time_limit: 10
+    - name: friendster
+      time_limit: 10
+config: 
+  algorithm: [cetric]
+  pseudo2core: [True, False]
+  binary-rank-search: True
+  threshold: local-edges
+  local-parallel: True
+  edge-partitioning: True
+  edge-partitioning-static: False
+  global-parallel: True
+  local-degree-of-parallelism: [2]
+  global-degree-of-parallelism: [2]
+  dense-degree-exchange: False
+  skip-local-neighborhood: False
+  global-synchronziation: True
+  communication-policy: [new, grid]
+  primary-cost-function: ["none", "IDPD"]
+  intersection-method: [merge, binary]
+  read-edge-partitioned: [True, False]
