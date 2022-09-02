@@ -1,4 +1,4 @@
-name: real-world
+name: real-world-communication
 ncores: [64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384]
 threads_per_rank: [1, 2, 4]
 graphs:
@@ -18,7 +18,7 @@ graphs:
       time_limit: 10
 config: 
   algorithm: [cetric]
-  pseudo2core: [True, False]
+  pseudo2core: [True]
   binary-rank-search: True
   threshold: local-edges
   local-parallel: True
@@ -26,11 +26,11 @@ config:
   edge-partitioning-static: False
   global-parallel: True
   local-degree-of-parallelism: [2]
-  global-degree-of-parallelism: [2]
+  global-degree-of-parallelism: [1, 2]
   dense-degree-exchange: False
   skip-local-neighborhood: False
   global-synchronziation: True
   communication-policy: [new, grid]
   primary-cost-function: ["none", "IDPD"]
-  intersection-method: [merge, binary]
+  intersection-method: [merge]
   read-edge-partitioned: [True, False]
