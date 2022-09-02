@@ -146,9 +146,7 @@ run_patric(DistributedGraph<>& G, cetric::profiling::Statistics& stats, const Co
     node_set ghosts;
     ConditionalBarrier(true);
     phase_timer.start("primary_load_balancing");
-    bool no_load_balancing_required = (conf.partitioned_input && conf.primary_cost_function == "none")
-                                      or (conf.gen.generator.empty() && conf.primary_cost_function == "N")
-                                      or (!conf.gen.generator.empty() && conf.primary_cost_function == "none");
+    bool no_load_balancing_required = (conf.primary_cost_function == "none");
     if (!no_load_balancing_required) {
         auto cost_function = [&]() {
             if (conf.num_threads > 1) {
@@ -299,9 +297,7 @@ run_cetric(DistributedGraph<>& G, cetric::profiling::Statistics& stats, const Co
     node_set ghosts;
     ConditionalBarrier(true);
     phase_timer.start("primary_load_balancing");
-    bool no_load_balancing_required = (conf.partitioned_input && conf.primary_cost_function == "none")
-                                      or (conf.gen.generator.empty() && conf.primary_cost_function == "N")
-                                      or (!conf.gen.generator.empty() && conf.primary_cost_function == "none");
+    bool no_load_balancing_required = (conf.primary_cost_function == "none");
     if (!no_load_balancing_required) {
         auto cost_function = [&]() {
             if (conf.num_threads > 1) {

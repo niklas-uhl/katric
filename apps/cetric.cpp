@@ -70,6 +70,7 @@ cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::P
 
     app.add_option("--cache-input", conf.cache_input)
         ->transform(CLI::CheckedTransformer(cetric::cache_input_map, CLI::ignore_case));
+    app.add_flag("--read-edge-partitioned", conf.read_edge_partitioned);
 
     app.add_option("--json-output", conf.json_output);
 
@@ -145,18 +146,18 @@ cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::P
     if (!conf.partitioning.empty()) {
         conf.partitioned_input = true;
     }
-    if (conf.primary_cost_function == "none" && conf.gen.generator.empty() && !conf.partitioned_input) {
-        int retval;
-        if (rank == 0) {
-            CLI::RequiredError e("Primary cost function 'none' is only allowed for generated or prepartitioned graphs."
-            );
-            retval = app.exit(e);
-        } else {
-            retval = 1;
-        }
-        MPI_Finalize();
-        exit(retval);
-    }
+    // if (conf.primary_cost_function == "none" && conf.gen.generator.empty() && !conf.partitioned_input) {
+    //     int retval;
+    //     if (rank == 0) {
+    //         CLI::RequiredError e("Primary cost function 'none' is only allowed for generated or prepartitioned graphs."
+    //         );
+    //         retval = app.exit(e);
+    //     } else {
+    //         retval = 1;
+    //     }
+    //     MPI_Finalize();
+    //     exit(retval);
+    // }
     conf.rank = rank;
     conf.PEs  = size;
     return conf;
@@ -198,7 +199,13 @@ public:
 private:
     graphio::IOResult load_graph() {
         if (conf_.gen.generator == "") {
-            auto G = graphio::read_local_graph(conf_.input_file, conf_.input_format, conf_.rank, conf_.PEs);
+            auto G = graphio::read_local_graph(
+                conf_.input_file,
+                conf_.input_format,
+                conf_.rank,
+                conf_.PEs,
+                conf_.read_edge_partitioned
+            );
             if (conf_.partitioned_input) {
                 auto partitioning = graphio::read_local_partition(
                     conf_.partitioning,

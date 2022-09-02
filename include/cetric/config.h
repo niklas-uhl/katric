@@ -119,6 +119,7 @@ struct Config {
     Config() = default;
     std::string           input_file;
     std::string           output_file;
+    bool                  read_edge_partitioned = false;
     graphio::InputFormat  input_format;
     std::string           partitioning;
     bool                  partitioned_input                 = false;
@@ -178,6 +179,7 @@ struct Config {
     void serialize(Archive& archive) {
         archive(
             CEREAL_NVP(input_file),
+            CEREAL_NVP(read_edge_partitioned),
             CEREAL_NVP(partitioning),
             CEREAL_NVP(partitioned_input),
             CEREAL_NVP(hostname),
