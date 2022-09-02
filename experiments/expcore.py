@@ -40,6 +40,12 @@ class FileInputGraph(InputGraph):
 
     def add_partitions(self, partitions):
         self.partitions.update(partitions)
+    @property
+    def name(self):
+        if self.partitioned:
+            return self.name + _partitioned
+        else:
+            return self.name
 
     def exists(self):
         if self.format == "metis":

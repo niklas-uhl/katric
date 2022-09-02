@@ -1,0 +1,55 @@
+name: graph-partitioning
+ncores: [512, 1024, 2048, 4096, 8192, 16384]
+threads_per_rank: [1]
+graphs:
+        - name: webbase-2001
+          time_limit: 25
+          partitioned: True
+        - name: webbase-2001
+          time_limit: 25
+          partitioned: False
+        - name: europe
+          time_limit: 3
+          partitioned: True
+        - name: europe
+          time_limit: 3
+          partitioned: False
+        - name: usa
+          time_limit: 3
+          partitioned: True
+        - name: usa
+          time_limit: 3
+          partitioned: False
+        - name: uk-2007-05
+          time_limit: 25
+          partitioned: True
+        - name: uk-2007-05
+          time_limit: 25
+          partitioned: False
+        - name: live-journal
+          time_limit: 15
+          partitioned: True
+        - name: live-journal
+          time_limit: 15
+          partitioned: False
+        - name: twitter
+          time_limit: 25
+          partitioned: True
+        - name: twitter
+          time_limit: 25
+          partitioned: False
+#time_limit: 15
+config:
+  algorithm: [cetric, patric]
+  pseudo2core: [True]
+  binary-rank-search: True
+  threshold: local-edges
+  local-parallel: False
+  global-parallel: False
+  dense-degree-exchange: False
+  skip-local-neighborhood: False
+  global-synchronziation: True
+  communication-policy: [new, grid]
+  primary-cost-function: none
+  intersection-method: [merge]
+  read-edge-partitioned: [True]
