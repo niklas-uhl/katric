@@ -1,0 +1,37 @@
+name: real-world-patric
+ncores: [64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384]
+threads_per_rank: [1]
+graphs:
+    - name: webbase-2001
+      time_limit: 10
+    - name: europe
+      time_limit: 3
+    - name: usa
+      time_limit: 3
+    - name: uk-2007-05
+      time_limit: 10
+    - name: live-journal
+      time_limit: 5
+    - name: twitter
+      time_limit: 10
+    - name: friendster
+      time_limit: 10
+config: 
+  algorithm: [patric]
+  pseudo2core: [False]
+  binary-rank-search: True
+  threshold: local-edges
+  threshold-scale: [0.0, 1.0]
+  local-parallel: False
+  edge-partitioning: False
+  edge-partitioning-static: False
+  global-parallel: False
+  local-degree-of-parallelism: [2]
+  global-degree-of-parallelism: [2]
+  dense-degree-exchange: False
+  skip-local-neighborhood: False
+  global-synchronization: True
+  communication-policy: [new]
+  primary-cost-function: ["none", "IDPD"]
+  intersection-method: [merge]
+  read-edge-partitioned: [True, False]

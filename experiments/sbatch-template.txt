@@ -7,6 +7,7 @@
 #SBATCH --get-user-env
 #SBATCH --account=${account}
 #SBATCH --switches=${islands}
+#SBATCh --constraint='work'
 #SBATCH --ear=off
 
 module load slurm_setup
