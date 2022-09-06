@@ -202,16 +202,16 @@ public:
 
     template <typename TriangleFunc, typename NodeOrdering>
     inline void run_local(TriangleFunc emit, cetric::profiling::Statistics& stats, NodeOrdering&& node_ordering) {
-        if (conf_.edge_partitioning) {
-            run_local_parallel_edge_partitioned(
-                emit,
-                stats,
-                interface_nodes_,
-                std::forward<NodeOrdering>(node_ordering)
-            );
-            return;
-        }
         if (conf_.local_parallel && conf_.num_threads > 1) {
+            if (conf_.edge_partitioning) {
+                run_local_parallel_edge_partitioned(
+                    emit,
+                    stats,
+                    interface_nodes_,
+                    std::forward<NodeOrdering>(node_ordering)
+                );
+                return;
+            }
             run_local_parallel(emit, stats, interface_nodes_, std::forward<NodeOrdering>(node_ordering));
         } else {
             run_local_sequential(emit, stats, interface_nodes_.local(), std::forward<NodeOrdering>(node_ordering));
@@ -407,6 +407,13 @@ public:
                             tail           = node_indexer.get_node(tail_idx);
                             tail_last_edge = edge_locator.template last_edge_id_for_idx<AdjacencyType::out>(tail_idx);
                         }
+                        if (edge_id == tail_first_edge) {
+                            // we are the first thread to examine this node
+                            // we check if it an interface node
+                            if (G.template is_interface_node_if_sorted_by_rank<AdjacencyType::out>(tail)) {
+                                interface_nodes.local().emplace_back(tail);
+                            }
+                        }
                         KASSERT(tail_first_edge <= edge_id);
                         KASSERT(edge_id < tail_last_edge);
                         auto v = tail;
@@ -417,7 +424,8 @@ public:
                         }
                         auto v_neighbors = G.out_adj(v).neighbors();
                         auto u_neighbors = G.out_adj(u).neighbors();
-                        auto offset      = edge_id - tail_first_edge;
+                        // auto offset      = edge_id - tail_first_edge;
+                        auto offset = (conf_.algorithm == Algorithm::Cetric) * (edge_id - tail_first_edge);
                         // atomic_debug(
                         //     fmt::format("[t{}] intersecting {} {}",
                         //     tbb::this_task_arena::current_thread_index(), v, u)
@@ -470,6 +478,13 @@ public:
                         tail           = node_indexer.get_node(tail_idx);
                         tail_last_edge = edge_locator.template last_edge_id_for_idx<AdjacencyType::out>(tail_idx);
                     }
+                    if (edge_id == tail_first_edge) {
+                        // we are the first thread to examine this node
+                        // we check if it an interface node
+                        if (G.template is_interface_node_if_sorted_by_rank<AdjacencyType::out>(tail)) {
+                            interface_nodes.local().emplace_back(tail);
+                        }
+                    }
                     KASSERT(tail_first_edge <= edge_id);
                     KASSERT(edge_id < tail_last_edge);
                     auto v = tail;
@@ -480,7 +495,8 @@ public:
                     }
                     auto v_neighbors = G.out_adj(v).neighbors();
                     auto u_neighbors = G.out_adj(u).neighbors();
-                    auto offset      = edge_id - tail_first_edge;
+                    auto offset      = (conf_.algorithm == Algorithm::Cetric) * (edge_id - tail_first_edge);
+                    // auto offset      = edge_id - tail_first_edge;
                     // atomic_debug(
                     //     fmt::format("[t{}] intersecting {} {}",
                     //     tbb::this_task_arena::current_thread_index(), v, u)
