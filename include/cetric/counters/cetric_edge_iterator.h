@@ -20,6 +20,7 @@
 #include <boost/iterator/function_output_iterator.hpp>
 #include <boost/range/adaptor/filtered.hpp>
 #include <boost/range/iterator_range_core.hpp>
+#include <boost/range/join.hpp>
 #include <gmpxx.h>
 #include <message-queue/buffered_queue.h>
 #include <mpi.h>
@@ -214,7 +215,16 @@ public:
             }
             run_local_parallel(emit, stats, interface_nodes_, std::forward<NodeOrdering>(node_ordering));
         } else {
-            run_local_sequential(emit, stats, interface_nodes_.local(), std::forward<NodeOrdering>(node_ordering));
+            if (conf_.algorithm == Algorithm::CetricX) {
+                run_local_sequential_with_ghosts(
+                    emit,
+                    stats,
+                    interface_nodes_.local(),
+                    std::forward<NodeOrdering>(node_ordering)
+                );
+            } else {
+                run_local_sequential(emit, stats, interface_nodes_.local(), std::forward<NodeOrdering>(node_ordering));
+            }
         }
     }
 
@@ -239,7 +249,7 @@ public:
             for (RankEncodedNodeId u: G.out_adj(v).neighbors()) {
                 KASSERT(*(G.out_adj(v).neighbors().begin() + neighbor_index) == u);
                 if (u.rank() != rank_) {
-                    if (conf_.algorithm == Algorithm::Patric) {
+                    if (conf_.algorithm == Algorithm::Patric || conf_.algorithm == Algorithm::CetricX) {
                         neighbor_index++;
                         continue;
                     }
@@ -262,6 +272,82 @@ public:
                 stats.local.wedge_checks += u_neighbors.end() - u_neighbors.begin();
                 cetric::intersection(
                     v_neighbors.begin() + offset,
+                    v_neighbors.end(),
+                    u_neighbors.begin(),
+                    u_neighbors.end(),
+                    [&](RankEncodedNodeId w) {
+                        stats.local.local_triangles++;
+                        emit(Triangle<RankEncodedNodeId>{v, u, w});
+                    },
+                    node_ordering,
+                    conf_
+                );
+                neighbor_index++;
+            }
+        }
+        stats.local.local_phase_time += phase_time.elapsed_time();
+    }
+
+    template <typename TriangleFunc, typename NodeOrdering>
+    inline void run_local_sequential_with_ghosts(
+        TriangleFunc                    emit,
+        cetric::profiling::Statistics&  stats,
+        std::vector<RankEncodedNodeId>& interface_nodes,
+        NodeOrdering&&                  node_ordering
+    ) {
+        cetric::profiling::Timer phase_time;
+        interface_nodes.clear();
+        for (auto v: G.local_nodes()) {
+            if (conf_.pseudo2core && G.outdegree(v) < 2) {
+                stats.local.skipped_nodes++;
+                continue;
+            }
+            if (G.template is_interface_node_if_sorted_by_rank<AdjacencyType::out>(v)) {
+                interface_nodes.emplace_back(v);
+            }
+            size_t neighbor_index = 0;
+            for (RankEncodedNodeId u: G.out_adj(v).neighbors()) {
+                KASSERT(*(G.out_adj(v).neighbors().begin() + neighbor_index) == u);
+                auto v_neighbors = G.out_adj(v).neighbors();
+                EdgeRange<RankEncodedNodeId, RangeModifiability::non_modifiable>::neighbor_range_type u_neighbors;
+                if (u.rank() != rank_) {
+                    u_neighbors = G.ghost_adj(u).neighbors();
+                } else {
+                    u_neighbors = G.out_adj(u).neighbors();
+                }
+                // for each edge (v, u) we check the open wedge (v, u, w) for
+                // w in N(u)+
+                stats.local.wedge_checks += u_neighbors.end() - u_neighbors.begin();
+                cetric::intersection(
+                    v_neighbors.begin(),
+                    v_neighbors.end(),
+                    u_neighbors.begin(),
+                    u_neighbors.end(),
+                    [&](RankEncodedNodeId w) {
+                        stats.local.local_triangles++;
+                        emit(Triangle<RankEncodedNodeId>{v, u, w});
+                    },
+                    node_ordering,
+                    conf_
+                );
+                neighbor_index++;
+            }
+        }
+        for (auto v: G.ghosts()) {
+            if (conf_.pseudo2core && G.outdegree(v) < 2) {
+                stats.local.skipped_nodes++;
+                continue;
+            }
+            size_t neighbor_index = 0;
+            for (RankEncodedNodeId u: G.ghost_adj(v).neighbors()) {
+                KASSERT(*(G.ghost_adj(v).neighbors().begin() + neighbor_index) == u);
+                auto v_neighbors = G.ghost_adj(v).neighbors();
+                auto u_neighbors = G.out_adj(u).neighbors();
+                // for each edge (v, u) we check the open wedge (v, u, w) for
+                // w in N(u)+
+                stats.local.wedge_checks += u_neighbors.end() - u_neighbors.begin();
+                cetric::intersection(
+                    v_neighbors.begin(),
                     v_neighbors.end(),
                     u_neighbors.begin(),
                     u_neighbors.end(),
@@ -679,7 +765,7 @@ public:
                 break;
             }
             case ParallelizationMethod::omp_for: {
-                // clang-format off
+// clang-format off
                 #pragma omp parallel for schedule(runtime)
                 // clang-format on
                 for (auto v: nodes) {
@@ -1141,6 +1227,11 @@ private:
         //         }
         //     });
         // } else {
+        if (conf_.algorithm == Algorithm::CetricX) {
+            if (!G.is_local(u)) {
+                return;
+            }
+        }
         auto u_neighbors = G.out_adj(u).neighbors();
         if (!ghosts.empty()) {
             auto filtered_neighbors_it =

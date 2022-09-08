@@ -149,7 +149,8 @@ cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::P
     // if (conf.primary_cost_function == "none" && conf.gen.generator.empty() && !conf.partitioned_input) {
     //     int retval;
     //     if (rank == 0) {
-    //         CLI::RequiredError e("Primary cost function 'none' is only allowed for generated or prepartitioned graphs."
+    //         CLI::RequiredError e("Primary cost function 'none' is only allowed for generated or prepartitioned
+    //         graphs."
     //         );
     //         retval = app.exit(e);
     //     } else {
@@ -368,11 +369,17 @@ int main(int argc, char* argv[]) {
                 } else if (conf.communication_policy == "grid") {
                     run_cetric(G, stats, conf, rank, size, cetric::GridPolicy{});
                 }
-            } else {
+            } else if (conf.algorithm == cetric::Algorithm::Patric) {
                 if (conf.communication_policy == "new") {
                     run_patric(G, stats, conf, rank, size, cetric::MessageQueuePolicy{});
                 } else if (conf.communication_policy == "grid") {
                     run_patric(G, stats, conf, rank, size, cetric::GridPolicy{});
+                }
+            } else if (conf.algorithm == cetric::Algorithm::CetricX) {
+                if (conf.communication_policy == "new") {
+                    run_cetric_new(G, stats, conf, rank, size, cetric::MessageQueuePolicy{});
+                } else if (conf.communication_policy == "grid") {
+                    run_cetric_new(G, stats, conf, rank, size, cetric::GridPolicy{});
                 }
             }
 

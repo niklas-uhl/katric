@@ -52,9 +52,9 @@ std::string save_minimal(const Archive& ar [[maybe_unused]], const CacheInput& c
     }
     return "";
 }
-enum class Algorithm { Patric, Cetric };
+enum class Algorithm { Patric, Cetric, CetricX };
 static const std::map<std::string, Algorithm> algorithm_map{
-    {"patric", Algorithm::Patric}, {"cetric", Algorithm::Cetric}};
+    {"patric", Algorithm::Patric}, {"cetric", Algorithm::Cetric}, {"cetric-x", Algorithm::CetricX}};
 
 template <class Archive>
 void load_minimal(const Archive& ar [[maybe_unused]], Algorithm& algorithm, const std::string& value) {

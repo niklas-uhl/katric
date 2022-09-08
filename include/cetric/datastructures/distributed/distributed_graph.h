@@ -15,6 +15,7 @@
 #include <limits>
 #include <optional>
 #include <set>
+#include <sparsehash/dense_hash_map>
 #include <sparsehash/dense_hash_set>
 #include <sstream>
 #include <stdexcept>
@@ -43,6 +44,7 @@
 #include <tlx/vector_free.hpp>
 
 #include "cetric/communicator.h"
+#include "cetric/datastructures/auxiliary_node_data.h"
 #include "cetric/datastructures/distributed/helpers.h"
 #include "cetric/datastructures/graph_definitions.h"
 #include "cetric/util.h"
@@ -120,7 +122,7 @@ struct SparseNodeIndexer {
     }
 
     bool is_indexed(RankEncodedNodeId node) const {
-        KASSERT(node.rank() == rank);
+        // KASSERT(node.rank() == rank);
         return idx_map.find(node) != idx_map.end();
     }
     auto nodes() const {
@@ -156,7 +158,7 @@ class DistributedGraph;
 template <typename NodeIndexer>
 class EdgeLocator {
 public:
-  EdgeLocator(DistributedGraph<NodeIndexer> const& G) : G(G) /*, ef(G.local_node_count(), G.local_edge_count()) */ {
+    EdgeLocator(DistributedGraph<NodeIndexer> const& G) : G(G) /*, ef(G.local_node_count(), G.local_edge_count()) */ {
         // for (size_t i = 0; i < G.local_node_count(); i++) {
         //     ef.push_back(G.first_out_[i]);
         // }
@@ -189,6 +191,51 @@ public:
     // util::EliasFano<5>                   ef;
 };
 
+template <typename NodeIdType>
+class NodeRange {
+public:
+    explicit NodeRange(NodeIdType from, NodeIdType to) : from_(std::move(from)), to_(std::move(to)) {}
+    boost::counting_iterator<NodeIdType> begin() const {
+        return boost::counting_iterator(from_);
+    }
+    boost::counting_iterator<NodeIdType> end() const {
+        return boost::counting_iterator(to_);
+    }
+
+private:
+    NodeIdType from_;
+    NodeIdType to_;
+};
+
+enum RangeModifiability { modifiable, non_modifiable };
+template <typename NodeIdType, RangeModifiability modifiability>
+class EdgeRange {
+public:
+    using head_iterator_type = std::conditional_t<
+        modifiability == RangeModifiability::modifiable,
+        typename std::vector<NodeIdType>::iterator,
+        typename std::vector<NodeIdType>::const_iterator>;
+    explicit EdgeRange(NodeIdType tail, head_iterator_type&& begin, head_iterator_type&& end)
+        : tail_(tail),
+          begin_(std::move(begin)),
+          end_(std::move(end)) {}
+
+    using neighbor_range_type = boost::iterator_range<head_iterator_type>;
+
+    neighbor_range_type neighbors() const {
+        return boost::make_iterator_range(begin_, end_);
+    }
+    auto edges() const {
+        return boost::adaptors::transform(neighbors(), [tail = tail_](NodeIdType neighbor) {
+            return graphio::Edge<NodeIdType>{RankEncodedNodeId(tail), neighbor};
+        });
+    }
+
+private:
+    NodeIdType         tail_;
+    head_iterator_type begin_;
+    head_iterator_type end_;
+};
 template <typename NodeIndexer>
 class DistributedGraph {
     friend class cetric::load_balancing::LoadBalancer;
@@ -199,50 +246,6 @@ class DistributedGraph {
     friend class DistributedGraph;
 
 public:
-    template <typename NodeIdType>
-    class NodeRange {
-    public:
-        explicit NodeRange(NodeIdType from, NodeIdType to) : from_(std::move(from)), to_(std::move(to)) {}
-        boost::counting_iterator<NodeIdType> begin() const {
-            return boost::counting_iterator(from_);
-        }
-        boost::counting_iterator<NodeIdType> end() const {
-            return boost::counting_iterator(to_);
-        }
-
-    private:
-        NodeIdType from_;
-        NodeIdType to_;
-    };
-
-    enum RangeModifiability { modifiable, non_modifiable };
-    template <typename NodeIdType, RangeModifiability modifiability>
-    class EdgeRange {
-    public:
-        using head_iterator_type = std::conditional_t<
-            modifiability == RangeModifiability::modifiable,
-            typename std::vector<NodeIdType>::iterator,
-            typename std::vector<NodeIdType>::const_iterator>;
-        explicit EdgeRange(NodeIdType tail, head_iterator_type&& begin, head_iterator_type&& end)
-            : tail_(tail),
-              begin_(std::move(begin)),
-              end_(std::move(end)) {}
-
-        auto neighbors() const {
-            return boost::make_iterator_range(begin_, end_);
-        }
-        auto edges() const {
-            return boost::adaptors::transform(neighbors(), [tail = tail_](NodeIdType neighbor) {
-                return graphio::Edge<NodeIdType>{RankEncodedNodeId(tail), neighbor};
-            });
-        }
-
-    private:
-        NodeIdType         tail_;
-        head_iterator_type begin_;
-        head_iterator_type end_;
-    };
-
     inline NodeId local_node_count() const {
         return node_range_.second - node_range_.first;
     }
@@ -253,6 +256,10 @@ public:
 
     auto local_nodes() const {
         return node_indexer_.nodes();
+    }
+
+    auto ghosts() const {
+        return ghost_indexer_.nodes();
     }
 
     EdgeRange<RankEncodedNodeId, RangeModifiability::non_modifiable> adj(RankEncodedNodeId node) const {
@@ -320,6 +327,23 @@ public:
 
     EdgeRange<RankEncodedNodeId, RangeModifiability::non_modifiable> in_adj(RankEncodedNodeId node) const {
         return adj_for<AdjacencyType::in>(node);
+    }
+
+    EdgeRange<RankEncodedNodeId, RangeModifiability::non_modifiable> ghost_adj(RankEncodedNodeId node) const {
+        EdgeId begin;
+        EdgeId end;
+        if (!ghost_indexer_.is_indexed(node)) {
+            begin = 0;
+            end   = 0;
+        } else {
+            auto idx = ghost_indexer_.get_index(node);
+            begin    = ghost_first_out_[idx];
+            end      = ghost_first_out_[idx + 1];
+        }
+        return EdgeRange<RankEncodedNodeId, RangeModifiability::non_modifiable>{
+            node,
+            head_.cbegin() + begin,
+            head_.cbegin() + end};
     }
 
     template <typename NodeCmp>
@@ -413,6 +437,10 @@ public:
 
     inline size_t to_local_idx(RankEncodedNodeId node) const {
         return node_indexer_.get_index(node);
+    }
+
+    inline size_t is_local(RankEncodedNodeId node) const {
+        return node_indexer_.is_indexed(node);
     }
 
     template <AdjacencyType adj_type>
@@ -721,6 +749,52 @@ public:
         return G_compact;
     }
 
+    template <typename NodeOrdering>
+    void remove_in_edges_and_expand_ghosts(NodeOrdering&& node_ordering) {
+        Degree                                                                    running_sum = 0;
+        google::dense_hash_map<RankEncodedNodeId, std::vector<RankEncodedNodeId>> ghost_edges;
+        ghost_edges.set_empty_key(RankEncodedNodeId::sentinel());
+        for (auto node: local_nodes()) {
+            for (auto neighbor: in_adj(node).neighbors()) {
+                if (neighbor.rank() != rank_) {
+                    ghost_edges[neighbor].push_back(node);
+                }
+            }
+            std::copy(out_adj(node).neighbors().begin(), out_adj(node).neighbors().end(), head_.begin() + running_sum);
+            auto i        = node_indexer_.get_index(node);
+            first_out_[i] = running_sum;
+            auto degree   = this->outdegree(node);
+            degree_[i]    = degree;
+            running_sum += degree;
+            first_out_offset_[i] = 0;
+        }
+        first_out_.back() = running_sum;
+        auto ghosts       = boost::adaptors::transform(
+            ghost_edges,
+            [](std::pair<RankEncodedNodeId, std::vector<RankEncodedNodeId>> const& kv) { return kv.first; }
+        );
+        this->local_edge_count_ = running_sum;
+        SparseNodeIndexer   ghost_indexer({}, ghosts.begin(), ghosts.end(), rank_);
+        std::vector<EdgeId> ghost_first_out(ghost_indexer.size() + 1);
+        auto                idx = 0;
+        for (auto& kv: ghost_edges) {
+            auto node = kv.first;
+            KASSERT(node == ghost_indexer.get_node(idx));
+            ghost_first_out[idx] = running_sum;
+            auto& neighbors      = kv.second;
+            std::sort(neighbors.begin(), neighbors.end(), node_ordering);
+            std::copy(neighbors.begin(), neighbors.end(), head_.begin() + running_sum);
+            running_sum += neighbors.size();
+            std::vector<RankEncodedNodeId>{}.swap(neighbors);
+            idx++;
+        }
+        ghost_first_out.back() = running_sum;
+        head_.resize(running_sum);
+        ghost_first_out_ = std::move(ghost_first_out);
+        ghost_indexer_   = std::move(ghost_indexer);
+        atomic_debug(fmt::format("{}", ghost_indexer_.nodes()));
+    }
+
     bool ghost_ranks_available() const {
         return ghost_ranks_available_;
     }
@@ -797,6 +871,7 @@ private:
     std::vector<EdgeId>            first_out_offset_;
     std::vector<Degree>            degree_;
     std::vector<RankEncodedNodeId> head_;
+    std::vector<EdgeId>            ghost_first_out_;
     bool                           ghost_ranks_available_;
     bool                           oriented_;
     EdgeId                         local_edge_count_{};
@@ -804,6 +879,7 @@ private:
     PEID                           rank_;
     PEID                           size_;
     NodeIndexer                    node_indexer_;
+    SparseNodeIndexer              ghost_indexer_;
 };
 
 template <typename GhostPayloadType>
