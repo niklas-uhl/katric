@@ -457,7 +457,7 @@ run_cetric(DistributedGraph<>& G, cetric::profiling::Statistics& stats, const Co
         phase_timer.start("global_phase");
         ghost_degrees = AuxiliaryNodeData<Degree>();
         cetric::CetricEdgeIterator ctr_global(G_global_phase, conf, rank, size, CommunicationPolicy{});
-        ctr.set_threshold(threshold);
+        ctr_global.set_threshold(threshold);
         ctr_global.run_local(
             [&](Triangle<RankEncodedNodeId> t) {
                 (void)t;
@@ -511,7 +511,7 @@ run_cetric(DistributedGraph<>& G, cetric::profiling::Statistics& stats, const Co
         phase_timer.start("global_phase");
         ghost_degrees = AuxiliaryNodeData<Degree>();
         cetric::CetricEdgeIterator ctr_global(G_compact, conf, rank, size, CommunicationPolicy{});
-        ctr.set_threshold(threshold);
+        ctr_global.set_threshold(threshold);
         ctr_global.run_distributed(
             [&](Triangle<RankEncodedNodeId> t) {
                 (void)t;
