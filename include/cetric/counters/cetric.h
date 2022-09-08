@@ -687,7 +687,6 @@ run_cetric_new(DistributedGraph<>& G, cetric::profiling::Statistics& stats, cons
             G.remove_internal_edges(node);
         }
     }
-    atomic_debug(G);
     auto G_compact = G.compact();
     LOG << "[R" << rank << "] "
         << "Contraction finished ";
@@ -703,7 +702,6 @@ run_cetric_new(DistributedGraph<>& G, cetric::profiling::Statistics& stats, cons
     // ConditionalBarrier(conf.global_synchronization);
     phase_timer.start("global_phase");
     ghost_degrees = AuxiliaryNodeData<Degree>();
-    atomic_debug(G_compact);
     cetric::CetricEdgeIterator ctr_global(G_compact, conf, rank, size,
                                           CommunicationPolicy{});
     ctr_global.set_threshold(threshold);

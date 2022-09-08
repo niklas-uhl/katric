@@ -792,7 +792,6 @@ public:
         head_.resize(running_sum);
         ghost_first_out_ = std::move(ghost_first_out);
         ghost_indexer_   = std::move(ghost_indexer);
-        atomic_debug(fmt::format("{}", ghost_indexer_.nodes()));
     }
 
     bool ghost_ranks_available() const {
