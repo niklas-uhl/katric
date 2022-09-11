@@ -1,4 +1,4 @@
-name: weak-scaling-full
+name: weak-scaling-full-smaller
 ncores: [256, 512, 1024, 2048, 4096, 8192, 16384, 32768]
 threads_per_rank: [1, 2, 4, 8]
 graphs:

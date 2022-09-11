@@ -1,5 +1,5 @@
-name: weak-scaling-full
-ncores: [256, 512, 1024, 2048, 4096, 8192, 16384, 32768]
+name: weak-scaling-full-smaller-cetric-x
+ncores: [256, 512, 1024, 2048, 4096, 8192, 16384]
 threads_per_rank: [1, 2, 4, 8]
 graphs:
   - generator: rgg_2d
@@ -25,13 +25,13 @@ graphs:
     #scale_weak: True
 time_limit: 4
 config:
-        - algorithm: [cetric]
+        - algorithm: [cetric-x]
           pseudo2core: [True]
           binary-rank-search: True
           threshold: local-nodes
           threshold-scale: 1.0
           local-parallel: True
-          edge-partitioning: [True, False]
+          edge-partitioning: [True]
           edge-partitioning-static: False
           global-parallel: True
           local-degree-of-parallelism: [2]
