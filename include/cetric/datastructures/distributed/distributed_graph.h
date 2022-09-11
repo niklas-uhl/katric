@@ -191,6 +191,74 @@ public:
     // util::EliasFano<5>                   ef;
 };
 
+template <typename NodeIndexer>
+class GhostEdgeLocator {
+public:
+    GhostEdgeLocator(DistributedGraph<NodeIndexer> const& G) : G(G) /*, ef(G.local_node_count(), G.local_edge_count()) */ {
+        // for (size_t i = 0; i < G.local_node_count(); i++) {
+        //     ef.push_back(G.first_out_[i]);
+        // }
+        // ef.buildRankSelect();
+    }
+
+    RankEncodedNodeId get_edge_head(EdgeId edge_id) const {
+        return G.head_[edge_id];
+    }
+
+    size_t edge_tail_idx(EdgeId edge_id) const {
+        if (edge_id >= G.first_out_.back()) {
+            auto it = std::upper_bound(G.ghost_first_out_.begin(), G.ghost_first_out_.end(), edge_id);
+            KASSERT(it != G.ghost_first_out_.end(), "Invalid edge id " << edge_id);
+            auto idx = (it - G.ghost_first_out_.begin()) - 1;
+            KASSERT(G.ghost_first_out_[idx] <= edge_id);
+            KASSERT(edge_id < G.ghost_first_out_[idx + 1]);
+            idx += G.first_out_.size() - 1;
+            KASSERT(is_ghost_idx(idx), idx);
+            // KASSERT(!is_ghost_idx(idx - G.first_out_.size()), idx);
+            return idx;
+        } else {
+            auto it = std::upper_bound(G.first_out_.begin(), G.first_out_.end(), edge_id);
+            KASSERT(it != G.first_out_.end(), "Invalid edge id " << edge_id);
+            auto idx = (it - G.first_out_.begin()) - 1;
+            KASSERT(G.first_out_[idx] <= edge_id);
+            KASSERT(edge_id < G.first_out_[idx + 1]);
+            KASSERT(!is_ghost_idx(idx), idx);
+            // KASSERT(is_ghost_idx(idx + G.first_out_.size()), idx);
+            return idx;
+        }
+        // return ef.predecessorPosition(edge_id);
+    }
+    inline bool is_ghost_idx(size_t idx) const {
+        return idx >= G.first_out_.size() - 1;
+    }
+
+    EdgeId first_edge_id_for_idx(size_t idx) const {
+        if (is_ghost_idx(idx)) {
+            return G.ghost_first_out_[idx - G.first_out_.size() + 1];
+        } else {
+            return G.template get_edge_range_for_idx<AdjacencyType::out>(idx).first;
+        }
+    }
+
+    inline RankEncodedNodeId get_node(size_t idx) const {
+        if (!is_ghost_idx(idx)) {
+            return G.node_indexer().get_node(idx);
+        } else {
+            return G.ghost_indexer().get_node(idx - G.first_out_.size() + 1);
+        }
+    }
+
+    EdgeId last_edge_id_for_idx(size_t idx) const {
+        if (is_ghost_idx(idx)) {
+            return G.ghost_first_out_[idx - G.first_out_.size() + 1 + 1];
+        } else {
+            return G.template get_edge_range_for_idx<AdjacencyType::out>(idx).second;
+        }
+    }
+    DistributedGraph<NodeIndexer> const& G;
+    // util::EliasFano<5>                   ef;
+};
+
 template <typename NodeIdType>
 class NodeRange {
 public:
@@ -241,6 +309,7 @@ class DistributedGraph {
     friend class cetric::load_balancing::LoadBalancer;
     friend class GraphBuilder;
     friend class EdgeLocator<NodeIndexer>;
+    friend class GhostEdgeLocator<NodeIndexer>;
     friend class CompactGraph;
     template <typename Idx>
     friend class DistributedGraph;
@@ -252,6 +321,9 @@ public:
 
     inline EdgeId local_edge_count() const {
         return local_edge_count_;
+    }
+    inline EdgeId local_edge_count_with_ghost_edges() const {
+        return head_.size();
     }
 
     auto local_nodes() const {
@@ -861,8 +933,16 @@ public:
         return node_indexer_;
     }
 
+    SparseNodeIndexer const& ghost_indexer() const {
+        return ghost_indexer_;
+    }
+
     EdgeLocator<NodeIndexer> build_edge_locator() const {
         return EdgeLocator{*this};
+    }
+
+    GhostEdgeLocator<NodeIndexer> build_ghost_edge_locator() const {
+        return GhostEdgeLocator{*this};
     }
 
 private:
