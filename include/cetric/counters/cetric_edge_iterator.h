@@ -338,7 +338,7 @@ public:
             }
         }
         for (auto v: G.ghosts()) {
-            if (conf_.pseudo2core && G.outdegree(v) < 2) {
+            if (conf_.pseudo2core && G.ghost_degree(v) < 2) {
                 stats.local.skipped_nodes++;
                 continue;
             }

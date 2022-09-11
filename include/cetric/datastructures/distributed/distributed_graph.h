@@ -194,7 +194,8 @@ public:
 template <typename NodeIndexer>
 class GhostEdgeLocator {
 public:
-    GhostEdgeLocator(DistributedGraph<NodeIndexer> const& G) : G(G) /*, ef(G.local_node_count(), G.local_edge_count()) */ {
+    GhostEdgeLocator(DistributedGraph<NodeIndexer> const& G)
+        : G(G) /*, ef(G.local_node_count(), G.local_edge_count()) */ {
         // for (size_t i = 0; i < G.local_node_count(); i++) {
         //     ef.push_back(G.first_out_[i]);
         // }
@@ -497,6 +498,12 @@ public:
     }
     inline Degree indegree(RankEncodedNodeId node) const {
         return degree_for<AdjacencyType::in>(node);
+    }
+
+    inline Degree ghost_degree(RankEncodedNodeId node) const {
+        KASSERT(ghost_indexer_.is_indexed(node));
+        auto idx = ghost_indexer_.get_index(node);
+        return ghost_first_out_[idx + 1] - ghost_first_out_[idx];
     }
 
     DistributedGraph() {
