@@ -23,9 +23,6 @@
 #include <type_traits>
 #include <vector>
 
-#include <oneapi/tbb/parallel_scan.h>
-#include <oneapi/tbb/task_arena.h>
-
 // #include <EliasFano.h>
 #include <boost/iterator/counting_iterator.hpp>
 #include <boost/iterator/iterator_categories.hpp>
@@ -41,12 +38,12 @@
 #include <fmt/core.h>
 #include <graph-io/local_graph_view.h>
 #include <kassert/kassert.hpp>
-#include <parlay/primitives.h>
 #include <tbb/blocked_range.h>
 #include <tbb/parallel_for_each.h>
 #include <tbb/partitioner.h>
 #include <tlx/vector_free.hpp>
 
+#include "cetric/atomic_debug.h"
 #include "cetric/communicator.h"
 #include "cetric/datastructures/auxiliary_node_data.h"
 #include "cetric/datastructures/distributed/helpers.h"
@@ -729,7 +726,7 @@ public:
     }
 
     template <bool binary_search, typename ExecutionPolicy = execution_policy::sequential>
-    void find_ghost_ranks(ExecutionPolicy&& = {}) {
+    void find_ghost_ranks(ExecutionPolicy&& policy = {}) {
         if (ghost_ranks_available()) {
             return;
         }
@@ -739,13 +736,16 @@ public:
         gather_PE_ranges(node_range_.first, node_range_.second, ranges, MPI_COMM_WORLD, rank_, size_);
         auto nodes = local_nodes();
         if constexpr (std::is_same_v<ExecutionPolicy, execution_policy::parallel>) {
-            tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&ranges, this](auto const& r) {
-                for (auto node: r) {
-                    for (auto& neighbor: this->adj(node).neighbors()) {
-                        PEID rank = get_PE_from_node_ranges<binary_search>(neighbor.id(), ranges);
-                        neighbor.set_rank(rank);
+            tbb::task_arena arena(policy.num_threads, 0);
+            arena.execute([&] {
+                tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&ranges, this](auto const& r) {
+                    for (auto node: r) {
+                        for (auto& neighbor: this->adj(node).neighbors()) {
+                            PEID rank = get_PE_from_node_ranges<binary_search>(neighbor.id(), ranges);
+                            neighbor.set_rank(rank);
+                        }
                     }
-                }
+                });
             });
         } else {
             for (auto node: nodes) {
@@ -798,37 +798,56 @@ public:
         return view;
     }
 
-    DistributedGraph<SparseNodeIndexer> compact(bool parallel = false) {
+    template <typename ExecutionPolicy = execution_policy::sequential>
+    DistributedGraph<SparseNodeIndexer> compact(ExecutionPolicy&& policy) {
+        static_assert(std::is_same_v<ExecutionPolicy, execution_policy::sequential> || std::is_same_v<ExecutionPolicy, execution_policy::parallel>);
         auto remaining_nodes =
             boost::adaptors::filter(this->local_nodes(), [this](auto node) { return this->degree(node) > 0; });
         SparseNodeIndexer sparse_indexer(this->node_range_, remaining_nodes.begin(), remaining_nodes.end(), rank_);
         auto              new_node_count = sparse_indexer.size();
-        auto              running_sum    = 0;
-        if (parallel) {
+        if constexpr (std::is_same_v<ExecutionPolicy, execution_policy::parallel>) {
+            tbb::task_arena     arena(policy.num_threads, 0);
             std::vector<EdgeId> first_out(new_node_count + 1);
             std::vector<EdgeId> first_out_offset(new_node_count);
-            tbb::parallel_for(tbb::blocked_range<size_t>(0, sparse_indexer.size()), [&](auto const& range) {
-                for (size_t i = range.begin(); i < range.end(); i++) {
-                    auto node = sparse_indexer.get_node(i);
-                    // std::copy(adj(node).neighbors().begin(), adj(node).neighbors().end(), head_.begin() +
-                    // running_sum);
-                    auto degree  = this->degree(node);
-                    first_out[i] = degree;
-                }
+            arena.execute([&] {
+                tbb::parallel_for(tbb::blocked_range<size_t>(0, sparse_indexer.size()), [&](auto const& range) {
+                    for (size_t i = range.begin(); i < range.end(); i++) {
+                        auto node = sparse_indexer.get_node(i);
+                        // std::copy(adj(node).neighbors().begin(),
+                        // adj(node).neighbors().end(), head_.begin() +
+                        // running_sum);
+                        auto degree  = this->degree(node);
+                        first_out[i] = degree;
+                    }
+                });
             });
-            auto                           edge_count = parlay::scan_inplace(first_out);
+            EdgeId edge_count = arena.execute([&] { return parallel_prefix_sum(first_out.begin(), first_out.end()); });
+            // edge_count = parlay::scan_inplace(first_out);
             std::vector<RankEncodedNodeId> head(edge_count);
-            tbb::parallel_for(tbb::blocked_range<size_t>(0, sparse_indexer.size()), [&](auto const& range) {
-                for (size_t i = range.begin(); i < range.end(); i++) {
-                    auto node = sparse_indexer.get_node(i);
-                    std::copy(adj(node).neighbors().begin(), adj(node).neighbors().end(), head.begin() + first_out[i]);
-                    degree_[i]          = first_out[i + i] - first_out[i];
-                    first_out_offset[i] = first_out_offset_[node_indexer_.get_index(node)];
-                }
+            arena.execute([&] {
+                tbb::parallel_for(tbb::blocked_range<size_t>(0, sparse_indexer.size()), [&](auto const& range) {
+                    for (size_t i = range.begin(); i < range.end(); i++) {
+                        auto node = sparse_indexer.get_node(i);
+                        std::copy(
+                            adj(node).neighbors().begin(),
+                            adj(node).neighbors().end(),
+                            head.begin() + first_out[i]
+                        );
+                        first_out_offset[i] = first_out_offset_[node_indexer_.get_index(node)];
+                    }
+                });
             });
+            degree_.resize(new_node_count);
             head_             = std::move(head);
             first_out_        = std::move(first_out);
             first_out_offset_ = std::move(first_out_offset);
+            arena.execute([&] {
+                tbb::parallel_for(tbb::blocked_range<size_t>(0, sparse_indexer.size()), [&](auto const& range) {
+                    for (size_t i = range.begin(); i < range.end(); i++) {
+                        degree_[i] = first_out_[i + 1] - first_out_[i];
+                    }
+                });
+            });
         } else {
             Degree running_sum = 0;
             for (size_t i = 0; i < sparse_indexer.size(); ++i) {
@@ -853,7 +872,7 @@ public:
         G_compact.head_                  = std::move(this->head_);
         G_compact.ghost_ranks_available_ = ghost_ranks_available_;
         G_compact.oriented_              = false;
-        G_compact.local_edge_count_      = running_sum;
+        G_compact.local_edge_count_      = head_.size();
         G_compact.node_range_            = node_range_;
         G_compact.rank_                  = rank_;
         G_compact.size_                  = size_;

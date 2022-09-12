@@ -18,6 +18,7 @@
 
 #include <fmt/core.h>
 #include <graph-io/local_graph_view.h>
+#include <oneapi/tbb/task_arena.h>
 
 #include "cetric/atomic_debug.h"
 #include "cetric/communicator.h"
@@ -187,7 +188,7 @@ public:
         AuxiliaryNodeData<Degree> const&            outdegree,
         CostFunctionType&                           cost_function,
         cetric::profiling::LoadBalancingStatistics& stats,
-        ExecutionPolicy&& = {}
+        ExecutionPolicy&&                           policy = {}
     )
         : G(G),
           degree_(degree),
@@ -200,16 +201,19 @@ public:
         size_t                   node_index = 0;
         auto                     nodes      = G.local_nodes();
         if constexpr (std::is_same_v<ExecutionPolicy, execution_policy::parallel>) {
-            tbb::parallel_for(
-                tbb::blocked_range(nodes.begin(), nodes.end()),
-                [this, &node_index, &cost_function, &G](auto const& r) {
-                    for (RankEncodedNodeId node: r) {
-                        node_to_idx_[node.id()] = node_index;
-                        cost[node_index]        = cost_function(*this, G, node);
-                        node_index++;
+            tbb::task_arena arena(policy.num_threads, 0);
+            arena.execute([&] {
+                tbb::parallel_for(
+                    tbb::blocked_range(nodes.begin(), nodes.end()),
+                    [this, &node_index, &cost_function, &G](auto const& r) {
+                        for (RankEncodedNodeId node: r) {
+                            node_to_idx_[node.id()] = node_index;
+                            cost[node_index]        = cost_function(*this, G, node);
+                            node_index++;
+                        }
                     }
-                }
-            );
+                );
+            });
         } else {
             for (RankEncodedNodeId node: nodes) {
                 node_to_idx_[node.id()] = node_index;
@@ -267,7 +271,7 @@ struct CostFunctionRegistry {
         Graph&                                      G,
         const Config&                               conf,
         cetric::profiling::LoadBalancingStatistics& stats,
-        ExecutionPolicy&& = {}) {
+        ExecutionPolicy&&                           policy = {}) {
         (void)conf;
         using RefType   = CostFunction<Graph>&;
         using GraphType = Graph&;
@@ -343,7 +347,7 @@ struct CostFunctionRegistry {
             stats.message_statistics
         );
         stats.cost_function_communication_time += t.elapsed_time();
-        return CostFunction<Graph>(G, name, degree, outdegree, cost, stats, ExecutionPolicy{});
+        return CostFunction<Graph>(G, name, degree, outdegree, cost, stats, policy);
     }
 };
 } // namespace cetric

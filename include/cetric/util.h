@@ -23,6 +23,9 @@
 #include <fmt/ranges.h>
 #include <graph-io/local_graph_view.h>
 #include <mpi.h>
+#include <oneapi/tbb/blocked_range.h>
+#include <oneapi/tbb/parallel_scan.h>
+#include <tbb/parallel_scan.h>
 #include <tlx/logger.hpp>
 #include <unistd.h>
 
@@ -176,8 +179,35 @@ std::ostream& operator<<(std::ostream& out, const std::pair<T, V>& p) {
 
 namespace execution_policy {
 struct sequential {};
-struct parallel {};
+struct parallel {
+    parallel(size_t num_threads) : num_threads(num_threads) {}
+    size_t num_threads;
+};
 } // namespace execution_policy
+
+template <typename IteratorType>
+typename IteratorType::value_type parallel_prefix_sum(IteratorType begin, IteratorType end) {
+    size_t size = end - begin;
+    return tbb::parallel_scan(
+        tbb::blocked_range<size_t>(0, size),
+        0,
+        [&begin,
+         &end,
+         &size](tbb::blocked_range<size_t> const& r, typename IteratorType::value_type sum, bool is_final_scan) ->
+        typename IteratorType::value_type {
+            auto temp = sum;
+            for (size_t i = r.begin(); i < r.end(); ++i) {
+                auto temp_prev = temp;
+                temp += *(begin + i);
+                if (is_final_scan) {
+                  *(begin + i) = temp_prev;
+                }
+            }
+            return temp;
+        },
+        std::plus<typename IteratorType::value_type>{}
+    );
+}
 } // namespace cetric
 
 template <>

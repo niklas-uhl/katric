@@ -102,6 +102,7 @@ cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::P
 
     app.add_flag("--local-parallel", conf.local_parallel);
     app.add_flag("--global-parallel", conf.global_parallel);
+    app.add_flag("--parallel-compact", conf.parallel_compact);
 
     app.add_option("--parallelization-method", conf.parallelization_method)
         ->transform(CLI::CheckedTransformer(enum_name_to_value_map<cetric::ParallelizationMethod>(), CLI::ignore_case));

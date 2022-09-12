@@ -13,6 +13,7 @@
 #include <kassert/internal/assertion_macros.hpp>
 #include <kassert/kassert.hpp>
 #include <mpi.h>
+#include <oneapi/tbb/task_arena.h>
 #include <tbb/combinable.h>
 #include <tbb/concurrent_vector.h>
 #include <tbb/task_arena.h>
@@ -62,10 +63,13 @@ inline void preprocessing(
         phase_timer.start("orientation");
         auto nodes = G.local_nodes();
         if (conf.num_threads > 1) {
-            tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G, &ghost_degree](auto const& r) {
-                for (auto node: r) {
-                    G.orient(node, node_ordering::degree(G, ghost_degree));
-                }
+            tbb::task_arena arena(conf.num_threads, 0);
+            arena.execute([&] {
+                tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G, &ghost_degree](auto const& r) {
+                    for (auto node: r) {
+                        G.orient(node, node_ordering::degree(G, ghost_degree));
+                    }
+                });
             });
         } else {
             for (auto node: nodes) {
@@ -74,16 +78,19 @@ inline void preprocessing(
         }
         phase_timer.start("sorting");
         if (conf.num_threads > 1) {
-            tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G, &conf](auto const& r) {
-                for (auto node: r) {
-                    if (conf.algorithm == Algorithm::Patric) {
-                        G.sort_neighborhoods(node, node_ordering::id());
-                    } else if (conf.algorithm == Algorithm::CetricX) {
-                        G.sort_neighborhoods(node, node_ordering::id_outward(G.rank()));
-                    } else {
-                        G.sort_neighborhoods(node, node_ordering::id_outward(G.rank()));
+            tbb::task_arena arena(conf.num_threads, 0);
+            arena.execute([&] {
+                tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G, &conf](auto const& r) {
+                    for (auto node: r) {
+                        if (conf.algorithm == Algorithm::Patric) {
+                            G.sort_neighborhoods(node, node_ordering::id());
+                        } else if (conf.algorithm == Algorithm::CetricX) {
+                            G.sort_neighborhoods(node, node_ordering::id_outward(G.rank()));
+                        } else {
+                            G.sort_neighborhoods(node, node_ordering::id_outward(G.rank()));
+                        }
                     }
-                }
+                });
             });
         } else {
             for (auto node: nodes) {
@@ -100,10 +107,13 @@ inline void preprocessing(
         phase_timer.start("orientation");
         auto nodes = G.local_nodes();
         if (conf.num_threads > 1) {
-            tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G](auto const& r) {
-                for (auto node: r) {
-                    G.orient(node, node_ordering::degree_outward(G));
-                }
+            tbb::task_arena arena(conf.num_threads, 0);
+            arena.execute([&] {
+                tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G](auto const& r) {
+                    for (auto node: r) {
+                        G.orient(node, node_ordering::degree_outward(G));
+                    }
+                });
             });
         } else {
             for (auto node: nodes) {
@@ -112,10 +122,13 @@ inline void preprocessing(
         }
         phase_timer.start("sorting");
         if (conf.num_threads > 1) {
-            tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G](auto const& r) {
-                for (auto node: r) {
-                    G.sort_neighborhoods(node, node_ordering::degree_outward(G));
-                }
+            tbb::task_arena arena(conf.num_threads, 0);
+            arena.execute([&] {
+                tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G](auto const& r) {
+                    for (auto node: r) {
+                        G.sort_neighborhoods(node, node_ordering::degree_outward(G));
+                    }
+                });
             });
         } else {
             for (auto node: nodes) {
@@ -136,9 +149,9 @@ run_patric(DistributedGraph<>& G, cetric::profiling::Statistics& stats, const Co
     bool debug                         = false;
     if (conf.num_threads > 1) {
         if (conf.binary_rank_search) {
-            G.find_ghost_ranks<true>(execution_policy::parallel{});
+            G.find_ghost_ranks<true>(execution_policy::parallel{conf.num_threads});
         } else {
-            G.find_ghost_ranks<false>(execution_policy::parallel{});
+            G.find_ghost_ranks<false>(execution_policy::parallel{conf.num_threads});
         }
     } else {
         if (conf.binary_rank_search) {
@@ -159,7 +172,7 @@ run_patric(DistributedGraph<>& G, cetric::profiling::Statistics& stats, const Co
                     G,
                     conf,
                     stats.local.primary_load_balancing,
-                    execution_policy::parallel{}
+                    execution_policy::parallel{conf.num_threads}
                 );
             } else {
                 return CostFunctionRegistry<DistributedGraph<>>::get(
@@ -184,9 +197,9 @@ run_patric(DistributedGraph<>& G, cetric::profiling::Statistics& stats, const Co
         G               = DistributedGraph(std::move(tmp), std::move(node_range), rank, size);
         if (conf.num_threads > 1) {
             if (conf.binary_rank_search) {
-                G.find_ghost_ranks<true>(execution_policy::parallel{});
+                G.find_ghost_ranks<true>(execution_policy::parallel{conf.num_threads});
             } else {
-                G.find_ghost_ranks<false>(execution_policy::parallel{});
+                G.find_ghost_ranks<false>(execution_policy::parallel{conf.num_threads});
             }
         } else {
             if (conf.binary_rank_search) {
@@ -287,9 +300,9 @@ run_cetric(DistributedGraph<>& G, cetric::profiling::Statistics& stats, const Co
     bool debug                         = false;
     if (conf.num_threads > 1) {
         if (conf.binary_rank_search) {
-            G.find_ghost_ranks<true>(execution_policy::parallel{});
+            G.find_ghost_ranks<true>(execution_policy::parallel{conf.num_threads});
         } else {
-            G.find_ghost_ranks<false>(execution_policy::parallel{});
+            G.find_ghost_ranks<false>(execution_policy::parallel{conf.num_threads});
         }
     } else {
         if (conf.binary_rank_search) {
@@ -310,7 +323,7 @@ run_cetric(DistributedGraph<>& G, cetric::profiling::Statistics& stats, const Co
                     G,
                     conf,
                     stats.local.primary_load_balancing,
-                    execution_policy::parallel{}
+                    execution_policy::parallel{conf.num_threads}
                 );
             } else {
                 return CostFunctionRegistry<DistributedGraph<>>::get(
@@ -335,9 +348,9 @@ run_cetric(DistributedGraph<>& G, cetric::profiling::Statistics& stats, const Co
         G               = DistributedGraph(std::move(tmp), std::move(node_range), rank, size);
         if (conf.num_threads > 1) {
             if (conf.binary_rank_search) {
-                G.find_ghost_ranks<true>(execution_policy::parallel{});
+                G.find_ghost_ranks<true>(execution_policy::parallel{conf.num_threads});
             } else {
-                G.find_ghost_ranks<false>(execution_policy::parallel{});
+                G.find_ghost_ranks<false>(execution_policy::parallel{conf.num_threads});
             }
         } else {
             if (conf.binary_rank_search) {
@@ -388,17 +401,21 @@ run_cetric(DistributedGraph<>& G, cetric::profiling::Statistics& stats, const Co
     phase_timer.start("contraction");
     auto nodes = G.local_nodes();
     if (conf.local_parallel) {
-        tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G](auto const& r) {
-            for (auto node: r) {
-                G.remove_internal_edges(node);
-            }
+        tbb::task_arena arena(conf.num_threads, 0);
+        arena.execute([&] {
+            tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G](auto const& r) {
+                for (auto node: r) {
+                    G.remove_internal_edges(node);
+                }
+            });
         });
     } else {
         for (auto node: nodes) {
             G.remove_internal_edges(node);
         }
     }
-    auto G_compact = G.compact();
+    auto G_compact = conf.parallel_compact ? G.compact(execution_policy::parallel{conf.num_threads})
+                                           : G.compact(execution_policy::sequential{});
     LOG << "[R" << rank << "] "
         << "Contraction finished ";
     ghosts = decltype(ghosts){};
@@ -415,7 +432,7 @@ run_cetric(DistributedGraph<>& G, cetric::profiling::Statistics& stats, const Co
                     G_compact,
                     conf,
                     stats.local.secondary_load_balancing,
-                    execution_policy::parallel{}
+                    execution_policy::parallel{conf.num_threads}
                 );
             } else {
                 return CostFunctionRegistry<decltype(G_compact)>::get(
@@ -434,9 +451,9 @@ run_cetric(DistributedGraph<>& G, cetric::profiling::Statistics& stats, const Co
         auto G_global_phase = DistributedGraph<SparseNodeIndexer>(std::move(tmp), std::move(node_range), rank, size);
         if (conf.num_threads > 1) {
             if (conf.binary_rank_search) {
-                G_global_phase.find_ghost_ranks<true>(execution_policy::parallel{});
+                G_global_phase.find_ghost_ranks<true>(execution_policy::parallel{conf.num_threads});
             } else {
-                G_global_phase.find_ghost_ranks<false>(execution_policy::parallel{});
+                G_global_phase.find_ghost_ranks<false>(execution_policy::parallel{conf.num_threads});
             }
         } else {
             if (conf.binary_rank_search) {
@@ -575,9 +592,9 @@ run_cetric_new(DistributedGraph<>& G, cetric::profiling::Statistics& stats, cons
     bool debug                         = false;
     if (conf.num_threads > 1) {
         if (conf.binary_rank_search) {
-            G.find_ghost_ranks<true>(execution_policy::parallel{});
+            G.find_ghost_ranks<true>(execution_policy::parallel{conf.num_threads});
         } else {
-            G.find_ghost_ranks<false>(execution_policy::parallel{});
+            G.find_ghost_ranks<false>(execution_policy::parallel{conf.num_threads});
         }
     } else {
         if (conf.binary_rank_search) {
@@ -598,7 +615,7 @@ run_cetric_new(DistributedGraph<>& G, cetric::profiling::Statistics& stats, cons
                     G,
                     conf,
                     stats.local.primary_load_balancing,
-                    execution_policy::parallel{}
+                    execution_policy::parallel{conf.num_threads}
                 );
             } else {
                 return CostFunctionRegistry<DistributedGraph<>>::get(
@@ -623,9 +640,9 @@ run_cetric_new(DistributedGraph<>& G, cetric::profiling::Statistics& stats, cons
         G               = DistributedGraph(std::move(tmp), std::move(node_range), rank, size);
         if (conf.num_threads > 1) {
             if (conf.binary_rank_search) {
-                G.find_ghost_ranks<true>(execution_policy::parallel{});
+                G.find_ghost_ranks<true>(execution_policy::parallel{conf.num_threads});
             } else {
-                G.find_ghost_ranks<false>(execution_policy::parallel{});
+                G.find_ghost_ranks<false>(execution_policy::parallel{conf.num_threads});
             }
         } else {
             if (conf.binary_rank_search) {
@@ -677,17 +694,21 @@ run_cetric_new(DistributedGraph<>& G, cetric::profiling::Statistics& stats, cons
     phase_timer.start("contraction");
     auto nodes = G.local_nodes();
     if (conf.local_parallel) {
-        tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G](auto const& r) {
-            for (auto node: r) {
-                G.remove_internal_edges(node);
-            }
+        tbb::task_arena arena(conf.num_threads, 0);
+        arena.execute([&] {
+            tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G](auto const& r) {
+                for (auto node: r) {
+                    G.remove_internal_edges(node);
+                }
+            });
         });
     } else {
         for (auto node: nodes) {
             G.remove_internal_edges(node);
         }
     }
-    auto G_compact = G.compact(false);
+    auto G_compact = conf.parallel_compact ? G.compact(execution_policy::parallel{conf.num_threads})
+                                           : G.compact(execution_policy::sequential{});
     LOG << "[R" << rank << "] "
         << "Contraction finished ";
     ghosts = decltype(ghosts){};
@@ -702,8 +723,7 @@ run_cetric_new(DistributedGraph<>& G, cetric::profiling::Statistics& stats, cons
     // ConditionalBarrier(conf.global_synchronization);
     phase_timer.start("global_phase");
     ghost_degrees = AuxiliaryNodeData<Degree>();
-    cetric::CetricEdgeIterator ctr_global(G_compact, conf, rank, size,
-                                          CommunicationPolicy{});
+    cetric::CetricEdgeIterator ctr_global(G_compact, conf, rank, size, CommunicationPolicy{});
     ctr_global.set_threshold(threshold);
     ctr_global.run_distributed(
         [&](Triangle<RankEncodedNodeId> t) {

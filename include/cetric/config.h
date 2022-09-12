@@ -136,6 +136,7 @@ struct Config {
     std::string           communication_policy              = "new";
     bool                  local_parallel                    = false;
     bool                  global_parallel                   = false;
+    bool                  parallel_compact                  = false;
     ParallelizationMethod parallelization_method            = ParallelizationMethod::tbb;
     bool                  edge_partitioning                 = false;
     bool                  edge_partitioning_static          = false;
@@ -191,6 +192,7 @@ struct Config {
             CEREAL_NVP(communication_policy),
             CEREAL_NVP(global_parallel),
             CEREAL_NVP(local_parallel),
+            CEREAL_NVP(parallel_compact),
             CEREAL_NVP(parallelization_method),
             CEREAL_NVP(edge_partitioning),
             CEREAL_NVP(edge_partitioning_static),
