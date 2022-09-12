@@ -43,6 +43,3 @@
 [submodule "extern/bytehamster_util"]
 	path = extern/bytehamster_util
 	url = https://github.com/ByteHamster/Util
-[submodule "extern/parlaylib"]
-	path = extern/parlaylib
-	url = https://github.com/niklas-uhl/parlaylib
