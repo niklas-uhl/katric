@@ -23,6 +23,12 @@
 #include <type_traits>
 #include <vector>
 
+#include <oneapi/tbb/blocked_range.h>
+#include <oneapi/tbb/concurrent_hash_map.h>
+#include <oneapi/tbb/concurrent_vector.h>
+#include <oneapi/tbb/parallel_for_each.h>
+#include <oneapi/tbb/task_arena.h>
+
 // #include <EliasFano.h>
 #include <boost/iterator/counting_iterator.hpp>
 #include <boost/iterator/iterator_categories.hpp>
@@ -39,6 +45,7 @@
 #include <graph-io/local_graph_view.h>
 #include <kassert/kassert.hpp>
 #include <tbb/blocked_range.h>
+#include <tbb/concurrent_unordered_map.h>
 #include <tbb/parallel_for_each.h>
 #include <tbb/partitioner.h>
 #include <tlx/vector_free.hpp>
@@ -882,6 +889,10 @@ public:
 
     template <typename NodeOrdering>
     void remove_in_edges_and_expand_ghosts(NodeOrdering&& node_ordering) {
+        remove_in_edges_and_expand_ghosts(node_ordering, execution_policy::parallel{4});
+    }
+    template <typename NodeOrdering>
+    void remove_in_edges_and_expand_ghosts(NodeOrdering&& node_ordering, execution_policy::sequential) {
         Degree                                                                    running_sum = 0;
         google::dense_hash_map<RankEncodedNodeId, std::vector<RankEncodedNodeId>> ghost_edges;
         ghost_edges.set_empty_key(RankEncodedNodeId::sentinel());
@@ -923,6 +934,71 @@ public:
         head_.resize(running_sum);
         ghost_first_out_ = std::move(ghost_first_out);
         ghost_indexer_   = std::move(ghost_indexer);
+    }
+
+    template <typename NodeOrdering>
+    void remove_in_edges_and_expand_ghosts(NodeOrdering&& node_ordering, execution_policy::parallel policy) {
+        tbb::task_arena arena(policy.num_threads, 0);
+        arena.execute([&] {
+            tbb::concurrent_unordered_map<RankEncodedNodeId, tbb::concurrent_vector<RankEncodedNodeId>> ghost_edges;
+            auto                nodes = local_nodes();
+            std::vector<Degree> degree(local_node_count() + 1);
+            std::atomic<size_t> ghost_edge_count = 0;
+            tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&](auto const& r) {
+                for (auto node: r) {
+                    for (auto neighbor: in_adj(node).neighbors()) {
+                        if (neighbor.rank() != rank_) {
+                            ghost_edges[neighbor].push_back(node);
+                            ghost_edge_count++;
+                        }
+                    }
+                    auto i    = node_indexer_.get_index(node);
+                    degree[i] = this->outdegree(node);
+                }
+            });
+            auto                           running_sum = parallel_prefix_sum(degree.begin(), degree.end());
+            std::vector<RankEncodedNodeId> new_head(running_sum + ghost_edge_count);
+            tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&](auto const& r) {
+                for (auto node: r) {
+                    auto i = node_indexer_.get_index(node);
+                    std::copy(
+                        out_adj(node).neighbors().begin(),
+                        out_adj(node).neighbors().end(),
+                        new_head.begin() + degree[i]
+                    );
+                    degree_[i]           = degree[i + 1] - degree[i];
+                    first_out_offset_[i] = 0;
+                }
+            });
+            head_                   = std::move(new_head);
+            first_out_              = std::move(degree);
+            first_out_.back()       = running_sum;
+            auto ghosts             = boost::adaptors::transform(ghost_edges, [](auto const& kv) { return kv.first; });
+            this->local_edge_count_ = running_sum;
+            SparseNodeIndexer   ghost_indexer({}, ghosts.begin(), ghosts.end(), rank_);
+            std::vector<EdgeId> ghost_first_out(ghost_indexer.size() + 1);
+            tbb::parallel_for(tbb::blocked_range<size_t>(0, ghost_indexer.size()), [&](auto const& r) {
+                for (size_t ghost_idx = r.begin(); ghost_idx < r.end(); ++ghost_idx) {
+                    auto        node           = ghost_indexer.get_node(ghost_idx);
+                    auto const& neighbors      = ghost_edges.at(node);
+                    ghost_first_out[ghost_idx] = neighbors.size();
+                }
+            });
+            parallel_prefix_sum(ghost_first_out.begin(), ghost_first_out.end());
+            ghost_first_out.back() = head_.size();
+            tbb::parallel_for(tbb::blocked_range<size_t>(0, ghost_indexer.size()), [&](auto const& r) {
+                for (size_t ghost_idx = r.begin(); ghost_idx < r.end(); ++ghost_idx) {
+                    auto  node      = ghost_indexer.get_node(ghost_idx);
+                    auto& neighbors = ghost_edges.at(node);
+                    ghost_first_out[ghost_idx] += running_sum;
+                    std::sort(neighbors.begin(), neighbors.end(), node_ordering);
+                    std::copy(neighbors.begin(), neighbors.end(), head_.begin() + ghost_first_out[ghost_idx]);
+                    neighbors.resize(0);
+                }
+            });
+            ghost_first_out_ = std::move(ghost_first_out);
+            ghost_indexer_ = std::move(ghost_indexer);
+        });
     }
 
     bool ghost_ranks_available() const {

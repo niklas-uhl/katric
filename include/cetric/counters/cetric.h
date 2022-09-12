@@ -660,7 +660,13 @@ run_cetric_new(DistributedGraph<>& G, cetric::profiling::Statistics& stats, cons
     ConditionalBarrier(conf.global_synchronization);
     phase_timer.start("preprocessing");
     preprocessing(G, stats.local.preprocessing_local_phase, ghost_degrees, ghosts, conf, Phase::Global);
-    G.remove_in_edges_and_expand_ghosts(node_ordering::id_outward(rank));
+    if (conf.parallel_compact) {
+      G.remove_in_edges_and_expand_ghosts(node_ordering::id_outward(rank), execution_policy::parallel{conf.num_threads});
+    } else {
+      G.remove_in_edges_and_expand_ghosts(
+          node_ordering::id_outward(rank),
+          execution_policy::sequential{});
+    }
     LOG << "[R" << rank << "] "
         << "Preprocessing finished ";
     ConditionalBarrier(conf.global_synchronization);

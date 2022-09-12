@@ -200,7 +200,7 @@ typename IteratorType::value_type parallel_prefix_sum(IteratorType begin, Iterat
                 auto temp_prev = temp;
                 temp += *(begin + i);
                 if (is_final_scan) {
-                  *(begin + i) = temp_prev;
+                    *(begin + i) = temp_prev;
                 }
             }
             return temp;
