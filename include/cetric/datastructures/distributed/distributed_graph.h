@@ -23,6 +23,9 @@
 #include <type_traits>
 #include <vector>
 
+#include <oneapi/tbb/parallel_scan.h>
+#include <oneapi/tbb/task_arena.h>
+
 // #include <EliasFano.h>
 #include <boost/iterator/counting_iterator.hpp>
 #include <boost/iterator/iterator_categories.hpp>
@@ -38,6 +41,7 @@
 #include <fmt/core.h>
 #include <graph-io/local_graph_view.h>
 #include <kassert/kassert.hpp>
+#include <parlay/primitives.h>
 #include <tbb/blocked_range.h>
 #include <tbb/parallel_for_each.h>
 #include <tbb/partitioner.h>
@@ -47,6 +51,7 @@
 #include "cetric/datastructures/auxiliary_node_data.h"
 #include "cetric/datastructures/distributed/helpers.h"
 #include "cetric/datastructures/graph_definitions.h"
+#include "cetric/datastructures/span.h"
 #include "cetric/util.h"
 
 namespace cetric {
@@ -793,26 +798,54 @@ public:
         return view;
     }
 
-    DistributedGraph<SparseNodeIndexer> compact() {
+    DistributedGraph<SparseNodeIndexer> compact(bool parallel = false) {
         auto remaining_nodes =
             boost::adaptors::filter(this->local_nodes(), [this](auto node) { return this->degree(node) > 0; });
         SparseNodeIndexer sparse_indexer(this->node_range_, remaining_nodes.begin(), remaining_nodes.end(), rank_);
-        Degree            running_sum = 0;
-        for (size_t i = 0; i < sparse_indexer.size(); ++i) {
-            auto node = sparse_indexer.get_node(i);
-            std::copy(adj(node).neighbors().begin(), adj(node).neighbors().end(), head_.begin() + running_sum);
-            first_out_[i] = running_sum;
-            auto degree   = this->degree(node);
-            degree_[i]    = degree;
-            running_sum += degree;
-            first_out_offset_[i] = first_out_offset_[node_indexer_.get_index(node)];
+        auto              new_node_count = sparse_indexer.size();
+        auto              running_sum    = 0;
+        if (parallel) {
+            std::vector<EdgeId> first_out(new_node_count + 1);
+            std::vector<EdgeId> first_out_offset(new_node_count);
+            tbb::parallel_for(tbb::blocked_range<size_t>(0, sparse_indexer.size()), [&](auto const& range) {
+                for (size_t i = range.begin(); i < range.end(); i++) {
+                    auto node = sparse_indexer.get_node(i);
+                    // std::copy(adj(node).neighbors().begin(), adj(node).neighbors().end(), head_.begin() +
+                    // running_sum);
+                    auto degree  = this->degree(node);
+                    first_out[i] = degree;
+                }
+            });
+            auto                           edge_count = parlay::scan_inplace(first_out);
+            std::vector<RankEncodedNodeId> head(edge_count);
+            tbb::parallel_for(tbb::blocked_range<size_t>(0, sparse_indexer.size()), [&](auto const& range) {
+                for (size_t i = range.begin(); i < range.end(); i++) {
+                    auto node = sparse_indexer.get_node(i);
+                    std::copy(adj(node).neighbors().begin(), adj(node).neighbors().end(), head.begin() + first_out[i]);
+                    degree_[i]          = first_out[i + i] - first_out[i];
+                    first_out_offset[i] = first_out_offset_[node_indexer_.get_index(node)];
+                }
+            });
+            head_             = std::move(head);
+            first_out_        = std::move(first_out);
+            first_out_offset_ = std::move(first_out_offset);
+        } else {
+            Degree running_sum = 0;
+            for (size_t i = 0; i < sparse_indexer.size(); ++i) {
+                auto node = sparse_indexer.get_node(i);
+                std::copy(adj(node).neighbors().begin(), adj(node).neighbors().end(), head_.begin() + running_sum);
+                first_out_[i] = running_sum;
+                auto degree   = this->degree(node);
+                degree_[i]    = degree;
+                running_sum += degree;
+                first_out_offset_[i] = first_out_offset_[node_indexer_.get_index(node)];
+            }
+            first_out_[new_node_count] = running_sum;
+            first_out_.resize(new_node_count + 1);
+            first_out_offset_.resize(new_node_count);
+            degree_.resize(new_node_count);
+            head_.resize(running_sum);
         }
-        auto new_node_count        = sparse_indexer.size();
-        first_out_[new_node_count] = running_sum;
-        first_out_.resize(new_node_count + 1);
-        first_out_offset_.resize(new_node_count);
-        degree_.resize(new_node_count);
-        head_.resize(running_sum);
         DistributedGraph<SparseNodeIndexer> G_compact;
         G_compact.first_out_             = std::move(this->first_out_);
         G_compact.first_out_offset_      = std::move(this->first_out_offset_);

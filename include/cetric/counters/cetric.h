@@ -687,7 +687,7 @@ run_cetric_new(DistributedGraph<>& G, cetric::profiling::Statistics& stats, cons
             G.remove_internal_edges(node);
         }
     }
-    auto G_compact = G.compact();
+    auto G_compact = G.compact(false);
     LOG << "[R" << rank << "] "
         << "Contraction finished ";
     ghosts = decltype(ghosts){};
