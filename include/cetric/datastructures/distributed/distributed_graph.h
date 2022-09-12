@@ -827,11 +827,10 @@ public:
                         first_out[i] = degree;
                     }
                 });
-            });
-            EdgeId edge_count = arena.execute([&] { return parallel_prefix_sum(first_out.begin(), first_out.end()); });
-            // edge_count = parlay::scan_inplace(first_out);
-            std::vector<RankEncodedNodeId> head(edge_count);
-            arena.execute([&] {
+                EdgeId edge_count =
+                    arena.execute([&] { return parallel_prefix_sum(first_out.begin(), first_out.end()); });
+                // edge_count = parlay::scan_inplace(first_out);
+                std::vector<RankEncodedNodeId> head(edge_count);
                 tbb::parallel_for(tbb::blocked_range<size_t>(0, sparse_indexer.size()), [&](auto const& range) {
                     for (size_t i = range.begin(); i < range.end(); i++) {
                         auto node = sparse_indexer.get_node(i);
@@ -843,12 +842,10 @@ public:
                         first_out_offset[i] = first_out_offset_[node_indexer_.get_index(node)];
                     }
                 });
-            });
-            degree_.resize(new_node_count);
-            head_             = std::move(head);
-            first_out_        = std::move(first_out);
-            first_out_offset_ = std::move(first_out_offset);
-            arena.execute([&] {
+                degree_.resize(new_node_count);
+                head_             = std::move(head);
+                first_out_        = std::move(first_out);
+                first_out_offset_ = std::move(first_out_offset);
                 tbb::parallel_for(tbb::blocked_range<size_t>(0, sparse_indexer.size()), [&](auto const& range) {
                     for (size_t i = range.begin(); i < range.end(); i++) {
                         degree_[i] = first_out_[i + 1] - first_out_[i];
@@ -997,7 +994,7 @@ public:
                 }
             });
             ghost_first_out_ = std::move(ghost_first_out);
-            ghost_indexer_ = std::move(ghost_indexer);
+            ghost_indexer_   = std::move(ghost_indexer);
         });
     }
 

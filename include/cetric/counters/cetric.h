@@ -70,16 +70,7 @@ inline void preprocessing(
                         G.orient(node, node_ordering::degree(G, ghost_degree));
                     }
                 });
-            });
-        } else {
-            for (auto node: nodes) {
-                G.orient(node, node_ordering::degree(G, ghost_degree));
-            }
-        }
-        phase_timer.start("sorting");
-        if (conf.num_threads > 1) {
-            tbb::task_arena arena(conf.num_threads, 0);
-            arena.execute([&] {
+                phase_timer.start("sorting");
                 tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G, &conf](auto const& r) {
                     for (auto node: r) {
                         if (conf.algorithm == Algorithm::Patric) {
@@ -93,6 +84,10 @@ inline void preprocessing(
                 });
             });
         } else {
+            for (auto node: nodes) {
+                G.orient(node, node_ordering::degree(G, ghost_degree));
+            }
+            phase_timer.start("sorting");
             for (auto node: nodes) {
                 if (conf.algorithm == Algorithm::Patric) {
                     G.sort_neighborhoods(node, node_ordering::id());
@@ -114,16 +109,7 @@ inline void preprocessing(
                         G.orient(node, node_ordering::degree_outward(G));
                     }
                 });
-            });
-        } else {
-            for (auto node: nodes) {
-                G.orient(node, node_ordering::degree_outward(G));
-            }
-        }
-        phase_timer.start("sorting");
-        if (conf.num_threads > 1) {
-            tbb::task_arena arena(conf.num_threads, 0);
-            arena.execute([&] {
+                phase_timer.start("sorting");
                 tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G](auto const& r) {
                     for (auto node: r) {
                         G.sort_neighborhoods(node, node_ordering::degree_outward(G));
@@ -131,6 +117,10 @@ inline void preprocessing(
                 });
             });
         } else {
+            for (auto node: nodes) {
+                G.orient(node, node_ordering::degree_outward(G));
+            }
+            phase_timer.start("sorting");
             for (auto node: nodes) {
                 G.sort_neighborhoods(node, node_ordering::degree_outward(G));
             }
@@ -661,11 +651,12 @@ run_cetric_new(DistributedGraph<>& G, cetric::profiling::Statistics& stats, cons
     phase_timer.start("preprocessing");
     preprocessing(G, stats.local.preprocessing_local_phase, ghost_degrees, ghosts, conf, Phase::Global);
     if (conf.parallel_compact) {
-      G.remove_in_edges_and_expand_ghosts(node_ordering::id_outward(rank), execution_policy::parallel{conf.num_threads});
+        G.remove_in_edges_and_expand_ghosts(
+            node_ordering::id_outward(rank),
+            execution_policy::parallel{conf.num_threads}
+        );
     } else {
-      G.remove_in_edges_and_expand_ghosts(
-          node_ordering::id_outward(rank),
-          execution_policy::sequential{});
+        G.remove_in_edges_and_expand_ghosts(node_ordering::id_outward(rank), execution_policy::sequential{});
     }
     LOG << "[R" << rank << "] "
         << "Preprocessing finished ";
