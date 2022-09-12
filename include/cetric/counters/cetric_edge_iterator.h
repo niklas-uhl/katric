@@ -410,7 +410,7 @@ public:
             for (auto edge_id = std::max(edge_id_range.begin(), tail_first_edge); edge_id < edge_id_range.end();
                  edge_id++) {
                 while (edge_id >= tail_last_edge || (conf_.pseudo2core && degree(tail) < 2)) {
-                    if (conf_.pseudo2core && G.outdegree(tail) < 2) {
+                    if (conf_.pseudo2core && G.degree(tail) < 2) {
                         skipped_nodes++;
                     }
                     tail_idx++;
