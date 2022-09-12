@@ -205,7 +205,12 @@ public:
     inline void run_local(TriangleFunc emit, cetric::profiling::Statistics& stats, NodeOrdering&& node_ordering) {
         if (conf_.local_parallel && conf_.num_threads > 1) {
             if (conf_.algorithm == Algorithm::CetricX) {
-                run_local_parallel_edge_partitioned_with_ghosts(emit, stats, interface_nodes_, std::forward<NodeOrdering>(node_ordering));
+                run_local_parallel_edge_partitioned_with_ghosts(
+                    emit,
+                    stats,
+                    interface_nodes_,
+                    std::forward<NodeOrdering>(node_ordering)
+                );
                 return;
             }
             if (conf_.edge_partitioning) {
@@ -378,10 +383,11 @@ public:
         cetric::profiling::Timer phase_time;
         interface_nodes.clear();
 
-        auto        edge_locator = G.build_ghost_edge_locator();
+        auto edge_locator = G.build_ghost_edge_locator();
 
         tbb::task_arena            arena(conf_.num_threads, 0);
         tbb::blocked_range<EdgeId> edge_ids(EdgeId{0}, G.local_edge_count_with_ghost_edges(), conf_.grainsize);
+        std::atomic<size_t>        skipped_nodes = 0;
 
         auto body = [&](auto const& edge_id_range) {
             auto tail_idx        = edge_locator.edge_tail_idx(edge_id_range.begin());
@@ -394,9 +400,19 @@ public:
             //     std::max(edge_id_range.begin(), tail_first_edge),
             //     edge_id_range.end()
             // ));
+            auto degree = [this](RankEncodedNodeId node) {
+                if (node.rank() == rank_) {
+                    return G.outdegree(node);
+                } else {
+                    return G.ghost_degree(node);
+                }
+            };
             for (auto edge_id = std::max(edge_id_range.begin(), tail_first_edge); edge_id < edge_id_range.end();
                  edge_id++) {
-                while (edge_id >= tail_last_edge) {
+                while (edge_id >= tail_last_edge || (conf_.pseudo2core && degree(tail) < 2)) {
+                    if (conf_.pseudo2core && G.outdegree(tail) < 2) {
+                        skipped_nodes++;
+                    }
                     tail_idx++;
                     tail_first_edge = edge_locator.template first_edge_id_for_idx(tail_idx);
                     edge_id         = tail_first_edge;
@@ -466,8 +482,8 @@ public:
         // }
 
         stats.local.local_phase_time += phase_time.elapsed_time();
-        // stats.local.skipped_nodes += skipped_nodes;
-}
+        stats.local.skipped_nodes += skipped_nodes;
+    }
 
     template <typename TriangleFunc, typename NodeOrdering>
     inline void run_local_parallel_edge_partitioned(
@@ -482,6 +498,7 @@ public:
         auto        edge_locator = G.build_edge_locator();
         auto const& node_indexer = G.node_indexer();
 
+        std::atomic<size_t> skipped_nodes = 0;
         if (conf_.edge_partitioning_static) {
             std::vector<std::thread> threads(conf_.num_threads);
             tlx::ThreadBarrierMutex  barrier(conf_.num_threads);
@@ -493,7 +510,8 @@ public:
                 threads[i] = std::thread([&, i = i] {
                     EdgeId edge_begin = i * edges_per_thread;
                     EdgeId edge_end   = std::min((i + 1) * edges_per_thread, G.local_edge_count());
-                    // std::cout << fmt::format("[t{}] procesing edges {} to {}\n", i, edge_begin, edge_end);
+                    // std::cout << fmt::format("[t{}] procesing edges {} to {}\n", i,
+                    // edge_begin, edge_end);
 
                     auto first_tail_idx  = edge_locator.edge_tail_idx(edge_begin);
                     auto tail_idx        = first_tail_idx;
@@ -523,7 +541,8 @@ public:
                         thread_local_cost[i] += cost(v, u);
                     }
                     barrier.wait([&] {
-                        // std::cout << fmt::format("thread local cost {}\n", thread_local_cost);
+                        // std::cout << fmt::format("thread local cost {}\n",
+                        // thread_local_cost);
                         std::exclusive_scan(
                             thread_local_cost.begin(),
                             thread_local_cost.end(),
@@ -532,8 +551,9 @@ public:
                         );
                         auto total_cost = thread_local_cost.back();
                         per_thread_cost = total_cost / conf_.num_threads;
-                        // std::cout << fmt::format("thread local cost {}\n", thread_local_cost);
-                        // std::cout << fmt::format("per thread cost {}\n", per_thread_cost);
+                        // std::cout << fmt::format("thread local cost {}\n",
+                        // thread_local_cost); std::cout << fmt::format("per thread cost
+                        // {}\n", per_thread_cost);
                     });
                     tail_idx        = first_tail_idx;
                     tail            = node_indexer.get_node(tail_idx);
@@ -576,7 +596,8 @@ public:
                     });
                     edge_begin = first_edge[i];
                     edge_end   = first_edge[i + 1];
-                    // std::cout << fmt::format("[t{}] procesing edges {} to {}\n", i, edge_begin, edge_end);
+                    // std::cout << fmt::format("[t{}] procesing edges {} to {}\n", i,
+                    // edge_begin, edge_end);
                     tail_idx        = edge_locator.edge_tail_idx(edge_begin);
                     tail            = node_indexer.get_node(tail_idx);
                     tail_first_edge = edge_locator.template first_edge_id_for_idx<AdjacencyType::out>(tail_idx);
@@ -588,7 +609,14 @@ public:
                     //     edge_id_range.end()
                     // ));
                     for (auto edge_id = std::max(edge_begin, tail_first_edge); edge_id < edge_end; edge_id++) {
-                        while (edge_id >= tail_last_edge) {
+                        while (edge_id >= tail_last_edge || (conf_.pseudo2core && G.outdegree(tail) < 2)) {
+                            if (conf_.pseudo2core && G.outdegree(tail) < 2) {
+                                skipped_nodes++;
+                            }
+                            // if we leave the edge range of the current tail, we
+                            // switch to the next tail node
+                            // this is wrapped in a loop, because this vertex may
+                            // not have any outgoing edges
                             tail_idx++;
                             tail_first_edge = edge_locator.template first_edge_id_for_idx<AdjacencyType::out>(tail_idx);
                             edge_id         = tail_first_edge;
@@ -659,7 +687,10 @@ public:
                 // ));
                 for (auto edge_id = std::max(edge_id_range.begin(), tail_first_edge); edge_id < edge_id_range.end();
                      edge_id++) {
-                    while (edge_id >= tail_last_edge) {
+                    while (edge_id >= tail_last_edge || (conf_.pseudo2core && G.outdegree(tail) < 2)) {
+                        if (conf_.pseudo2core && G.outdegree(tail) < 2) {
+                            skipped_nodes++;
+                        }
                         tail_idx++;
                         tail_first_edge = edge_locator.template first_edge_id_for_idx<AdjacencyType::out>(tail_idx);
                         edge_id         = tail_first_edge;
@@ -680,7 +711,8 @@ public:
                     KASSERT(edge_id < tail_last_edge);
                     auto v = tail;
                     auto u = edge_locator.get_edge_head(edge_id);
-                    // processed_edges[tail_idx].push_back(RankEncodedEdge{u, v});
+                    // processed_edges[tail_idx].push_back(RankEncodedEdge{u,
+                    // v});
                     if (u.rank() != rank_) {
                         continue;
                     }
@@ -733,7 +765,7 @@ public:
         // }
 
         stats.local.local_phase_time += phase_time.elapsed_time();
-        // stats.local.skipped_nodes += skipped_nodes;
+        stats.local.skipped_nodes += skipped_nodes;
     }
 
     template <typename TriangleFunc, typename NodeOrdering>
@@ -870,7 +902,7 @@ public:
                 break;
             }
             case ParallelizationMethod::omp_for: {
-// clang-format off
+                // clang-format off
                 #pragma omp parallel for schedule(runtime)
                 // clang-format on
                 for (auto v: nodes) {
