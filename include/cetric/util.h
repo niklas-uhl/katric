@@ -23,8 +23,8 @@
 #include <fmt/ranges.h>
 #include <graph-io/local_graph_view.h>
 #include <mpi.h>
-#include <oneapi/tbb/blocked_range.h>
-#include <oneapi/tbb/parallel_scan.h>
+#include <tbb/blocked_range.h>
+#include <tbb/parallel_scan.h>
 #include <tbb/parallel_scan.h>
 #include <tlx/logger.hpp>
 #include <unistd.h>

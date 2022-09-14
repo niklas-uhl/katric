@@ -25,10 +25,10 @@
 #include <message-queue/buffered_queue.h>
 #include <mpi.h>
 #include <omp.h>
-#include <oneapi/tbb/parallel_for.h>
-#include <oneapi/tbb/partitioner.h>
-#include <oneapi/tbb/task_arena.h>
-#include <oneapi/tbb/task_group.h>
+#include <tbb/parallel_for.h>
+#include <tbb/partitioner.h>
+#include <tbb/task_arena.h>
+#include <tbb/task_group.h>
 #include <tbb/concurrent_vector.h>
 #include <tbb/enumerable_thread_specific.h>
 #include <tbb/parallel_for_each.h>

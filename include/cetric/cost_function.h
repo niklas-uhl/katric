@@ -18,7 +18,7 @@
 
 #include <fmt/core.h>
 #include <graph-io/local_graph_view.h>
-#include <oneapi/tbb/task_arena.h>
+#include <tbb/task_arena.h>
 
 #include "cetric/atomic_debug.h"
 #include "cetric/communicator.h"

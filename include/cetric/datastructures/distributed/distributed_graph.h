@@ -22,12 +22,13 @@
 #include <tuple>
 #include <type_traits>
 #include <vector>
+#include <atomic>
 
-#include <oneapi/tbb/blocked_range.h>
-#include <oneapi/tbb/concurrent_hash_map.h>
-#include <oneapi/tbb/concurrent_vector.h>
-#include <oneapi/tbb/parallel_for_each.h>
-#include <oneapi/tbb/task_arena.h>
+#include <tbb/blocked_range.h>
+#include <tbb/concurrent_hash_map.h>
+#include <tbb/concurrent_vector.h>
+#include <tbb/parallel_for_each.h>
+#include <tbb/task_arena.h>
 
 // #include <EliasFano.h>
 #include <boost/iterator/counting_iterator.hpp>
@@ -986,7 +987,7 @@ public:
             tbb::parallel_for(tbb::blocked_range<size_t>(0, ghost_indexer.size()), [&](auto const& r) {
                 for (size_t ghost_idx = r.begin(); ghost_idx < r.end(); ++ghost_idx) {
                     auto  node      = ghost_indexer.get_node(ghost_idx);
-                    auto& neighbors = ghost_edges.at(node);
+                    auto& neighbors = ghost_edges[node];
                     ghost_first_out[ghost_idx] += running_sum;
                     std::sort(neighbors.begin(), neighbors.end(), node_ordering);
                     std::copy(neighbors.begin(), neighbors.end(), head_.begin() + ghost_first_out[ghost_idx]);

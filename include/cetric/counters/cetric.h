@@ -13,7 +13,6 @@
 #include <kassert/internal/assertion_macros.hpp>
 #include <kassert/kassert.hpp>
 #include <mpi.h>
-#include <oneapi/tbb/task_arena.h>
 #include <tbb/combinable.h>
 #include <tbb/concurrent_vector.h>
 #include <tbb/task_arena.h>

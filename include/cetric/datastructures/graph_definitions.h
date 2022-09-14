@@ -121,6 +121,10 @@ public:
         return this->value_ - rhs.value_;
     }
 
+    explicit operator std::uint64_t() const {
+	return data();
+    }
+
 private:
     std::uint64_t value_;
 };
@@ -180,6 +184,7 @@ inline std::ostream& operator<<(std::ostream& out, const Triangle<NodeIdType>& t
 }
 } // namespace graph
 } // namespace cetric
+
 
 template <>
 struct std::hash<cetric::graph::RankEncodedNodeId> {
