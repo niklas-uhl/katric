@@ -6,6 +6,7 @@
 #define PARALLEL_TRIANGLE_COUNTER_DISTRIBUTED_GRAPH_H
 
 #include <algorithm>
+#include <atomic>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -22,7 +23,6 @@
 #include <tuple>
 #include <type_traits>
 #include <vector>
-#include <atomic>
 
 #include <tbb/blocked_range.h>
 #include <tbb/concurrent_hash_map.h>
@@ -575,6 +575,7 @@ public:
         KASSERT(
             edges_last_outward_sorted<AdjacencyType::out>(node) && edges_last_outward_sorted<AdjacencyType::in>(node)
         );
+        // TODO: work on non id directed graph
         if (!is_interface_node_if_sorted_by_rank<AdjacencyType::out>(node)
             && (remove_all_in_edges || !is_interface_node_if_sorted_by_rank<AdjacencyType::in>(node))) {
             degree_[to_local_idx(node)]           = 0;

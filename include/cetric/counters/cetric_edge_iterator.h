@@ -25,14 +25,13 @@
 #include <message-queue/buffered_queue.h>
 #include <mpi.h>
 #include <omp.h>
-#include <tbb/parallel_for.h>
-#include <tbb/partitioner.h>
-#include <tbb/task_arena.h>
-#include <tbb/task_group.h>
 #include <tbb/concurrent_vector.h>
 #include <tbb/enumerable_thread_specific.h>
+#include <tbb/parallel_for.h>
 #include <tbb/parallel_for_each.h>
 #include <tbb/parallel_scan.h>
+#include <tbb/partitioner.h>
+#include <tbb/task_arena.h>
 #include <tbb/task_group.h>
 #include <tlx/meta/has_member.hpp>
 #include <tlx/meta/has_method.hpp>
@@ -60,6 +59,8 @@ using namespace graph;
 namespace node_ordering {
 struct id {
     explicit id(){};
+    template <typename GraphType>
+    explicit id(GraphType const&, AuxiliaryNodeData<Degree> const&) {}
     inline bool operator()(RankEncodedNodeId const& lhs, RankEncodedNodeId const& rhs) const {
         // return lhs < rhs;
         return lhs.id() < rhs.id();
@@ -68,6 +69,8 @@ struct id {
 private:
 };
 struct id_outward {
+    template <typename GraphType>
+    explicit id_outward(GraphType const& G, AuxiliaryNodeData<Degree> const&) : id_outward(G.rank()) {}
     explicit id_outward(PEID rank) : rank_(rank) {}
     inline bool operator()(RankEncodedNodeId const& lhs, RankEncodedNodeId const& rhs) const {
         return std::pair(lhs.rank() != rank_, lhs.id()) < std::pair(rhs.rank() != rank_, rhs.id());
@@ -80,6 +83,15 @@ template <typename GraphType>
 struct degree {
     explicit degree(GraphType const& G, AuxiliaryNodeData<Degree> const& ghost_degree)
         : G_(G),
+          degree_(nullptr),
+          ghost_degree_(ghost_degree) {
+        // KASSERT(ghost_degree_.size() > 0ul);
+    }
+    explicit degree(
+        GraphType const& G, AuxiliaryNodeData<Degree> const& ghost_degree, AuxiliaryNodeData<Degree> const& degree
+    )
+        : G_(G),
+          degree_(&degree),
           ghost_degree_(ghost_degree) {
         // KASSERT(ghost_degree_.size() > 0ul);
     }
@@ -88,6 +100,9 @@ struct degree {
             if (node.rank() != G_.rank()) {
                 return ghost_degree_[node];
             }
+            if (degree_ != nullptr) {
+                return (*degree_)[node];
+            }
             return G_.degree(node);
         };
         return std::tuple(degree(lhs), lhs.id()) < std::tuple(degree(rhs), rhs.id());
@@ -95,10 +110,12 @@ struct degree {
 
 private:
     GraphType const&                 G_;
+    const AuxiliaryNodeData<Degree>* degree_;
     AuxiliaryNodeData<Degree> const& ghost_degree_;
 };
 template <typename GraphType>
 struct degree_outward {
+    explicit degree_outward(GraphType const& G, AuxiliaryNodeData<Degree> const&) : degree_outward(G) {}
     explicit degree_outward(GraphType const& G) : G_(G) {}
     inline bool operator()(RankEncodedNodeId const& lhs, RankEncodedNodeId const& rhs) const {
         auto degree = [this](RankEncodedNodeId const& node) {
@@ -201,11 +218,12 @@ public:
         threshold_ = threshold;
     }
 
-    template <typename TriangleFunc, typename NodeOrdering>
-    inline void run_local(TriangleFunc emit, cetric::profiling::Statistics& stats, NodeOrdering&& node_ordering) {
+    template <typename TriangleFunc, typename NodeOrdering, typename EdgeOrientationOrdering>
+    inline void
+    run_local(TriangleFunc emit, cetric::profiling::Statistics& stats, NodeOrdering&& node_ordering, EdgeOrientationOrdering&&) {
         if (conf_.local_parallel && conf_.num_threads > 1) {
             if (conf_.algorithm == Algorithm::CetricX) {
-                run_local_parallel_edge_partitioned_with_ghosts(
+                run_local_parallel_edge_partitioned_with_ghosts<EdgeOrientationOrdering>(
                     emit,
                     stats,
                     interface_nodes_,
@@ -214,7 +232,7 @@ public:
                 return;
             }
             if (conf_.edge_partitioning) {
-                run_local_parallel_edge_partitioned(
+                run_local_parallel_edge_partitioned<EdgeOrientationOrdering>(
                     emit,
                     stats,
                     interface_nodes_,
@@ -222,22 +240,32 @@ public:
                 );
                 return;
             }
-            run_local_parallel(emit, stats, interface_nodes_, std::forward<NodeOrdering>(node_ordering));
+            run_local_parallel<EdgeOrientationOrdering>(
+                emit,
+                stats,
+                interface_nodes_,
+                std::forward<NodeOrdering>(node_ordering)
+            );
         } else {
             if (conf_.algorithm == Algorithm::CetricX) {
-                run_local_sequential_with_ghosts(
+                run_local_sequential_with_ghosts<EdgeOrientationOrdering>(
                     emit,
                     stats,
                     interface_nodes_.local(),
                     std::forward<NodeOrdering>(node_ordering)
                 );
             } else {
-                run_local_sequential(emit, stats, interface_nodes_.local(), std::forward<NodeOrdering>(node_ordering));
+                run_local_sequential<EdgeOrientationOrdering>(
+                    emit,
+                    stats,
+                    interface_nodes_.local(),
+                    std::forward<NodeOrdering>(node_ordering)
+                );
             }
         }
     }
 
-    template <typename TriangleFunc, typename NodeOrdering>
+    template <typename EdgeOrientationOrdering, typename TriangleFunc, typename NodeOrdering>
     inline void run_local_sequential(
         TriangleFunc                    emit,
         cetric::profiling::Statistics&  stats,
@@ -251,17 +279,23 @@ public:
                 stats.local.skipped_nodes++;
                 continue;
             }
-            if (G.template is_interface_node_if_sorted_by_rank<AdjacencyType::out>(v)) {
-                interface_nodes.emplace_back(v);
-            }
-            size_t neighbor_index = 0;
+            bool   interface_node_pushed = false;
+            size_t neighbor_index        = 0;
             for (RankEncodedNodeId u: G.out_adj(v).neighbors()) {
                 KASSERT(*(G.out_adj(v).neighbors().begin() + neighbor_index) == u);
                 if (u.rank() != rank_) {
-                    if (conf_.algorithm == Algorithm::Patric || conf_.algorithm == Algorithm::CetricX) {
+                    if (!interface_node_pushed) {
+                        interface_nodes.emplace_back(v);
+                        interface_node_pushed = true;
+                    }
+                    if constexpr (!std::is_same_v<NodeOrdering, node_ordering::id_outward> && !std::is_same_v<NodeOrdering, node_ordering::degree_outward<GraphType>>) {
                         neighbor_index++;
                         continue;
                     }
+                    // if (conf_.algorithm == Algorithm::Patric || conf_.algorithm == Algorithm::CetricX) {
+                    //     neighbor_index++;
+                    //     continue;
+                    // }
                     // atomic_debug(
                     //     fmt::format("Remaining neighbors {}",
                     //                 boost::make_iterator_range(G.out_adj(v).neighbors().begin() + neighbor_index,
@@ -274,9 +308,12 @@ public:
                     ));
                     break;
                 }
-                auto v_neighbors = G.out_adj(v).neighbors();
-                auto u_neighbors = G.out_adj(u).neighbors();
-                auto offset      = (conf_.algorithm == Algorithm::Cetric) * neighbor_index;
+                auto   v_neighbors = G.out_adj(v).neighbors();
+                auto   u_neighbors = G.out_adj(u).neighbors();
+                size_t offset      = 0;
+                if constexpr (std::is_same_v<NodeOrdering, EdgeOrientationOrdering>) {
+                    offset = neighbor_index;
+                }
                 // for each edge (v, u) we check the open wedge (v, u, w) for w in N(u)+
                 stats.local.wedge_checks += u_neighbors.end() - u_neighbors.begin();
                 cetric::intersection(
@@ -297,7 +334,7 @@ public:
         stats.local.local_phase_time += phase_time.elapsed_time();
     }
 
-    template <typename TriangleFunc, typename NodeOrdering>
+    template <typename EdgeOrientationOrdering, typename TriangleFunc, typename NodeOrdering>
     inline void run_local_sequential_with_ghosts(
         TriangleFunc                    emit,
         cetric::profiling::Statistics&  stats,
@@ -311,24 +348,30 @@ public:
                 stats.local.skipped_nodes++;
                 continue;
             }
-            if (G.template is_interface_node_if_sorted_by_rank<AdjacencyType::out>(v)) {
-                interface_nodes.emplace_back(v);
-            }
-            size_t neighbor_index = 0;
+            bool   interface_node_pushed = false;
+            size_t neighbor_index        = 0;
             for (RankEncodedNodeId u: G.out_adj(v).neighbors()) {
                 KASSERT(*(G.out_adj(v).neighbors().begin() + neighbor_index) == u);
                 auto v_neighbors = G.out_adj(v).neighbors();
                 EdgeRange<RankEncodedNodeId, RangeModifiability::non_modifiable>::neighbor_range_type u_neighbors;
                 if (u.rank() != rank_) {
+                    if (!interface_node_pushed) {
+                        interface_nodes.emplace_back(v);
+                        interface_node_pushed = true;
+                    }
                     u_neighbors = G.ghost_adj(u).neighbors();
                 } else {
                     u_neighbors = G.out_adj(u).neighbors();
                 }
                 // for each edge (v, u) we check the open wedge (v, u, w) for
                 // w in N(u)+
+                size_t offset = 0;
+                if constexpr (std::is_same_v<NodeOrdering, EdgeOrientationOrdering>) {
+                    offset = neighbor_index;
+                }
                 stats.local.wedge_checks += u_neighbors.end() - u_neighbors.begin();
                 cetric::intersection(
-                    v_neighbors.begin(),
+                    v_neighbors.begin() + offset,
                     v_neighbors.end(),
                     u_neighbors.begin(),
                     u_neighbors.end(),
@@ -355,8 +398,12 @@ public:
                 // for each edge (v, u) we check the open wedge (v, u, w) for
                 // w in N(u)+
                 stats.local.wedge_checks += u_neighbors.end() - u_neighbors.begin();
+                size_t offset = 0;
+                if constexpr (std::is_same_v<NodeOrdering, EdgeOrientationOrdering>) {
+                    offset = neighbor_index;
+                }
                 cetric::intersection(
-                    v_neighbors.begin(),
+                    v_neighbors.begin() + offset,
                     v_neighbors.end(),
                     u_neighbors.begin(),
                     u_neighbors.end(),
@@ -373,7 +420,7 @@ public:
         stats.local.local_phase_time += phase_time.elapsed_time();
     }
 
-    template <typename TriangleFunc, typename NodeOrdering>
+    template <typename EdgeOrientationOrdering, typename TriangleFunc, typename NodeOrdering>
     inline void run_local_parallel_edge_partitioned_with_ghosts(
         TriangleFunc                                                     emit,
         cetric::profiling::Statistics&                                   stats,
@@ -389,6 +436,15 @@ public:
         tbb::blocked_range<EdgeId> edge_ids(EdgeId{0}, G.local_edge_count_with_ghost_edges(), conf_.grainsize);
         std::atomic<size_t>        skipped_nodes = 0;
 
+        std::vector<std::atomic<bool>> is_interface;
+        constexpr bool                 fast_is_interface =
+            std::is_same_v<
+                NodeOrdering,
+                node_ordering::degree_outward<
+                    GraphType>> || std::is_same_v<NodeOrdering, node_ordering::id> || std::is_same_v<NodeOrdering, node_ordering::id_outward>;
+        if constexpr (!fast_is_interface) {
+            is_interface = std::vector<std::atomic<bool>>(G.local_node_count());
+        }
         auto body = [&](auto const& edge_id_range) {
             auto tail_idx        = edge_locator.edge_tail_idx(edge_id_range.begin());
             auto tail            = edge_locator.get_node(tail_idx);
@@ -422,21 +478,33 @@ public:
                     tail           = edge_locator.get_node(tail_idx);
                     tail_last_edge = edge_locator.template last_edge_id_for_idx(tail_idx);
                 }
-                if (tail.rank() == rank_ && edge_id == tail_first_edge) {
-                    // we are the first thread to examine this node
-                    // we check if it an interface node
-                    if (G.template is_interface_node_if_sorted_by_rank<AdjacencyType::out>(tail)) {
-                        interface_nodes.local().emplace_back(tail);
-                    }
-                }
                 KASSERT(tail_first_edge <= edge_id);
                 KASSERT(edge_id < tail_last_edge);
                 auto v = tail;
                 auto u = edge_locator.get_edge_head(edge_id);
+                if constexpr (fast_is_interface) {
+                    if (tail.rank() == rank_ && edge_id == tail_first_edge) {
+                        // we are the first thread to examine this node
+                        // we check if it an interface node
+                        if (G.template is_interface_node_if_sorted_by_rank<AdjacencyType::out>(tail)) {
+                            interface_nodes.local().emplace_back(tail);
+                        }
+                    }
+                } else {
+                    if (u.rank() != rank_) {
+                        bool was_set = is_interface[tail_idx].exchange(true);
+                        if (!was_set) {
+                            interface_nodes.local().emplace_back(tail);
+                        }
+                    }
+                }
                 // processed_edges[tail_idx].push_back(RankEncodedEdge{u, v});
-                auto v_neighbors = v.rank() == rank_ ? G.out_adj(v).neighbors() : G.ghost_adj(v).neighbors();
-                auto u_neighbors = u.rank() == rank_ ? G.out_adj(u).neighbors() : G.ghost_adj(u).neighbors();
-                auto offset      = (conf_.algorithm == Algorithm::Cetric) * (edge_id - tail_first_edge);
+                auto   v_neighbors = v.rank() == rank_ ? G.out_adj(v).neighbors() : G.ghost_adj(v).neighbors();
+                auto   u_neighbors = u.rank() == rank_ ? G.out_adj(u).neighbors() : G.ghost_adj(u).neighbors();
+                size_t offset      = 0;
+                if constexpr (std::is_same_v<NodeOrdering, EdgeOrientationOrdering>) {
+                    offset = edge_id - tail_first_edge;
+                }
                 // auto offset      = edge_id - tail_first_edge;
                 // atomic_debug(
                 //     fmt::format("[t{}] intersecting {} {}",
@@ -478,14 +546,15 @@ public:
                 break;
         }
         // for (size_t i = 0; i < edges.size(); ++i) {
-        //     KASSERT(edges[i].size() == processed_edges[i].size(), "Failed for " << i);
+        //     KASSERT(edges[i].size() == processed_edges[i].size(), "Failed for "
+        //     << i);
         // }
 
         stats.local.local_phase_time += phase_time.elapsed_time();
         stats.local.skipped_nodes += skipped_nodes;
     }
 
-    template <typename TriangleFunc, typename NodeOrdering>
+    template <typename EdgeOrientationOrdering, typename TriangleFunc, typename NodeOrdering>
     inline void run_local_parallel_edge_partitioned(
         TriangleFunc                                                     emit,
         cetric::profiling::Statistics&                                   stats,
@@ -608,6 +677,15 @@ public:
                     //     std::max(edge_id_range.begin(), tail_first_edge),
                     //     edge_id_range.end()
                     // ));
+                    std::vector<std::atomic<bool>> is_interface;
+                    constexpr bool                 fast_is_interface =
+                        std::is_same_v<
+                            NodeOrdering,
+                            node_ordering::degree_outward<
+                                GraphType>> || std::is_same_v<NodeOrdering, node_ordering::id> || std::is_same_v<NodeOrdering, node_ordering::id_outward>;
+                    if constexpr (!fast_is_interface) {
+                        is_interface = std::vector<std::atomic<bool>>(G.local_node_count());
+                    }
                     for (auto edge_id = std::max(edge_begin, tail_first_edge); edge_id < edge_end; edge_id++) {
                         while (edge_id >= tail_last_edge || (conf_.pseudo2core && G.outdegree(tail) < 2)) {
                             if (conf_.pseudo2core && G.outdegree(tail) < 2) {
@@ -626,17 +704,26 @@ public:
                             tail           = node_indexer.get_node(tail_idx);
                             tail_last_edge = edge_locator.template last_edge_id_for_idx<AdjacencyType::out>(tail_idx);
                         }
-                        if (edge_id == tail_first_edge) {
-                            // we are the first thread to examine this node
-                            // we check if it an interface node
-                            if (G.template is_interface_node_if_sorted_by_rank<AdjacencyType::out>(tail)) {
-                                interface_nodes.local().emplace_back(tail);
-                            }
-                        }
                         KASSERT(tail_first_edge <= edge_id);
                         KASSERT(edge_id < tail_last_edge);
                         auto v = tail;
                         auto u = edge_locator.get_edge_head(edge_id);
+                        if constexpr (fast_is_interface) {
+                            if (tail.rank() == rank_ && edge_id == tail_first_edge) {
+                                // we are the first thread to examine this node
+                                // we check if it an interface node
+                                if (G.template is_interface_node_if_sorted_by_rank<AdjacencyType::out>(tail)) {
+                                    interface_nodes.local().emplace_back(tail);
+                                }
+                            }
+                        } else {
+                            if (u.rank() != rank_) {
+                                bool was_set = is_interface[tail_idx].exchange(true);
+                                if (!was_set) {
+                                    interface_nodes.local().emplace_back(tail);
+                                }
+                            }
+                        }
                         // processed_edges[tail_idx].push_back(RankEncodedEdge{u, v});
                         if (u.rank() != rank_) {
                             continue;
@@ -644,7 +731,10 @@ public:
                         auto v_neighbors = G.out_adj(v).neighbors();
                         auto u_neighbors = G.out_adj(u).neighbors();
                         // auto offset      = edge_id - tail_first_edge;
-                        auto offset = (conf_.algorithm == Algorithm::Cetric) * (edge_id - tail_first_edge);
+                        size_t offset = 0;
+                        if constexpr (std::is_same_v<NodeOrdering, EdgeOrientationOrdering>) {
+                            offset = edge_id - tail_first_edge;
+                        }
                         // atomic_debug(
                         //     fmt::format("[t{}] intersecting {} {}",
                         //     tbb::this_task_arena::current_thread_index(), v, u)
@@ -674,6 +764,15 @@ public:
             tbb::task_arena            arena(conf_.num_threads, 0);
             tbb::blocked_range<EdgeId> edge_ids(EdgeId{0}, G.local_edge_count(), conf_.grainsize);
 
+            std::vector<std::atomic<bool>> is_interface;
+            constexpr bool                 fast_is_interface =
+                std::is_same_v<
+                    NodeOrdering,
+                    node_ordering::degree_outward<
+                        GraphType>> || std::is_same_v<NodeOrdering, node_ordering::id> || std::is_same_v<NodeOrdering, node_ordering::id_outward>;
+            if constexpr (!fast_is_interface) {
+                is_interface = std::vector<std::atomic<bool>>(G.local_node_count());
+            }
             auto body = [&](auto const& edge_id_range) {
                 auto tail_idx        = edge_locator.edge_tail_idx(edge_id_range.begin());
                 auto tail            = node_indexer.get_node(tail_idx);
@@ -700,25 +799,37 @@ public:
                         tail           = node_indexer.get_node(tail_idx);
                         tail_last_edge = edge_locator.template last_edge_id_for_idx<AdjacencyType::out>(tail_idx);
                     }
-                    if (edge_id == tail_first_edge) {
-                        // we are the first thread to examine this node
-                        // we check if it an interface node
-                        if (G.template is_interface_node_if_sorted_by_rank<AdjacencyType::out>(tail)) {
-                            interface_nodes.local().emplace_back(tail);
-                        }
-                    }
                     KASSERT(tail_first_edge <= edge_id);
                     KASSERT(edge_id < tail_last_edge);
                     auto v = tail;
                     auto u = edge_locator.get_edge_head(edge_id);
+                    if constexpr (fast_is_interface) {
+                        if (tail.rank() == rank_ && edge_id == tail_first_edge) {
+                            // we are the first thread to examine this node
+                            // we check if it an interface node
+                            if (G.template is_interface_node_if_sorted_by_rank<AdjacencyType::out>(tail)) {
+                                interface_nodes.local().emplace_back(tail);
+                            }
+                        }
+                    } else {
+                        if (u.rank() != rank_) {
+                            bool was_set = is_interface[tail_idx].exchange(true);
+                            if (!was_set) {
+                                interface_nodes.local().emplace_back(tail);
+                            }
+                        }
+                    }
                     // processed_edges[tail_idx].push_back(RankEncodedEdge{u,
                     // v});
                     if (u.rank() != rank_) {
                         continue;
                     }
-                    auto v_neighbors = G.out_adj(v).neighbors();
-                    auto u_neighbors = G.out_adj(u).neighbors();
-                    auto offset      = (conf_.algorithm == Algorithm::Cetric) * (edge_id - tail_first_edge);
+                    auto   v_neighbors = G.out_adj(v).neighbors();
+                    auto   u_neighbors = G.out_adj(u).neighbors();
+                    size_t offset      = 0;
+                    if constexpr (std::is_same_v<NodeOrdering, EdgeOrientationOrdering>) {
+                        offset = edge_id - tail_first_edge;
+                    }
                     // auto offset      = edge_id - tail_first_edge;
                     // atomic_debug(
                     //     fmt::format("[t{}] intersecting {} {}",
@@ -768,7 +879,7 @@ public:
         stats.local.skipped_nodes += skipped_nodes;
     }
 
-    template <typename TriangleFunc, typename NodeOrdering>
+    template <typename EdgeOrientationOrdering, typename TriangleFunc, typename NodeOrdering>
     inline void run_local_parallel(
         TriangleFunc                                                     emit,
         cetric::profiling::Statistics&                                   stats,
@@ -802,10 +913,12 @@ public:
                 auto u = *(G.out_adj(v).neighbors().begin() + neighbor_index);
                 KASSERT(*(G.out_adj(v).neighbors().begin() + neighbor_index) == u);
                 if (u.rank() != rank_) {
-                    if (conf_.algorithm == Algorithm::Patric) {
-                        // neighbor_index++;
+                    if constexpr (!std::is_same_v<NodeOrdering, node_ordering::id_outward> && !std::is_same_v<NodeOrdering, node_ordering::degree_outward<GraphType>>) {
                         continue;
                     }
+                    // if (conf_.algorithm == Algorithm::Patric) {
+                    //     // neighbor_index++;
+                    // }
                     // atomic_debug(
                     //     fmt::format("Remaining neighbors {}",
                     //                 boost::make_iterator_range(G.out_adj(v).neighbors().begin() +
@@ -821,9 +934,12 @@ public:
                 }
                 // #pragma omp task if (spawn)
                 {
-                    auto v_neighbors = G.out_adj(v).neighbors();
-                    auto u_neighbors = G.out_adj(u).neighbors();
-                    auto offset      = (conf_.algorithm == Algorithm::Cetric) * neighbor_index;
+                    auto   v_neighbors = G.out_adj(v).neighbors();
+                    auto   u_neighbors = G.out_adj(u).neighbors();
+                    size_t offset      = 0;
+                    if constexpr (std::is_same_v<NodeOrdering, EdgeOrientationOrdering>) {
+                        offset = neighbor_index;
+                    }
                     // for each edge (v, u) we check the open wedge (v, u, w)
                     // for w in N(u)+
                     stats.local.wedge_checks += u_neighbors.end() - u_neighbors.begin();
@@ -902,7 +1018,7 @@ public:
                 break;
             }
             case ParallelizationMethod::omp_for: {
-                // clang-format off
+// clang-format off
                 #pragma omp parallel for schedule(runtime)
                 // clang-format on
                 for (auto v: nodes) {

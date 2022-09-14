@@ -37,17 +37,18 @@
 namespace cetric {
 enum class Phase { Local, Global };
 
-template <typename NodeIndexer, typename GhostSet>
+template <typename NodeOrdering, typename OrientationOrdering, typename NodeIndexer, typename GhostSet>
 inline void preprocessing(
     DistributedGraph<NodeIndexer>&              G,
     cetric::profiling::PreprocessingStatistics& stats,
     AuxiliaryNodeData<Degree>&                  ghost_degree,
     GhostSet&                                   ghosts,
     const Config&                               conf,
-    Phase                                       phase
+    bool                                        fetch_ghost_degree
 ) {
     tlx::MultiTimer phase_timer;
-    if (phase == Phase::Global || conf.algorithm == Algorithm::Patric) {
+    // if (phase == Phase::Global || conf.algorithm == Algorithm::Patric) {
+    if (fetch_ghost_degree) {
         phase_timer.start("degree_exchange");
         find_ghosts(G, ghosts);
         ghost_degree = AuxiliaryNodeData<Degree>{ghosts.begin(), ghosts.end()};
@@ -58,73 +59,79 @@ inline void preprocessing(
             !conf.dense_degree_exchange,
             conf.compact_degree_exchange
         );
+    }
 
-        phase_timer.start("orientation");
-        auto nodes = G.local_nodes();
-        if (conf.num_threads > 1) {
-            tbb::task_arena arena(conf.num_threads, 0);
-            arena.execute([&] {
-                tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G, &ghost_degree](auto const& r) {
-                    for (auto node: r) {
-                        G.orient(node, node_ordering::degree(G, ghost_degree));
-                    }
-                });
-                phase_timer.start("sorting");
-                tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G, &conf](auto const& r) {
-                    for (auto node: r) {
-                        if (conf.algorithm == Algorithm::Patric) {
-                            G.sort_neighborhoods(node, node_ordering::id());
-                        } else if (conf.algorithm == Algorithm::CetricX) {
-                            G.sort_neighborhoods(node, node_ordering::id_outward(G.rank()));
-                        } else {
-                            G.sort_neighborhoods(node, node_ordering::id_outward(G.rank()));
-                        }
-                    }
-                });
-            });
-        } else {
-            for (auto node: nodes) {
-                G.orient(node, node_ordering::degree(G, ghost_degree));
-            }
-            phase_timer.start("sorting");
-            for (auto node: nodes) {
-                if (conf.algorithm == Algorithm::Patric) {
-                    G.sort_neighborhoods(node, node_ordering::id());
-                } else if (conf.algorithm == Algorithm::CetricX) {
-                    G.sort_neighborhoods(node, node_ordering::id_outward(G.rank()));
-                } else {
-                    G.sort_neighborhoods(node, node_ordering::id_outward(G.rank()));
+    phase_timer.start("orientation");
+    auto nodes = G.local_nodes();
+    if (conf.num_threads > 1) {
+        tbb::task_arena arena(conf.num_threads, 0);
+        arena.execute([&] {
+            tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G, &ghost_degree](auto const& r) {
+                for (auto node: r) {
+                    G.orient(node, OrientationOrdering(G, ghost_degree));
                 }
-            }
-        }
-    } else {
-        phase_timer.start("orientation");
-        auto nodes = G.local_nodes();
-        if (conf.num_threads > 1) {
-            tbb::task_arena arena(conf.num_threads, 0);
-            arena.execute([&] {
-                tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G](auto const& r) {
-                    for (auto node: r) {
-                        G.orient(node, node_ordering::degree_outward(G));
-                    }
-                });
-                phase_timer.start("sorting");
-                tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G](auto const& r) {
-                    for (auto node: r) {
-                        G.sort_neighborhoods(node, node_ordering::degree_outward(G));
-                    }
-                });
             });
-        } else {
-            for (auto node: nodes) {
-                G.orient(node, node_ordering::degree_outward(G));
-            }
             phase_timer.start("sorting");
-            for (auto node: nodes) {
-                G.sort_neighborhoods(node, node_ordering::degree_outward(G));
-            }
+            tbb::parallel_for(
+                tbb::blocked_range(nodes.begin(), nodes.end()),
+                [&G, &conf, &ghost_degree](auto const& r) {
+                    for (auto node: r) {
+                        G.sort_neighborhoods(node, NodeOrdering(G, ghost_degree));
+                        // if (conf.algorithm == Algorithm::Patric) {
+                        //     G.sort_neighborhoods(node, node_ordering::id());
+                        // } else if (conf.algorithm == Algorithm::CetricX) {
+                        //     G.sort_neighborhoods(node, node_ordering::id_outward(G.rank()));
+                        // } else {
+                        //     G.sort_neighborhoods(node, node_ordering::id_outward(G.rank()));
+                        // }
+                    }
+                }
+            );
+        });
+    } else {
+        for (auto node: nodes) {
+            G.orient(node, OrientationOrdering(G, ghost_degree));
+        }
+        phase_timer.start("sorting");
+        for (auto node: nodes) {
+            G.sort_neighborhoods(node, NodeOrdering(G, ghost_degree));
+            // if (conf.algorithm == Algorithm::Patric) {
+            //   G.sort_neighborhoods(node, node_ordering::id());
+            // } else if (conf.algorithm == Algorithm::CetricX) {
+            //   G.sort_neighborhoods(node, node_ordering::id_outward(G.rank()));
+            // } else {
+            //   G.sort_neighborhoods(node, node_ordering::id_outward(G.rank()));
+            // }
         }
     }
+    // } else {
+    //     phase_timer.start("orientation");
+    //     auto nodes = G.local_nodes();
+    //     if (conf.num_threads > 1) {
+    //         tbb::task_arena arena(conf.num_threads, 0);
+    //         arena.execute([&] {
+    //             tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G](auto const& r) {
+    //                 for (auto node: r) {
+    //                     G.orient(node, node_ordering::degree_outward(G));
+    //                 }
+    //             });
+    //             phase_timer.start("sorting");
+    //             tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G](auto const& r) {
+    //                 for (auto node: r) {
+    //                     G.sort_neighborhoods(node, node_ordering::degree_outward(G));
+    //                 }
+    //             });
+    //         });
+    //     } else {
+    //         for (auto node: nodes) {
+    //             G.orient(node, node_ordering::degree_outward(G));
+    //         }
+    //         phase_timer.start("sorting");
+    //         for (auto node: nodes) {
+    //             G.sort_neighborhoods(node, node_ordering::degree_outward(G));
+    //         }
+    //     }
+    // }
     phase_timer.stop();
     stats.ingest(phase_timer);
 }
@@ -204,7 +211,14 @@ run_patric(DistributedGraph<>& G, cetric::profiling::Statistics& stats, const Co
         << "Primary load balancing finished ";
     // G.expand_ghosts();
     phase_timer.start("preprocessing");
-    preprocessing(G, stats.local.preprocessing_local_phase, ghost_degrees, ghosts, conf, Phase::Local);
+    preprocessing<node_ordering ::id, node_ordering::degree<decltype(G)>>(
+        G,
+        stats.local.preprocessing_local_phase,
+        ghost_degrees,
+        ghosts,
+        conf,
+        true
+    );
     LOG << "[R" << rank << "] "
         << "Preprocessing finished";
     ConditionalBarrier(conf.global_synchronization);
@@ -228,7 +242,8 @@ run_patric(DistributedGraph<>& G, cetric::profiling::Statistics& stats, const Co
             triangle_count_local_phase.local()++;
         },
         stats,
-        node_ordering::id()
+        node_ordering::id(),
+        node_ordering::degree(G, ghost_degrees)
     );
     triangle_count += triangle_count_local_phase.combine(std::plus<>{});
     LOG << "[R" << rank << "] "
@@ -356,7 +371,14 @@ run_cetric(DistributedGraph<>& G, cetric::profiling::Statistics& stats, const Co
 
     ConditionalBarrier(conf.global_synchronization);
     phase_timer.start("preprocessing");
-    preprocessing(G, stats.local.preprocessing_local_phase, ghost_degrees, ghosts, conf, Phase::Local);
+    preprocessing<node_ordering::degree_outward<decltype(G)>, node_ordering::degree_outward<decltype(G)>>(
+        G,
+        stats.local.preprocessing_local_phase,
+        ghost_degrees,
+        ghosts,
+        conf,
+        false
+    );
     LOG << "[R" << rank << "] "
         << "Preprocessing finished ";
     ConditionalBarrier(conf.global_synchronization);
@@ -381,6 +403,7 @@ run_cetric(DistributedGraph<>& G, cetric::profiling::Statistics& stats, const Co
             triangle_count_local_phase.local()++;
         },
         stats,
+        node_ordering::degree_outward(G),
         node_ordering::degree_outward(G)
     );
     triangle_count += triangle_count_local_phase.combine(std::plus<>{});
@@ -455,13 +478,13 @@ run_cetric(DistributedGraph<>& G, cetric::profiling::Statistics& stats, const Co
             << "Secondary load balancing finished ";
         ConditionalBarrier(conf.global_synchronization);
         phase_timer.start("preprocessing");
-        preprocessing(
+        preprocessing<node_ordering::id_outward, node_ordering::degree<decltype(G_global_phase)>>(
             G_global_phase,
             stats.local.preprocessing_global_phase,
             ghost_degrees,
             ghosts,
             conf,
-            Phase::Global
+            true
         );
         ConditionalBarrier(conf.global_synchronization);
         phase_timer.start("global_phase");
@@ -480,7 +503,8 @@ run_cetric(DistributedGraph<>& G, cetric::profiling::Statistics& stats, const Co
                 triangle_count_global_phase.local()++;
             },
             stats,
-            node_ordering::id_outward(rank)
+            node_ordering::id_outward(rank),
+            node_ordering::degree_outward(G_global_phase, ghost_degrees)
         );
         // atomic_debug(
         //     fmt::format("Found {} triangles in global phase 1", triangle_count_global_phase.combine(std::plus<>{})));
@@ -516,7 +540,14 @@ run_cetric(DistributedGraph<>& G, cetric::profiling::Statistics& stats, const Co
     } else {
         ConditionalBarrier(conf.global_synchronization);
         phase_timer.start("preprocessing");
-        preprocessing(G_compact, stats.local.preprocessing_global_phase, ghost_degrees, ghosts, conf, Phase::Global);
+        preprocessing<node_ordering::id_outward, node_ordering::degree<decltype(G_compact)>>(
+            G_compact,
+            stats.local.preprocessing_global_phase,
+            ghost_degrees,
+            ghosts,
+            conf,
+            true
+        );
         ConditionalBarrier(conf.global_synchronization);
         phase_timer.start("global_phase");
         ghost_degrees = AuxiliaryNodeData<Degree>();
@@ -648,14 +679,35 @@ run_cetric_new(DistributedGraph<>& G, cetric::profiling::Statistics& stats, cons
 
     ConditionalBarrier(conf.global_synchronization);
     phase_timer.start("preprocessing");
-    preprocessing(G, stats.local.preprocessing_local_phase, ghost_degrees, ghosts, conf, Phase::Global);
+    preprocessing<node_ordering::id_outward, node_ordering::degree<decltype(G)>>(
+        G,
+        stats.local.preprocessing_local_phase,
+        ghost_degrees,
+        ghosts,
+        conf,
+        true
+    );
+    // TODO: work with degree ID sorting
+    // AuxiliaryNodeData<Degree> original_degrees(
+    //     RankEncodedNodeId{G.node_range().first, rank},
+    //     RankEncodedNodeId{G.node_range().second, rank}
+    // );
+
+    // for (auto node: G.local_nodes()) {
+    //     original_degrees[node] = G.degree(node);
+    // }
     if (conf.parallel_compact) {
         G.remove_in_edges_and_expand_ghosts(
+            // node_ordering::degree(G, ghost_degrees, original_degrees),
             node_ordering::id_outward(rank),
             execution_policy::parallel{conf.num_threads}
         );
     } else {
-        G.remove_in_edges_and_expand_ghosts(node_ordering::id_outward(rank), execution_policy::sequential{});
+        G.remove_in_edges_and_expand_ghosts(
+            node_ordering::id_outward(rank),
+            // node_ordering::degree(G, ghost_degrees, original_degrees),
+            execution_policy::sequential{}
+        );
     }
     LOG << "[R" << rank << "] "
         << "Preprocessing finished ";
@@ -681,7 +733,9 @@ run_cetric_new(DistributedGraph<>& G, cetric::profiling::Statistics& stats, cons
             triangle_count_local_phase.local()++;
         },
         stats,
-        node_ordering::id_outward(rank)
+        node_ordering::id_outward(rank),
+        // node_ordering::degree(G, ghost_degrees, original_degrees),
+        node_ordering::degree(G, ghost_degrees /*, original_degrees*/)
     );
     triangle_count += triangle_count_local_phase.combine(std::plus<>{});
     LOG << "[R" << rank << "] "
@@ -736,8 +790,9 @@ run_cetric_new(DistributedGraph<>& G, cetric::profiling::Statistics& stats, cons
         G_compact.local_nodes().begin(),
         G_compact.local_nodes().end(),
         node_ordering::id() // even though the neighborhoods are sorted
-                            // using id_outward, after removing the
-                            // internal edges, this is the same as id
+        // node_ordering::degree(G_compact, ghost_degrees) // even though the neighborhoods are sorted
+                                                        // using id_outward, after removing the
+                                                        // internal edges, this is the same as id
     );
     triangle_count += triangle_count_global_phase.combine(std::plus<>{});
     LOG << "[R" << rank << "] "
