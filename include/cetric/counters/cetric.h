@@ -417,13 +417,13 @@ run_cetric(DistributedGraph<>& G, cetric::profiling::Statistics& stats, const Co
         arena.execute([&] {
             tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G](auto const& r) {
                 for (auto node: r) {
-                    G.remove_internal_edges(node);
+                    G.remove_internal_edges(node, node_ordering::degree_outward(G));
                 }
             });
         });
     } else {
         for (auto node: nodes) {
-            G.remove_internal_edges(node);
+            G.remove_internal_edges(node, node_ordering::degree_outward(G));
         }
     }
     auto G_compact = conf.parallel_compact ? G.compact(execution_policy::parallel{conf.num_threads})
@@ -510,14 +510,14 @@ run_cetric(DistributedGraph<>& G, cetric::profiling::Statistics& stats, const Co
         //     fmt::format("Found {} triangles in global phase 1", triangle_count_global_phase.combine(std::plus<>{})));
         auto nodes = G_global_phase.local_nodes();
         if (conf.local_parallel) {
-            tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G_global_phase](auto const& r) {
+            tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G_global_phase, &rank](auto const& r) {
                 for (auto node: r) {
-                    G_global_phase.remove_internal_edges(node);
+                    G_global_phase.remove_internal_edges(node, node_ordering::id_outward(rank));
                 }
             });
         } else {
             for (auto node: nodes) {
-                G_global_phase.remove_internal_edges(node);
+                G_global_phase.remove_internal_edges(node, node_ordering::id_outward(rank));
             }
         }
         ctr_global.run_distributed(
@@ -746,15 +746,15 @@ run_cetric_new(DistributedGraph<>& G, cetric::profiling::Statistics& stats, cons
     if (conf.local_parallel) {
         tbb::task_arena arena(conf.num_threads, 0);
         arena.execute([&] {
-            tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G](auto const& r) {
+            tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G, &rank](auto const& r) {
                 for (auto node: r) {
-                    G.remove_internal_edges(node);
+                    G.remove_internal_edges(node, node_ordering::id_outward(rank));
                 }
             });
         });
     } else {
         for (auto node: nodes) {
-            G.remove_internal_edges(node);
+            G.remove_internal_edges(node, node_ordering::id_outward(rank));
         }
     }
     auto G_compact = conf.parallel_compact ? G.compact(execution_policy::parallel{conf.num_threads})
@@ -791,8 +791,8 @@ run_cetric_new(DistributedGraph<>& G, cetric::profiling::Statistics& stats, cons
         G_compact.local_nodes().end(),
         node_ordering::id() // even though the neighborhoods are sorted
         // node_ordering::degree(G_compact, ghost_degrees) // even though the neighborhoods are sorted
-                                                        // using id_outward, after removing the
-                                                        // internal edges, this is the same as id
+        // using id_outward, after removing the
+        // internal edges, this is the same as id
     );
     triangle_count += triangle_count_global_phase.combine(std::plus<>{});
     LOG << "[R" << rank << "] "

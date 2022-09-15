@@ -16,6 +16,7 @@
 #include <tlx/multi_timer.hpp>
 
 #include "cetric/communicator.h"
+#include "cetric/datastructures/distributed/distributed_graph.h"
 #include "cetric/datastructures/graph_definitions.h"
 #include "cetric/statistics.h"
 #include "cetric/util.h"
@@ -74,7 +75,7 @@ public:
         receive_buffers.clear();
         for (auto node: G.local_nodes()) {
             neighboring_PEs.clear();
-            if (G.is_interface_node(node)) {
+            if (G.template is_interface_node<AdjacencyType::full>(node)) {
                 auto data = get_data(node);
                 for (auto neighbor: G.adj(node).neighbors()) {
                     if (neighbor.rank() != rank_) {
@@ -135,7 +136,7 @@ public:
         }
         for (auto node: G.local_nodes()) {
             neighboring_PEs.clear();
-            if (G.is_interface_node(node)) {
+            if (G.template is_interface_node<AdjacencyType::full>(node)) {
                 auto data = get_data(node);
                 for (auto neighbor: G.adj(node).neighbors()) {
                     if (neighbor.rank() != rank_) {
