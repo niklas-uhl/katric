@@ -2,6 +2,7 @@
 #define CETRIC_H_1MZUS6LP
 
 #include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <numeric>
 #include <sparsehash/dense_hash_set>
@@ -679,7 +680,9 @@ run_cetric_new(DistributedGraph<>& G, cetric::profiling::Statistics& stats, cons
 
     ConditionalBarrier(conf.global_synchronization);
     phase_timer.start("preprocessing");
-    preprocessing<node_ordering::id_outward, node_ordering::degree<decltype(G)>>(
+    // preprocessing<node_ordering::id_outward,
+    // node_ordering::degree<decltype(G)>>(
+    preprocessing<node_ordering::degree<decltype(G)>, node_ordering::degree<decltype(G)>>(
         G,
         stats.local.preprocessing_local_phase,
         ghost_degrees,
@@ -688,24 +691,24 @@ run_cetric_new(DistributedGraph<>& G, cetric::profiling::Statistics& stats, cons
         true
     );
     // TODO: work with degree ID sorting
-    // AuxiliaryNodeData<Degree> original_degrees(
-    //     RankEncodedNodeId{G.node_range().first, rank},
-    //     RankEncodedNodeId{G.node_range().second, rank}
-    // );
+    AuxiliaryNodeData<Degree> original_degrees(
+        RankEncodedNodeId{G.node_range().first, static_cast<uint16_t>(rank)},
+        RankEncodedNodeId{G.node_range().second, static_cast<uint16_t>(rank)}
+    );
 
-    // for (auto node: G.local_nodes()) {
-    //     original_degrees[node] = G.degree(node);
-    // }
+    for (auto node: G.local_nodes()) {
+        original_degrees[node] = G.degree(node);
+    }
     if (conf.parallel_compact) {
         G.remove_in_edges_and_expand_ghosts(
-            // node_ordering::degree(G, ghost_degrees, original_degrees),
-            node_ordering::id_outward(rank),
+            node_ordering::degree(G, ghost_degrees, original_degrees),
+            // node_ordering::id_outward(rank),
             execution_policy::parallel{conf.num_threads}
         );
     } else {
         G.remove_in_edges_and_expand_ghosts(
-            node_ordering::id_outward(rank),
-            // node_ordering::degree(G, ghost_degrees, original_degrees),
+            // node_ordering::id_outward(rank),
+            node_ordering::degree(G, ghost_degrees, original_degrees),
             execution_policy::sequential{}
         );
     }
@@ -733,9 +736,9 @@ run_cetric_new(DistributedGraph<>& G, cetric::profiling::Statistics& stats, cons
             triangle_count_local_phase.local()++;
         },
         stats,
-        node_ordering::id_outward(rank),
-        // node_ordering::degree(G, ghost_degrees, original_degrees),
-        node_ordering::degree(G, ghost_degrees /*, original_degrees*/)
+        // node_ordering::id_outward(rank),
+        node_ordering::degree(G, ghost_degrees, original_degrees),
+        node_ordering::degree(G, ghost_degrees, original_degrees)
     );
     triangle_count += triangle_count_local_phase.combine(std::plus<>{});
     LOG << "[R" << rank << "] "
@@ -746,19 +749,42 @@ run_cetric_new(DistributedGraph<>& G, cetric::profiling::Statistics& stats, cons
     if (conf.local_parallel) {
         tbb::task_arena arena(conf.num_threads, 0);
         arena.execute([&] {
-            tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G, &rank](auto const& r) {
+            tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&](auto const& r) {
                 for (auto node: r) {
-                    G.remove_internal_edges(node, node_ordering::id_outward(rank));
+                    G.remove_internal_edges(
+                        node,
+                        // node_ordering::id_outward(rank));
+                        node_ordering::degree(G, ghost_degrees, original_degrees)
+                    );
                 }
             });
         });
     } else {
         for (auto node: nodes) {
-            G.remove_internal_edges(node, node_ordering::id_outward(rank));
+            G.remove_internal_edges(
+                node,
+                // node_ordering::id_outward(rank));
+                node_ordering::degree(G, ghost_degrees, original_degrees)
+            );
         }
     }
-    auto G_compact = conf.parallel_compact ? G.compact(execution_policy::parallel{conf.num_threads})
-                                           : G.compact(execution_policy::sequential{});
+    auto G_compact     = conf.parallel_compact ? G.compact(execution_policy::parallel{conf.num_threads})
+                                               : G.compact(execution_policy::sequential{});
+    auto compact_nodes = G_compact.local_nodes();
+    if (conf.local_parallel) {
+        tbb::task_arena arena(conf.num_threads, 0);
+        arena.execute([&] {
+            tbb::parallel_for(tbb::blocked_range(compact_nodes.begin(), compact_nodes.end()), [&](auto const& r) {
+                for (auto node: r) {
+                    G_compact.sort_neighborhoods(node, node_ordering::id());
+                }
+            });
+        });
+    } else {
+        for (auto node: compact_nodes) {
+            G_compact.sort_neighborhoods(node, node_ordering::id());
+        }
+    }
     LOG << "[R" << rank << "] "
         << "Contraction finished ";
     ghosts = decltype(ghosts){};
@@ -773,6 +799,8 @@ run_cetric_new(DistributedGraph<>& G, cetric::profiling::Statistics& stats, cons
     // ConditionalBarrier(conf.global_synchronization);
     phase_timer.start("global_phase");
     ghost_degrees = AuxiliaryNodeData<Degree>();
+    // atomic_debug(fmt::format("ghosts={}", ghosts));
+    // atomic_debug(fmt::format("ghost_degrees={}", ghost_degrees.range()));
     cetric::CetricEdgeIterator ctr_global(G_compact, conf, rank, size, CommunicationPolicy{});
     ctr_global.set_threshold(threshold);
     ctr_global.run_distributed(
@@ -790,9 +818,14 @@ run_cetric_new(DistributedGraph<>& G, cetric::profiling::Statistics& stats, cons
         G_compact.local_nodes().begin(),
         G_compact.local_nodes().end(),
         node_ordering::id() // even though the neighborhoods are sorted
-        // node_ordering::degree(G_compact, ghost_degrees) // even though the neighborhoods are sorted
+        // node_ordering::degree(
+        //     G_compact,
+        //     ghost_degrees,
+        //     original_degrees
+        // ), // even though the neighborhoods are sorted
         // using id_outward, after removing the
         // internal edges, this is the same as id
+        // ghosts
     );
     triangle_count += triangle_count_global_phase.combine(std::plus<>{});
     LOG << "[R" << rank << "] "

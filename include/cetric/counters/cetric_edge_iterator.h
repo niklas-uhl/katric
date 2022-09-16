@@ -56,7 +56,6 @@
 namespace cetric {
 using namespace graph;
 
-
 struct MessageQueuePolicy {};
 struct GridPolicy {};
 
@@ -1406,6 +1405,7 @@ private:
         //     });
         // } else {
         if (conf_.algorithm == Algorithm::CetricX) {
+            // this node may have no out edges and was therefore removed
             if (!G.is_local(u)) {
                 return;
             }
@@ -1420,9 +1420,10 @@ private:
                 filtered_neighbors_it.begin(),
                 filtered_neighbors_it.end()
             );
-            // atomic_debug(fmt::format("intersecting {} and {}", u_neighbors,
-            // filtered_neighbors)); for each edge (v, u) we check the open wedge
-            // (v, u, w) for w in N(u)+
+            // atomic_debug(fmt::format("intersecting N({})={} and N({}){}", u, u_neighbors, v, filtered_neighbors));
+
+            // for each edge (v, u) we check the open wedge
+            //  (v, u, w) for w in N(u)+
             stats.local.wedge_checks += u_neighbors.end() - u_neighbors.begin();
             cetric::intersection(
                 u_neighbors.begin(),

@@ -654,9 +654,9 @@ public:
         bool                remove_all_in_edges = true
     ) {
         KASSERT(node.rank() == rank_);
-        KASSERT(
-            edges_last_outward_sorted<AdjacencyType::out>(node) && edges_last_outward_sorted<AdjacencyType::in>(node)
-        );
+        // KASSERT(
+        //     edges_last_outward_sorted<AdjacencyType::out>(node) && edges_last_outward_sorted<AdjacencyType::in>(node)
+        // );
         constexpr bool fast_is_interface =
             std::is_same_v<
                 NodeOrdering,
