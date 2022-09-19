@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <functional>
 #include <iomanip>
 #include <iostream>
 #include <istream>
@@ -25,7 +26,10 @@
 #include <magic_enum.hpp>
 #include <mpi.h>
 #include <omp.h>
+#include <tbb/blocked_range.h>
+#include <tbb/enumerable_thread_specific.h>
 #include <tbb/global_control.h>
+#include <tbb/parallel_for.h>
 #include <tbb/task_arena.h>
 #include <unistd.h>
 
@@ -34,6 +38,7 @@
 #include "cetric/config.h"
 #include "cetric/counters/cetric_edge_iterator.h"
 #include "cetric/datastructures/distributed/distributed_graph.h"
+#include "cetric/datastructures/graph_definitions.h"
 #include "cetric/statistics.h"
 #include "cetric/timer.h"
 #include "cetric/util.h"
@@ -357,6 +362,14 @@ int main(int argc, char* argv[]) {
                 rank,
                 size
             );
+            tbb::enumerable_thread_specific<size_t> wedges = 0;
+            tbb::parallel_for(tbb::blocked_range(G.local_nodes().begin(), G.local_nodes().end()), [&](auto const& r) {
+                for (auto node: r) {
+                    auto degree = G.degree(node);
+                    wedges.local() += (degree * (degree - 1)) / 2;
+                }
+            });
+            stats.local.wedges = wedges.combine(std::plus<>{});
             // atomic_debug(G);
             LOG << "[R" << rank << "] "
                 << "Finished conversion";

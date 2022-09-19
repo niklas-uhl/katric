@@ -1,6 +1,7 @@
 #ifndef STATISTICS_H_PLFYJDX0
 #define STATISTICS_H_PLFYJDX0
 
+#include <cstddef>
 #include <istream>
 #include <numeric>
 #include <sstream>
@@ -168,6 +169,7 @@ struct Statistics {
         std::atomic<size_t>              local_triangles        = 0;
         std::atomic<size_t>              type3_triangles        = 0;
         size_t                           global_phase_threshold = 0;
+        size_t                           wedges                 = 0;
         double                           local_wall_time        = 0;
         double                           local_time             = 0;
 
@@ -199,6 +201,7 @@ struct Statistics {
                 CEREAL_NVP(reduce_time),
                 CEREAL_NVP(message_statistics),
                 CEREAL_NVP(global_phase_threshold),
+                CEREAL_NVP(wedges),
                 CEREAL_NVP(local_wall_time),
                 CEREAL_NVP(local_time)
             );
@@ -227,6 +230,7 @@ struct Statistics {
                 CEREAL_NVP(reduce_time),
                 CEREAL_NVP(message_statistics),
                 CEREAL_NVP(global_phase_threshold),
+                CEREAL_NVP(wedges),
                 CEREAL_NVP(local_wall_time),
                 CEREAL_NVP(local_time)
             );
