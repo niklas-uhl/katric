@@ -696,8 +696,20 @@ run_cetric_new(DistributedGraph<>& G, cetric::profiling::Statistics& stats, cons
         RankEncodedNodeId{G.node_range().second, static_cast<uint16_t>(rank)}
     );
 
-    for (auto node: G.local_nodes()) {
-        original_degrees[node] = G.degree(node);
+    auto nodes = G.local_nodes();
+    if (conf.num_threads > 1) {
+        tbb::task_arena arena(conf.num_threads, 0);
+        arena.execute([&] {
+            tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&](auto const& r) {
+                for (auto node: r) {
+                    original_degrees[node] = G.degree(node);
+                }
+            });
+        });
+    } else {
+        for (auto node: nodes) {
+            original_degrees[node] = G.degree(node);
+        }
     }
     if (conf.parallel_compact) {
         G.remove_in_edges_and_expand_ghosts(
@@ -744,8 +756,8 @@ run_cetric_new(DistributedGraph<>& G, cetric::profiling::Statistics& stats, cons
     LOG << "[R" << rank << "] "
         << "Local phase finished ";
     ConditionalBarrier(conf.global_synchronization);
+    original_degrees = AuxiliaryNodeData<Degree>{};
     phase_timer.start("contraction");
-    auto nodes = G.local_nodes();
     if (conf.local_parallel) {
         tbb::task_arena arena(conf.num_threads, 0);
         arena.execute([&] {
