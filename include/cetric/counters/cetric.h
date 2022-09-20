@@ -296,8 +296,15 @@ run_patric(DistributedGraph<>& G, cetric::profiling::Statistics& stats, const Co
 }
 
 template <typename CommunicationPolicy>
-inline size_t
-run_cetric(DistributedGraph<>& G, cetric::profiling::Statistics& stats, const Config& conf, PEID rank, PEID size, CommunicationPolicy&&) {
+inline size_t run_cetric(
+    DistributedGraph<>&            G,
+    cetric::profiling::Statistics& stats,
+    const Config&                  conf,
+    PEID                           rank,
+    PEID                           size,
+    CommunicationPolicy&&,
+    bool id_node_ordering = false
+) {
     tlx::MultiTimer phase_timer;
     phase_timer.start("ghost_ranks");
     size_t threshold                   = get_threshold(G, conf);
@@ -372,14 +379,25 @@ run_cetric(DistributedGraph<>& G, cetric::profiling::Statistics& stats, const Co
 
     ConditionalBarrier(conf.global_synchronization);
     phase_timer.start("preprocessing");
-    preprocessing<node_ordering::degree_outward<decltype(G)>, node_ordering::degree_outward<decltype(G)>>(
-        G,
-        stats.local.preprocessing_local_phase,
-        ghost_degrees,
-        ghosts,
-        conf,
-        false
-    );
+    if (!id_node_ordering) {
+        preprocessing<node_ordering::degree_outward<decltype(G)>, node_ordering::degree_outward<decltype(G)>>(
+            G,
+            stats.local.preprocessing_local_phase,
+            ghost_degrees,
+            ghosts,
+            conf,
+            false
+        );
+    } else {
+        preprocessing<node_ordering::id_outward, node_ordering::degree_outward<decltype(G)>>(
+            G,
+            stats.local.preprocessing_local_phase,
+            ghost_degrees,
+            ghosts,
+            conf,
+            false
+        );
+    }
     LOG << "[R" << rank << "] "
         << "Preprocessing finished ";
     ConditionalBarrier(conf.global_synchronization);
@@ -389,24 +407,45 @@ run_cetric(DistributedGraph<>& G, cetric::profiling::Statistics& stats, const Co
     size_t                                              triangle_count = 0;
     tbb::concurrent_vector<Triangle<RankEncodedNodeId>> triangles;
     tbb::combinable<size_t>                             triangle_count_local_phase{0};
-    ctr.run_local(
-        [&](Triangle<RankEncodedNodeId> t) {
-            (void)t;
-            // atomic_debug(t);
+    if (!id_node_ordering) {
+        ctr.run_local(
+            [&](Triangle<RankEncodedNodeId> t) {
+                (void)t;
+                // atomic_debug(t);
 
-            if constexpr (KASSERT_ASSERTION_LEVEL >= kassert::assert::normal) {
-                t.normalize();
-                triangles.push_back(t);
-            }
-            // atomic_debug(tbb::this_task_arena::current_thread_index());
-            // triangle_count++;
-            // atomic_debug(omp_get_thread_num());
-            triangle_count_local_phase.local()++;
-        },
-        stats,
-        node_ordering::degree_outward(G),
-        node_ordering::degree_outward(G)
-    );
+                if constexpr (KASSERT_ASSERTION_LEVEL >= kassert::assert::normal) {
+                    t.normalize();
+                    triangles.push_back(t);
+                }
+                // atomic_debug(tbb::this_task_arena::current_thread_index());
+                // triangle_count++;
+                // atomic_debug(omp_get_thread_num());
+                triangle_count_local_phase.local()++;
+            },
+            stats,
+            node_ordering::degree_outward(G),
+            node_ordering::degree_outward(G)
+        );
+    } else {
+        ctr.run_local(
+            [&](Triangle<RankEncodedNodeId> t) {
+                (void)t;
+                // atomic_debug(t);
+
+                if constexpr (KASSERT_ASSERTION_LEVEL >= kassert::assert::normal) {
+                    t.normalize();
+                    triangles.push_back(t);
+                }
+                // atomic_debug(tbb::this_task_arena::current_thread_index());
+                // triangle_count++;
+                // atomic_debug(omp_get_thread_num());
+                triangle_count_local_phase.local()++;
+            },
+            stats,
+            node_ordering::id_outward(rank),
+            node_ordering::degree_outward(G)
+        );
+    }
     triangle_count += triangle_count_local_phase.combine(std::plus<>{});
     LOG << "[R" << rank << "] "
         << "Local phase finished ";
@@ -682,47 +721,78 @@ run_cetric_new(DistributedGraph<>& G, cetric::profiling::Statistics& stats, cons
     phase_timer.start("preprocessing");
     // preprocessing<node_ordering::id_outward,
     // node_ordering::degree<decltype(G)>>(
-    preprocessing<node_ordering::degree<decltype(G)>, node_ordering::degree<decltype(G)>>(
-        G,
-        stats.local.preprocessing_local_phase,
-        ghost_degrees,
-        ghosts,
-        conf,
-        true
-    );
+    if (!conf.id_node_ordering) {
+        preprocessing<node_ordering::degree<decltype(G)>, node_ordering::degree<decltype(G)>>(
+            G,
+            stats.local.preprocessing_local_phase,
+            ghost_degrees,
+            ghosts,
+            conf,
+            true
+        );
+    } else {
+        preprocessing<node_ordering::id_outward, node_ordering::degree<decltype(G)>>(
+            G,
+            stats.local.preprocessing_local_phase,
+            ghost_degrees,
+            ghosts,
+            conf,
+            true
+        );
+    }
     // TODO: work with degree ID sorting
-    AuxiliaryNodeData<Degree> original_degrees(
-        RankEncodedNodeId{G.node_range().first, static_cast<uint16_t>(rank)},
-        RankEncodedNodeId{G.node_range().second, static_cast<uint16_t>(rank)}
-    );
+    AuxiliaryNodeData<Degree> original_degrees;
+    if (!conf.id_node_ordering) {
+        original_degrees = AuxiliaryNodeData<Degree>{
+            RankEncodedNodeId{G.node_range().first, static_cast<uint16_t>(rank)},
+            RankEncodedNodeId{G.node_range().second, static_cast<uint16_t>(rank)}};
+    }
 
     auto nodes = G.local_nodes();
-    if (conf.num_threads > 1) {
-        tbb::task_arena arena(conf.num_threads, 0);
-        arena.execute([&] {
-            tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&](auto const& r) {
-                for (auto node: r) {
-                    original_degrees[node] = G.degree(node);
-                }
+    if (!conf.id_node_ordering) {
+        if (conf.num_threads > 1) {
+            tbb::task_arena arena(conf.num_threads, 0);
+            arena.execute([&] {
+                tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&](auto const& r) {
+                    for (auto node: r) {
+                        original_degrees[node] = G.degree(node);
+                    }
+                });
             });
-        });
-    } else {
-        for (auto node: nodes) {
-            original_degrees[node] = G.degree(node);
+        } else {
+            for (auto node: nodes) {
+                original_degrees[node] = G.degree(node);
+            }
         }
     }
-    if (conf.parallel_compact) {
-        G.remove_in_edges_and_expand_ghosts(
-            node_ordering::degree(G, ghost_degrees, original_degrees),
-            // node_ordering::id_outward(rank),
-            execution_policy::parallel{conf.num_threads}
-        );
+    if (!conf.id_node_ordering) {
+        if (conf.parallel_compact) {
+            G.remove_in_edges_and_expand_ghosts(
+                node_ordering::degree(G, ghost_degrees, original_degrees),
+                // node_ordering::id_outward(rank),
+                execution_policy::parallel{conf.num_threads}
+            );
+        } else {
+            G.remove_in_edges_and_expand_ghosts(
+                // node_ordering::id_outward(rank),
+                node_ordering::degree(G, ghost_degrees, original_degrees),
+                execution_policy::sequential{}
+            );
+        }
     } else {
-        G.remove_in_edges_and_expand_ghosts(
-            // node_ordering::id_outward(rank),
-            node_ordering::degree(G, ghost_degrees, original_degrees),
-            execution_policy::sequential{}
-        );
+        if (conf.parallel_compact) {
+            G.remove_in_edges_and_expand_ghosts(
+                // node_ordering::degree(G, ghost_degrees, original_degrees),
+                node_ordering::id_outward(rank),
+                execution_policy::parallel{conf.num_threads}
+            );
+        } else {
+            G.remove_in_edges_and_expand_ghosts(
+                node_ordering::id_outward(rank),
+                // node_ordering::degree(G, ghost_degrees, original_degrees),
+                execution_policy::sequential{}
+            );
+        }
     }
     LOG << "[R" << rank << "] "
         << "Preprocessing finished ";
@@ -733,51 +803,90 @@ run_cetric_new(DistributedGraph<>& G, cetric::profiling::Statistics& stats, cons
     size_t                                              triangle_count = 0;
     tbb::concurrent_vector<Triangle<RankEncodedNodeId>> triangles;
     tbb::combinable<size_t>                             triangle_count_local_phase{0};
-    ctr.run_local(
-        [&](Triangle<RankEncodedNodeId> t) {
-            (void)t;
-            // atomic_debug(t);
+    if (!conf.id_node_ordering) {
+        ctr.run_local(
+            [&](Triangle<RankEncodedNodeId> t) {
+                (void)t;
+                // atomic_debug(t);
 
-            if constexpr (KASSERT_ASSERTION_LEVEL >= kassert::assert::normal) {
-                t.normalize();
-                triangles.push_back(t);
-            }
-            // atomic_debug(tbb::this_task_arena::current_thread_index());
-            // triangle_count++;
-            // atomic_debug(omp_get_thread_num());
-            triangle_count_local_phase.local()++;
-        },
-        stats,
-        // node_ordering::id_outward(rank),
-        node_ordering::degree(G, ghost_degrees, original_degrees),
-        node_ordering::degree(G, ghost_degrees, original_degrees)
-    );
+                if constexpr (KASSERT_ASSERTION_LEVEL >= kassert::assert::normal) {
+                    t.normalize();
+                    triangles.push_back(t);
+                }
+                // atomic_debug(tbb::this_task_arena::current_thread_index());
+                // triangle_count++;
+                // atomic_debug(omp_get_thread_num());
+                triangle_count_local_phase.local()++;
+            },
+            stats,
+            // node_ordering::id_outward(rank),
+            node_ordering::degree(G, ghost_degrees, original_degrees),
+            node_ordering::degree(G, ghost_degrees, original_degrees)
+        );
+    } else {
+        ctr.run_local(
+            [&](Triangle<RankEncodedNodeId> t) {
+                (void)t;
+                // atomic_debug(t);
+
+                if constexpr (KASSERT_ASSERTION_LEVEL >= kassert::assert::normal) {
+                    t.normalize();
+                    triangles.push_back(t);
+                }
+                // atomic_debug(tbb::this_task_arena::current_thread_index());
+                // triangle_count++;
+                // atomic_debug(omp_get_thread_num());
+                triangle_count_local_phase.local()++;
+            },
+            stats,
+            node_ordering::id_outward(rank),
+            // node_ordering::degree(G, ghost_degrees, original_degrees),
+            node_ordering::degree(G, ghost_degrees, original_degrees)
+        );
+    }
     triangle_count += triangle_count_local_phase.combine(std::plus<>{});
     LOG << "[R" << rank << "] "
         << "Local phase finished ";
     ConditionalBarrier(conf.global_synchronization);
     original_degrees = AuxiliaryNodeData<Degree>{};
     phase_timer.start("contraction");
-    if (conf.local_parallel) {
-        tbb::task_arena arena(conf.num_threads, 0);
-        arena.execute([&] {
-            tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&](auto const& r) {
-                for (auto node: r) {
-                    G.remove_internal_edges(
-                        node,
-                        // node_ordering::id_outward(rank));
-                        node_ordering::degree(G, ghost_degrees, original_degrees)
-                    );
-                }
+    if (!conf.id_node_ordering) {
+        if (conf.local_parallel) {
+            tbb::task_arena arena(conf.num_threads, 0);
+            arena.execute([&] {
+                tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&](auto const& r) {
+                    for (auto node: r) {
+                        G.remove_internal_edges(
+                            node,
+                            // node_ordering::id_outward(rank));
+                            node_ordering::degree(G, ghost_degrees, original_degrees)
+                        );
+                    }
+                });
             });
-        });
+        } else {
+            for (auto node: nodes) {
+                G.remove_internal_edges(
+                    node,
+                    // node_ordering::id_outward(rank));
+                    node_ordering::degree(G, ghost_degrees, original_degrees)
+                );
+            }
+        }
     } else {
-        for (auto node: nodes) {
-            G.remove_internal_edges(
-                node,
-                // node_ordering::id_outward(rank));
-                node_ordering::degree(G, ghost_degrees, original_degrees)
-            );
+        if (conf.local_parallel) {
+            tbb::task_arena arena(conf.num_threads, 0);
+            arena.execute([&] {
+                tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&](auto const& r) {
+                    for (auto node: r) {
+                        G.remove_internal_edges(node, node_ordering::id_outward(rank));
+                    }
+                });
+            });
+        } else {
+            for (auto node: nodes) {
+                G.remove_internal_edges(node, node_ordering::id_outward(rank));
+            }
         }
     }
     auto G_compact     = conf.parallel_compact ? G.compact(execution_policy::parallel{conf.num_threads})

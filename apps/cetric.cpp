@@ -95,6 +95,7 @@ cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::P
     app.add_flag("--compact-degree-exchange", conf.compact_degree_exchange);
     app.add_flag("--global-synchronization", conf.global_synchronization);
     app.add_flag("--binary-rank-search", conf.binary_rank_search);
+    app.add_flag("--id-node-ordering", conf.id_node_ordering);
 
     app.add_option("--algorithm", conf.algorithm)
         ->transform(CLI::CheckedTransformer(cetric::algorithm_map, CLI::ignore_case));
@@ -379,9 +380,9 @@ int main(int argc, char* argv[]) {
 
             if (conf.algorithm == cetric::Algorithm::Cetric) {
                 if (conf.communication_policy == "new") {
-                    run_cetric(G, stats, conf, rank, size, cetric::MessageQueuePolicy{});
+                    run_cetric(G, stats, conf, rank, size, cetric::MessageQueuePolicy{}, conf.id_node_ordering);
                 } else if (conf.communication_policy == "grid") {
-                    run_cetric(G, stats, conf, rank, size, cetric::GridPolicy{});
+                    run_cetric(G, stats, conf, rank, size, cetric::GridPolicy{}, conf.id_node_ordering);
                 }
             } else if (conf.algorithm == cetric::Algorithm::Patric) {
                 if (conf.communication_policy == "new") {

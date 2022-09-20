@@ -153,6 +153,7 @@ struct Config {
     bool compact_degree_exchange = false;
     bool global_synchronization  = false;
     bool binary_rank_search      = false;
+    bool id_node_ordering = false;
 
     bool degree_filtering        = false;
     bool orient_locally          = false;
@@ -209,6 +210,7 @@ struct Config {
             CEREAL_NVP(compact_degree_exchange),
             CEREAL_NVP(global_synchronization),
             CEREAL_NVP(binary_rank_search),
+            CEREAL_NVP(id_node_ordering),
             CEREAL_NVP(threshold_scale),
             CEREAL_NVP(high_degree_threshold_scale),
             CEREAL_NVP(primary_cost_function),
