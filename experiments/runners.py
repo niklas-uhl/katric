@@ -82,8 +82,8 @@ def get_queue(cores, tasks_per_node):
 def required_nodes(cores, tasks_per_node):
     return int(max(int(m.ceil(float(cores) / tasks_per_node)), 1))
 
-def required_islands(cores):
-    if cores > 768:
+def required_islands(nodes):
+    if nodes > 768:
         return 2
     else:
         return 1
@@ -132,14 +132,15 @@ class SBatchRunner:
                 aggregate_jobname = f"{experiment_suite.name}-{input_name}-cores{ncores}"
                 log_path = output_path / f"{input_name}-cores{ncores}-log.txt"
                 subs = {}
-                subs["nodes"] = required_nodes(ncores, tasks_per_node)
+                nodes = required_nodes(ncores, tasks_per_node)
+                subs["nodes"] = nodes
                 subs["output_log"] = str(log_path)
                 subs["job_name"] = aggregate_jobname
                 if self.use_test_partition:
                     subs["job_queue"] = "test"
                 else:
                     subs["job_queue"] = get_queue(ncores, tasks_per_node)
-                subs["islands"] = required_islands(ncores)
+                subs["islands"] = required_islands(nodes)
                 subs["account"] = project
                 time_limit = 0
                 commands = []
