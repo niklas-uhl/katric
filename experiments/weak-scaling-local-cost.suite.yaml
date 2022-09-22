@@ -1,0 +1,47 @@
+name: weak-scaling-local-cost
+ncores: [512, 1024, 2048, 4096, 8192, 16384]
+threads_per_rank: [1]
+graphs:
+  - generator: rgg_2d
+    n: 18
+    m: 22
+    scale_weak: True
+  - generator: rhg
+    n: 18
+    m: 22
+    gamma: 3.0
+    scale_weak: True
+  - generator: rhg
+    n: 18
+    m: 22
+    gamma: 2.9
+    scale_weak: True
+  - generator: rmat
+    n: 12
+    m: 16
+    scale_weak: True
+  - generator: gnm
+    n: 16
+    m: 20
+    scale_weak: True
+time_limit: 5
+config:
+        - algorithm: [cetric-x, patric]
+          pseudo2core: [False]
+          binary-rank-search: True
+          threshold: local-nodes
+          threshold-scale: 1.0
+          edge-partitioning: False
+          edge-partitioning-static: False
+          id-node-ordering: True
+          local-parallel: False
+          global-parallel: False
+          local-degree-of-parallelism: [2]
+          global-degree-of-parallelism: [2]
+          dense-degree-exchange: False
+          skip-local-neighborhood: False
+          global-synchronization: True
+          communication-policy: [new]
+          primary-cost-function: ["none"]
+          intersection-method: [merge]
+          read-edge-partitioned: [True]
