@@ -163,15 +163,17 @@ struct Statistics {
         double                           global_phase_time = 0;
         double                           reduce_time       = 0;
         message_queue::MessageStatistics message_statistics;
-        std::atomic<size_t>              skipped_nodes          = 0;
-        std::atomic<size_t>              wedge_checks           = 0;
-        std::atomic<size_t>              nodes_parallel2d       = 0;
-        std::atomic<size_t>              local_triangles        = 0;
-        std::atomic<size_t>              type3_triangles        = 0;
-        size_t                           global_phase_threshold = 0;
-        size_t                           wedges                 = 0;
-        double                           local_wall_time        = 0;
-        double                           local_time             = 0;
+        std::atomic<size_t>              skipped_nodes            = 0;
+        std::atomic<size_t>              wedge_checks             = 0;
+        std::atomic<size_t>              intersection_size_local  = 0;
+        std::atomic<size_t>              intersection_size_global = 0;
+        std::atomic<size_t>              nodes_parallel2d         = 0;
+        std::atomic<size_t>              local_triangles          = 0;
+        std::atomic<size_t>              type3_triangles          = 0;
+        size_t                           global_phase_threshold   = 0;
+        size_t                           wedges                   = 0;
+        double                           local_wall_time          = 0;
+        double                           local_time               = 0;
 
         void ingest(tlx::MultiTimer const& timer) {
             tlx::MultiTimer timer_copy          = timer;
@@ -208,6 +210,8 @@ struct Statistics {
             archive(
                 cereal::make_nvp("skipped_nodes", skipped_nodes.load()),
                 cereal::make_nvp("wedge_checks", wedge_checks.load()),
+                cereal::make_nvp("intersection_size_local", intersection_size_local.load()),
+                cereal::make_nvp("intersection_size_global", intersection_size_global.load()),
                 cereal::make_nvp("nodes_parallel2d", nodes_parallel2d.load()),
                 cereal::make_nvp("local_triangles", local_triangles.load()),
                 cereal::make_nvp("type3_triangles", type3_triangles.load())
@@ -236,18 +240,24 @@ struct Statistics {
             );
             size_t skipped_nodes_tmp;
             size_t wedge_checks_tmp;
+            size_t intersection_size_local_tmp;
+            size_t intersection_size_global_tmp;
             size_t nodes_parallel2d_tmp;
             size_t local_triangles_tmp;
             size_t type3_triangles_tmp;
             archive(
                 cereal::make_nvp("skipped_nodes", skipped_nodes_tmp),
                 cereal::make_nvp("wedge_checks", wedge_checks_tmp),
+                cereal::make_nvp("intersection_size_local", intersection_size_local_tmp),
+                cereal::make_nvp("intersection_size_global", intersection_size_global_tmp),
                 cereal::make_nvp("nodes_parallel2d", nodes_parallel2d_tmp),
                 cereal::make_nvp("local_triangles", local_triangles_tmp),
                 cereal::make_nvp("type3_triangles", type3_triangles_tmp)
             );
             skipped_nodes.store(skipped_nodes_tmp);
             wedge_checks.store(wedge_checks_tmp);
+            intersection_size_local.store(intersection_size_local_tmp);
+            intersection_size_global.store(intersection_size_global_tmp);
             nodes_parallel2d.store(nodes_parallel2d_tmp);
             local_triangles.store(local_triangles_tmp);
             type3_triangles.store(type3_triangles_tmp);

@@ -240,6 +240,8 @@ public:
                 }
                 // for each edge (v, u) we check the open wedge (v, u, w) for w in N(u)+
                 stats.local.wedge_checks += u_neighbors.end() - u_neighbors.begin();
+                stats.local.intersection_size_local +=
+                    v_neighbors.end() - v_neighbors.begin() + u_neighbors.end() - u_neighbors.begin();
                 cetric::intersection(
                     v_neighbors.begin() + offset,
                     v_neighbors.end(),
@@ -294,6 +296,8 @@ public:
                     offset = neighbor_index;
                 }
                 stats.local.wedge_checks += u_neighbors.end() - u_neighbors.begin();
+                stats.local.intersection_size_local +=
+                    v_neighbors.end() - v_neighbors.begin() + u_neighbors.end() - u_neighbors.begin();
                 cetric::intersection(
                     v_neighbors.begin() + offset,
                     v_neighbors.end(),
@@ -326,6 +330,8 @@ public:
                 if constexpr (std::is_same_v<NodeOrdering, EdgeOrientationOrdering>) {
                     offset = neighbor_index;
                 }
+                stats.local.intersection_size_local +=
+                    v_neighbors.end() - v_neighbors.begin() + u_neighbors.end() - u_neighbors.begin();
                 cetric::intersection(
                     v_neighbors.begin() + offset,
                     v_neighbors.end(),
@@ -437,6 +443,8 @@ public:
                 // for each edge (v, u) we check the open wedge (v, u, w)
                 // for w in N(u)+
                 stats.local.wedge_checks += u_neighbors.end() - u_neighbors.begin();
+                stats.local.intersection_size_local +=
+                    v_neighbors.end() - v_neighbors.begin() + u_neighbors.end() - u_neighbors.begin();
                 cetric::intersection(
                     v_neighbors.begin() + offset,
                     v_neighbors.end(),
@@ -666,6 +674,8 @@ public:
                         // for each edge (v, u) we check the open wedge (v, u,
                         // w) for w in N(u)+
                         stats.local.wedge_checks += u_neighbors.end() - u_neighbors.begin();
+                        stats.local.intersection_size_local +=
+                            v_neighbors.end() - v_neighbors.begin() + u_neighbors.end() - u_neighbors.begin();
                         cetric::intersection(
                             v_neighbors.begin() + offset,
                             v_neighbors.end(),
@@ -762,6 +772,8 @@ public:
                     // for each edge (v, u) we check the open wedge (v, u, w)
                     // for w in N(u)+
                     stats.local.wedge_checks += u_neighbors.end() - u_neighbors.begin();
+                    stats.local.intersection_size_local +=
+                        v_neighbors.end() - v_neighbors.begin() + u_neighbors.end() - u_neighbors.begin();
                     cetric::intersection(
                         v_neighbors.begin() + offset,
                         v_neighbors.end(),
@@ -867,6 +879,8 @@ public:
                     // for each edge (v, u) we check the open wedge (v, u, w)
                     // for w in N(u)+
                     stats.local.wedge_checks += u_neighbors.end() - u_neighbors.begin();
+                    stats.local.intersection_size_local +=
+                        v_neighbors.end() - v_neighbors.begin() + u_neighbors.end() - u_neighbors.begin();
                     cetric::intersection(
                         v_neighbors.begin() + offset,
                         v_neighbors.end(),
@@ -942,7 +956,7 @@ public:
                 break;
             }
             case ParallelizationMethod::omp_for: {
-// clang-format off
+                // clang-format off
                 #pragma omp parallel for schedule(runtime)
                 // clang-format on
                 for (auto v: nodes) {
@@ -1425,6 +1439,8 @@ private:
             // for each edge (v, u) we check the open wedge
             //  (v, u, w) for w in N(u)+
             stats.local.wedge_checks += u_neighbors.end() - u_neighbors.begin();
+            stats.local.intersection_size_global +=
+                filtered_neighbors.end() - filtered_neighbors.begin() + u_neighbors.end() - u_neighbors.begin();
             cetric::intersection(
                 u_neighbors.begin(),
                 u_neighbors.end(),
@@ -1438,6 +1454,8 @@ private:
             // for each edge (v, u) we check the open wedge (v, u, w) for w in
             // N(u)+
             stats.local.wedge_checks += u_neighbors.end() - u_neighbors.begin();
+
+            stats.local.intersection_size_global += end - begin + u_neighbors.end() - u_neighbors.begin();
             cetric::intersection(
                 u_neighbors.begin(),
                 u_neighbors.end(),
@@ -1453,6 +1471,8 @@ private:
             // for each edge (v, u) we check the open wedge (v, u, w) for w in
             // N(u)+
             stats.local.wedge_checks += u_neighbors.end() - u_neighbors.begin();
+            stats.local.intersection_size_global +=
+                v_neighbors.end() - v_neighbors.begin() + u_neighbors.end() - u_neighbors.begin();
             cetric::intersection(
                 u_neighbors.begin(),
                 u_neighbors.end(),
