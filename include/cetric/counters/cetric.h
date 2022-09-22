@@ -517,7 +517,7 @@ inline size_t run_cetric(
         LOG << "[R" << rank << "] "
             << "Secondary load balancing finished ";
         ConditionalBarrier(conf.global_synchronization);
-        phase_timer.start("preprocessing");
+        phase_timer.start("preprocessing_global");
         preprocessing<node_ordering::id_outward, node_ordering::degree<decltype(G_global_phase)>>(
             G_global_phase,
             stats.local.preprocessing_global_phase,
@@ -579,7 +579,7 @@ inline size_t run_cetric(
         // fmt::format("Found {} triangles in global phase 2", triangle_count_global_phase.combine(std::plus<>{})));
     } else {
         ConditionalBarrier(conf.global_synchronization);
-        phase_timer.start("preprocessing");
+        phase_timer.start("preprocessing_global");
         preprocessing<node_ordering::id_outward, node_ordering::degree<decltype(G_compact)>>(
             G_compact,
             stats.local.preprocessing_global_phase,
@@ -891,19 +891,23 @@ run_cetric_new(DistributedGraph<>& G, cetric::profiling::Statistics& stats, cons
     }
     auto G_compact     = conf.parallel_compact ? G.compact(execution_policy::parallel{conf.num_threads})
                                                : G.compact(execution_policy::sequential{});
+    ConditionalBarrier(conf.global_synchronization);
+    phase_timer.start("preprocessing_global");
     auto compact_nodes = G_compact.local_nodes();
-    if (conf.local_parallel) {
-        tbb::task_arena arena(conf.num_threads, 0);
-        arena.execute([&] {
-            tbb::parallel_for(tbb::blocked_range(compact_nodes.begin(), compact_nodes.end()), [&](auto const& r) {
-                for (auto node: r) {
-                    G_compact.sort_neighborhoods(node, node_ordering::id());
-                }
+    if (!conf.id_node_ordering) {
+        if (conf.local_parallel) {
+            tbb::task_arena arena(conf.num_threads, 0);
+            arena.execute([&] {
+                tbb::parallel_for(tbb::blocked_range(compact_nodes.begin(), compact_nodes.end()), [&](auto const& r) {
+                    for (auto node: r) {
+                        G_compact.sort_neighborhoods(node, node_ordering::id());
+                    }
+                });
             });
-        });
-    } else {
-        for (auto node: compact_nodes) {
-            G_compact.sort_neighborhoods(node, node_ordering::id());
+        } else {
+            for (auto node: compact_nodes) {
+                G_compact.sort_neighborhoods(node, node_ordering::id());
+            }
         }
     }
     LOG << "[R" << rank << "] "
@@ -915,7 +919,7 @@ run_cetric_new(DistributedGraph<>& G, cetric::profiling::Statistics& stats, cons
     phase_timer.start("secondary_load_balancing");
     tbb::combinable<size_t> triangle_count_global_phase{0};
     ConditionalBarrier(conf.global_synchronization);
-    phase_timer.start("preprocessing");
+    //phase_timer.start("preprocessing");
     // preprocessing(G_compact, stats.local.preprocessing_global_phase, ghost_degrees, ghosts, conf, Phase::Global);
     // ConditionalBarrier(conf.global_synchronization);
     phase_timer.start("global_phase");

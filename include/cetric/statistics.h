@@ -120,6 +120,8 @@ struct Statistics {
             contraction_time           = rhs.contraction_time;
             global_phase_time          = rhs.global_phase_time;
             reduce_time                = rhs.reduce_time;
+            preprocessing_time         = rhs.preprocessing_time;
+            preprocessing_global_time  = rhs.preprocessing_global_time;
             message_statistics         = rhs.message_statistics;
             skipped_nodes              = rhs.skipped_nodes.load();
             wedge_checks               = rhs.wedge_checks.load();
@@ -140,6 +142,8 @@ struct Statistics {
             contraction_time           = rhs.contraction_time;
             global_phase_time          = rhs.global_phase_time;
             reduce_time                = rhs.reduce_time;
+            preprocessing_time         = rhs.preprocessing_time;
+            preprocessing_global_time  = rhs.preprocessing_global_time;
             message_statistics         = rhs.message_statistics;
             skipped_nodes              = rhs.skipped_nodes.load();
             wedge_checks               = rhs.wedge_checks.load();
@@ -157,11 +161,13 @@ struct Statistics {
         PreprocessingStatistics          preprocessing_global_phase;
         LoadBalancingStatistics          primary_load_balancing;
         LoadBalancingStatistics          secondary_load_balancing;
-        double                           ghost_rank_gather = 0;
-        double                           local_phase_time  = 0;
-        double                           contraction_time  = 0;
-        double                           global_phase_time = 0;
-        double                           reduce_time       = 0;
+        double                           ghost_rank_gather         = 0;
+        double                           local_phase_time          = 0;
+        double                           contraction_time          = 0;
+        double                           global_phase_time         = 0;
+        double                           reduce_time               = 0;
+        double                           preprocessing_time        = 0;
+        double                           preprocessing_global_time = 0;
         message_queue::MessageStatistics message_statistics;
         std::atomic<size_t>              skipped_nodes            = 0;
         std::atomic<size_t>              wedge_checks             = 0;
@@ -184,6 +190,8 @@ struct Statistics {
             secondary_load_balancing.phase_time = timer_copy.get("secondary_load_balancing");
             global_phase_time                   = timer_copy.get("global_phase");
             reduce_time                         = timer_copy.get("reduce");
+            preprocessing_time                  = timer_copy.get("preprocessing");
+            preprocessing_global_time           = timer_copy.get("preprocessing_global");
             local_time                          = timer.total();
         }
 
@@ -201,6 +209,8 @@ struct Statistics {
                 CEREAL_NVP(contraction_time),
                 CEREAL_NVP(global_phase_time),
                 CEREAL_NVP(reduce_time),
+                CEREAL_NVP(preprocessing_time),
+                CEREAL_NVP(preprocessing_global_time),
                 CEREAL_NVP(message_statistics),
                 CEREAL_NVP(global_phase_threshold),
                 CEREAL_NVP(wedges),
@@ -232,6 +242,8 @@ struct Statistics {
                 CEREAL_NVP(contraction_time),
                 CEREAL_NVP(global_phase_time),
                 CEREAL_NVP(reduce_time),
+                CEREAL_NVP(preprocessing_time),
+                CEREAL_NVP(preprocessing_global_time),
                 CEREAL_NVP(message_statistics),
                 CEREAL_NVP(global_phase_threshold),
                 CEREAL_NVP(wedges),
