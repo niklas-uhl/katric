@@ -1,0 +1,65 @@
+name: weak-scaling-full-again-new
+ncores: [512, 1024, 2048, 4096, 8192, 16384]
+threads_per_rank: [1]
+graphs:
+  - generator: rgg_2d
+    n: 18
+    m: 22
+    scale_weak: True
+  - generator: rhg
+    n: 18
+    m: 22
+    gamma: 3.0
+    scale_weak: True
+  - generator: rhg
+    n: 18
+    m: 22
+    gamma: 2.9
+    scale_weak: True
+  - generator: rmat
+    n: 14
+    m: 18
+    scale_weak: True
+  - generator: gnm
+    n: 18
+    m: 22
+    scale_weak: True
+time_limit: 10
+config:
+        - algorithm: [cetric]
+          pseudo2core: [True]
+          binary-rank-search: True
+          threshold: local-nodes
+          threshold-scale: 1.0
+          local-parallel: True
+          edge-partitioning: True
+          edge-partitioning-static: False
+          id-node-ordering: True
+          global-parallel: True
+          local-degree-of-parallelism: [2]
+          global-degree-of-parallelism: [2]
+          dense-degree-exchange: False
+          skip-local-neighborhood: False
+          global-synchronization: True
+          communication-policy: [new, grid]
+          primary-cost-function: ["none"]
+          intersection-method: [merge, binary]
+          read-edge-partitioned: [True]
+        - algorithm: [patric]
+          pseudo2core: [False]
+          binary-rank-search: True
+          threshold: local-nodes
+          threshold-scale: 0.0
+          local-parallel: True
+          edge-partitioning: True
+          edge-partitioning-static: False
+          global-parallel: True
+          local-degree-of-parallelism: [2]
+          global-degree-of-parallelism: [2]
+          dense-degree-exchange: False
+          skip-local-neighborhood: False
+          global-synchronization: True
+          communication-policy: [new]
+          primary-cost-function: ["none"]
+          intersection-method: [merge]
+          read-edge-partitioned: [True]
