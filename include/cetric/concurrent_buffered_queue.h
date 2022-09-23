@@ -7,6 +7,7 @@
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <thread>
 #include <type_traits>
 #include <unordered_map>
 
@@ -34,24 +35,47 @@ public:
     using splitter   = Splitter;
     using value_type = T;
 
-    ConcurrentBufferedMessageQueue(size_t num_threads, Merger&& merge, Splitter&& split)
-        : queue_(),
+    ConcurrentBufferedMessageQueue(size_t num_threads, std::thread::id master, Merger&& merge, Splitter&& split)
+        : master_thread_id_(master),
+          queue_(),
           buffers_(queue_.size()),
           merge(merge),
           split(split),
           num_worker_threads_(num_threads - 1) {}
 
+    // a thread tries to post a message
+    // if the buffer is full it blocks (thread is writing + waiting)
+    // main thread polls and sees overflow
+    // if no threads are waiting
+
     void post_message(std::vector<T>&& message, message_queue::PEID receiver, int tag = 0) {
-        num_writing_threads_++;
+        if (std::this_thread::get_id() == master_thread_id_) {
+            check_for_overflow_and_flush();
+            auto&  buffer         = buffers_[receiver];
+            size_t added_elements = merge(buffer, std::forward<std::vector<T>>(message), tag);
+            buffer_ocupacy_ += added_elements;
+            return;
+        }
+        num_writing_threads_.fetch_add(1, std::memory_order_seq_cst);
         {
-            if (buffer_ocupacy_ >= threshold_) {
-                waiting_threads_++;
-                // atomic_debug("Waiting");
+            if (buffer_ocupacy_.load(std::memory_order_seq_cst) >= threshold_) {
+                waiting_threads_.fetch_add(1, std::memory_order_seq_cst);
+                atomic_debug(fmt::format("t{}: waiting", std::this_thread::get_id()));
                 {
                     std::unique_lock lock(mutex_);
-                    cv_buffer_full_.wait(lock, [this]() { return buffer_ocupacy_ < threshold_; });
+                    size_t           overflows = overflows_.load(std::memory_order_seq_cst);
+                    cv_buffer_full_.wait(lock, [this, overflows]() {
+                        if (threshold_ == 0) {
+                            // we may wake up to early, therefore check if the buffer has already been flushed
+                            return !flushing_;
+                        } else {
+                            return buffer_ocupacy_.load(std::memory_order_seq_cst) < threshold_;
+                        }
+                    });
+                    atomic_debug(fmt::format("t{}: writing {}", std::this_thread::get_id(), message));
+                    filling_threads_.fetch_add(1, std::memory_order_seq_cst);
+                    waiting_threads_.fetch_sub(1, std::memory_order_seq_cst);
                 }
-                waiting_threads_--;
                 // atomic_debug("Waiting finished");
             }
             auto&             buffer = buffers_[receiver];
@@ -60,17 +84,23 @@ public:
             //     << ": " << message;
             // atomic_debug(out.str());
             size_t added_elements = merge(buffer, std::forward<std::vector<T>>(message), tag);
-            buffer_ocupacy_ += added_elements;
+            atomic_debug(fmt::format("t{}: writing done", std::this_thread::get_id()));
+            std::atomic_thread_fence(std::memory_order_seq_cst);
+            buffer_ocupacy_.fetch_add(added_elements, std::memory_order_seq_cst);
+            filling_threads_.fetch_sub(1, std::memory_order_seq_cst);
         }
-        num_writing_threads_--;
+        num_writing_threads_.fetch_sub(1, std::memory_order_seq_cst);
     }
 
     void check_for_overflow_and_flush() {
-        if (buffer_ocupacy_ >= threshold_ && waiting_threads_ != 0 && waiting_threads_ == num_writing_threads_) {
+        if (buffer_ocupacy_.load(std::memory_order_seq_cst) >= threshold_
+            && waiting_threads_.load(std::memory_order_seq_cst) != 0
+            && waiting_threads_.load(std::memory_order_seq_cst) == num_writing_threads_.load(std::memory_order_seq_cst)
+            && filling_threads_.load(std::memory_order_seq_cst) == 0) {
             // assert(buffer_ocupacy_ > threshold_);
             // atomic_debug("Overflow");
-            overflows_++;
             flush_all();
+            overflows_.fetch_add(1, std::memory_order_seq_cst);
         }
         cv_buffer_full_.notify_all();
     }
@@ -78,8 +108,8 @@ public:
     void set_threshold(size_t threshold) {
         threshold_ = threshold;
         if (buffer_ocupacy_ > threshold_) {
-            overflows_++;
             flush_all();
+            overflows_++;
         }
     }
 
@@ -92,6 +122,8 @@ public:
             // atomic_debug(fmt::format("Flushing buffer for {}", receiver));
             buffer.clear();
             removed_elements = message.size();
+            atomic_debug(fmt::format("send {}", message));
+            KASSERT(message.back() == cetric::RankEncodedNodeId::sentinel());
             queue_.post_message(std::move(message), receiver);
         }
         return removed_elements;
@@ -102,16 +134,21 @@ public:
     }
 
     void flush_all() {
+        flushing_ = true;
+        atomic_debug("Flush all");
         size_t removed_elements = 0;
         for (size_t i = 0; i < buffers_.size(); ++i) {
             removed_elements += flush_impl(i);
         }
-        buffer_ocupacy_ -= removed_elements;
+        buffer_ocupacy_.fetch_sub(removed_elements, std::memory_order_seq_cst);
+        atomic_debug("Flush all done");
+        flushing_ = false;
     }
 
     template <typename MessageHandler>
     void poll(MessageHandler&& on_message) {
         queue_.poll([&](std::vector<T> message, message_queue::PEID sender) {
+            atomic_debug(fmt::format("received {}", message));
             split(std::move(message), on_message, sender);
         });
     }
@@ -132,7 +169,7 @@ public:
     }
 
     size_t overflows() const {
-        return overflows_;
+        return overflows_.load();
     }
 
     const message_queue::MessageStatistics& stats() {
@@ -147,6 +184,7 @@ public:
     }
 
 private:
+    std::thread::id                        master_thread_id_;
     message_queue::MessageQueue<T>         queue_;
     std::vector<tbb::concurrent_vector<T>> buffers_;
     std::mutex                             mutex_;
@@ -154,17 +192,20 @@ private:
     Splitter                               split;
     size_t                                 num_worker_threads_;
     size_t                                 threshold_           = std::numeric_limits<size_t>::max();
-    size_t                                 overflows_           = 0;
+    std::atomic<size_t>                    overflows_           = 0;
     std::atomic<size_t>                    num_writing_threads_ = 0;
     std::atomic<size_t>                    buffer_ocupacy_      = 0;
     std::atomic<size_t>                    waiting_threads_     = 0;
+    std::atomic<size_t>                    filling_threads_     = 0;
+    std::atomic<bool>                      flushing_            = false;
     std::condition_variable                cv_buffer_full_;
 };
 
 template <class T, typename Merger, typename Splitter>
-auto make_concurrent_buffered_queue(size_t num_threads, Merger&& merger, Splitter&& splitter) {
+auto make_concurrent_buffered_queue(size_t num_threads, std::thread::id master, Merger&& merger, Splitter&& splitter) {
     return ConcurrentBufferedMessageQueue<T, Merger, Splitter>(
         num_threads,
+        master,
         std::forward<Merger>(merger),
         std::forward<Splitter>(splitter)
     );

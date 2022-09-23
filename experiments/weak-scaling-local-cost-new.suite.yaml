@@ -1,5 +1,5 @@
-name: weak-scaling-local-cost
-ncores: [512, 1024, 2048, 4096, 8192, 16384]
+name: weak-scaling-local-cost-new
+ncores: [512, 1024, 2048, 4096, 8192, 16384, 32768]
 threads_per_rank: [1]
 graphs:
   - generator: rgg_2d
@@ -14,12 +14,12 @@ graphs:
   - generator: rhg
     n: 18
     m: 22
-    gamma: 2.9
+    gamma: 2.8
     scale_weak: True
   - generator: rhg
     n: 18
     m: 22
-    gamma: 2.8
+    gamma: 2.6
     scale_weak: True
   - generator: rmat
     n: 12
@@ -50,6 +50,7 @@ config:
           primary-cost-function: ["none"]
           intersection-method: [merge]
           read-edge-partitioned: [True]
+          iterations: 4
         - algorithm: [cetric-x]
           pseudo2core: [False]
           binary-rank-search: True
@@ -65,7 +66,8 @@ config:
           dense-degree-exchange: True
           skip-local-neighborhood: False
           global-synchronization: True
-          communication-policy: [new, hybrid]
+          communication-policy: [new, grid]
           primary-cost-function: ["none"]
-          intersection-method: [merge, binary]
+          intersection-method: [merge]
           read-edge-partitioned: [True]
+          iterations: 4

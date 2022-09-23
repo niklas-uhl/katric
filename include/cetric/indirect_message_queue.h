@@ -75,6 +75,7 @@ public:
                 std::stringstream out;
                 out << "Redirecting message to " << receiver << " via " << proxy;
                 // atomic_debug(out.str());
+                //TODO this is a problem with multi threading
                 queue_.post_message(std::vector(begin, end), proxy);
             }
         });

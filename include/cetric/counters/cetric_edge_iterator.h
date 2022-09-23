@@ -71,9 +71,15 @@ struct Merger {
     size_t
     operator()(VectorType<RankEncodedNodeId>& buffer, std::vector<RankEncodedNodeId> msg, int tag [[maybe_unused]]) {
         if constexpr (has_grow_by_v<VectorType<RankEncodedNodeId>>) {
+            atomic_debug(fmt::format("grow by {} with {}", msg.size(), msg));
             auto insert_position = buffer.grow_by(msg.size() + 1);
             std::copy(msg.begin(), msg.end(), insert_position);
             *(insert_position + msg.size()) = RankEncodedNodeId::sentinel();
+            atomic_debug(fmt::format(
+                "done with copy of {} -> {}",
+                msg,
+                boost::make_iterator_range(insert_position, insert_position + msg.size())
+            ));
         } else {
             for (auto elem: msg) {
                 buffer.push_back(elem);
@@ -1010,11 +1016,11 @@ public:
             if (conf_.local_degree_of_parallelism > 2) {
                 return true;
             } else if (conf_.local_degree_of_parallelism > 1) {
-              if (node.rank() == rank_) {
-                return G.outdegree(node) > high_degree_threshold_;
-              } else {
-                return G.ghost_degree(node) > high_degree_threshold_;
-              }
+                if (node.rank() == rank_) {
+                    return G.outdegree(node) > high_degree_threshold_;
+                } else {
+                    return G.ghost_degree(node) > high_degree_threshold_;
+                }
             } else {
                 return false;
             }
@@ -1283,8 +1289,13 @@ public:
         GhostSet const&                ghosts
     ) {
         KASSERT(conf_.num_threads > 1ul);
-        auto base_queue =
-            cetric::make_concurrent_buffered_queue<RankEncodedNodeId>(conf_.num_threads - 1, Merger{}, Splitter{});
+        std::thread::id master_thread_id = std::this_thread::get_id();
+        auto            base_queue       = cetric::make_concurrent_buffered_queue<RankEncodedNodeId>(
+            conf_.num_threads - 1,
+            master_thread_id,
+            Merger{},
+            Splitter{}
+        );
         auto queue = [&]() {
             if constexpr (std::is_same_v<CommunicationPolicy, cetric::GridPolicy>) {
                 return IndirectMessageQueueAdaptor(base_queue);
@@ -1334,8 +1345,7 @@ public:
         }
         while (true) {
             if (write_jobs == 0 && nodes_queued == 0) {
-                // atomic_debug(fmt::format("No more polling, enqueued: {}, done: {}", pool.enqueued(),
-                // pool.done()));
+                atomic_debug(fmt::format("No more polling, enqueued: {}, done: {}", pool.enqueued(), pool.done()));
                 break;
             }
             queue.check_for_overflow_and_flush();

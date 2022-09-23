@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <vector>
+#include <kassert/kassert.hpp>
 
 namespace cetric {
 template <typename T>
@@ -11,7 +12,9 @@ public:
     SharedVectorSpan(std::shared_ptr<std::vector<T>> ptr, size_t begin, size_t end)
         : ptr_(std::move(ptr)),
           begin_(begin),
-          end_(end) {}
+          end_(end) {
+      KASSERT(begin <= end);
+    }
 
     SharedVectorSpan<T> subspan(size_t begin, size_t end) {
         return SharedVectorSpan<T>(ptr_, begin_ + begin, begin_ + end);

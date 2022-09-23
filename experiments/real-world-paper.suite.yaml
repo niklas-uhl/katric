@@ -1,35 +1,23 @@
-name: weak-scaling-local-cost
-ncores: [512, 1024, 2048, 4096, 8192, 16384]
+name: real-world-paper
+ncores: [512, 1024, 2048, 4096, 8192, 16384, 32768]
 threads_per_rank: [1]
 graphs:
-  - generator: rgg_2d
-    n: 18
-    m: 22
-    scale_weak: True
-  - generator: rhg
-    n: 18
-    m: 22
-    gamma: 3.0
-    scale_weak: True
-  - generator: rhg
-    n: 18
-    m: 22
-    gamma: 2.9
-    scale_weak: True
-  - generator: rhg
-    n: 18
-    m: 22
-    gamma: 2.8
-    scale_weak: True
-  - generator: rmat
-    n: 12
-    m: 16
-    scale_weak: True
-  - generator: gnm
-    n: 16
-    m: 20
-    scale_weak: True
-time_limit: 5
+    - name: webbase-2001
+      time_limit: 3
+    - name: europe
+      time_limit: 1
+    - name: usa
+      time_limit: 1
+    - name: uk-2007-05
+      time_limit: 10
+    - name: orkut
+      time_limit: 2
+    - name: live-journal
+      time_limit: 2
+    - name: twitter
+      time_limit: 5
+    - name: friendster
+      time_limit: 5
 config:
         - algorithm: [patric]
           pseudo2core: [False]
@@ -48,8 +36,9 @@ config:
           global-synchronization: True
           communication-policy: [new]
           primary-cost-function: ["none"]
-          intersection-method: [merge]
+          intersection-method: [merge, binary]
           read-edge-partitioned: [True]
+          #iterations: 4
         - algorithm: [cetric-x]
           pseudo2core: [False]
           binary-rank-search: True
@@ -65,7 +54,8 @@ config:
           dense-degree-exchange: True
           skip-local-neighborhood: False
           global-synchronization: True
-          communication-policy: [new, hybrid]
+          communication-policy: [new, grid]
           primary-cost-function: ["none"]
           intersection-method: [merge, binary]
           read-edge-partitioned: [True]
+          #iterations: 4
