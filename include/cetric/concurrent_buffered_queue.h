@@ -60,7 +60,6 @@ public:
         {
             if (buffer_ocupacy_.load(std::memory_order_seq_cst) >= threshold_) {
                 waiting_threads_.fetch_add(1, std::memory_order_seq_cst);
-                atomic_debug(fmt::format("t{}: waiting", std::this_thread::get_id()));
                 {
                     std::unique_lock lock(mutex_);
                     size_t           overflows = overflows_.load(std::memory_order_seq_cst);
@@ -72,7 +71,6 @@ public:
                             return buffer_ocupacy_.load(std::memory_order_seq_cst) < threshold_;
                         }
                     });
-                    atomic_debug(fmt::format("t{}: writing {}", std::this_thread::get_id(), message));
                     filling_threads_.fetch_add(1, std::memory_order_seq_cst);
                     waiting_threads_.fetch_sub(1, std::memory_order_seq_cst);
                 }
@@ -84,7 +82,6 @@ public:
             //     << ": " << message;
             // atomic_debug(out.str());
             size_t added_elements = merge(buffer, std::forward<std::vector<T>>(message), tag);
-            atomic_debug(fmt::format("t{}: writing done", std::this_thread::get_id()));
             std::atomic_thread_fence(std::memory_order_seq_cst);
             buffer_ocupacy_.fetch_add(added_elements, std::memory_order_seq_cst);
             filling_threads_.fetch_sub(1, std::memory_order_seq_cst);
@@ -122,7 +119,6 @@ public:
             // atomic_debug(fmt::format("Flushing buffer for {}", receiver));
             buffer.clear();
             removed_elements = message.size();
-            atomic_debug(fmt::format("send {}", message));
             KASSERT(message.back() == cetric::RankEncodedNodeId::sentinel());
             queue_.post_message(std::move(message), receiver);
         }
@@ -135,20 +131,17 @@ public:
 
     void flush_all() {
         flushing_ = true;
-        atomic_debug("Flush all");
         size_t removed_elements = 0;
         for (size_t i = 0; i < buffers_.size(); ++i) {
             removed_elements += flush_impl(i);
         }
         buffer_ocupacy_.fetch_sub(removed_elements, std::memory_order_seq_cst);
-        atomic_debug("Flush all done");
         flushing_ = false;
     }
 
     template <typename MessageHandler>
     void poll(MessageHandler&& on_message) {
         queue_.poll([&](std::vector<T> message, message_queue::PEID sender) {
-            atomic_debug(fmt::format("received {}", message));
             split(std::move(message), on_message, sender);
         });
     }

@@ -71,15 +71,15 @@ struct Merger {
     size_t
     operator()(VectorType<RankEncodedNodeId>& buffer, std::vector<RankEncodedNodeId> msg, int tag [[maybe_unused]]) {
         if constexpr (has_grow_by_v<VectorType<RankEncodedNodeId>>) {
-            atomic_debug(fmt::format("grow by {} with {}", msg.size(), msg));
+            // atomic_debug(fmt::format("grow by {} with {}", msg.size(), msg));
             auto insert_position = buffer.grow_by(msg.size() + 1);
             std::copy(msg.begin(), msg.end(), insert_position);
             *(insert_position + msg.size()) = RankEncodedNodeId::sentinel();
-            atomic_debug(fmt::format(
-                "done with copy of {} -> {}",
-                msg,
-                boost::make_iterator_range(insert_position, insert_position + msg.size())
-            ));
+            // atomic_debug(fmt::format(
+            //     "done with copy of {} -> {}",
+            //     msg,
+            //     boost::make_iterator_range(insert_position, insert_position + msg.size())
+            // ));
         } else {
             for (auto elem: msg) {
                 buffer.push_back(elem);
@@ -1345,7 +1345,7 @@ public:
         }
         while (true) {
             if (write_jobs == 0 && nodes_queued == 0) {
-                atomic_debug(fmt::format("No more polling, enqueued: {}, done: {}", pool.enqueued(), pool.done()));
+                // atomic_debug(fmt::format("No more polling, enqueued: {}, done: {}", pool.enqueued(), pool.done()));
                 break;
             }
             queue.check_for_overflow_and_flush();
