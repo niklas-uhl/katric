@@ -1,0 +1,64 @@
+name: real-world-paper-hybrid-old
+ncores: [512, 1024, 2048, 4096, 8192, 16384, 32768]
+threads_per_rank: [2, 4, 8]
+graphs:
+    - name: webbase-2001
+      time_limit: 3
+    - name: europe
+      time_limit: 1
+    - name: usa
+      time_limit: 1
+    - name: uk-2007-05
+      time_limit: 5
+    - name: orkut
+      time_limit: 1
+    - name: live-journal
+      time_limit: 2
+    - name: twitter
+      time_limit: 5
+    - name: friendster
+      time_limit: 5
+config:
+        - algorithm: [cetric-x]
+          pseudo2core: [False]
+          binary-rank-search: True
+          threshold: local-nodes
+          threshold-scale: 1.0
+          edge-partitioning: True
+          edge-partitioning-static: False
+          id-node-ordering: True
+          local-parallel: True
+          global-parallel: True
+          parallel-compact: True
+          local-degree-of-parallelism: [2]
+          global-degree-of-parallelism: [2]
+          dense-degree-exchange: True
+          skip-local-neighborhood: False
+          global-synchronization: True
+          communication-policy: [new, grid]
+          primary-cost-function: ["none"]
+          intersection-method: [merge]
+          read-edge-partitioned: [True]
+          iterations: 3
+        - algorithm: [cetric-x]
+          pseudo2core: [False]
+          binary-rank-search: True
+          threshold: local-nodes
+          threshold-scale: 1.0
+          edge-partitioning: False
+          edge-partitioning-static: False
+          id-node-ordering: True
+          local-parallel: True
+          global-parallel: True
+          parallel-compact: True
+          local-degree-of-parallelism: [2]
+          local-degree-of-parallelism: [1, 2]
+          global-degree-of-parallelism: [2]
+          dense-degree-exchange: True
+          skip-local-neighborhood: False
+          global-synchronization: True
+          communication-policy: [new, grid]
+          primary-cost-function: ["none"]
+          intersection-method: [merge]
+          read-edge-partitioned: [True]
+          iterations: 3
