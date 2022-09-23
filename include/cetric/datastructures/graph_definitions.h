@@ -92,7 +92,16 @@ public:
     }
     RankEncodedNodeId operator++(int) {
         auto pre = *this;
+        value_--;
+        return pre;
+    }
+    RankEncodedNodeId& operator--() {
         value_++;
+        return *this;
+    }
+    RankEncodedNodeId operator--(int) {
+        auto pre = *this;
+        value_--;
         return pre;
     }
 
@@ -122,7 +131,7 @@ public:
     }
 
     explicit operator std::uint64_t() const {
-	return data();
+        return data();
     }
 
 private:
@@ -184,7 +193,6 @@ inline std::ostream& operator<<(std::ostream& out, const Triangle<NodeIdType>& t
 }
 } // namespace graph
 } // namespace cetric
-
 
 template <>
 struct std::hash<cetric::graph::RankEncodedNodeId> {

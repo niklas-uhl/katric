@@ -147,12 +147,21 @@ public:
     run_local(TriangleFunc emit, cetric::profiling::Statistics& stats, NodeOrdering&& node_ordering, EdgeOrientationOrdering&&) {
         if (conf_.local_parallel && conf_.num_threads > 1) {
             if (conf_.algorithm == Algorithm::CetricX) {
-                run_local_parallel_edge_partitioned_with_ghosts<EdgeOrientationOrdering>(
-                    emit,
-                    stats,
-                    interface_nodes_,
-                    std::forward<NodeOrdering>(node_ordering)
-                );
+                if (conf_.edge_partitioning) {
+                    run_local_parallel_edge_partitioned_with_ghosts<EdgeOrientationOrdering>(
+                        emit,
+                        stats,
+                        interface_nodes_,
+                        std::forward<NodeOrdering>(node_ordering)
+                    );
+                } else {
+                    run_local_parallel_with_ghosts<EdgeOrientationOrdering>(
+                        emit,
+                        stats,
+                        interface_nodes_,
+                        std::forward<NodeOrdering>(node_ordering)
+                    );
+                }
                 return;
             }
             if (conf_.edge_partitioning) {
@@ -956,7 +965,7 @@ public:
                 break;
             }
             case ParallelizationMethod::omp_for: {
-                // clang-format off
+// clang-format off
                 #pragma omp parallel for schedule(runtime)
                 // clang-format on
                 for (auto v: nodes) {
@@ -978,6 +987,163 @@ public:
                 //                     }
                 //                 }
                 //                 break;
+            }
+        }
+        stats.local.local_phase_time += phase_time.elapsed_time();
+        stats.local.skipped_nodes += skipped_nodes;
+    }
+
+    template <typename EdgeOrientationOrdering, typename TriangleFunc, typename NodeOrdering>
+    inline void run_local_parallel_with_ghosts(
+        TriangleFunc                                                     emit,
+        cetric::profiling::Statistics&                                   stats,
+        tbb::enumerable_thread_specific<std::vector<RankEncodedNodeId>>& interface_nodes,
+        NodeOrdering&&                                                   node_ordering
+    ) {
+        cetric::profiling::Timer phase_time;
+        interface_nodes.clear();
+
+        auto partition_neighborhood_2d = [this](RankEncodedNodeId node [[maybe_unused]]) {
+            if (conf_.parallelization_method == ParallelizationMethod::omp_for) {
+                return false;
+            }
+            if (conf_.local_degree_of_parallelism > 2) {
+                return true;
+            } else if (conf_.local_degree_of_parallelism > 1) {
+              if (node.rank() == rank_) {
+                return G.outdegree(node) > high_degree_threshold_;
+              } else {
+                return G.ghost_degree(node) > high_degree_threshold_;
+              }
+            } else {
+                return false;
+            }
+        };
+        std::vector<std::atomic<bool>> is_interface;
+        constexpr bool                 fast_is_interface =
+            std::is_same_v<
+                NodeOrdering,
+                node_ordering::degree_outward<
+                    GraphType>> || std::is_same_v<NodeOrdering, node_ordering::id> || std::is_same_v<NodeOrdering, node_ordering::id_outward>;
+        if constexpr (!fast_is_interface) {
+            is_interface = std::vector<std::atomic<bool>>(G.local_node_count());
+        }
+
+        auto handle_neighbor_range = [&](RankEncodedNodeId                 v,
+                                         tbb::blocked_range<size_t> const& neighbor_range,
+                                         bool                              spawn [[maybe_unused]] = false) {
+            for (size_t neighbor_index = neighbor_range.begin(); neighbor_index != neighbor_range.end();
+                 neighbor_index++) {
+                EdgeRange<RankEncodedNodeId, RangeModifiability::non_modifiable>::neighbor_range_type v_neighbors;
+                if (v.rank() != rank_) {
+                    v_neighbors = G.ghost_adj(v).neighbors();
+                } else {
+                    v_neighbors = G.out_adj(v).neighbors();
+                }
+                auto u = *(v_neighbors.begin() + neighbor_index);
+                KASSERT(*(v_neighbors.begin() + neighbor_index) == u);
+                EdgeRange<RankEncodedNodeId, RangeModifiability::non_modifiable>::neighbor_range_type u_neighbors;
+                if (u.rank() != rank_) {
+                    if constexpr (!fast_is_interface) {
+                        bool was_set = is_interface[G.to_local_idx(v)].exchange(true);
+                        if (!was_set) {
+                            interface_nodes.local().emplace_back(v);
+                        }
+                    }
+                    u_neighbors = G.ghost_adj(u).neighbors();
+                } else {
+                    u_neighbors = G.out_adj(u).neighbors();
+                }
+                size_t offset = 0;
+                if constexpr (std::is_same_v<NodeOrdering, EdgeOrientationOrdering>) {
+                    offset = neighbor_index;
+                }
+                // for each edge (v, u) we check the open wedge (v, u, w)
+                // for w in N(u)+
+                stats.local.wedge_checks += u_neighbors.end() - u_neighbors.begin();
+                stats.local.intersection_size_local +=
+                    v_neighbors.end() - v_neighbors.begin() + u_neighbors.end() - u_neighbors.begin();
+                cetric::intersection(
+                    v_neighbors.begin() + offset,
+                    v_neighbors.end(),
+                    u_neighbors.begin(),
+                    u_neighbors.end(),
+                    [&](RankEncodedNodeId w) {
+                        stats.local.local_triangles++;
+                        emit(Triangle<RankEncodedNodeId>{v, u, w});
+                    },
+                    node_ordering,
+                    conf_
+                );
+            }
+        };
+        std::atomic<size_t> skipped_nodes  = 0;
+        auto                node_loop_body = [&](RankEncodedNodeId const& v) {
+            Degree v_degree;
+            if (v.rank() == rank_) {
+                v_degree = G.outdegree(v);
+            } else {
+                v_degree = G.ghost_degree(v);
+            }
+            if (conf_.pseudo2core && v_degree < 2) {
+                skipped_nodes++;
+                // continue;
+            } else {
+                if constexpr (fast_is_interface) {
+                    if (v.rank() == rank_ && G.template is_interface_node_if_sorted_by_rank<AdjacencyType::out>(v)) {
+                        interface_nodes.local().emplace_back(v);
+                    }
+                }
+                size_t v_neighbors_size;
+                if (v.rank() == rank_) {
+                    v_neighbors_size = v_degree;
+                } else {
+                    v_neighbors_size = v_degree;
+                }
+                if (conf_.parallelization_method == ParallelizationMethod::tbb && partition_neighborhood_2d(v)) {
+                    stats.local.nodes_parallel2d++;
+                    tbb::parallel_for(
+                        tbb::blocked_range(size_t{0}, static_cast<size_t>(v_neighbors_size)),
+                        [&handle_neighbor_range, v = v](auto const& neighbor_range) {
+                            handle_neighbor_range(v, neighbor_range);
+                        }
+                    );
+                } else {
+                    if (partition_neighborhood_2d(v)) {
+                        stats.local.nodes_parallel2d++;
+                    }
+                    handle_neighbor_range(
+                        v,
+                        tbb::blocked_range(size_t{0}, static_cast<size_t>(v_neighbors_size)),
+                        partition_neighborhood_2d(v)
+                    );
+                }
+            }
+        };
+        auto nodes = boost::join(G.local_nodes(), G.ghosts());
+        switch (conf_.parallelization_method) {
+            case ParallelizationMethod::tbb: {
+                tbb::task_arena arena(conf_.num_threads, 0);
+                arena.execute([&] {
+                    tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&](auto const& r) {
+                        for (auto v: r) {
+                            node_loop_body(v);
+                        }
+                    });
+                });
+                break;
+            }
+            case ParallelizationMethod::omp_for: {
+// clang-format off
+                #pragma omp parallel for schedule(runtime)
+                // clang-format on
+                for (auto v: nodes) {
+                    node_loop_body(v);
+                }
+                break;
+            }
+            case ParallelizationMethod::omp_task: {
+                throw "currently unsupported";
             }
         }
         stats.local.local_phase_time += phase_time.elapsed_time();
