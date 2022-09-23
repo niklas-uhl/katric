@@ -56,23 +56,23 @@ public:
             buffer_ocupacy_ += added_elements;
             return;
         }
-        num_writing_threads_.fetch_add(1, std::memory_order_seq_cst);
+        num_writing_threads_.fetch_add(1, std::memory_order_relaxed);
         {
-            if (buffer_ocupacy_.load(std::memory_order_seq_cst) >= threshold_) {
-                waiting_threads_.fetch_add(1, std::memory_order_seq_cst);
+            if (buffer_ocupacy_.load(std::memory_order_relaxed) >= threshold_) {
+                waiting_threads_.fetch_add(1, std::memory_order_relaxed);
                 {
                     std::unique_lock lock(mutex_);
-                    size_t           overflows = overflows_.load(std::memory_order_seq_cst);
+                    size_t           overflows = overflows_.load(std::memory_order_relaxed);
                     cv_buffer_full_.wait(lock, [this, overflows]() {
                         if (threshold_ == 0) {
                             // we may wake up to early, therefore check if the buffer has already been flushed
                             return !flushing_;
                         } else {
-                            return buffer_ocupacy_.load(std::memory_order_seq_cst) < threshold_;
+                            return buffer_ocupacy_.load(std::memory_order_relaxed) < threshold_;
                         }
                     });
-                    filling_threads_.fetch_add(1, std::memory_order_seq_cst);
-                    waiting_threads_.fetch_sub(1, std::memory_order_seq_cst);
+                    filling_threads_.fetch_add(1, std::memory_order_relaxed);
+                    waiting_threads_.fetch_sub(1, std::memory_order_relaxed);
                 }
                 // atomic_debug("Waiting finished");
             }
@@ -82,22 +82,21 @@ public:
             //     << ": " << message;
             // atomic_debug(out.str());
             size_t added_elements = merge(buffer, std::forward<std::vector<T>>(message), tag);
-            std::atomic_thread_fence(std::memory_order_seq_cst);
-            buffer_ocupacy_.fetch_add(added_elements, std::memory_order_seq_cst);
-            filling_threads_.fetch_sub(1, std::memory_order_seq_cst);
+            buffer_ocupacy_.fetch_add(added_elements, std::memory_order_relaxed);
+            filling_threads_.fetch_sub(1, std::memory_order_relaxed);
         }
-        num_writing_threads_.fetch_sub(1, std::memory_order_seq_cst);
+        num_writing_threads_.fetch_sub(1, std::memory_order_relaxed);
     }
 
     void check_for_overflow_and_flush() {
-        if (buffer_ocupacy_.load(std::memory_order_seq_cst) >= threshold_
-            && waiting_threads_.load(std::memory_order_seq_cst) != 0
-            && waiting_threads_.load(std::memory_order_seq_cst) == num_writing_threads_.load(std::memory_order_seq_cst)
-            && filling_threads_.load(std::memory_order_seq_cst) == 0) {
+        if (buffer_ocupacy_.load(std::memory_order_relaxed) >= threshold_
+            && waiting_threads_.load(std::memory_order_relaxed) != 0
+            && waiting_threads_.load(std::memory_order_relaxed) == num_writing_threads_.load(std::memory_order_relaxed)
+            && filling_threads_.load(std::memory_order_relaxed) == 0) {
             // assert(buffer_ocupacy_ > threshold_);
             // atomic_debug("Overflow");
             flush_all();
-            overflows_.fetch_add(1, std::memory_order_seq_cst);
+            overflows_.fetch_add(1, std::memory_order_relaxed);
         }
         cv_buffer_full_.notify_all();
     }
@@ -135,7 +134,7 @@ public:
         for (size_t i = 0; i < buffers_.size(); ++i) {
             removed_elements += flush_impl(i);
         }
-        buffer_ocupacy_.fetch_sub(removed_elements, std::memory_order_seq_cst);
+        buffer_ocupacy_.fetch_sub(removed_elements, std::memory_order_relaxed);
         flushing_ = false;
     }
 
