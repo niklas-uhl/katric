@@ -1,0 +1,16 @@
+name: havoqgt-missing-weak
+type: havoqgt
+executable: ../../havoqgt/build/src/run_new_triangle_count
+ncores: [16384, 32768]
+tasks_per_node: 32
+graphs:
+  - generator: rhg
+    n: 18
+    m: 22
+    gamma: 2.8
+    scale_weak: True
+  - generator: gnm
+    n: 16
+    m: 20
+    scale_weak: True
+time_limit: 15

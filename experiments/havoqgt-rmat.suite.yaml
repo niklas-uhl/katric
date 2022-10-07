@@ -1,0 +1,11 @@
+name: havoqgt-rmat
+type: havoqgt
+executable: ../../havoqgt/build/src/run_new_triangle_count
+ncores: [16, 32, 64, 128, 256, 512, 1024]
+tasks_per_node: 32
+graphs:
+  - generator: rmat
+    n: 16
+    m: 20
+    scale_weak: True
+time_limit: 180

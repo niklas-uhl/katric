@@ -1,0 +1,14 @@
+name: plain-tric-rmat
+type: tric
+executable: ../../tric/build/tric
+ncores: [16, 32, 64, 128, 256, 512, 1024]
+graphs:
+  - generator: rmat
+    n: 16
+    m: 20
+    scale_weak: True
+time_limit: 180
+config: {
+  b: [False]
+}
+

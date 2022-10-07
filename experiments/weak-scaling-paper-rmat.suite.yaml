@@ -1,0 +1,30 @@
+name: weak-scaling-paper-rmat
+ncores: [16, 32, 64, 128, 256, 512, 1024]
+threads_per_rank: [1]
+graphs:
+  - generator: rmat
+    n: 16
+    m: 20
+    scale_weak: True
+time_limit: 180
+config:
+        - algorithm: [patric, cetric-x]
+          pseudo2core: [False]
+          binary-rank-search: True
+          threshold: local-nodes
+          threshold-scale: 1.0
+          edge-partitioning: False
+          edge-partitioning-static: False
+          id-node-ordering: True
+          local-parallel: False
+          global-parallel: False
+          local-degree-of-parallelism: [2]
+          global-degree-of-parallelism: [2]
+          dense-degree-exchange: True
+          skip-local-neighborhood: False
+          global-synchronization: True
+          communication-policy: [new, grid]
+          primary-cost-function: ["none"]
+          intersection-method: [merge]
+          read-edge-partitioned: [True]
+          #iterations: 4

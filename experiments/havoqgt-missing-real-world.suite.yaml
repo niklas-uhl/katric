@@ -1,0 +1,23 @@
+name: havoqgt-missing-real-world
+type: havoqgt
+executable: ../../havoqgt/build/src/run_new_triangle_count
+ncores: [512, 1024, 2048, 4096, 8192, 16384, 32768]
+tasks_per_node: 32
+graphs:
+  - name: europe
+    time_limit: 3
+  - name: webbase-2001
+    time_limit: 10
+  - name: uk-2007-05
+    time_limit: 15
+  - name: twitter
+    time_limit: 10
+  - name: friendster
+    time_limit: 10
+  - name: usa
+    time_limit: 3
+  - name: live-journal
+    time_limit: 5
+  - name: orkut
+    time_limit: 5
+time_limit: 10
