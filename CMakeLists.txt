@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.14)
+cmake_minimum_required(VERSION 3.16)
 project(cetric LANGUAGES C CXX)
 
 if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)

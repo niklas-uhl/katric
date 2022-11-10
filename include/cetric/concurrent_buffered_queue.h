@@ -19,6 +19,7 @@
 #include <tbb/concurrent_unordered_map.h>
 #include <tbb/concurrent_vector.h>
 #include <tbb/spin_rw_mutex.h>
+#include "cetric/datastructures/graph_definitions.h"
 
 namespace cetric {
 
@@ -118,7 +119,7 @@ public:
             // atomic_debug(fmt::format("Flushing buffer for {}", receiver));
             buffer.clear();
             removed_elements = message.size();
-            KASSERT(message.back() == cetric::RankEncodedNodeId::sentinel());
+            KASSERT(message.back() == cetric::graph::RankEncodedNodeId::sentinel());
             queue_.post_message(std::move(message), receiver);
         }
         return removed_elements;
