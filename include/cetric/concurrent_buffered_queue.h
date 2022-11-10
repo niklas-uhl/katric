@@ -7,18 +7,22 @@
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <shared_mutex>
 #include <thread>
 #include <type_traits>
 #include <unordered_map>
+#include <utility>
 
 #include <backward.hpp>
 #include <fmt/core.h>
 #include <fmt/ranges.h>
+#include <kassert/kassert.hpp>
 #include <message-queue/queue.h>
 #include <tbb/concurrent_hash_map.h>
 #include <tbb/concurrent_unordered_map.h>
 #include <tbb/concurrent_vector.h>
 #include <tbb/spin_rw_mutex.h>
+
 #include "cetric/datastructures/graph_definitions.h"
 
 namespace cetric {
@@ -57,49 +61,71 @@ public:
             buffer_ocupacy_ += added_elements;
             return;
         }
-        num_writing_threads_.fetch_add(1, std::memory_order_relaxed);
+
         {
-            if (buffer_ocupacy_.load(std::memory_order_relaxed) >= threshold_) {
-                waiting_threads_.fetch_add(1, std::memory_order_relaxed);
-                {
-                    std::unique_lock lock(mutex_);
-                    size_t           overflows = overflows_.load(std::memory_order_relaxed);
-                    cv_buffer_full_.wait(lock, [this, overflows]() {
-                        if (threshold_ == 0) {
-                            // we may wake up to early, therefore check if the buffer has already been flushed
-                            return !flushing_;
-                        } else {
-                            return buffer_ocupacy_.load(std::memory_order_relaxed) < threshold_;
-                        }
-                    });
-                    filling_threads_.fetch_add(1, std::memory_order_relaxed);
-                    waiting_threads_.fetch_sub(1, std::memory_order_relaxed);
-                }
-                // atomic_debug("Waiting finished");
+            std::unique_lock lock(mutex_);
+            if (buffer_ocupacy_ > threshold_) {
+                cv_buffer_full_.wait(lock, [this]() { return buffer_ocupacy_ <= threshold_; });
             }
-            auto&             buffer = buffers_[receiver];
-            std::stringstream out;
-            // out << "message from thread " << tbb::this_task_arena::current_thread_index() << " for rank " << receiver
-            //     << ": " << message;
-            // atomic_debug(out.str());
-            size_t added_elements = merge(buffer, std::forward<std::vector<T>>(message), tag);
-            buffer_ocupacy_.fetch_add(added_elements, std::memory_order_relaxed);
-            filling_threads_.fetch_sub(1, std::memory_order_relaxed);
+            buffer_ocupacy_ += message.size() + 1;
+            shared_mutex_.lock_shared();
+            num_writing_threads_++;
         }
-        num_writing_threads_.fetch_sub(1, std::memory_order_relaxed);
+        auto& buffer = buffers_[receiver];
+        merge(buffer, std::forward<std::vector<T>>(message), tag);
+        num_writing_threads_--;
+        shared_mutex_.unlock_shared();
+        // num_writing_threads_.fetch_add(1, std::memory_order_seq_cst);
+        // {
+        //     if (buffer_ocupacy_.load(std::memory_order_seq_cst) >= threshold_) {
+        //         waiting_threads_.fetch_add(1, std::memory_order_seq_cst);
+        //         {
+        //             std::unique_lock lock(mutex_);
+        //             size_t           overflows = overflows_.load(std::memory_order_seq_cst);
+        //             cv_buffer_full_.wait(lock, [this, overflows]() {
+        //                 if (threshold_ == 0) {
+        //                     // we may wake up to early, therefore check if the buffer has already been flushed
+        //                     return !flushing_;
+        //                 } else {
+        //                     return buffer_ocupacy_.load(std::memory_order_seq_cst) < threshold_;
+        //                 }
+        //             });
+        //             filling_threads_.fetch_add(1, std::memory_order_seq_cst);
+        //             waiting_threads_.fetch_sub(1, std::memory_order_seq_cst);
+        //         }
+        //         // atomic_debug("Waiting finished");
+        //     }
+        //     auto&             buffer = buffers_[receiver];
+        //     std::stringstream out;
+        //     // out << "message from thread " << tbb::this_task_arena::current_thread_index() << " for rank " <<
+        //     receiver
+        //     //     << ": " << message;
+        //     // atomic_debug(out.str());
+        //     size_t added_elements = merge(buffer, std::forward<std::vector<T>>(message), tag);
+        //     buffer_ocupacy_.fetch_add(added_elements, std::memory_order_seq_cst);
+        //     filling_threads_.fetch_sub(1, std::memory_order_seq_cst);
+        // }
+        // num_writing_threads_.fetch_sub(1, std::memory_order_seq_cst);
     }
 
     void check_for_overflow_and_flush() {
-        if (buffer_ocupacy_.load(std::memory_order_relaxed) >= threshold_
-            && waiting_threads_.load(std::memory_order_relaxed) != 0
-            && waiting_threads_.load(std::memory_order_relaxed) == num_writing_threads_.load(std::memory_order_relaxed)
-            && filling_threads_.load(std::memory_order_relaxed) == 0) {
-            // assert(buffer_ocupacy_ > threshold_);
-            // atomic_debug("Overflow");
+        if (buffer_ocupacy_ > threshold_) {
+            std::scoped_lock lock(shared_mutex_);
+            KASSERT(num_writing_threads_ == size_t {0});
             flush_all();
-            overflows_.fetch_add(1, std::memory_order_relaxed);
         }
         cv_buffer_full_.notify_all();
+        // if (buffer_ocupacy_.load(std::memory_order_seq_cst) >= threshold_
+        //     && waiting_threads_.load(std::memory_order_seq_cst) != 0
+        //     && waiting_threads_.load(std::memory_order_seq_cst) ==
+        //     num_writing_threads_.load(std::memory_order_seq_cst)
+        //     && filling_threads_.load(std::memory_order_seq_cst) == 0) {
+        //     // assert(buffer_ocupacy_ > threshold_);
+        //     // atomic_debug("Overflow");
+        //     flush_all();
+        //     overflows_.fetch_add(1, std::memory_order_seq_cst);
+        // }
+        // cv_buffer_full_.notify_all();
     }
 
     void set_threshold(size_t threshold) {
@@ -130,12 +156,12 @@ public:
     }
 
     void flush_all() {
-        flushing_ = true;
+        flushing_               = true;
         size_t removed_elements = 0;
         for (size_t i = 0; i < buffers_.size(); ++i) {
             removed_elements += flush_impl(i);
         }
-        buffer_ocupacy_.fetch_sub(removed_elements, std::memory_order_relaxed);
+        buffer_ocupacy_.fetch_sub(removed_elements, std::memory_order_seq_cst);
         flushing_ = false;
     }
 
@@ -181,6 +207,7 @@ private:
     message_queue::MessageQueue<T>         queue_;
     std::vector<tbb::concurrent_vector<T>> buffers_;
     std::mutex                             mutex_;
+    std::shared_mutex                      shared_mutex_;
     Merger                                 merge;
     Splitter                               split;
     size_t                                 num_worker_threads_;
