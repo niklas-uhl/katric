@@ -19,9 +19,7 @@ endif()
 option(CETRIC_DEBUG_CONTAINERS "Use GNU debug containers" OFF)
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_LIST_DIR}/cmake)
 
-find_package(sparsehash REQUIRED)
-add_library(sparsehash INTERFACE)
-target_include_directories(sparsehash INTERFACE ${SPARSEHASH_INCLUDE_DIR})
+find_package(Sparsehash REQUIRED)
 
 find_package(Boost REQUIRED COMPONENTS headers)
 find_package(TBB REQUIRED)
