@@ -68,13 +68,14 @@ public:
                 cv_buffer_full_.wait(lock, [this]() { return buffer_ocupacy_ <= threshold_; });
             }
             buffer_ocupacy_ += message.size() + 1;
-            shared_mutex_.lock_shared();
+            // shared_mutex_.lock_shared();
+            read_write_unlocked_.wait(lock, [this]() { return !flush_lock_; });
             num_writing_threads_++;
         }
         auto& buffer = buffers_[receiver];
         merge(buffer, std::forward<std::vector<T>>(message), tag);
         num_writing_threads_--;
-        shared_mutex_.unlock_shared();
+        // shared_mutex_.unlock_shared();
         // num_writing_threads_.fetch_add(1, std::memory_order_seq_cst);
         // {
         //     if (buffer_ocupacy_.load(std::memory_order_seq_cst) >= threshold_) {
@@ -110,9 +111,23 @@ public:
 
     void check_for_overflow_and_flush() {
         if (buffer_ocupacy_ > threshold_) {
-            std::scoped_lock lock(shared_mutex_);
-            KASSERT(num_writing_threads_ == size_t {0});
-            flush_all();
+            mutex_.lock();
+            if (!flush_lock_ && num_writing_threads_ == 0) {
+                flush_lock_ = true;
+                mutex_.unlock();
+                flush_all();
+                overflows_++;
+                flush_lock_ = false;
+            } else {
+                mutex_.unlock();
+            }
+            // if (shared_mutex_.try_lock()) {
+            //     // std::scoped_lock lock(shared_mutex_);
+            //     KASSERT(num_writing_threads_ == size_t{0});
+            //     flush_all();
+            //     shared_mutex_.unlock();
+            // }
+            // return;
         }
         cv_buffer_full_.notify_all();
         // if (buffer_ocupacy_.load(std::memory_order_seq_cst) >= threshold_
@@ -215,10 +230,10 @@ private:
     std::atomic<size_t>                    overflows_           = 0;
     std::atomic<size_t>                    num_writing_threads_ = 0;
     std::atomic<size_t>                    buffer_ocupacy_      = 0;
-    std::atomic<size_t>                    waiting_threads_     = 0;
-    std::atomic<size_t>                    filling_threads_     = 0;
     std::atomic<bool>                      flushing_            = false;
-    std::condition_variable                cv_buffer_full_;
+    std::condition_variable cv_buffer_full_;
+    std::atomic<bool>       flush_lock_ = false;
+    std::condition_variable read_write_unlocked_;
 };
 
 template <class T, typename Merger, typename Splitter>
