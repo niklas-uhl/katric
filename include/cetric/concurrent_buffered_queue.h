@@ -118,6 +118,7 @@ public:
                 flush_all();
                 overflows_++;
                 flush_lock_ = false;
+		read_write_unlocked_.notify_all();
             } else {
                 mutex_.unlock();
             }
