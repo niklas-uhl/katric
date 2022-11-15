@@ -75,38 +75,6 @@ public:
         auto& buffer = buffers_[receiver];
         merge(buffer, std::forward<std::vector<T>>(message), tag);
         num_writing_threads_--;
-        // shared_mutex_.unlock_shared();
-        // num_writing_threads_.fetch_add(1, std::memory_order_seq_cst);
-        // {
-        //     if (buffer_ocupacy_.load(std::memory_order_seq_cst) >= threshold_) {
-        //         waiting_threads_.fetch_add(1, std::memory_order_seq_cst);
-        //         {
-        //             std::unique_lock lock(mutex_);
-        //             size_t           overflows = overflows_.load(std::memory_order_seq_cst);
-        //             cv_buffer_full_.wait(lock, [this, overflows]() {
-        //                 if (threshold_ == 0) {
-        //                     // we may wake up to early, therefore check if the buffer has already been flushed
-        //                     return !flushing_;
-        //                 } else {
-        //                     return buffer_ocupacy_.load(std::memory_order_seq_cst) < threshold_;
-        //                 }
-        //             });
-        //             filling_threads_.fetch_add(1, std::memory_order_seq_cst);
-        //             waiting_threads_.fetch_sub(1, std::memory_order_seq_cst);
-        //         }
-        //         // atomic_debug("Waiting finished");
-        //     }
-        //     auto&             buffer = buffers_[receiver];
-        //     std::stringstream out;
-        //     // out << "message from thread " << tbb::this_task_arena::current_thread_index() << " for rank " <<
-        //     receiver
-        //     //     << ": " << message;
-        //     // atomic_debug(out.str());
-        //     size_t added_elements = merge(buffer, std::forward<std::vector<T>>(message), tag);
-        //     buffer_ocupacy_.fetch_add(added_elements, std::memory_order_seq_cst);
-        //     filling_threads_.fetch_sub(1, std::memory_order_seq_cst);
-        // }
-        // num_writing_threads_.fetch_sub(1, std::memory_order_seq_cst);
     }
 
     void check_for_overflow_and_flush() {
@@ -118,30 +86,12 @@ public:
                 flush_all();
                 overflows_++;
                 flush_lock_ = false;
-		read_write_unlocked_.notify_all();
+                read_write_unlocked_.notify_all();
             } else {
                 mutex_.unlock();
             }
-            // if (shared_mutex_.try_lock()) {
-            //     // std::scoped_lock lock(shared_mutex_);
-            //     KASSERT(num_writing_threads_ == size_t{0});
-            //     flush_all();
-            //     shared_mutex_.unlock();
-            // }
-            // return;
         }
         cv_buffer_full_.notify_all();
-        // if (buffer_ocupacy_.load(std::memory_order_seq_cst) >= threshold_
-        //     && waiting_threads_.load(std::memory_order_seq_cst) != 0
-        //     && waiting_threads_.load(std::memory_order_seq_cst) ==
-        //     num_writing_threads_.load(std::memory_order_seq_cst)
-        //     && filling_threads_.load(std::memory_order_seq_cst) == 0) {
-        //     // assert(buffer_ocupacy_ > threshold_);
-        //     // atomic_debug("Overflow");
-        //     flush_all();
-        //     overflows_.fetch_add(1, std::memory_order_seq_cst);
-        // }
-        // cv_buffer_full_.notify_all();
     }
 
     void set_threshold(size_t threshold) {
@@ -232,9 +182,9 @@ private:
     std::atomic<size_t>                    num_writing_threads_ = 0;
     std::atomic<size_t>                    buffer_ocupacy_      = 0;
     std::atomic<bool>                      flushing_            = false;
-    std::condition_variable cv_buffer_full_;
-    std::atomic<bool>       flush_lock_ = false;
-    std::condition_variable read_write_unlocked_;
+    std::condition_variable                cv_buffer_full_;
+    std::atomic<bool>                      flush_lock_ = false;
+    std::condition_variable                read_write_unlocked_;
 };
 
 template <class T, typename Merger, typename Splitter>
