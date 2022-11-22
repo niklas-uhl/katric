@@ -1,0 +1,27 @@
+name: real-world-hybrid-fixed
+ncores: [48, 96, 192, 384, 768, 1536, 3072]
+threads_per_rank: [1, 2, 4, 8, 16]
+graphs:
+    - name: orkut
+      time_limit: 5
+config:
+        - algorithm: [patric]
+          pseudo2core: [False]
+          binary-rank-search: True
+          threshold: local-nodes
+          threshold-scale: 1.0
+          edge-partitioning: True
+          edge-partitioning-static: False
+          id-node-ordering: True
+          local-parallel: True
+          global-parallel: True
+          local-degree-of-parallelism: [2]
+          global-degree-of-parallelism: [3]
+          dense-degree-exchange: True
+          skip-local-neighborhood: False
+          global-synchronization: True
+          communication-policy: [new]
+          primary-cost-function: ["none"]
+          intersection-method: [merge]
+          read-edge-partitioned: [True]
+          iterations: 4
