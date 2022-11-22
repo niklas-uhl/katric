@@ -393,8 +393,8 @@ public:
         auto body = [&](auto const& edge_id_range) {
             auto tail_idx        = edge_locator.edge_tail_idx(edge_id_range.begin());
             auto tail            = edge_locator.get_node(tail_idx);
-            auto tail_first_edge = edge_locator.template first_edge_id_for_idx(tail_idx);
-            auto tail_last_edge  = edge_locator.template last_edge_id_for_idx(tail_idx);
+            auto tail_first_edge = edge_locator.first_edge_id_for_idx(tail_idx);
+            auto tail_last_edge  = edge_locator.last_edge_id_for_idx(tail_idx);
             // atomic_debug(fmt::format(
             //     "[t{}] processing edges {} to {}",
             //     tbb::this_task_arena::current_thread_index(),
@@ -415,13 +415,13 @@ public:
                         skipped_nodes++;
                     }
                     tail_idx++;
-                    tail_first_edge = edge_locator.template first_edge_id_for_idx(tail_idx);
+                    tail_first_edge = edge_locator.first_edge_id_for_idx(tail_idx);
                     edge_id         = tail_first_edge;
                     if (edge_id >= edge_id_range.end()) {
                         goto finish;
                     }
                     tail           = edge_locator.get_node(tail_idx);
-                    tail_last_edge = edge_locator.template last_edge_id_for_idx(tail_idx);
+                    tail_last_edge = edge_locator.last_edge_id_for_idx(tail_idx);
                 }
                 KASSERT(tail_first_edge <= edge_id);
                 KASSERT(edge_id < tail_last_edge);
