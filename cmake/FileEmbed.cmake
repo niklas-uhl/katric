@@ -68,7 +68,7 @@ extern unsigned ${c_name}_size\;
 
 
     if (NOT EXISTS ${CMAKE_BINARY_DIR}/file_embed)
-        file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}file_embed)
+        file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/file_embed)
     endif ()
 
 

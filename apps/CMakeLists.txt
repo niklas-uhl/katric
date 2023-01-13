@@ -26,3 +26,7 @@ target_link_libraries(cetric PUBLIC git_hash)
 add_sanitizers(cetric)
 
 target_link_libraries(shared_memory_counter PRIVATE cetric-lib CLI11::CLI11)
+
+add_executable(shmetric shmetric.cpp)
+target_link_libraries(shmetric PRIVATE cetric-lib CLI11::CLI11 OpenMP::OpenMP_CXX)
+target_link_libraries(shmetric PUBLIC git_hash)

@@ -5,7 +5,6 @@
 
 #include <mpi.h>
 
-#include "counters/cetric_edge_iterator.h"
 #include "datastructures/graph_definitions.h"
 #include "datastructures/span.h"
 #include "message-queue/buffered_queue.h"

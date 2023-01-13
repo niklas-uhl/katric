@@ -9,6 +9,7 @@
 #include <boost/range/iterator_range_core.hpp>
 #include <fmt/core.h>
 #include <fmt/ranges.h>
+#include <kassert/kassert.hpp>
 
 #include "cetric/config.h"
 #include "cetric/util.h"

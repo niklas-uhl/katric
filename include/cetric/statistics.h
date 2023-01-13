@@ -277,9 +277,9 @@ struct Statistics {
     };
     LocalStatistics              local;
     std::vector<LocalStatistics> local_statistics;
-    double                       global_wall_time;
-    size_t                       triangles;
-    size_t                       counted_triangles;
+    double                       global_wall_time  = 0;
+    size_t                       triangles         = 0;
+    size_t                       counted_triangles = 0;
     PEID                         size;
     PEID                         rank;
 
@@ -317,6 +317,13 @@ struct Statistics {
                 global_wall_time = std::max(local_statistics[i].local_wall_time, global_wall_time);
             }
         }
+    }
+    void collapse() {
+        local_statistics.push_back(local);
+        local_statistics[0].rank = rank;
+        triangles = local.local_triangles;
+        counted_triangles = triangles;
+        global_wall_time = local.local_wall_time;
     }
 
     template <class Archive>

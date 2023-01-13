@@ -52,6 +52,7 @@
 #include "cetric/timer.h"
 #include "cetric/util.h"
 #include "kassert/kassert.hpp"
+#include "cetric/indirect_message_queue.h"
 
 namespace cetric {
 using namespace graph;
@@ -139,8 +140,7 @@ public:
           interface_nodes_(),
           pe_min_degree(),
           threshold_(std::numeric_limits<size_t>::max()) {
-        EdgeId total_edge_count = G.local_edge_count();
-        MPI_Allreduce(MPI_IN_PLACE, &total_edge_count, 1, MPI_NODE, MPI_SUM, MPI_COMM_WORLD);
+        EdgeId total_edge_count = G.total_edge_count();
         high_degree_threshold_ = conf_.high_degree_threshold_scale * sqrt(total_edge_count / 2.0);
     }
 

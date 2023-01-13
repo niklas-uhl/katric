@@ -120,7 +120,7 @@ struct Config {
     std::string           input_file;
     std::string           output_file;
     bool                  read_edge_partitioned = false;
-    graphio::InputFormat  input_format;
+    graphio::InputFormat  input_format          = graphio::InputFormat::metis;
     std::string           partitioning;
     bool                  partitioned_input                 = false;
     size_t                buffer_threshold                  = std::numeric_limits<size_t>::max();
@@ -153,7 +153,7 @@ struct Config {
     bool compact_degree_exchange = false;
     bool global_synchronization  = false;
     bool binary_rank_search      = false;
-    bool id_node_ordering = false;
+    bool id_node_ordering        = false;
 
     bool degree_filtering        = false;
     bool orient_locally          = false;
