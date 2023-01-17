@@ -25,6 +25,7 @@
 #include <message-queue/buffered_queue.h>
 #include <mpi.h>
 #include <omp.h>
+#include <tbb/combinable.h>
 #include <tbb/concurrent_vector.h>
 #include <tbb/enumerable_thread_specific.h>
 #include <tbb/parallel_for.h>
@@ -52,7 +53,6 @@
 #include "cetric/timer.h"
 #include "cetric/util.h"
 #include "kassert/kassert.hpp"
-#include "cetric/indirect_message_queue.h"
 
 namespace cetric {
 using namespace graph;
@@ -141,7 +141,7 @@ public:
           pe_min_degree(),
           threshold_(std::numeric_limits<size_t>::max()) {
         EdgeId total_edge_count = G.total_edge_count();
-        high_degree_threshold_ = conf_.high_degree_threshold_scale * sqrt(total_edge_count / 2.0);
+        high_degree_threshold_  = conf_.high_degree_threshold_scale * sqrt(total_edge_count / 2.0);
     }
 
     void set_threshold(size_t threshold) {
@@ -382,11 +382,9 @@ public:
         std::atomic<size_t>        skipped_nodes = 0;
 
         std::vector<std::atomic<bool>> is_interface;
-        constexpr bool                 fast_is_interface =
-            std::is_same_v<
-                NodeOrdering,
-                node_ordering::degree_outward<
-                    GraphType>> || std::is_same_v<NodeOrdering, node_ordering::id> || std::is_same_v<NodeOrdering, node_ordering::id_outward>;
+        constexpr bool fast_is_interface = std::is_same_v<NodeOrdering, node_ordering::degree_outward<GraphType>>
+                                           || std::is_same_v<NodeOrdering, node_ordering::id>
+                                           || std::is_same_v<NodeOrdering, node_ordering::id_outward>;
         if constexpr (!fast_is_interface) {
             is_interface = std::vector<std::atomic<bool>>(G.local_node_count());
         }
@@ -626,10 +624,9 @@ public:
                     // ));
                     std::vector<std::atomic<bool>> is_interface;
                     constexpr bool                 fast_is_interface =
-                        std::is_same_v<
-                            NodeOrdering,
-                            node_ordering::degree_outward<
-                                GraphType>> || std::is_same_v<NodeOrdering, node_ordering::id> || std::is_same_v<NodeOrdering, node_ordering::id_outward>;
+                        std::is_same_v<NodeOrdering, node_ordering::degree_outward<GraphType>>
+                        || std::is_same_v<NodeOrdering, node_ordering::id>
+                        || std::is_same_v<NodeOrdering, node_ordering::id_outward>;
                     if constexpr (!fast_is_interface) {
                         is_interface = std::vector<std::atomic<bool>>(G.local_node_count());
                     }
@@ -714,11 +711,9 @@ public:
             tbb::blocked_range<EdgeId> edge_ids(EdgeId{0}, G.local_edge_count(), conf_.grainsize);
 
             std::vector<std::atomic<bool>> is_interface;
-            constexpr bool                 fast_is_interface =
-                std::is_same_v<
-                    NodeOrdering,
-                    node_ordering::degree_outward<
-                        GraphType>> || std::is_same_v<NodeOrdering, node_ordering::id> || std::is_same_v<NodeOrdering, node_ordering::id_outward>;
+            constexpr bool fast_is_interface = std::is_same_v<NodeOrdering, node_ordering::degree_outward<GraphType>>
+                                               || std::is_same_v<NodeOrdering, node_ordering::id>
+                                               || std::is_same_v<NodeOrdering, node_ordering::id_outward>;
             if constexpr (!fast_is_interface) {
                 is_interface = std::vector<std::atomic<bool>>(G.local_node_count());
             }
@@ -839,7 +834,8 @@ public:
     ) {
         cetric::profiling::Timer phase_time;
         interface_nodes.clear();
-        auto nodes = G.local_nodes();
+        auto                    nodes = G.local_nodes();
+        tbb::combinable<size_t> local_triangles_stats{0};
 
         auto partition_neighborhood_2d = [this](RankEncodedNodeId node [[maybe_unused]]) {
             if (conf_.parallelization_method == ParallelizationMethod::omp_for) {
@@ -854,7 +850,7 @@ public:
             }
         };
 
-        auto handle_neighbor_range = [&node_ordering, this, &emit, &stats](
+        auto handle_neighbor_range = [&node_ordering, this, &emit, &stats, &local_triangles_stats](
                                          RankEncodedNodeId                 v,
                                          tbb::blocked_range<size_t> const& neighbor_range,
                                          bool                              spawn [[maybe_unused]] = false
@@ -902,7 +898,8 @@ public:
                         u_neighbors.begin(),
                         u_neighbors.end(),
                         [&](RankEncodedNodeId w) {
-                            stats.local.local_triangles++;
+                            local_triangles_stats.local()++;
+                            // stats.local.local_triangles++;
                             emit(Triangle<RankEncodedNodeId>{v, u, w});
                         },
                         node_ordering,
@@ -997,6 +994,7 @@ public:
         }
         stats.local.local_phase_time += phase_time.elapsed_time();
         stats.local.skipped_nodes += skipped_nodes;
+        stats.local.local_triangles += local_triangles_stats.combine(std::plus<>{});
     }
 
     template <typename EdgeOrientationOrdering, typename TriangleFunc, typename NodeOrdering>
@@ -1026,11 +1024,9 @@ public:
             }
         };
         std::vector<std::atomic<bool>> is_interface;
-        constexpr bool                 fast_is_interface =
-            std::is_same_v<
-                NodeOrdering,
-                node_ordering::degree_outward<
-                    GraphType>> || std::is_same_v<NodeOrdering, node_ordering::id> || std::is_same_v<NodeOrdering, node_ordering::id_outward>;
+        constexpr bool fast_is_interface = std::is_same_v<NodeOrdering, node_ordering::degree_outward<GraphType>>
+                                           || std::is_same_v<NodeOrdering, node_ordering::id>
+                                           || std::is_same_v<NodeOrdering, node_ordering::id_outward>;
         if constexpr (!fast_is_interface) {
             is_interface = std::vector<std::atomic<bool>>(G.local_node_count());
         }

@@ -17,9 +17,9 @@
 #include <boost/range/join.hpp>
 #include <mpi.h>
 #include <omp.h>
+#include <tbb/combinable.h>
 #include <tbb/concurrent_vector.h>
 #include <tbb/enumerable_thread_specific.h>
-#include <tbb/combinable.h>
 #include <tbb/parallel_for.h>
 #include <tbb/parallel_for_each.h>
 #include <tbb/parallel_scan.h>
@@ -32,6 +32,7 @@
 
 #include "cetric/atomic_debug.h"
 #include "cetric/config.h"
+#include "cetric/counters/cetric_edge_iterator.h"
 #include "cetric/counters/intersection.h"
 #include "cetric/datastructures/auxiliary_node_data.h"
 #include "cetric/datastructures/distributed/distributed_graph.h"
@@ -44,13 +45,11 @@
 #include "cetric/timer.h"
 #include "cetric/util.h"
 #include "kassert/kassert.hpp"
-#include "cetric/counters/cetric_edge_iterator.h"
 
 namespace cetric {
 template <typename NodeIndexer>
-inline void preprocessing(
-    DistributedGraph<NodeIndexer>& G, cetric::profiling::PreprocessingStatistics& stats, const Config& conf
-) {
+inline void
+preprocessing(DistributedGraph<NodeIndexer>& G, cetric::profiling::PreprocessingStatistics& stats, const Config& conf) {
     tlx::MultiTimer phase_timer;
     phase_timer.start("orientation");
     auto nodes = G.local_nodes();
@@ -82,10 +81,9 @@ inline void preprocessing(
     stats.ingest(phase_timer);
 }
 
-inline size_t
-run_shmem(DistributedGraph<>& G, cetric::profiling::Statistics& stats, const Config& conf) {
+inline size_t run_shmem(DistributedGraph<>& G, cetric::profiling::Statistics& stats, const Config& conf) {
     tlx::MultiTimer phase_timer;
-    bool debug                         = false;
+    bool            debug = false;
     // if (conf.num_threads > 1) {
     //     if (conf.binary_rank_search) {
     //         G.find_ghost_ranks<true>(execution_policy::parallel{conf.num_threads});
@@ -101,11 +99,7 @@ run_shmem(DistributedGraph<>& G, cetric::profiling::Statistics& stats, const Con
     // }
     node_set ghosts;
     phase_timer.start("preprocessing");
-    preprocessing(
-        G,
-        stats.local.preprocessing_local_phase,
-        conf
-    );
+    preprocessing(G, stats.local.preprocessing_local_phase, conf);
     LOG << "Preprocessing finished";
     phase_timer.start("local_phase");
     auto   ctr            = cetric::CetricEdgeIterator(G, conf, 0, 1, MessageQueuePolicy{});
@@ -151,6 +145,6 @@ run_shmem(DistributedGraph<>& G, cetric::profiling::Statistics& stats, const Con
         LOG << "Verification finished";
     }
     stats.local.ingest(phase_timer);
-    return stats.counted_triangles;
+    return triangle_count;
 }
 } // namespace cetric
