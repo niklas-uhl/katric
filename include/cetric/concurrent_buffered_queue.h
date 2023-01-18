@@ -84,7 +84,7 @@ public:
                 flush_lock_ = true;
                 mutex_.unlock();
                 flush_all();
-                overflows_++;
+                overflows_.fetch_add(1, std::memory_order_relaxed);
                 flush_lock_ = false;
                 read_write_unlocked_.notify_all();
             } else {
@@ -98,7 +98,7 @@ public:
         threshold_ = threshold;
         if (buffer_ocupacy_ > threshold_) {
             flush_all();
-            overflows_++;
+            overflows_.fetch_add(1, std::memory_order_relaxed);
         }
     }
 

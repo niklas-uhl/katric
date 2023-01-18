@@ -22,7 +22,7 @@
 #include <boost/range/iterator_range_core.hpp>
 #include <boost/range/join.hpp>
 #include <message-queue/buffered_queue.h>
-#include <mpi.h> 
+#include <mpi.h>
 #include <omp.h>
 #include <tbb/combinable.h>
 #include <tbb/concurrent_vector.h>
@@ -378,7 +378,6 @@ public:
 
         tbb::task_arena            arena(conf_.num_threads, 0);
         tbb::blocked_range<EdgeId> edge_ids(EdgeId{0}, G.local_edge_count_with_ghost_edges(), conf_.grainsize);
-        std::atomic<size_t>        skipped_nodes = 0;
 
         std::vector<std::atomic<bool>> is_interface;
         constexpr bool fast_is_interface = std::is_same_v<NodeOrdering, node_ordering::degree_outward<GraphType>>
@@ -387,7 +386,17 @@ public:
         if constexpr (!fast_is_interface) {
             is_interface = std::vector<std::atomic<bool>>(G.local_node_count());
         }
-        auto body = [&](auto const& edge_id_range) {
+        tbb::combinable<size_t> thread_local_skipped_nodes{0};
+        tbb::combinable<size_t> thread_local_wedge_checks{0};
+        tbb::combinable<size_t> thread_local_intersection_size_local{0};
+        tbb::combinable<size_t> thread_local_local_triangles{0};
+        auto                    body = [&](auto const& edge_id_range) {
+            auto& skipped_nodes           = thread_local_skipped_nodes.local();
+            auto& wedge_checks            = thread_local_wedge_checks.local();
+            auto& intersection_size_local = thread_local_intersection_size_local.local();
+            auto& local_triangles         = thread_local_local_triangles.local();
+            auto& local_interface_nodes   = interface_nodes.local();
+
             auto tail_idx        = edge_locator.edge_tail_idx(edge_id_range.begin());
             auto tail            = edge_locator.get_node(tail_idx);
             auto tail_first_edge = edge_locator.first_edge_id_for_idx(tail_idx);
@@ -429,21 +438,21 @@ public:
                         // we are the first thread to examine this node
                         // we check if it an interface node
                         if (G.template is_interface_node_if_sorted_by_rank<AdjacencyType::out>(tail)) {
-                            interface_nodes.local().emplace_back(tail);
+                            local_interface_nodes.emplace_back(tail);
                         }
                     }
                 } else {
                     if (u.rank() != rank_) {
                         bool was_set = is_interface[tail_idx].exchange(true);
                         if (!was_set) {
-                            interface_nodes.local().emplace_back(tail);
+                            local_interface_nodes.emplace_back(tail);
                         }
                     }
                 }
                 // processed_edges[tail_idx].push_back(RankEncodedEdge{u, v});
                 auto   v_neighbors = v.rank() == rank_ ? G.out_adj(v).neighbors() : G.ghost_adj(v).neighbors();
                 auto   u_neighbors = u.rank() == rank_ ? G.out_adj(u).neighbors() : G.ghost_adj(u).neighbors();
-                size_t offset      = 0;
+                size_t offset = 0;
                 if constexpr (std::is_same_v<NodeOrdering, EdgeOrientationOrdering>) {
                     offset = edge_id - tail_first_edge;
                 }
@@ -454,8 +463,8 @@ public:
                 // );
                 // for each edge (v, u) we check the open wedge (v, u, w)
                 // for w in N(u)+
-                stats.local.wedge_checks += u_neighbors.end() - u_neighbors.begin();
-                stats.local.intersection_size_local +=
+                wedge_checks += u_neighbors.end() - u_neighbors.begin();
+                intersection_size_local +=
                     v_neighbors.end() - v_neighbors.begin() + u_neighbors.end() - u_neighbors.begin();
                 cetric::intersection(
                     v_neighbors.begin() + offset,
@@ -463,7 +472,7 @@ public:
                     u_neighbors.begin(),
                     u_neighbors.end(),
                     [&](RankEncodedNodeId w) {
-                        stats.local.local_triangles++;
+                        local_triangles++;
                         emit(Triangle<RankEncodedNodeId>{v, u, w});
                     },
                     node_ordering,
@@ -495,7 +504,10 @@ public:
         // }
 
         stats.local.local_phase_time += phase_time.elapsed_time();
-        stats.local.skipped_nodes += skipped_nodes;
+        stats.local.skipped_nodes += thread_local_skipped_nodes.combine(std::plus<>{});
+        stats.local.wedge_checks += thread_local_wedge_checks.combine(std::plus<>{});
+        stats.local.intersection_size_local += thread_local_intersection_size_local.combine(std::plus<>{});
+        stats.local.local_triangles += thread_local_local_triangles.combine(std::plus<>{});
     }
 
     template <typename EdgeOrientationOrdering, typename TriangleFunc, typename NodeOrdering>
@@ -511,7 +523,6 @@ public:
         auto        edge_locator = G.build_edge_locator();
         auto const& node_indexer = G.node_indexer();
 
-        std::atomic<size_t> skipped_nodes = 0;
         if (conf_.edge_partitioning_static) {
             std::vector<std::thread> threads(conf_.num_threads);
             tlx::ThreadBarrierMutex  barrier(conf_.num_threads);
@@ -519,6 +530,12 @@ public:
             size_t                   per_thread_cost;
             auto                edges_per_thread = (G.local_edge_count() + conf_.num_threads - 1) / conf_.num_threads;
             std::vector<EdgeId> first_edge(conf_.num_threads + 1);
+
+            std::vector<size_t> thread_local_skipped_nodes(conf_.num_threads);
+            std::vector<size_t> thread_local_wedge_checks(conf_.num_threads);
+            std::vector<size_t> thread_local_intersection_size_local(conf_.num_threads);
+            std::vector<size_t> thread_local_local_triangles(conf_.num_threads);
+
             for (size_t i = 0; i < conf_.num_threads; i++) {
                 threads[i] = std::thread([&, i = i] {
                     EdgeId edge_begin = i * edges_per_thread;
@@ -629,10 +646,11 @@ public:
                     if constexpr (!fast_is_interface) {
                         is_interface = std::vector<std::atomic<bool>>(G.local_node_count());
                     }
+                    auto& local_interface_nodes = interface_nodes.local();
                     for (auto edge_id = std::max(edge_begin, tail_first_edge); edge_id < edge_end; edge_id++) {
                         while (edge_id >= tail_last_edge || (conf_.pseudo2core && G.outdegree(tail) < 2)) {
                             if (conf_.pseudo2core && G.outdegree(tail) < 2) {
-                                skipped_nodes++;
+                                thread_local_skipped_nodes[i]++;
                             }
                             // if we leave the edge range of the current tail, we
                             // switch to the next tail node
@@ -656,14 +674,14 @@ public:
                                 // we are the first thread to examine this node
                                 // we check if it an interface node
                                 if (G.template is_interface_node_if_sorted_by_rank<AdjacencyType::out>(tail)) {
-                                    interface_nodes.local().emplace_back(tail);
+                                    local_interface_nodes.emplace_back(tail);
                                 }
                             }
                         } else {
                             if (u.rank() != rank_) {
                                 bool was_set = is_interface[tail_idx].exchange(true);
                                 if (!was_set) {
-                                    interface_nodes.local().emplace_back(tail);
+                                    local_interface_nodes.emplace_back(tail);
                                 }
                             }
                         }
@@ -684,8 +702,8 @@ public:
                         // );
                         // for each edge (v, u) we check the open wedge (v, u,
                         // w) for w in N(u)+
-                        stats.local.wedge_checks += u_neighbors.end() - u_neighbors.begin();
-                        stats.local.intersection_size_local +=
+                        thread_local_wedge_checks[i] += u_neighbors.end() - u_neighbors.begin();
+                        thread_local_intersection_size_local[i] +=
                             v_neighbors.end() - v_neighbors.begin() + u_neighbors.end() - u_neighbors.begin();
                         cetric::intersection(
                             v_neighbors.begin() + offset,
@@ -693,7 +711,7 @@ public:
                             u_neighbors.begin(),
                             u_neighbors.end(),
                             [&](RankEncodedNodeId w) {
-                                stats.local.local_triangles++;
+                                thread_local_local_triangles[i]++;
                                 emit(Triangle<RankEncodedNodeId>{v, u, w});
                             },
                             node_ordering,
@@ -705,6 +723,13 @@ public:
                 });
             }
             std::for_each(threads.begin(), threads.end(), [](auto& t) { t.join(); });
+            stats.local.skipped_nodes =
+                std::reduce(thread_local_skipped_nodes.begin(), thread_local_skipped_nodes.end());
+            stats.local.intersection_size_local =
+                std::reduce(thread_local_intersection_size_local.begin(), thread_local_intersection_size_local.end());
+            stats.local.wedge_checks = std::reduce(thread_local_wedge_checks.begin(), thread_local_wedge_checks.end());
+            stats.local.local_triangles =
+                std::reduce(thread_local_local_triangles.begin(), thread_local_local_triangles.end());
         } else {
             tbb::task_arena            arena(conf_.num_threads, 0);
             tbb::blocked_range<EdgeId> edge_ids(EdgeId{0}, G.local_edge_count(), conf_.grainsize);
@@ -716,11 +741,21 @@ public:
             if constexpr (!fast_is_interface) {
                 is_interface = std::vector<std::atomic<bool>>(G.local_node_count());
             }
-            auto body = [&](auto const& edge_id_range) {
-                auto tail_idx        = edge_locator.edge_tail_idx(edge_id_range.begin());
-                auto tail            = node_indexer.get_node(tail_idx);
+            tbb::combinable<size_t> thread_local_skipped_nodes{0};
+            tbb::combinable<size_t> thread_local_wedge_checks{0};
+            tbb::combinable<size_t> thread_local_intersection_size_local{0};
+            tbb::combinable<size_t> thread_local_local_triangles{0};
+            auto                    body = [&](auto const& edge_id_range) {
+                auto& skipped_nodes           = thread_local_skipped_nodes.local();
+                auto& wedge_checks            = thread_local_wedge_checks.local();
+                auto& intersection_size_local = thread_local_intersection_size_local.local();
+                auto& local_triangles         = thread_local_local_triangles.local();
+                auto& local_interface_nodes   = interface_nodes.local();
+
+                auto tail_idx = edge_locator.edge_tail_idx(edge_id_range.begin());
+                auto tail     = node_indexer.get_node(tail_idx);
                 auto tail_first_edge = edge_locator.template first_edge_id_for_idx<AdjacencyType::out>(tail_idx);
-                auto tail_last_edge  = edge_locator.template last_edge_id_for_idx<AdjacencyType::out>(tail_idx);
+                auto tail_last_edge = edge_locator.template last_edge_id_for_idx<AdjacencyType::out>(tail_idx);
                 // atomic_debug(fmt::format(
                 //     "[t{}] processing edges {} to {}",
                 //     tbb::this_task_arena::current_thread_index(),
@@ -735,11 +770,11 @@ public:
                         }
                         tail_idx++;
                         tail_first_edge = edge_locator.template first_edge_id_for_idx<AdjacencyType::out>(tail_idx);
-                        edge_id         = tail_first_edge;
+                        edge_id = tail_first_edge;
                         if (edge_id >= edge_id_range.end()) {
                             goto finish;
                         }
-                        tail           = node_indexer.get_node(tail_idx);
+                        tail = node_indexer.get_node(tail_idx);
                         tail_last_edge = edge_locator.template last_edge_id_for_idx<AdjacencyType::out>(tail_idx);
                     }
                     KASSERT(tail_first_edge <= edge_id);
@@ -751,14 +786,14 @@ public:
                             // we are the first thread to examine this node
                             // we check if it an interface node
                             if (G.template is_interface_node_if_sorted_by_rank<AdjacencyType::out>(tail)) {
-                                interface_nodes.local().emplace_back(tail);
+                                local_interface_nodes.emplace_back(tail);
                             }
                         }
                     } else {
                         if (u.rank() != rank_) {
                             bool was_set = is_interface[tail_idx].exchange(true);
                             if (!was_set) {
-                                interface_nodes.local().emplace_back(tail);
+                                local_interface_nodes.emplace_back(tail);
                             }
                         }
                     }
@@ -780,8 +815,8 @@ public:
                     // );
                     // for each edge (v, u) we check the open wedge (v, u, w)
                     // for w in N(u)+
-                    stats.local.wedge_checks += u_neighbors.end() - u_neighbors.begin();
-                    stats.local.intersection_size_local +=
+                    wedge_checks += u_neighbors.end() - u_neighbors.begin();
+                    intersection_size_local +=
                         v_neighbors.end() - v_neighbors.begin() + u_neighbors.end() - u_neighbors.begin();
                     cetric::intersection(
                         v_neighbors.begin() + offset,
@@ -789,7 +824,7 @@ public:
                         u_neighbors.begin(),
                         u_neighbors.end(),
                         [&](RankEncodedNodeId w) {
-                            stats.local.local_triangles++;
+                            local_triangles++;
                             emit(Triangle<RankEncodedNodeId>{v, u, w});
                         },
                         node_ordering,
@@ -815,13 +850,16 @@ public:
                     arena.execute([&] { tbb::parallel_for(edge_ids, body, partitioner); });
                     break;
             }
+            stats.local.skipped_nodes += thread_local_skipped_nodes.combine(std::plus<>{});
+            stats.local.wedge_checks += thread_local_wedge_checks.combine(std::plus<>{});
+            stats.local.intersection_size_local += thread_local_intersection_size_local.combine(std::plus<>{});
+            stats.local.local_triangles += thread_local_local_triangles.combine(std::plus<>{});
         }
         // for (size_t i = 0; i < edges.size(); ++i) {
         //     KASSERT(edges[i].size() == processed_edges[i].size(), "Failed for " << i);
         // }
 
         stats.local.local_phase_time += phase_time.elapsed_time();
-        stats.local.skipped_nodes += skipped_nodes;
     }
 
     template <typename EdgeOrientationOrdering, typename TriangleFunc, typename NodeOrdering>
@@ -834,7 +872,10 @@ public:
         cetric::profiling::Timer phase_time;
         interface_nodes.clear();
         auto                    nodes = G.local_nodes();
-        tbb::combinable<size_t> local_triangles_stats{0};
+        tbb::combinable<size_t> thread_local_skipped_nodes{0};
+        tbb::combinable<size_t> thread_local_wedge_checks{0};
+        tbb::combinable<size_t> thread_local_intersection_size_local{0};
+        tbb::combinable<size_t> thread_local_local_triangles{0};
 
         auto partition_neighborhood_2d = [this](RankEncodedNodeId node [[maybe_unused]]) {
             if (conf_.parallelization_method == ParallelizationMethod::omp_for) {
@@ -849,12 +890,12 @@ public:
             }
         };
 
-        auto handle_neighbor_range = [&node_ordering, this, &emit, &stats, &local_triangles_stats](
-                                         RankEncodedNodeId                 v,
+        auto handle_neighbor_range = [&](RankEncodedNodeId                 v,
                                          tbb::blocked_range<size_t> const& neighbor_range,
-                                         bool                              spawn [[maybe_unused]] = false
-                                     ) {
-	    auto& local_triangles = local_triangles_stats.local();
+                                         bool                              spawn [[maybe_unused]] = false) {
+            auto& wedge_checks            = thread_local_wedge_checks.local();
+            auto& intersection_size_local = thread_local_intersection_size_local.local();
+            auto& local_triangles         = thread_local_local_triangles.local();
             for (size_t neighbor_index = neighbor_range.begin(); neighbor_index != neighbor_range.end();
                  neighbor_index++) {
                 auto u = *(G.out_adj(v).neighbors().begin() + neighbor_index);
@@ -868,10 +909,11 @@ public:
                     // }
                     // atomic_debug(
                     //     fmt::format("Remaining neighbors {}",
-                    //                 boost::make_iterator_range(G.out_adj(v).neighbors().begin() +
-                    //                 neighbor_index,
+                    //                 boost::make_iterator_range(G.out_adj(v).neighbors().begin()
+                    //                 + neighbor_index,
                     //                                            G.out_adj(v).neighbors().end())));
-                    // TODO: we should be able to break here when the edges are properly sorted
+                    // TODO: we should be able to break here when the edges are
+                    // properly sorted
                     KASSERT(std::all_of(
                         G.out_adj(v).neighbors().begin() + neighbor_index,
                         G.out_adj(v).neighbors().end(),
@@ -889,9 +931,9 @@ public:
                     }
                     // for each edge (v, u) we check the open wedge (v, u, w)
                     // for w in N(u)+
-                    //stats.local.wedge_checks += u_neighbors.end() - u_neighbors.begin();
-                    //stats.local.intersection_size_local +=
-                        //v_neighbors.end() - v_neighbors.begin() + u_neighbors.end() - u_neighbors.begin();
+                    wedge_checks += u_neighbors.end() - u_neighbors.begin();
+                    intersection_size_local +=
+                        v_neighbors.end() - v_neighbors.begin() + u_neighbors.end() - u_neighbors.begin();
                     cetric::intersection(
                         v_neighbors.begin() + offset,
                         v_neighbors.end(),
@@ -908,7 +950,6 @@ public:
                 }
             }
         };
-        std::atomic<size_t> skipped_nodes = 0;
         // tbb::parallel_for(
         //     tbb::blocked_range(nodes.begin(), nodes.end()),
         //     [this,
@@ -927,16 +968,18 @@ public:
         //     #pragma omp taskloop grainsize(conf_.grainsize)
         // #endif
         auto node_loop_body = [&](RankEncodedNodeId const& v) {
+            auto& skipped_nodes         = thread_local_skipped_nodes.local();
+            auto& local_interface_nodes = interface_nodes.local();
             if (conf_.pseudo2core && G.outdegree(v) < 2) {
                 skipped_nodes++;
                 // continue;
             } else {
                 if (G.template is_interface_node_if_sorted_by_rank<AdjacencyType::out>(v)) {
-                    interface_nodes.local().emplace_back(v);
+                    local_interface_nodes.emplace_back(v);
                 }
                 auto v_neighbors_size = std::distance(G.out_adj(v).neighbors().begin(), G.out_adj(v).neighbors().end());
                 if (conf_.parallelization_method == ParallelizationMethod::tbb && partition_neighborhood_2d(v)) {
-                    //stats.local.nodes_parallel2d++;
+                    // stats.local.nodes_parallel2d++;
                     tbb::parallel_for(
                         tbb::blocked_range(size_t{0}, static_cast<size_t>(v_neighbors_size)),
                         [&handle_neighbor_range, v = v](auto const& neighbor_range) {
@@ -945,7 +988,7 @@ public:
                     );
                 } else {
                     if (partition_neighborhood_2d(v)) {
-                        //stats.local.nodes_parallel2d++;
+                        // stats.local.nodes_parallel2d++;
                     }
                     handle_neighbor_range(
                         v,
@@ -968,7 +1011,7 @@ public:
                 break;
             }
             case ParallelizationMethod::omp_for: {
-// clang-format off
+                // clang-format off
                 #pragma omp parallel for schedule(runtime)
                 // clang-format on
                 for (auto v: nodes) {
@@ -993,8 +1036,10 @@ public:
             }
         }
         stats.local.local_phase_time += phase_time.elapsed_time();
-        stats.local.skipped_nodes += skipped_nodes;
-        stats.local.local_triangles += local_triangles_stats.combine(std::plus<>{});
+        stats.local.skipped_nodes += thread_local_skipped_nodes.combine(std::plus<>{});
+        stats.local.wedge_checks += thread_local_wedge_checks.combine(std::plus<>{});
+        stats.local.intersection_size_local += thread_local_intersection_size_local.combine(std::plus<>{});
+        stats.local.local_triangles += thread_local_local_triangles.combine(std::plus<>{});
     }
 
     template <typename EdgeOrientationOrdering, typename TriangleFunc, typename NodeOrdering>
@@ -1006,6 +1051,11 @@ public:
     ) {
         cetric::profiling::Timer phase_time;
         interface_nodes.clear();
+
+        tbb::combinable<size_t> thread_local_skipped_nodes{0};
+        tbb::combinable<size_t> thread_local_wedge_checks{0};
+        tbb::combinable<size_t> thread_local_intersection_size_local{0};
+        tbb::combinable<size_t> thread_local_local_triangles{0};
 
         auto partition_neighborhood_2d = [this](RankEncodedNodeId node [[maybe_unused]]) {
             if (conf_.parallelization_method == ParallelizationMethod::omp_for) {
@@ -1034,6 +1084,11 @@ public:
         auto handle_neighbor_range = [&](RankEncodedNodeId                 v,
                                          tbb::blocked_range<size_t> const& neighbor_range,
                                          bool                              spawn [[maybe_unused]] = false) {
+            auto& wedge_checks            = thread_local_wedge_checks.local();
+            auto& intersection_size_local = thread_local_intersection_size_local.local();
+            auto& local_triangles         = thread_local_local_triangles.local();
+            auto& local_interface_nodes   = interface_nodes.local();
+
             for (size_t neighbor_index = neighbor_range.begin(); neighbor_index != neighbor_range.end();
                  neighbor_index++) {
                 EdgeRange<RankEncodedNodeId, RangeModifiability::non_modifiable>::neighbor_range_type v_neighbors;
@@ -1049,7 +1104,7 @@ public:
                     if constexpr (!fast_is_interface) {
                         bool was_set = is_interface[G.to_local_idx(v)].exchange(true);
                         if (!was_set) {
-                            interface_nodes.local().emplace_back(v);
+                            local_interface_nodes.emplace_back(v);
                         }
                     }
                     u_neighbors = G.ghost_adj(u).neighbors();
@@ -1062,16 +1117,17 @@ public:
                 }
                 // for each edge (v, u) we check the open wedge (v, u, w)
                 // for w in N(u)+
-                //stats.local.wedge_checks += u_neighbors.end() - u_neighbors.begin();
-                //stats.local.intersection_size_local +=
-                //  v_neighbors.end() - v_neighbors.begin() + u_neighbors.end() - u_neighbors.begin();
+                wedge_checks += u_neighbors.end() - u_neighbors.begin();
+                intersection_size_local +=
+                    v_neighbors.end() - v_neighbors.begin() + u_neighbors.end() - u_neighbors.begin();
                 cetric::intersection(
                     v_neighbors.begin() + offset,
                     v_neighbors.end(),
                     u_neighbors.begin(),
                     u_neighbors.end(),
                     [&](RankEncodedNodeId w) {
-                        //stats.local.local_triangles++;
+                        // stats.local.local_triangles++;
+                        local_triangles++;
                         emit(Triangle<RankEncodedNodeId>{v, u, w});
                     },
                     node_ordering,
@@ -1079,8 +1135,8 @@ public:
                 );
             }
         };
-        std::atomic<size_t> skipped_nodes  = 0;
-        auto                node_loop_body = [&](RankEncodedNodeId const& v) {
+        auto node_loop_body = [&](RankEncodedNodeId const& v) {
+            auto&  skipped_nodes = thread_local_skipped_nodes.local();
             Degree v_degree;
             if (v.rank() == rank_) {
                 v_degree = G.outdegree(v);
@@ -1103,7 +1159,7 @@ public:
                     v_neighbors_size = v_degree;
                 }
                 if (conf_.parallelization_method == ParallelizationMethod::tbb && partition_neighborhood_2d(v)) {
-                    //stats.local.nodes_parallel2d++;
+                    // stats.local.nodes_parallel2d++;
                     tbb::parallel_for(
                         tbb::blocked_range(size_t{0}, static_cast<size_t>(v_neighbors_size)),
                         [&handle_neighbor_range, v = v](auto const& neighbor_range) {
@@ -1112,7 +1168,7 @@ public:
                     );
                 } else {
                     if (partition_neighborhood_2d(v)) {
-                        //stats.local.nodes_parallel2d++;
+                        // stats.local.nodes_parallel2d++;
                     }
                     handle_neighbor_range(
                         v,
@@ -1136,7 +1192,7 @@ public:
                 break;
             }
             case ParallelizationMethod::omp_for: {
-// clang-format off
+                // clang-format off
                 #pragma omp parallel for schedule(runtime)
                 // clang-format on
                 for (auto v: nodes) {
@@ -1149,7 +1205,10 @@ public:
             }
         }
         stats.local.local_phase_time += phase_time.elapsed_time();
-        stats.local.skipped_nodes += skipped_nodes;
+        stats.local.skipped_nodes += thread_local_skipped_nodes.combine(std::plus<>{});
+        stats.local.wedge_checks += thread_local_wedge_checks.combine(std::plus<>{});
+        stats.local.intersection_size_local += thread_local_intersection_size_local.combine(std::plus<>{});
+        stats.local.local_triangles += thread_local_local_triangles.combine(std::plus<>{});
     }
 
     template <typename TriangleFunc, typename NodeOrdering>
