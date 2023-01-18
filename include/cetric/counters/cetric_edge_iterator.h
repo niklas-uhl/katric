@@ -21,9 +21,8 @@
 #include <boost/range/adaptor/filtered.hpp>
 #include <boost/range/iterator_range_core.hpp>
 #include <boost/range/join.hpp>
-#include <gmpxx.h>
 #include <message-queue/buffered_queue.h>
-#include <mpi.h>
+#include <mpi.h> 
 #include <omp.h>
 #include <tbb/combinable.h>
 #include <tbb/concurrent_vector.h>
@@ -855,6 +854,7 @@ public:
                                          tbb::blocked_range<size_t> const& neighbor_range,
                                          bool                              spawn [[maybe_unused]] = false
                                      ) {
+	    auto& local_triangles = local_triangles_stats.local();
             for (size_t neighbor_index = neighbor_range.begin(); neighbor_index != neighbor_range.end();
                  neighbor_index++) {
                 auto u = *(G.out_adj(v).neighbors().begin() + neighbor_index);
@@ -889,16 +889,16 @@ public:
                     }
                     // for each edge (v, u) we check the open wedge (v, u, w)
                     // for w in N(u)+
-                    stats.local.wedge_checks += u_neighbors.end() - u_neighbors.begin();
-                    stats.local.intersection_size_local +=
-                        v_neighbors.end() - v_neighbors.begin() + u_neighbors.end() - u_neighbors.begin();
+                    //stats.local.wedge_checks += u_neighbors.end() - u_neighbors.begin();
+                    //stats.local.intersection_size_local +=
+                        //v_neighbors.end() - v_neighbors.begin() + u_neighbors.end() - u_neighbors.begin();
                     cetric::intersection(
                         v_neighbors.begin() + offset,
                         v_neighbors.end(),
                         u_neighbors.begin(),
                         u_neighbors.end(),
                         [&](RankEncodedNodeId w) {
-                            local_triangles_stats.local()++;
+                            local_triangles++;
                             // stats.local.local_triangles++;
                             emit(Triangle<RankEncodedNodeId>{v, u, w});
                         },
@@ -936,7 +936,7 @@ public:
                 }
                 auto v_neighbors_size = std::distance(G.out_adj(v).neighbors().begin(), G.out_adj(v).neighbors().end());
                 if (conf_.parallelization_method == ParallelizationMethod::tbb && partition_neighborhood_2d(v)) {
-                    stats.local.nodes_parallel2d++;
+                    //stats.local.nodes_parallel2d++;
                     tbb::parallel_for(
                         tbb::blocked_range(size_t{0}, static_cast<size_t>(v_neighbors_size)),
                         [&handle_neighbor_range, v = v](auto const& neighbor_range) {
@@ -945,7 +945,7 @@ public:
                     );
                 } else {
                     if (partition_neighborhood_2d(v)) {
-                        stats.local.nodes_parallel2d++;
+                        //stats.local.nodes_parallel2d++;
                     }
                     handle_neighbor_range(
                         v,
@@ -1062,16 +1062,16 @@ public:
                 }
                 // for each edge (v, u) we check the open wedge (v, u, w)
                 // for w in N(u)+
-                stats.local.wedge_checks += u_neighbors.end() - u_neighbors.begin();
-                stats.local.intersection_size_local +=
-                    v_neighbors.end() - v_neighbors.begin() + u_neighbors.end() - u_neighbors.begin();
+                //stats.local.wedge_checks += u_neighbors.end() - u_neighbors.begin();
+                //stats.local.intersection_size_local +=
+                //  v_neighbors.end() - v_neighbors.begin() + u_neighbors.end() - u_neighbors.begin();
                 cetric::intersection(
                     v_neighbors.begin() + offset,
                     v_neighbors.end(),
                     u_neighbors.begin(),
                     u_neighbors.end(),
                     [&](RankEncodedNodeId w) {
-                        stats.local.local_triangles++;
+                        //stats.local.local_triangles++;
                         emit(Triangle<RankEncodedNodeId>{v, u, w});
                     },
                     node_ordering,
@@ -1103,7 +1103,7 @@ public:
                     v_neighbors_size = v_degree;
                 }
                 if (conf_.parallelization_method == ParallelizationMethod::tbb && partition_neighborhood_2d(v)) {
-                    stats.local.nodes_parallel2d++;
+                    //stats.local.nodes_parallel2d++;
                     tbb::parallel_for(
                         tbb::blocked_range(size_t{0}, static_cast<size_t>(v_neighbors_size)),
                         [&handle_neighbor_range, v = v](auto const& neighbor_range) {
@@ -1112,7 +1112,7 @@ public:
                     );
                 } else {
                     if (partition_neighborhood_2d(v)) {
-                        stats.local.nodes_parallel2d++;
+                        //stats.local.nodes_parallel2d++;
                     }
                     handle_neighbor_range(
                         v,
