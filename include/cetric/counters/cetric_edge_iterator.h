@@ -24,6 +24,7 @@
 #include <message-queue/buffered_queue.h>
 #include <mpi.h>
 #include <omp.h>
+#include <oneapi/tbb/task_group.h>
 #include <tbb/combinable.h>
 #include <tbb/concurrent_vector.h>
 #include <tbb/enumerable_thread_specific.h>
@@ -1011,7 +1012,7 @@ public:
                 break;
             }
             case ParallelizationMethod::omp_for: {
-                // clang-format off
+// clang-format off
                 #pragma omp parallel for schedule(runtime)
                 // clang-format on
                 for (auto v: nodes) {
@@ -1192,7 +1193,7 @@ public:
                 break;
             }
             case ParallelizationMethod::omp_for: {
-                // clang-format off
+// clang-format off
                 #pragma omp parallel for schedule(runtime)
                 // clang-format on
                 for (auto v: nodes) {
@@ -1362,13 +1363,14 @@ public:
         cetric::profiling::Timer phase_time;
         std::atomic<size_t>      nodes_queued = 0;
         std::atomic<size_t>      write_jobs   = 0;
-        ThreadPool               pool(conf_.num_threads - 1);
+        // ThreadPool               pool(conf_.num_threads - 1);
 
         std::atomic<size_t> skipped_nodes = 0;
+        tbb::task_group     task_group;
         for (auto current = interface_nodes_begin; current != interface_nodes_end; current++) {
             RankEncodedNodeId v = *current;
             nodes_queued++;
-            auto task = [v, this, &stats, emit, &queue, &pool, &nodes_queued, &write_jobs, &skipped_nodes]() {
+            auto task = [v, this, &stats, emit, &queue, &task_group, &nodes_queued, &write_jobs, &skipped_nodes]() {
                 if (conf_.pseudo2core && G.outdegree(v) < 2) {
                     skipped_nodes++;
                     nodes_queued--;
@@ -1386,14 +1388,15 @@ public:
                         if (last_proc_[G.to_local_idx(v)] != u_rank) {
                             // atomic_debug(fmt::format("Send N({}) to {}",
                             // G.to_global_id(v), u_rank));
-                            enqueue_for_sending_async(queue, v, u_rank, pool, write_jobs, emit, stats);
+                            enqueue_for_sending_async(queue, v, u_rank, task_group, write_jobs, emit, stats);
                         }
                     }
                 }
                 nodes_queued--;
             };
             if (conf_.global_degree_of_parallelism > 1) {
-                pool.enqueue(task);
+                task_group.run(task);
+                // pool.enqueue(task);
             } else {
                 task();
             }
@@ -1405,15 +1408,16 @@ public:
             }
             queue.check_for_overflow_and_flush();
             queue.poll([&](SharedVectorSpan<RankEncodedNodeId> span, PEID sender [[maybe_unused]]) {
-                handle_buffer_hybrid(std::move(span), pool, emit, stats, node_ordering, ghosts);
+                handle_buffer_hybrid(std::move(span), task_group, emit, stats, node_ordering, ghosts);
             });
         }
         queue.terminate([&](SharedVectorSpan<RankEncodedNodeId> span, PEID sender [[maybe_unused]]) {
-            handle_buffer_hybrid(std::move(span), pool, emit, stats, node_ordering, ghosts);
+            handle_buffer_hybrid(std::move(span), task_group, emit, stats, node_ordering, ghosts);
         });
-        pool.loop_until_empty();
-        pool.terminate();
-        // atomic_debug(fmt::format("Finished Pool, enqueued: {}, done: {}", pool.enqueued(), pool.done()));
+        task_group.wait();
+        // pool.loop_until_empty();
+        // pool.terminate();
+        //  atomic_debug(fmt::format("Finished Pool, enqueued: {}, done: {}", pool.enqueued(), pool.done()));
         stats.local.global_phase_time += phase_time.elapsed_time();
         stats.local.message_statistics.add(queue.stats());
         stats.local.skipped_nodes += skipped_nodes;
@@ -1526,7 +1530,7 @@ private:
         MessageQueue&                  queue,
         RankEncodedNodeId              v,
         PEID                           u_rank,
-        ThreadPool&                    thread_pool [[maybe_unused]],
+        tbb::task_group&               tg [[maybe_unused]],
         std::atomic<size_t>&           write_jobs,
         TriangleFunc                   emit [[maybe_unused]],
         cetric::profiling::Statistics& stats [[maybe_unused]]
@@ -1534,8 +1538,8 @@ private:
         // atomic_debug(fmt::format("rank {}", u_rank));
         // atomic_debug(u_rank);
         write_jobs++;
-        thread_pool.enqueue([&queue, &write_jobs, this, v, u_rank] {
-            // tg.run([&stats, emit, this, v, u_rank]() {
+        // thread_pool.enqueue([&queue, &write_jobs, this, v, u_rank] {
+        tg.run([&queue, &write_jobs, this, v, u_rank]() {
             std::vector<RankEncodedNodeId> buffer;
             buffer.emplace_back(v);
             // size_t send_count = 0;
@@ -1569,13 +1573,14 @@ private:
     template <typename TriangleFunc, typename NodeOrdering, typename GhostSet>
     void handle_buffer_hybrid(
         SharedVectorSpan<RankEncodedNodeId> span,
-        ThreadPool&                         thread_pool,
+        tbb::task_group&                    tg,
         TriangleFunc                        emit,
         cetric::profiling::Statistics&      stats,
         NodeOrdering&&                      node_ordering,
         GhostSet const&                     ghosts
     ) {
-        thread_pool.enqueue(
+        tg.run(
+            // thread_pool.enqueue(
             [this, emit, span = std::move(span), &stats, &node_ordering, &ghosts] {
                 RankEncodedNodeId v = *span.begin();
                 // atomic_debug(
@@ -1590,8 +1595,8 @@ private:
                     std::forward<NodeOrdering>(node_ordering),
                     ghosts
                 );
-            },
-            ThreadPool::Priority::high
+            } //,
+            // ThreadPool::Priority::high
         );
     }
     // template <typename NodeBufferIter>
