@@ -49,7 +49,7 @@
 #include "cetric/datastructures/span.h"
 #include "cetric/indirect_message_queue.h"
 #include "cetric/statistics.h"
-#include "cetric/thread_pool.h"
+#include "cetric/task_pool.h"
 #include "cetric/timer.h"
 #include "cetric/util.h"
 #include "kassert/kassert.hpp"
@@ -377,7 +377,7 @@ public:
 
         auto edge_locator = G.build_ghost_edge_locator();
 
-        tbb::task_arena            arena(conf_.num_threads, 0);
+        tbb::task_arena            arena(conf_.num_threads);
         tbb::blocked_range<EdgeId> edge_ids(EdgeId{0}, G.local_edge_count_with_ghost_edges(), conf_.grainsize);
 
         std::vector<std::atomic<bool>> is_interface;
@@ -732,7 +732,7 @@ public:
             stats.local.local_triangles =
                 std::reduce(thread_local_local_triangles.begin(), thread_local_local_triangles.end());
         } else {
-            tbb::task_arena            arena(conf_.num_threads, 0);
+            tbb::task_arena            arena(conf_.num_threads);
             tbb::blocked_range<EdgeId> edge_ids(EdgeId{0}, G.local_edge_count(), conf_.grainsize);
 
             std::vector<std::atomic<bool>> is_interface;
@@ -1001,7 +1001,7 @@ public:
         };
         switch (conf_.parallelization_method) {
             case ParallelizationMethod::tbb: {
-                tbb::task_arena arena(conf_.num_threads, 0);
+                tbb::task_arena arena(conf_.num_threads);
                 arena.execute([&] {
                     tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&](auto const& r) {
                         for (auto v: r) {
@@ -1182,7 +1182,7 @@ public:
         auto nodes = boost::join(G.local_nodes(), G.ghosts());
         switch (conf_.parallelization_method) {
             case ParallelizationMethod::tbb: {
-                tbb::task_arena arena(conf_.num_threads, 0);
+                tbb::task_arena arena(conf_.num_threads);
                 arena.execute([&] {
                     tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&](auto const& r) {
                         for (auto v: r) {
@@ -1262,14 +1262,30 @@ public:
         GhostSet const&                ghosts
     ) {
         if (conf_.global_parallel && conf_.num_threads > 1) {
-            run_distributed_parallel(
-                emit,
-                stats,
-                interface_nodes_begin,
-                interface_nodes_end,
-                std::forward<NodeOrdering>(node_ordering),
-                ghosts
-            );
+            auto do_run = [&](auto& pool) {
+                run_distributed_parallel(
+                    emit,
+                    stats,
+                    interface_nodes_begin,
+                    interface_nodes_end,
+                    std::forward<NodeOrdering>(node_ordering),
+                    ghosts,
+                    pool
+                );
+            };
+            switch (conf_.task_pool_type) {
+                case TaskPoolType::std_thread: {
+                    ThreadTaskPool pool(conf_.num_threads);
+                    do_run(pool);
+                    break;
+                }
+                case TaskPoolType::task_group: {
+                    TbbTaskPool pool(conf_.num_threads);
+                    do_run(pool);
+                    break;
+                }
+            }
+
         } else {
             run_distributed_sequential(
                 emit,
@@ -1335,14 +1351,15 @@ public:
         queue.reset();
     }
 
-    template <typename TriangleFunc, typename NodeIterator, typename NodeOrdering, typename GhostSet>
+    template <typename TriangleFunc, typename NodeIterator, typename NodeOrdering, typename GhostSet, typename Pool>
     inline void run_distributed_parallel(
         TriangleFunc                   emit,
         cetric::profiling::Statistics& stats,
         NodeIterator                   interface_nodes_begin,
         NodeIterator                   interface_nodes_end,
         NodeOrdering&&                 node_ordering,
-        GhostSet const&                ghosts
+        GhostSet const&                ghosts,
+        Pool&                          pool
     ) {
         KASSERT(conf_.num_threads > 1ul);
         std::thread::id master_thread_id = std::this_thread::get_id();
@@ -1363,14 +1380,15 @@ public:
         cetric::profiling::Timer phase_time;
         std::atomic<size_t>      nodes_queued = 0;
         std::atomic<size_t>      write_jobs   = 0;
-        // ThreadPool               pool(conf_.num_threads - 1);
+        // TbbTaskPool              pool(conf_.num_threads);
+        //  ThreadPool               pool(conf_.num_threads - 1);
 
+        //ConcurrencyTracker  tracker(conf_.num_threads);
         std::atomic<size_t> skipped_nodes = 0;
-        tbb::task_group     task_group;
         for (auto current = interface_nodes_begin; current != interface_nodes_end; current++) {
             RankEncodedNodeId v = *current;
             nodes_queued++;
-            auto task = [v, this, &stats, emit, &queue, &task_group, &nodes_queued, &write_jobs, &skipped_nodes]() {
+            auto task = [&, v = v]() {
                 if (conf_.pseudo2core && G.outdegree(v) < 2) {
                     skipped_nodes++;
                     nodes_queued--;
@@ -1388,34 +1406,41 @@ public:
                         if (last_proc_[G.to_local_idx(v)] != u_rank) {
                             // atomic_debug(fmt::format("Send N({}) to {}",
                             // G.to_global_id(v), u_rank));
-                            enqueue_for_sending_async(queue, v, u_rank, task_group, write_jobs, emit, stats);
+                            enqueue_for_sending_async(queue, v, u_rank, pool, write_jobs, emit, stats);
                         }
                     }
                 }
+                // tracker.track("enqueue");
                 nodes_queued--;
             };
             if (conf_.global_degree_of_parallelism > 1) {
-                task_group.run(task);
-                // pool.enqueue(task);
+                pool.submit_work(task);
+                // task_group.run(task);
+                //  pool.enqueue(task);
             } else {
                 task();
             }
         }
-        while (true) {
-            if (write_jobs == 0 && nodes_queued == 0) {
-                // atomic_debug(fmt::format("No more polling, enqueued: {}, done: {}", pool.enqueued(), pool.done()));
-                break;
+        auto master_task = [&] {
+            while (true) {
+                if (write_jobs == 0 && nodes_queued == 0) {
+                    // atomic_debug(fmt::format("No more polling, enqueued: {}, done:
+                    // {}", pool.enqueued(), pool.done()));
+                    break;
+                }
+                queue.check_for_overflow_and_flush();
+                queue.poll([&](SharedVectorSpan<RankEncodedNodeId> span, PEID sender [[maybe_unused]]) {
+                    handle_buffer_hybrid(std::move(span), pool, emit, stats, node_ordering, ghosts);
+                });
             }
-            queue.check_for_overflow_and_flush();
-            queue.poll([&](SharedVectorSpan<RankEncodedNodeId> span, PEID sender [[maybe_unused]]) {
-                handle_buffer_hybrid(std::move(span), task_group, emit, stats, node_ordering, ghosts);
+            queue.terminate([&](SharedVectorSpan<RankEncodedNodeId> span, PEID sender [[maybe_unused]]) {
+                handle_buffer_hybrid(std::move(span), pool, emit, stats, node_ordering, ghosts);
             });
-        }
-        queue.terminate([&](SharedVectorSpan<RankEncodedNodeId> span, PEID sender [[maybe_unused]]) {
-            handle_buffer_hybrid(std::move(span), task_group, emit, stats, node_ordering, ghosts);
-        });
-        task_group.wait();
+            // tracker.track("master");
+        };
+        pool.run_and_wait(master_task);
         // pool.loop_until_empty();
+        // atomic_debug(tracker.dump());
         // pool.terminate();
         //  atomic_debug(fmt::format("Finished Pool, enqueued: {}, done: {}", pool.enqueued(), pool.done()));
         stats.local.global_phase_time += phase_time.elapsed_time();
@@ -1525,12 +1550,12 @@ private:
         last_proc_[G.to_local_idx(v)] = u_rank;
     }
 
-    template <typename MessageQueue, typename TriangleFunc>
+    template <typename MessageQueue, typename TriangleFunc, typename Pool>
     void enqueue_for_sending_async(
         MessageQueue&                  queue,
         RankEncodedNodeId              v,
         PEID                           u_rank,
-        tbb::task_group&               tg [[maybe_unused]],
+        Pool&                          pool,
         std::atomic<size_t>&           write_jobs,
         TriangleFunc                   emit [[maybe_unused]],
         cetric::profiling::Statistics& stats [[maybe_unused]]
@@ -1539,7 +1564,7 @@ private:
         // atomic_debug(u_rank);
         write_jobs++;
         // thread_pool.enqueue([&queue, &write_jobs, this, v, u_rank] {
-        tg.run([&queue, &write_jobs, this, v, u_rank]() {
+        pool.submit_work([&queue, &write_jobs, this, v, u_rank]() {
             std::vector<RankEncodedNodeId> buffer;
             buffer.emplace_back(v);
             // size_t send_count = 0;
@@ -1570,16 +1595,16 @@ private:
         process_neighborhood(v, begin + 1, end, emit, stats, std::forward<NodeOrdering>(node_ordering), ghosts);
     }
 
-    template <typename TriangleFunc, typename NodeOrdering, typename GhostSet>
+    template <typename TriangleFunc, typename NodeOrdering, typename GhostSet, typename Pool>
     void handle_buffer_hybrid(
         SharedVectorSpan<RankEncodedNodeId> span,
-        tbb::task_group&                    tg,
+        Pool&                               pool,
         TriangleFunc                        emit,
         cetric::profiling::Statistics&      stats,
         NodeOrdering&&                      node_ordering,
         GhostSet const&                     ghosts
     ) {
-        tg.run(
+        pool.submit_work(
             // thread_pool.enqueue(
             [this, emit, span = std::move(span), &stats, &node_ordering, &ghosts] {
                 RankEncodedNodeId v = *span.begin();
@@ -1595,8 +1620,8 @@ private:
                     std::forward<NodeOrdering>(node_ordering),
                     ghosts
                 );
-            } //,
-            // ThreadPool::Priority::high
+            },
+            TaskPriority::high
         );
     }
     // template <typename NodeBufferIter>

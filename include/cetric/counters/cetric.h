@@ -65,7 +65,7 @@ inline void preprocessing(
     phase_timer.start("orientation");
     auto nodes = G.local_nodes();
     if (conf.num_threads > 1) {
-        tbb::task_arena arena(conf.num_threads, 0);
+        tbb::task_arena arena(conf.num_threads);
         arena.execute([&] {
             tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G, &ghost_degree](auto const& r) {
                 for (auto node: r) {
@@ -453,7 +453,7 @@ inline size_t run_cetric(
     phase_timer.start("contraction");
     auto nodes = G.local_nodes();
     if (conf.local_parallel) {
-        tbb::task_arena arena(conf.num_threads, 0);
+        tbb::task_arena arena(conf.num_threads);
         arena.execute([&] {
             tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G](auto const& r) {
                 for (auto node: r) {
@@ -751,7 +751,7 @@ run_cetric_new(DistributedGraph<>& G, cetric::profiling::Statistics& stats, cons
     auto nodes = G.local_nodes();
     if (!conf.id_node_ordering) {
         if (conf.num_threads > 1) {
-            tbb::task_arena arena(conf.num_threads, 0);
+            tbb::task_arena arena(conf.num_threads);
             arena.execute([&] {
                 tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&](auto const& r) {
                     for (auto node: r) {
@@ -852,7 +852,7 @@ run_cetric_new(DistributedGraph<>& G, cetric::profiling::Statistics& stats, cons
     phase_timer.start("contraction");
     if (!conf.id_node_ordering) {
         if (conf.local_parallel) {
-            tbb::task_arena arena(conf.num_threads, 0);
+            tbb::task_arena arena(conf.num_threads);
             arena.execute([&] {
                 tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&](auto const& r) {
                     for (auto node: r) {
@@ -875,7 +875,7 @@ run_cetric_new(DistributedGraph<>& G, cetric::profiling::Statistics& stats, cons
         }
     } else {
         if (conf.local_parallel) {
-            tbb::task_arena arena(conf.num_threads, 0);
+            tbb::task_arena arena(conf.num_threads);
             arena.execute([&] {
                 tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&](auto const& r) {
                     for (auto node: r) {
@@ -896,7 +896,7 @@ run_cetric_new(DistributedGraph<>& G, cetric::profiling::Statistics& stats, cons
     auto compact_nodes = G_compact.local_nodes();
     if (!conf.id_node_ordering) {
         if (conf.local_parallel) {
-            tbb::task_arena arena(conf.num_threads, 0);
+            tbb::task_arena arena(conf.num_threads);
             arena.execute([&] {
                 tbb::parallel_for(tbb::blocked_range(compact_nodes.begin(), compact_nodes.end()), [&](auto const& r) {
                     for (auto node: r) {

@@ -201,7 +201,7 @@ public:
         size_t                   node_index = 0;
         auto                     nodes      = G.local_nodes();
         if constexpr (std::is_same_v<ExecutionPolicy, execution_policy::parallel>) {
-            tbb::task_arena arena(policy.num_threads, 0);
+            tbb::task_arena arena(policy.num_threads);
             arena.execute([&] {
                 tbb::parallel_for(
                     tbb::blocked_range(nodes.begin(), nodes.end()),

@@ -893,7 +893,7 @@ public:
         gather_PE_ranges(node_range_.first, node_range_.second, ranges, MPI_COMM_WORLD, rank_, size_);
         auto nodes = local_nodes();
         if constexpr (std::is_same_v<ExecutionPolicy, execution_policy::parallel>) {
-            tbb::task_arena arena(policy.num_threads, 0);
+            tbb::task_arena arena(policy.num_threads);
             arena.execute([&] {
                 tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&ranges, this](auto const& r) {
                     for (auto node: r) {
@@ -963,7 +963,7 @@ public:
         SparseNodeIndexer sparse_indexer(this->node_range_, remaining_nodes.begin(), remaining_nodes.end(), rank_);
         auto              new_node_count = sparse_indexer.size();
         if constexpr (std::is_same_v<ExecutionPolicy, execution_policy::parallel>) {
-            tbb::task_arena     arena(policy.num_threads, 0);
+            tbb::task_arena     arena(policy.num_threads);
             std::vector<EdgeId> first_out(new_node_count + 1);
             std::vector<EdgeId> first_out_offset(new_node_count);
             arena.execute([&] {
@@ -1085,7 +1085,7 @@ public:
 
     template <typename NodeOrdering>
     void remove_in_edges_and_expand_ghosts(NodeOrdering&& node_ordering, execution_policy::parallel policy) {
-        tbb::task_arena arena(policy.num_threads, 0);
+        tbb::task_arena arena(policy.num_threads);
         arena.execute([&] {
             tbb::concurrent_unordered_map<RankEncodedNodeId, tbb::concurrent_vector<RankEncodedNodeId>> ghost_edges;
             auto                nodes = local_nodes();

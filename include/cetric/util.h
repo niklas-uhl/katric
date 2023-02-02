@@ -6,6 +6,7 @@
 #define PARALLEL_TRIANGLE_COUNTER_UTIL_H
 
 #include <array>
+#include <atomic>
 #include <cstddef>
 #include <cstdlib>
 #include <exception>
@@ -13,6 +14,7 @@
 #include <istream>
 #include <iterator>
 #include <ostream>
+#include <set>
 #include <sstream>
 #include <vector>
 
@@ -24,7 +26,6 @@
 #include <graph-io/local_graph_view.h>
 #include <mpi.h>
 #include <tbb/blocked_range.h>
-#include <tbb/parallel_scan.h>
 #include <tbb/parallel_scan.h>
 #include <tlx/logger.hpp>
 #include <unistd.h>
@@ -219,6 +220,36 @@ struct mpi_traits<graphio::LocalGraphView::NodeInfo> {
         return mpi_node_info;
     }
     static constexpr bool builtin = false;
+};
+
+static thread_local int my_tid   = -1;
+static std::atomic<int> next_tid = 0;
+class ConcurrencyTracker {
+public:
+    ConcurrencyTracker(size_t max_threads) : tid_regions(3 * max_threads) {}
+    void track(const std::string& region) {
+        if (my_tid == -1) {
+            my_tid = next_tid.fetch_add(1, std::memory_order_relaxed);
+        }
+        tid_regions[my_tid].insert(region);
+    }
+    std::string dump() {
+        int                        end = next_tid;
+        std::map<std::string, int> m;
+        for (int i = 0; i < end; i++) {
+            for (auto n: tid_regions[i]) {
+                m[n] += 1;
+            }
+        }
+        std::stringstream out;
+        for (auto& kv : m) {
+          out << kv.first << "[" << kv.second << "]; ";
+        }
+        return out.str();
+    }
+
+private:
+    std::vector<std::set<std::string>> tid_regions;
 };
 
 #endif // PARALLEL_TRIANGLE_COUNTER_UTIL_H

@@ -120,6 +120,8 @@ cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::P
 
     app.add_option("--tbb-partitioner", conf.tbb_partitioner)
         ->transform(CLI::CheckedTransformer(enum_name_to_value_map<cetric::TBBPartitioner>(), CLI::ignore_case));
+    app.add_option("--task-pool-type", conf.task_pool_type)
+        ->transform(CLI::CheckedTransformer(enum_name_to_value_map<cetric::TaskPoolType>(), CLI::ignore_case));
 
     app.add_option("--threshold", conf.threshold)
         ->transform(CLI::CheckedTransformer(cetric::threshold_map, CLI::ignore_case));
@@ -312,7 +314,7 @@ int main(int argc, char* argv[]) {
                 fmt::format("Warning, TBB uses only {} instead of {} threads!", max_concurrency, conf.num_threads)
             );
         }
-        tbb::global_control global_limit(tbb::global_control::max_allowed_parallelism, conf.num_threads + 1);
+        tbb::global_control global_limit(tbb::global_control::max_allowed_parallelism, conf.num_threads);
 
         omp_set_num_threads(conf.num_threads);
         if (conf.omp_chunksize == 0) {

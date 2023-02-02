@@ -114,6 +114,7 @@ std::string save_minimal(const Archive& ar [[maybe_unused]], const IntersectionM
 enum class ParallelizationMethod { tbb, omp_for, omp_task };
 enum class OMPSchedule { stat, dynamic, guided, standard };
 enum class TBBPartitioner { stat, simple, standard, affinity };
+enum class TaskPoolType { std_thread, task_group };
 
 struct Config {
     Config() = default;
@@ -138,6 +139,7 @@ struct Config {
     bool                  global_parallel                   = false;
     bool                  parallel_compact                  = false;
     ParallelizationMethod parallelization_method            = ParallelizationMethod::tbb;
+    TaskPoolType          task_pool_type                    = TaskPoolType::std_thread;
     bool                  edge_partitioning                 = false;
     bool                  edge_partitioning_static          = false;
     TBBPartitioner        tbb_partitioner                   = TBBPartitioner::standard;

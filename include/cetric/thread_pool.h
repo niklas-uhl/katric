@@ -1,14 +1,13 @@
 #pragma once
 
+#include <functional>
 #include <atomic>
 #include <condition_variable>
-#include <deque>
-#include <functional>
-#include <mutex>
 #include <thread>
-#include <unordered_map>
-#include <vector>
+#include <mutex>
+#include <deque>
 
+namespace cetric {
 class ThreadPool {
 public:
     using Job = std::function<void()>;
@@ -127,3 +126,4 @@ private:
         return jobs_[i];
     }
 };
+}
