@@ -33,6 +33,7 @@
 #include <tbb/parallel_scan.h>
 #include <tbb/partitioner.h>
 #include <tbb/task_arena.h>
+#include <tbb/concurrent_queue.h>
 #include <tbb/task_group.h>
 #include <tlx/meta/has_member.hpp>
 #include <tlx/meta/has_method.hpp>
@@ -1380,8 +1381,6 @@ public:
         cetric::profiling::Timer phase_time;
         std::atomic<size_t>      nodes_queued = 0;
         std::atomic<size_t>      write_jobs   = 0;
-        // TbbTaskPool              pool(conf_.num_threads);
-        //  ThreadPool               pool(conf_.num_threads - 1);
 
         //ConcurrencyTracker  tracker(conf_.num_threads);
         std::atomic<size_t> skipped_nodes = 0;
@@ -1764,7 +1763,7 @@ private:
         auto for_each_local_receiver = [&](auto on_node) {
             if (conf_.skip_local_neighborhood) {
                 auto neighbors = G.out_adj(v).neighbors();
-                if (false) {
+                if (conf_.global_degree_of_parallelism > 2) {
                     tbb::parallel_for(
                         tbb::blocked_range(neighbors.begin(), neighbors.end()),
                         [&on_node](auto const& r) {
@@ -1779,7 +1778,7 @@ private:
                     }
                 }
             } else {
-                if (false) {
+                if (conf_.global_degree_of_parallelism > 2) {
                     tbb::parallel_for(tbb::blocked_range(begin, end), [&on_node, this](auto const& r) {
                         for (auto u: r) {
                             if (u.rank() == rank_) {

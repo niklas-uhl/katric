@@ -25,10 +25,12 @@ public:
     void submit_work(Job&& job, TaskPriority = TaskPriority::normal) {
         arena_.execute([&] { tg_.run(std::forward<Job>(job)); });
     }
+
     template <typename Job>
     void run_and_wait(Job&& job) {
         arena_.execute([&] { tg_.run_and_wait(std::forward<Job>(job)); });
     }
+
     void wait() {
         arena_.execute([&] { tg_.wait(); });
     }
