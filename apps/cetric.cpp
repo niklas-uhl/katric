@@ -122,6 +122,7 @@ cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::P
         ->transform(CLI::CheckedTransformer(enum_name_to_value_map<cetric::TBBPartitioner>(), CLI::ignore_case));
     app.add_option("--task-pool-type", conf.task_pool_type)
         ->transform(CLI::CheckedTransformer(enum_name_to_value_map<cetric::TaskPoolType>(), CLI::ignore_case));
+    app.add_flag("--task-priorities", conf.task_priorities);
 
     app.add_option("--threshold", conf.threshold)
         ->transform(CLI::CheckedTransformer(cetric::threshold_map, CLI::ignore_case));

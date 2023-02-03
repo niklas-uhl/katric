@@ -140,6 +140,7 @@ struct Config {
     bool                  parallel_compact                  = false;
     ParallelizationMethod parallelization_method            = ParallelizationMethod::tbb;
     TaskPoolType          task_pool_type                    = TaskPoolType::std_thread;
+    bool                  task_priorities                   = false;
     bool                  edge_partitioning                 = false;
     bool                  edge_partitioning_static          = false;
     TBBPartitioner        tbb_partitioner                   = TBBPartitioner::standard;
@@ -197,6 +198,8 @@ struct Config {
             CEREAL_NVP(local_parallel),
             CEREAL_NVP(parallel_compact),
             CEREAL_NVP(parallelization_method),
+            CEREAL_NVP(task_pool_type),
+            CEREAL_NVP(task_priorities),
             CEREAL_NVP(edge_partitioning),
             CEREAL_NVP(edge_partitioning_static),
             CEREAL_NVP(tbb_partitioner),
