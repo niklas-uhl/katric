@@ -15,9 +15,9 @@ If you use this code in the context of an academic publication, please cite:
 ### Requirements
 To compile this project you need:
 - A modern, C++17-ready compiler such as `g++` version 9 or higher or `clang` version 11 or higher.
-- [https://www.open-mpi.org/](OpenMPI) or [https://www.intel.com/content/www/us/en/developer/tools/oneapi/mpi-library.html#gs.pr0oht](Intel MPI)
-- OpenMP and oneTBB [https://oneapi-src.github.io/oneTBB/](oneTBB)
-- [https://github.com/sparsehash/sparsehash](Google Sparsehash)
+- [OpenMPI](https://www.open-mpi.org/) or [Intel MPI](https://www.intel.com/content/www/us/en/developer/tools/oneapi/mpi-library.html#gs.pr0oht)
+- OpenMP and [oneTBB](https://oneapi-src.github.io/oneTBB/)
+- [Google Sparsehash](https://github.com/sparsehash/sparsehash)
 
 ### Compiling
 
@@ -30,7 +30,7 @@ make
 
 
 ## Running
-For reproducing our experiments see [./experiments/README.md](the corresponding document).
+For reproducing our experiments see [the corresponding document](./experiments/README.md).
 
 We provide two base configurations of our algorithm:
 - DiTriC, which uses the asynchronous buffered messaging approach from our publication 
@@ -57,11 +57,12 @@ For additional parameters see `--help`.
 
 ### Providing input graphs
 You can read undirected graphs from input files represented in `METIS` or `binary` format. The `binary` is a lot faster to read.
-To convert other graph represenations to supported formats see [https://github.com/niklas-uhl/graph-converters](our graph converter suite).
+To convert other graph represenations to supported formats see [our graph converter suite](https://github.com/niklas-uhl/graph-converter).
+
 Select the input format using `--input-format`.
 
-You can also use random graphs generated via [https://github.com/sebalamm/kagen](KaGen).
+You can also use random graphs generated via [KaGen](https://github.com/sebalamm/kagen).
 Choose a generator with the `--gen` flag and set the desired parameters (`--gen_*`). See the KaGen documentation for details.
 
 ------------------------------
-Licensed under [./LICENSE](MIT). 
+Licensed under [MIT](./LICENSE).
