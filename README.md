@@ -1,7 +1,7 @@
 # KaTric: Scalable Distributed-Memory Triangle Counting
 ![katric logo](./doc/katric.svg)
 
-This is the code to accompany our paper:
+This is the code to accompany our (soon to be published) paper:
 _Sanders, P. and Uhl, T.N., 2023. Engineering a Distributed-Memory Triangle Counting Algorithm._
 
 If you use this code in the context of an academic publication, please cite:
