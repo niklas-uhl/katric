@@ -1,4 +1,4 @@
-name: mysuite
+name: example
 ncores: [16]
 threads_per_rank: [1, 2, 4, 8, 16]
 graphs:

@@ -40,10 +40,10 @@ We provide two base configurations of our algorithm:
 While we provide many command-line parameters to tune our algorithms' behavior, we provide the variants from the publication as config presets:
 ```shell
 # running DiTriC
-mpiexec -np <NUM_PES> build/apps/cetric <GRAPH> --config configs/ditric.conf
+mpiexec -np <NUM_PES> build/apps/katric <GRAPH> --config configs/ditric.conf
 
 # running CeTriC
-mpiexec -np <NUM_PES> build/apps/cetric <GRAPH> --config configs/cetric.conf
+mpiexec -np <NUM_PES> build/apps/katric <GRAPH> --config configs/cetric.conf
 ```
 
 If you want to enable the grid-based 2D indirect routing of messages, load the additional config

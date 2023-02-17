@@ -239,11 +239,11 @@ class ExperimentSuite:
             if graph["partitioned"]:
                 input.add_partitions(partitions.get(graph["name"], {}))
                 input.partitioned = graph["partitioned"]
-            print(input)
+            # print(input)
             inputs_new.append(input)
             
         self.inputs = inputs_new
-        print(self.inputs)
+        # print(self.inputs)
 
     def __repr__(self):
         return f"ExperimentSuite({self.name}, {self.cores}, {self.inputs}, {self.configs}, {self.time_limit}, {self.input_time_limit})"
@@ -331,7 +331,7 @@ def cetric_command(input, mpi_ranks, threads_per_rank, **kwargs):
     script_path = os.path.dirname(__file__)
     build_dir = Path(
         os.environ.get("BUILD_DIR", os.path.join(script_path, "../build/")))
-    app = build_dir / "apps" / "cetric"
+    app = build_dir / "apps" / "katric"
     command = [str(app)]
     if input:
         if isinstance(input, InputGraph):
