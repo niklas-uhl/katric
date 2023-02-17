@@ -28,8 +28,6 @@
 #include <tbb/parallel_for_each.h>
 #include <tbb/partitioner.h>
 
-#include "debug_assert.hpp"
-
 namespace cetric {
 namespace graph {
 

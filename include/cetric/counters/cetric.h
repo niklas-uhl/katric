@@ -9,7 +9,6 @@
 #include <sstream>
 #include <utility>
 
-#include <debug_assert.hpp>
 #include <graph-io/local_graph_view.h>
 #include <kassert/internal/assertion_macros.hpp>
 #include <kassert/kassert.hpp>

@@ -10,7 +10,6 @@
 #include <string>
 #include <vector>
 
-#include <debug_assert.hpp>
 #include <fmt/core.h>
 #include <graph-io/local_graph_view.h>
 #include <mpi.h>

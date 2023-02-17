@@ -16,7 +16,6 @@
 #include <tbb/global_control.h>
 
 #include "cetric/counters/shared_memory_cetric.h"
-#include "cetric/counters/shared_memory_edge_iterator.h"
 #include "cetric/datastructures/distributed/distributed_graph.h"
 #include "cetric/datastructures/graph.h"
 #include "cetric/statistics.h"

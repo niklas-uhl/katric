@@ -7,9 +7,6 @@
 [submodule "extern/catch"]
 	path = extern/catch
 	url = https://github.com/catchorg/Catch2.git
-[submodule "extern/debug_assert"]
-	path = extern/debug_assert
-	url = https://github.com/foonathan/debug_assert.git
 [submodule "extern/backward-cpp"]
 	path = extern/backward-cpp
 	url = https://github.com/niklas-uhl/backward-cpp-mpi.git
@@ -40,6 +37,3 @@
 [submodule "extern/sanitizers-cmake"]
 	path = extern/sanitizers-cmake
 	url = https://github.com/arsenm/sanitizers-cmake
-[submodule "extern/bytehamster_util"]
-	path = extern/bytehamster_util
-	url = https://github.com/ByteHamster/Util

@@ -18,6 +18,7 @@ To compile this project you need:
 - [OpenMPI](https://www.open-mpi.org/) or [Intel MPI](https://www.intel.com/content/www/us/en/developer/tools/oneapi/mpi-library.html#gs.pr0oht)
 - OpenMP and [oneTBB](https://oneapi-src.github.io/oneTBB/)
 - [Google Sparsehash](https://github.com/sparsehash/sparsehash)
+- Boost
 
 ### Compiling
 

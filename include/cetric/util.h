@@ -19,7 +19,6 @@
 #include <vector>
 
 #include <backward.hpp>
-#include <debug_assert.hpp>
 #include <fmt/core.h>
 #include <fmt/ostream.h>
 #include <fmt/ranges.h>
@@ -49,35 +48,6 @@ inline std::string get_stacktrace() {
     print_stacktrace(out);
     return out.str();
 }
-
-#define MODULE_A_LEVEL 0
-#define PRINT_TRACE    1
-struct debug_module : debug_assert::default_handler, debug_assert::set_level<MODULE_A_LEVEL> {
-    static void handle(const debug_assert::source_location& loc, const char* expr, const char* msg = nullptr) noexcept {
-        PEID rank;
-        MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-        std::string       rank_prefix = fmt::format("[R{}]", rank);
-        std::string       prefix      = "[debug assert]";
-        std::stringstream out;
-        out << rank_prefix << prefix << " " << loc.file_name << ":" << loc.line_number << ": ";
-
-        if (*expr == '\0') {
-            out << "Unreachable code reached";
-        } else {
-            out << "Assertion " << expr << " failed";
-        }
-        if (msg) {
-            out << " - " << msg << ".";
-        } else {
-            out << ".";
-        }
-        out << std::endl;
-        if constexpr (PRINT_TRACE) {
-            print_stacktrace(out);
-        }
-        std::cerr << out.str();
-    }
-};
 
 #ifndef DEBUG_BARRIER
     #ifndef NDEBUG

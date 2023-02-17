@@ -40,7 +40,6 @@
 #include <boost/range/counting_range.hpp>
 #include <boost/range/iterator_range.hpp>
 #include <boost/range/iterator_range_core.hpp>
-#include <debug_assert.hpp>
 #include <default_hash.hpp>
 #include <fmt/core.h>
 #include <graph-io/local_graph_view.h>

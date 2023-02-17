@@ -1,8 +1,11 @@
 file(GLOB_RECURSE HEADER_LIST CONFIGURE_DEPENDS "${parallel-triangle-counter_SOURCE_DIR}/include/[a-zA-Z_0-9]+.h")
 
-set(FILE_LIST
-  shared_memory_edge_iterator.cpp
-)
+set(FILE_LIST)
+if (NOT FILE_LIST)
+    set(DUMMY_FILE ${CMAKE_CURRENT_BINARY_DIR}/null.cpp)
+    file(WRITE "${DUMMY_FILE}" "")
+    list(APPEND FILE_LIST "${DUMMY_FILE}")
+endif()
 
 
 add_library(cetric-lib ${FILE_LIST} ${HEADER_LIST})
@@ -15,16 +18,13 @@ target_link_libraries(cetric-lib PUBLIC tlx)
 target_link_libraries(cetric-lib PUBLIC Sparsehash::Sparsehash)
 target_link_libraries(cetric-lib PUBLIC cereal::cereal)
 target_link_libraries(cetric-lib PUBLIC magic_enum::magic_enum)
-target_link_libraries(cetric-lib PUBLIC debug_assert)
 target_link_libraries(cetric-lib PUBLIC fmt::fmt)
 target_link_libraries(cetric-lib PUBLIC message-queue)
 target_link_libraries(cetric-lib PUBLIC graph-io)
 target_link_libraries(cetric-lib PUBLIC TBB::tbb)
 target_link_libraries(cetric-lib PUBLIC OpenMP::OpenMP_CXX)
 target_link_libraries(cetric-lib PUBLIC kassert::kassert)
-target_link_libraries(cetric-lib PUBLIC range_adaptor)
 target_link_libraries(cetric-lib PUBLIC utils_tm)
-#target_link_libraries(cetric-lib PUBLIC ByteHamsterUtil)
 target_link_libraries(cetric-lib PUBLIC Boost::headers)
 target_include_directories(cetric-lib PUBLIC ${BACKWARD_INCLUDE_DIRS})
 target_link_libraries(cetric-lib PUBLIC ${BACKWARD_LIBRARIES})
