@@ -1,3 +1,7 @@
+# Karlsruhe Triangle Counting
+
+![katric logo](./katric.svg)
+
 This repository contains our experimental implementation of CETRIC.
 
 The code is based on the following thesis:

@@ -1,0 +1,20 @@
+# Cetric
+algorithm = "cetric-x"
+pseudo2core = false
+binary-rank-search = true
+threshold = "local-nodes"
+threshold-scale = 1.0
+edge-partitioning = false
+edge-partitioning-static = false
+id-node-ordering = true
+local-parallel = false
+global-parallel = false
+local-degree-of-parallelism = 2
+global-degree-of-parallelism = 2
+dense-degree-exchange = true
+skip-local-neighborhood = false
+global-synchronization = true
+communication-policy = "new"
+primary-cost-function = "none"
+intersection-method = "merge"
+read-edge-partitioned = true

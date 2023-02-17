@@ -1,0 +1,5 @@
+edge-partitioning= true
+local-parallel = true
+global-parallel = true
+task-pool-type = "task_group"
+task-priorities= true

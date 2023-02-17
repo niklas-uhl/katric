@@ -50,6 +50,9 @@ cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::P
 
     CLI::App app("Parallel Triangle Counter");
     app.option_defaults()->always_capture_default();
+    app.set_config("--config")
+        ->expected(0, 3);
+    
     cetric::Config conf;
     conf.git_commit = cetric::git_hash;
 
