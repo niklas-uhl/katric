@@ -57,7 +57,7 @@ For detailed metrics of all algorithm phases and communication, use the `--json-
 For additional parameters see `--help`.
 
 ### Providing input graphs
-You can read undirected graphs from input files represented in `METIS` or `binary` format. The `binary` is a lot faster to read.
+You can read undirected graphs from input files represented in `METIS` or `binary` format. The `binary` is a lot faster to read. You can find some toy graphs in `./examples`.
 To convert other graph represenations to supported formats see [our graph converter suite](https://github.com/niklas-uhl/graph-converter).
 
 Select the input format using `--input-format`.
