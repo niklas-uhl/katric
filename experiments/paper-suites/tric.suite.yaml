@@ -1,0 +1,43 @@
+name: tric
+type: tric
+executable: ../../tric/build/tric
+ncores: [512, 1024, 2048, 4096, 8192, 16384, 32768]
+graphs:
+  - name: europe
+    time_limit: 3
+  - name: webbase-2001
+    time_limit: 10
+  - name: uk-2007-05
+    time_limit: 20
+  - name: twitter
+    time_limit: 10
+  - name: usa
+    time_limit: 3
+  - name: live-journal
+    time_limit: 5
+  - name: orkut
+    time_limit: 5
+  - name: friendster
+    time_limit: 10
+  - generator: rgg_2d
+    n: 18
+    m: 22
+    scale_weak: True
+  - generator: rhg
+    n: 18
+    m: 22
+    gamma: 2.8
+    scale_weak: True
+  - generator: gnm
+    n: 16
+    m: 20
+    scale_weak: True
+  - generator: rmat
+    n: 16
+    m: 20
+    scale_weak: True
+time_limit: 20
+config: {
+  b: [True]
+}
+
