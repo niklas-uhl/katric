@@ -1,33 +1,69 @@
-# Karlsruhe Triangle Counting
+# KaTric: Scalable Distributed-Memory Triangle Counting
+![katric logo](./doc/katric.svg)
 
-![katric logo](./katric.svg)
+This is the code to accompany our (soon to be published) paper:
+_Sanders, P. and Uhl, T.N., 2023. Engineering a Distributed-Memory Triangle Counting Algorithm._
 
-This repository contains our experimental implementation of CETRIC.
+If you use this code in the context of an academic publication, please cite:
+```bibtex
+// TODO
+```
+## Introduction
 
-The code is based on the following thesis:
+## Building
 
-T. N. Uhl. Communication Efficient Triangle Counting. Karlsruhe Institute of Technology. 2021
+### Requirements
+To compile this project you need:
+- A modern, C++17-ready compiler such as `g++` version 9 or higher or `clang` version 11 or higher.
+- [OpenMPI](https://www.open-mpi.org/) or [Intel MPI](https://www.intel.com/content/www/us/en/developer/tools/oneapi/mpi-library.html#gs.pr0oht)
+- OpenMP and [oneTBB](https://oneapi-src.github.io/oneTBB/)
+- [Google Sparsehash](https://github.com/sparsehash/sparsehash)
+- Boost
 
-# Building
+### Compiling
 
 ```shell
 git submodule update --init --recursive
 mkdir build && cd build
-cmake ..
+cmake -DCMAKE_BUILD_TYPE=Release ..
 make
 ```
 
-# Running
+
+## Running
+For reproducing our experiments see [the corresponding document](./experiments/README.md).
+
+We provide two base configurations of our algorithm:
+- DiTriC, which uses the asynchronous buffered messaging approach from our publication 
+- CeTriC, which employs our communication reduction technique
+
+While we provide many command-line parameters to tune our algorithms' behavior, we provide the variants from the publication as config presets:
 ```shell
-cd build
+# running DiTriC
+mpiexec -np <NUM_PES> build/apps/katric <GRAPH> --config configs/ditric.conf
 
-# running CETRIC
-mpiexec -np NUM_PROCS apps/parallel-counter GRAPH --ghost --k3-intersection --compress_more
-
-# running PATRIC
-mpiexec -np NUM_PROCS apps/parallel-counter GRAPH 
-
-# for more details run
-mpiexec -np NUM_PROCS apps/parallel-counter --help
-# or refer to the example scripts under experiments
+# running CeTriC
+mpiexec -np <NUM_PES> build/apps/katric <GRAPH> --config configs/cetric.conf
 ```
+
+If you want to enable the grid-based 2D indirect routing of messages, load the additional config
+`--config configs/2d-grid` after loading one of the base configs.
+
+To use the hybrid implementation add `--config configs/hybrid` and control the number of threads used per MPI rank via the `--num-threads` parameter.
+
+By default, this only prints the running time and the total number of triangles to stdout.
+For detailed metrics of all algorithm phases and communication, use the `--json-ouput` flag with `stdout` or a outfile as parameter.
+
+For additional parameters see `--help`.
+
+### Providing input graphs
+You can read undirected graphs from input files represented in `METIS` or `binary` format. The `binary` is a lot faster to read. You can find some toy graphs in `./examples`.
+To convert other graph represenations to supported formats see [our graph converter suite](https://github.com/niklas-uhl/graph-converter).
+
+Select the input format using `--input-format`.
+
+You can also use random graphs generated via [KaGen](https://github.com/sebalamm/kagen).
+Choose a generator with the `--gen` flag and set the desired parameters (`--gen_*`). See the KaGen documentation for details.
+
+------------------------------
+Licensed under [MIT](./LICENSE).
