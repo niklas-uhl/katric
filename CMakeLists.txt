@@ -21,7 +21,7 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_LIST_DIR}/cmake)
 
 find_package(Sparsehash REQUIRED)
 
-find_package(Boost REQUIRED COMPONENTS headers)
+find_package(Boost REQUIRED COMPONENTS headers mpi)
 find_package(TBB REQUIRED)
 find_package(OpenMP REQUIRED)
 find_package(MPI REQUIRED)

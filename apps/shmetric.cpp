@@ -89,10 +89,6 @@ int main(int argc, char* argv[]) {
     if (conf.num_threads == 0) {
         conf.num_threads = max_concurrency;
     }
-    if (conf.num_threads > max_concurrency) {
-        std::cout
-            << fmt::format("Warning, TBB uses only {} instead of {} threads!\n", max_concurrency, conf.num_threads);
-    }
     tbb::global_control global_limit(tbb::global_control::max_allowed_parallelism, conf.num_threads + 1);
 
     omp_set_num_threads(conf.num_threads);

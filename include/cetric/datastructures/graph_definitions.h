@@ -31,14 +31,15 @@
 #include <ostream>
 #include <sparsehash/dense_hash_map>
 #include <sparsehash/dense_hash_set>
+#include <mpi.h>
 
 #include <fmt/core.h>
 #include <fmt/ostream.h>
 #include <graph-io/graph_definitions.h>
 #include <hash/murmur2_hash.hpp>
+#include <boost/mpi/datatype.hpp>
 
 #include "cetric/atomic_debug.h"
-#include "message-queue/mpi_datatype.h"
 
 namespace cetric {
 namespace graph {
@@ -273,7 +274,13 @@ struct node_map : public google::dense_hash_map<graph::RankEncodedNodeId, T, has
 //     }
 // };
 
+namespace boost::mpi {
 template <>
-struct kamping::mpi_type_traits<cetric::graph::RankEncodedNodeId> : kamping::mpi_type_traits<std::uint64_t> {};
+MPI_Datatype get_mpi_datatype<cetric::graph::RankEncodedNodeId>(cetric::graph::RankEncodedNodeId const&) {
+    return get_mpi_datatype<std::uint64_t>();
+}
+template<>
+struct is_mpi_builtin_datatype<cetric::graph::RankEncodedNodeId> : is_mpi_builtin_datatype<std::uint64_t> {};
+}
 
 #endif /* end of include guard: GRAPH_DEFINITIONS_H_8XAL43DH */
