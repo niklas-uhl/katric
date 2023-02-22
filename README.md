@@ -1,5 +1,6 @@
 # KaTric: Scalable Distributed-Memory Triangle Counting
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.7665533.svg)](https://doi.org/10.5281/zenodo.7665533)
+[![GitHub](https://img.shields.io/github/license/niklas-uhl/katric)
+![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.7665533.svg)](https://doi.org/10.5281/zenodo.7665533)
 
 ![katric logo](./doc/katric.svg)
 
