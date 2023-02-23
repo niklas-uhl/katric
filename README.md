@@ -4,12 +4,22 @@
 
 ![katric logo](./doc/katric.svg)
 
-This is the code to accompany our (soon to be published) paper:
-_Sanders, P. and Uhl, T.N., 2023. Engineering a Distributed-Memory Triangle Counting Algorithm._
+This is the code to accompany our paper:
+_Sanders, P. and Uhl, T.N., 2023. Engineering a Distributed-Memory Triangle Counting Algorithm._ to be published in 2023 IEEE International Parallel and Distributed Processing Symposium (IPDPS).
 
-If you use this code in the context of an academic publication, please cite:
+If you use this code in the context of an academic publication, please cite the [freely accessible postprint in the arXiv](https://arxiv.org/abs/2302.11443):
 ```bibtex
-// TODO
+@misc{https://doi.org/10.48550/arxiv.2302.11443,
+  doi = {10.48550/ARXIV.2302.11443},
+  url = {https://arxiv.org/abs/2302.11443},
+  author = {Sanders, Peter and Uhl, Tim Niklas},
+  keywords = {Distributed, Parallel, and Cluster Computing (cs.DC), Data Structures and Algorithms (cs.DS), Social and Information Networks (cs.SI), FOS: Computer and information sciences, FOS: Computer and information sciences},
+  title = {Engineering a Distributed-Memory Triangle Counting Algorithm},
+  publisher = {arXiv},
+  year = {2023},
+  copyright = {arXiv.org perpetual, non-exclusive license}
+}
+
 ```
 ## Introduction
 Counting triangles in a graph and incident to each vertex is a
