@@ -5,22 +5,27 @@
 ![katric logo](./doc/katric.svg)
 
 This is the code to accompany our paper:
-_Sanders, P. and Uhl, T.N., 2023. Engineering a Distributed-Memory Triangle Counting Algorithm._ to be published in 2023 IEEE International Parallel and Distributed Processing Symposium (IPDPS).
+_Sanders, P. and Uhl, T.N., 2023. Engineering a Distributed-Memory Triangle Counting Algorithm._ published in the proceedings of the 2023 IEEE International Parallel and Distributed Processing Symposium (IPDPS).
 
-If you use this code in the context of an academic publication, please cite the [freely accessible postprint in the arXiv](https://arxiv.org/abs/2302.11443):
+If you use this code in the context of an academic publication, we kindly ask you to [cite it](https://doi.org/10.1109/IPDPS54959.2023.00076):
+
 ```bibtex
-@misc{https://doi.org/10.48550/arxiv.2302.11443,
-  doi = {10.48550/ARXIV.2302.11443},
-  url = {https://arxiv.org/abs/2302.11443},
-  author = {Sanders, Peter and Uhl, Tim Niklas},
-  keywords = {Distributed, Parallel, and Cluster Computing (cs.DC), Data Structures and Algorithms (cs.DS), Social and Information Networks (cs.SI), FOS: Computer and information sciences, FOS: Computer and information sciences},
-  title = {Engineering a Distributed-Memory Triangle Counting Algorithm},
-  publisher = {arXiv},
-  year = {2023},
-  copyright = {arXiv.org perpetual, non-exclusive license}
+@inproceedings{sanders2023
+  author       = {Peter Sanders and
+                  Tim Niklas Uhl},
+  title        = {Engineering a Distributed-Memory Triangle Counting Algorithm},
+  booktitle    = {{IEEE} International Parallel and Distributed Processing Symposium,
+                  {IPDPS} 2023, St. Petersburg, FL, USA, May 15-19, 2023},
+  pages        = {702--712},
+  publisher    = {{IEEE}},
+  year         = {2023},
+  url          = {https://doi.org/10.1109/IPDPS54959.2023.00076},
+  doi          = {10.1109/IPDPS54959.2023.00076},
 }
-
 ```
+
+You can also find a [freely accessible postprint in the arXiv](https://arxiv.org/abs/2302.11443).
+
 ## Introduction
 Counting triangles in a graph and incident to each vertex is a
 fundamental and frequently considered task of graph analysis.  We
