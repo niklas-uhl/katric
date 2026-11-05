@@ -37,7 +37,6 @@
 #include <boost/range/iterator_range_core.hpp>
 #include <boost/range/join.hpp>
 #include <mpi.h>
-#include <omp.h>
 #include <tbb/combinable.h>
 #include <tbb/concurrent_vector.h>
 #include <tbb/enumerable_thread_specific.h>

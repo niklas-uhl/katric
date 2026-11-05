@@ -17,13 +17,16 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
 endif()
 
 option(CETRIC_DEBUG_CONTAINERS "Use GNU debug containers" OFF)
+option(CETRIC_USE_OPENMP "Enable OpenMP-based parallelization (--parallelization-method omp_for)" ON)
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_LIST_DIR}/cmake)
 
 find_package(Sparsehash REQUIRED)
 
-find_package(Boost REQUIRED COMPONENTS headers mpi)
+find_package(Boost REQUIRED CONFIG COMPONENTS headers mpi)
 find_package(TBB REQUIRED)
-find_package(OpenMP REQUIRED)
+if (CETRIC_USE_OPENMP)
+  find_package(OpenMP REQUIRED COMPONENTS CXX)
+endif()
 find_package(MPI REQUIRED)
 message(STATUS "Run: ${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} ${MPIEXEC_MAX_NUMPROCS} ${MPIEXEC_PREFLAGS} EXECUTABLE ${MPIEXEC_POSTFLAGS} ARGS")
 

@@ -35,6 +35,7 @@
 #include <limits>
 #include <memory>
 #include <numeric>
+#include <stdexcept>
 #include <thread>
 #include <type_traits>
 
@@ -44,7 +45,9 @@
 #include <boost/range/join.hpp>
 #include <message-queue/buffered_queue.h>
 #include <mpi.h>
-#include <omp.h>
+#ifdef CETRIC_HAS_OPENMP
+    #include <omp.h>
+#endif
 #include <tbb/blocked_range.h>
 #include <tbb/combinable.h>
 #include <tbb/concurrent_queue.h>
@@ -1034,9 +1037,13 @@ public:
                 break;
             }
             case ParallelizationMethod::omp_for: {
+#ifdef CETRIC_HAS_OPENMP
                 // clang-format off
                 #pragma omp parallel for schedule(runtime)
                 // clang-format on
+#else
+                throw std::runtime_error("parallelization method omp_for requires building with CETRIC_USE_OPENMP=ON");
+#endif
                 for (auto v: nodes) {
                     node_loop_body(v);
                 }
@@ -1215,9 +1222,13 @@ public:
                 break;
             }
             case ParallelizationMethod::omp_for: {
+#ifdef CETRIC_HAS_OPENMP
                 // clang-format off
                 #pragma omp parallel for schedule(runtime)
                 // clang-format on
+#else
+                throw std::runtime_error("parallelization method omp_for requires building with CETRIC_USE_OPENMP=ON");
+#endif
                 for (auto v: nodes) {
                     node_loop_body(v);
                 }

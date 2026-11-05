@@ -161,6 +161,12 @@ cetric::Config parse_config(int argc, char* argv[]) {
                              "generator via '--gen'");
         exit(app.exit(e));
     }
+#ifndef CETRIC_HAS_OPENMP
+    if (conf.parallelization_method == cetric::ParallelizationMethod::omp_for) {
+        CLI::ValidationError e("--parallelization-method", "omp_for requires building with CETRIC_USE_OPENMP=ON");
+        exit(app.exit(e));
+    }
+#endif
     conf.rank = 0;
     conf.PEs  = 1;
     return conf;

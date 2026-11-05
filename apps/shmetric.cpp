@@ -31,7 +31,9 @@
 #include <graph-io/graph_definitions.h>
 #include <graph-io/graph_io.h>
 #include <magic_enum.hpp>
-#include <omp.h>
+#ifdef CETRIC_HAS_OPENMP
+    #include <omp.h>
+#endif
 #include <tbb/global_control.h>
 
 #include "cetric/counters/shared_memory_cetric.h"
@@ -91,6 +93,7 @@ int main(int argc, char* argv[]) {
     }
     tbb::global_control global_limit(tbb::global_control::max_allowed_parallelism, conf.num_threads + 1);
 
+#ifdef CETRIC_HAS_OPENMP
     omp_set_num_threads(conf.num_threads);
     if (conf.omp_chunksize == 0) {
         omp_sched_t type;
@@ -113,6 +116,7 @@ int main(int argc, char* argv[]) {
             omp_set_schedule(omp_sched_auto, conf.omp_chunksize);
             break;
     }
+#endif
 
     std::optional<double>             io_time;
     cetric::profiling::Timer          t;

@@ -44,7 +44,9 @@
 #include <kassert/kassert.hpp>
 #include <magic_enum.hpp>
 #include <mpi.h>
-#include <omp.h>
+#ifdef CETRIC_HAS_OPENMP
+    #include <omp.h>
+#endif
 #include <tbb/blocked_range.h>
 #include <tbb/enumerable_thread_specific.h>
 #include <tbb/global_control.h>
@@ -175,6 +177,19 @@ cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::P
         MPI_Finalize();
         exit(retval);
     }
+#ifndef CETRIC_HAS_OPENMP
+    if (conf.parallelization_method == cetric::ParallelizationMethod::omp_for) {
+        int retval;
+        if (rank == 0) {
+            CLI::ValidationError e("--parallelization-method", "omp_for requires building with CETRIC_USE_OPENMP=ON");
+            retval = app.exit(e);
+        } else {
+            retval = 1;
+        }
+        MPI_Finalize();
+        exit(retval);
+    }
+#endif
     if (!conf.partitioning.empty()) {
         conf.partitioned_input = true;
     }
@@ -334,6 +349,7 @@ int main(int argc, char* argv[]) {
         }
         tbb::global_control global_limit(tbb::global_control::max_allowed_parallelism, conf.num_threads);
 
+#ifdef CETRIC_HAS_OPENMP
         omp_set_num_threads(conf.num_threads);
         if (conf.omp_chunksize == 0) {
             omp_sched_t type;
@@ -356,6 +372,7 @@ int main(int argc, char* argv[]) {
                 omp_set_schedule(omp_sched_auto, conf.omp_chunksize);
                 break;
         }
+#endif
 
         std::optional<double>    io_time;
         cetric::profiling::Timer t;
