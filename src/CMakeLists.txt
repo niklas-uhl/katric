@@ -12,7 +12,6 @@ add_library(cetric-lib ${FILE_LIST} ${HEADER_LIST})
 
 target_include_directories(cetric-lib PUBLIC ${PROJECT_SOURCE_DIR}/include/)
 
-target_link_libraries(cetric-lib PRIVATE local_spooky)
 target_link_libraries(cetric-lib PUBLIC MPI::MPI_CXX)
 target_link_libraries(cetric-lib PUBLIC tlx)
 target_link_libraries(cetric-lib PUBLIC Sparsehash::Sparsehash)

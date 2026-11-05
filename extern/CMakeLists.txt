@@ -1,4 +1,3 @@
-add_subdirectory(spooky)
 add_subdirectory(cli11)
 add_subdirectory(backward-cpp EXCLUDE_FROM_ALL)
 add_subdirectory(fmt EXCLUDE_FROM_ALL)
