@@ -48,6 +48,13 @@ add_subdirectory(apps)
 
 if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME AND BUILD_TESTING)
   enable_testing()
+  include(FetchContent)
+  FetchContent_Declare(
+    KaTestrophe
+    GIT_REPOSITORY https://github.com/kamping-site/KaTestrophe.cmake
+    GIT_TAG        v1.1.1
+  )
+  FetchContent_MakeAvailable(KaTestrophe)
   include(GoogleTest)
   add_subdirectory(tests)
 endif()
