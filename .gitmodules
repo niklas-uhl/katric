@@ -4,9 +4,6 @@
 [submodule "extern/tlx"]
 	path = extern/tlx
 	url = https://github.com/tlx/tlx
-[submodule "extern/catch"]
-	path = extern/catch
-	url = https://github.com/catchorg/Catch2.git
 [submodule "extern/backward-cpp"]
 	path = extern/backward-cpp
 	url = https://github.com/niklas-uhl/backward-cpp-mpi.git

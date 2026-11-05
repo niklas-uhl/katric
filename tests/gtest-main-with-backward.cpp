@@ -18,12 +18,10 @@
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include <backward.hpp>
-#include <catch2/catch_session.hpp>
+#include <gtest/gtest.h>
 
 int main(int argc, char* argv[]) {
     backward::SignalHandling sh;
-
-    int result = Catch::Session().run(argc, argv);
-
-    return result;
+    ::testing::InitGoogleTest(&argc, argv);
+    return RUN_ALL_TESTS();
 }

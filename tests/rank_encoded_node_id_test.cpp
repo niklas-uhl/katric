@@ -20,21 +20,20 @@
 #include <cstdint>
 #include <limits>
 
-#include <catch2/catch_test_macros.hpp>
+#include <gtest/gtest.h>
 
 #include "cetric/datastructures/graph_definitions.h"
 
-TEST_CASE("Rank encoding works") {
+TEST(RankEncodedNodeIdTest, RankEncodingWorks) {
     cetric::graph::RankEncodedNodeId node_id{42};
-    REQUIRE(node_id.id() == 42);
+    EXPECT_EQ(node_id.id(), 42);
     node_id.set_rank(255);
-    REQUIRE(node_id.id() == 42);
-    REQUIRE(node_id.rank() == 255);
-    REQUIRE(node_id.data() != 42);
+    EXPECT_EQ(node_id.id(), 42);
+    EXPECT_EQ(node_id.rank(), 255);
+    EXPECT_NE(node_id.data(), 42);
     node_id.set_rank(0);
-    REQUIRE(node_id.id() == 42);
-    REQUIRE(node_id.rank() == 0);
-    REQUIRE(node_id.data() == 42);
-    REQUIRE(cetric::graph::RankEncodedNodeId::sentinel().data() == std::numeric_limits<uint64_t>::max());
-    // node_id.set_rank(1'000'000'000);
+    EXPECT_EQ(node_id.id(), 42);
+    EXPECT_EQ(node_id.rank(), 0);
+    EXPECT_EQ(node_id.data(), 42);
+    EXPECT_EQ(cetric::graph::RankEncodedNodeId::sentinel().data(), std::numeric_limits<uint64_t>::max());
 }

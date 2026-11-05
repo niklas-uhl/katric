@@ -19,155 +19,117 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <initializer_list>
+#include <functional>
 #include <iterator>
 #include <random>
-#include <tuple>
+#include <string>
 #include <vector>
 
-#include <catch2/catch_test_macros.hpp>
-#include <catch2/generators/catch_generators_all.hpp>
-#include <catch2/matchers/catch_matchers_vector.hpp>
+#include <gmock/gmock.h>
+#include <gtest/gtest.h>
 
-#include "catch2/generators/catch_generators.hpp"
 #include "cetric/counters/intersection.h"
 
-TEST_CASE("intersection works", "[simple]") {
-    auto constexpr make_input =
-        [](std::initializer_list<size_t> v1, std::initializer_list<size_t> v2, std::initializer_list<size_t> expected) {
-            return std::make_tuple(std::vector(v1), std::vector(v2), std::vector(expected));
+namespace {
+
+using Vec = std::vector<size_t>;
+
+std::string to_string(Vec const& v) {
+    std::string s = "{";
+    for (size_t i = 0; i < v.size(); ++i) {
+        s += (i == 0 ? "" : ", ") + std::to_string(v[i]);
+    }
+    return s + "}";
+}
+
+// Runs all intersection variants on (v1, v2) and (v2, v1) and compares against expected.
+void check_all_intersections(Vec v1, Vec v2, Vec const& expected) {
+    using ::testing::ElementsAreArray;
+    using ::testing::UnorderedElementsAreArray;
+    for (bool swap: {false, true}) {
+        if (swap) {
+            v1.swap(v2);
+        }
+        SCOPED_TRACE("v1 = " + to_string(v1) + ", v2 = " + to_string(v2));
+        auto run = [&](auto&& intersect) {
+            Vec result;
+            intersect(
+                v1.begin(),
+                v1.end(),
+                v2.begin(),
+                v2.end(),
+                [&result](auto const& val) { result.push_back(val); },
+                std::less<>{}
+            );
+            return result;
         };
-
-    auto inputs = GENERATE_REF(
-        make_input({0, 1, 3, 6, 9, 478}, {1, 6, 7, 8, 478}, {1, 6, 478}),
-        make_input({}, {1, 6, 7, 8, 478}, {}),
-        make_input({}, {}, {}),
-        make_input({1}, {}, {}),
-        make_input({1}, {1}, {1}),
-        make_input({1}, {42}, {}),
-        make_input({13, 46, 54, 58, 64}, {6, 21, 43, 47, 75}, {}),
-        make_input({1, 2, 5, 9, 10}, {1, 2, 4, 5, 6, 7, 8}, {1, 2, 5}),
-        make_input({2, 3, 4, 7, 10}, {3, 5, 6}, {3}),
-        make_input({1, 2, 3, 4, 5}, {6, 7, 8, 9, 10, 11, 12}, {})
-    );
-
-    auto v1       = std::get<0>(inputs);
-    auto v2       = std::get<1>(inputs);
-    auto expected = std::get<2>(inputs);
-
-    bool swap = GENERATE(false, true);
-    if (swap) {
-        v1.swap(v2);
-    }
-
-    CAPTURE(v1, v2);
-
-    std::vector<size_t> result;
-    SECTION("with merge intersection") {
-        cetric::merge_intersection(
-            v1.begin(),
-            v1.end(),
-            v2.begin(),
-            v2.end(),
-            [&result](auto const& val) { result.push_back(val); },
-            std::less<>{}
-        );
-        REQUIRE_THAT(result, Catch::Matchers::Equals(expected));
-    }
-    SECTION("with binary search intersection") {
-        cetric::binary_search_intersection(
-            v1.begin(),
-            v1.end(),
-            v2.begin(),
-            v2.end(),
-            [&result](auto const& val) { result.push_back(val); },
-            std::less<>{}
-        );
-        REQUIRE_THAT(result, Catch::Matchers::Equals(expected));
-    }
-    SECTION("with binary intersection") {
-        cetric::binary_intersection(
-            v1.begin(),
-            v1.end(),
-            v2.begin(),
-            v2.end(),
-            [&result](auto const& val) { result.push_back(val); },
-            std::less<>{}
-        );
-        REQUIRE_THAT(result, Catch::Matchers::UnorderedEquals(expected));
+        auto merge = [](auto&&... args) {
+            cetric::merge_intersection(std::forward<decltype(args)>(args)...);
+        };
+        auto binary_search = [](auto&&... args) {
+            cetric::binary_search_intersection(std::forward<decltype(args)>(args)...);
+        };
+        auto binary = [](auto&&... args) {
+            cetric::binary_intersection(std::forward<decltype(args)>(args)...);
+        };
+        EXPECT_THAT(run(merge), ElementsAreArray(expected)) << "merge_intersection";
+        EXPECT_THAT(run(binary_search), ElementsAreArray(expected)) << "binary_search_intersection";
+        EXPECT_THAT(run(binary), UnorderedElementsAreArray(expected)) << "binary_intersection";
     }
 }
 
-TEST_CASE("intersection works with random values", "[random]") {
-    constexpr size_t    max_length   = 1000;
-    std::vector<size_t> vector_sizes = GENERATE(take(100, chunk(3, random(size_t{0}, max_length))));
-    auto                v1_size      = vector_sizes[0];
-    auto                v2_size      = vector_sizes[1];
+} // namespace
 
-    std::default_random_engine            eng(vector_sizes[3]);
-    std::uniform_int_distribution<size_t> dist(1, std::max(size_t{10}, max_length / 10));
-
-    auto gen = [&dist, &eng]() {
-        return dist(eng);
+TEST(IntersectionTest, Simple) {
+    struct Input {
+        Vec v1, v2, expected;
     };
-    auto gen_input = [&gen](size_t size) {
-        std::vector<size_t> v(size);
-        std::generate(v.begin(), v.end(), gen);
+    std::vector<Input> const inputs = {
+        {{0, 1, 3, 6, 9, 478}, {1, 6, 7, 8, 478}, {1, 6, 478}},
+        {{}, {1, 6, 7, 8, 478}, {}},
+        {{}, {}, {}},
+        {{1}, {}, {}},
+        {{1}, {1}, {1}},
+        {{1}, {42}, {}},
+        {{13, 46, 54, 58, 64}, {6, 21, 43, 47, 75}, {}},
+        {{1, 2, 5, 9, 10}, {1, 2, 4, 5, 6, 7, 8}, {1, 2, 5}},
+        {{2, 3, 4, 7, 10}, {3, 5, 6}, {3}},
+        {{1, 2, 3, 4, 5}, {6, 7, 8, 9, 10, 11, 12}, {}},
+    };
+    for (auto const& input: inputs) {
+        check_all_intersections(input.v1, input.v2, input.expected);
+    }
+}
+
+TEST(IntersectionTest, Random) {
+    constexpr size_t                      max_length = 1000;
+    constexpr size_t                      iterations = 100;
+    std::mt19937_64                       eng(42);
+    std::uniform_int_distribution<size_t> size_dist(0, max_length);
+    std::uniform_int_distribution<size_t> value_dist(1, std::max(size_t{10}, max_length / 10));
+
+    auto gen_input = [&](size_t size) {
+        Vec v(size);
+        std::generate(v.begin(), v.end(), [&] { return value_dist(eng); });
         std::sort(v.begin(), v.end());
-        auto v_last = std::unique(v.begin(), v.end());
-        v.erase(v_last, v.end());
+        v.erase(std::unique(v.begin(), v.end()), v.end());
         return v;
     };
 
-    auto v1 = gen_input(v1_size);
-    auto v2 = gen_input(v2_size);
-
-    bool v2_empty = GENERATE(false, true);
-    if (v2_empty) {
-        v2 = {};
-    }
-
-    bool swap = GENERATE(false, true);
-    if (swap) {
-        v1.swap(v2);
-    }
-    CAPTURE(v1, v2);
-
-    std::vector<size_t> expected;
-    std::set_intersection(v1.begin(), v1.end(), v2.begin(), v2.end(), std::back_inserter(expected));
-
-    std::vector<size_t> result;
-    SECTION("with merge intersection") {
-        cetric::merge_intersection(
-            v1.begin(),
-            v1.end(),
-            v2.begin(),
-            v2.end(),
-            [&result](auto const& val) { result.push_back(val); },
-            std::less<>{}
-        );
-        REQUIRE_THAT(result, Catch::Matchers::Equals(expected));
-    }
-    SECTION("with binary search intersection") {
-        cetric::binary_search_intersection(
-            v1.begin(),
-            v1.end(),
-            v2.begin(),
-            v2.end(),
-            [&result](auto const& val) { result.push_back(val); },
-            std::less<>{}
-        );
-        REQUIRE_THAT(result, Catch::Matchers::Equals(expected));
-    }
-    SECTION("with binary intersection") {
-        cetric::binary_intersection(
-            v1.begin(),
-            v1.end(),
-            v2.begin(),
-            v2.end(),
-            [&result](auto const& val) { result.push_back(val); },
-            std::less<>{}
-        );
-        REQUIRE_THAT(result, Catch::Matchers::UnorderedEquals(expected));
+    for (size_t i = 0; i < iterations; ++i) {
+        Vec v1 = gen_input(size_dist(eng));
+        Vec v2 = gen_input(size_dist(eng));
+        for (bool v2_empty: {false, true}) {
+            Vec v2_used = v2_empty ? Vec{} : v2;
+            Vec expected;
+            std::set_intersection(
+                v1.begin(),
+                v1.end(),
+                v2_used.begin(),
+                v2_used.end(),
+                std::back_inserter(expected)
+            );
+            check_all_intersections(v1, v2_used, expected);
+        }
     }
 }
