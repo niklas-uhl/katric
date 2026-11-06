@@ -35,14 +35,13 @@
 
 #include <CLI/CLI.hpp>
 #include <CLI/Validators.hpp>
-#include <backward.hpp>
 #include <cereal/archives/json.hpp>
 #include <cereal/cereal.hpp>
 #include <graph-io/definitions.h>
 #include <graph-io/distributed_graph_io.h>
 #include <graph-io/local_graph_view.h>
 #include <kassert/kassert.hpp>
-#include <magic_enum.hpp>
+#include <magic_enum/magic_enum.hpp>
 #include <mpi.h>
 #ifdef CETRIC_HAS_OPENMP
     #include <omp.h>
@@ -336,9 +335,7 @@ int main(int argc, char* argv[]) {
     bool                     debug = false;
     cetric::PEID             rank;
     cetric::PEID             size;
-    backward::SignalHandling sh;
     {
-        backward::MPIErrorHandler mpi_error_handler(MPI_COMM_WORLD);
         MPI_Comm_rank(MPI_COMM_WORLD, &rank);
         MPI_Comm_size(MPI_COMM_WORLD, &size);
         DEBUG_BARRIER(rank);

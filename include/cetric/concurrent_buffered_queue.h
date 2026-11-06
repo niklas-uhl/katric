@@ -34,7 +34,6 @@
 #include <unordered_map>
 #include <utility>
 
-#include <backward.hpp>
 #include <fmt/core.h>
 #include <fmt/ranges.h>
 #include <kassert/kassert.hpp>

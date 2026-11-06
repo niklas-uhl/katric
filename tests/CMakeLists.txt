@@ -1,15 +1,8 @@
-# Links backward-cpp's signal handler (stack traces on crashes) into a test executable.
-function(cetric_enable_backward TARGET)
-    target_link_libraries(${TARGET} PRIVATE ${BACKWARD_ENABLE} ${BACKWARD_LIBRARIES})
-    target_compile_definitions(${TARGET} PRIVATE ${BACKWARD_DEFINITIONS})
-endfunction()
-
 # MPI tests: KaTestrophe::main initializes MPI and aggregates GoogleTest output across ranks.
 function(cetric_add_mpi_test TARGET)
     cmake_parse_arguments(CETRIC_MPI_TEST "" "" "FILES;CORES" ${ARGN})
     add_executable(${TARGET} ${CETRIC_MPI_TEST_FILES})
     target_link_libraries(${TARGET} PRIVATE KaTestrophe::main cetric-lib)
-    cetric_enable_backward(${TARGET})
     katestrophe_add_mpi_test(${TARGET} CORES ${CETRIC_MPI_TEST_CORES})
 endfunction()
 
@@ -18,7 +11,6 @@ function(cetric_add_test TARGET)
     cmake_parse_arguments(CETRIC_TEST "" "" "FILES" ${ARGN})
     add_executable(${TARGET} ${CETRIC_TEST_FILES})
     target_link_libraries(${TARGET} PRIVATE GTest::gmock GTest::gtest_main cetric-lib)
-    cetric_enable_backward(${TARGET})
     gtest_discover_tests(${TARGET})
 endfunction()
 

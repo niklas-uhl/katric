@@ -39,7 +39,6 @@
 #include <sstream>
 #include <vector>
 
-#include <backward.hpp>
 #include <fmt/core.h>
 #include <fmt/ostream.h>
 #include <fmt/ranges.h>
@@ -56,19 +55,6 @@
 
 namespace cetric {
 using PEID = int;
-
-inline void print_stacktrace(std::ostream& os = std::cerr) {
-    backward::StackTrace stacktrace;
-    backward::Printer    printer;
-    stacktrace.load_here(32);
-    printer.print(stacktrace, os);
-}
-
-inline std::string get_stacktrace() {
-    std::stringstream out;
-    print_stacktrace(out);
-    return out.str();
-}
 
 #ifndef DEBUG_BARRIER
     #ifndef NDEBUG

@@ -23,14 +23,13 @@
 
 #include <CLI/CLI.hpp>
 #include <CLI/Validators.hpp>
-#include <backward.hpp>
 #include <cereal/archives/json.hpp>
 #include <cereal/cereal.hpp>
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 #include <graph-io/graph_definitions.h>
 #include <graph-io/graph_io.h>
-#include <magic_enum.hpp>
+#include <magic_enum/magic_enum.hpp>
 #ifdef CETRIC_HAS_OPENMP
     #include <omp.h>
 #endif
@@ -85,7 +84,6 @@ void print_summary(
 }
 
 int main(int argc, char* argv[]) {
-    backward::SignalHandling sh;
     auto                     conf            = shmetric::parse_config(argc, argv);
     size_t                   max_concurrency = tbb::this_task_arena::max_concurrency();
     if (conf.num_threads == 0) {

@@ -33,7 +33,7 @@
 #include <cereal/types/optional.hpp>
 #include <graph-io/definitions.h>
 #include <graph-io/gen_parameters.h>
-#include <magic_enum.hpp>
+#include <magic_enum/magic_enum.hpp>
 
 #include "cetric/datastructures/graph_definitions.h"
 #include "cetric/util.h"

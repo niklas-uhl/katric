@@ -274,6 +274,10 @@ struct node_map : public google::dense_hash_map<graph::RankEncodedNodeId, T, has
 //     }
 // };
 
+// fmt >= 9 requires an explicit opt-in to use operator<<
+template <>
+struct fmt::formatter<cetric::graph::RankEncodedNodeId> : fmt::ostream_formatter {};
+
 namespace boost::mpi {
 template <>
 MPI_Datatype get_mpi_datatype<cetric::graph::RankEncodedNodeId>(cetric::graph::RankEncodedNodeId const&) {

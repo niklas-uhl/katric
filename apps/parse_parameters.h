@@ -29,7 +29,7 @@
 
 #include "cetric/config.h"
 #include "git_hash.h"
-#include "magic_enum.hpp"
+#include "magic_enum/magic_enum.hpp"
 
 inline std::shared_ptr<CLI::App> parse_parameters(const std::string& app_name, cetric::Config& conf) {
     auto app = std::make_shared<CLI::App>(app_name);
