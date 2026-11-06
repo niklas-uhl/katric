@@ -13,9 +13,6 @@
 [submodule "extern/cereal"]
 	path = extern/cereal
 	url = https://github.com/USCiLab/cereal.git
-[submodule "extern/message-queue"]
-	path = extern/message-queue
-	url = https://github.com/niklas-uhl/message-queue
 [submodule "extern/kassert"]
 	path = extern/kassert
 	url = https://github.com/kamping-site/kassert
