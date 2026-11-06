@@ -111,7 +111,7 @@ public:
                         PEID rank = neighbor.rank();
                         KASSERT(rank < size_);
                         if (neighboring_PEs.find(rank) == neighboring_PEs.end()) {
-                            // atomic_debug(fmt::format("Sending degree of {} to rank {}", node, rank));
+                            SPDLOG_DEBUG("Sending degree of {} to rank {}", node, rank);
                             send_buffers[rank].emplace_back(node);
                             send_buffers[rank].emplace_back(data);
                             neighboring_PEs.insert(rank);
@@ -171,7 +171,7 @@ public:
                     if (neighbor.rank() != rank_) {
                         PEID rank = neighbor.rank();
                         if (neighboring_PEs.find(rank) == neighboring_PEs.end()) {
-                            // atomic_debug(fmt::format("Sending degree of {} to rank {}", node, rank));
+                            SPDLOG_DEBUG("Sending degree of {} to rank {}", node, rank);
                             if (sparse) {
                                 send_buffers[rank].emplace_back(node);
                                 send_buffers[rank].emplace_back(data);

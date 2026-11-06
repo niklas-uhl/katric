@@ -39,7 +39,7 @@
 #include <hash/murmur2_hash.hpp>
 #include <kamping/types/mpi_type_traits.hpp>
 
-#include "cetric/atomic_debug.h"
+#include <spdlog/spdlog.h>
 
 namespace cetric {
 namespace graph {
@@ -277,6 +277,9 @@ struct node_map : public google::dense_hash_map<graph::RankEncodedNodeId, T, has
 // fmt >= 9 requires an explicit opt-in to use operator<<
 template <>
 struct fmt::formatter<cetric::graph::RankEncodedNodeId> : fmt::ostream_formatter {};
+
+template <typename NodeIdType>
+struct fmt::formatter<cetric::graph::Triangle<NodeIdType>> : fmt::ostream_formatter {};
 
 // RankEncodedNodeId is transferred as its underlying 64 bit integer
 template <>

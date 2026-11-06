@@ -71,7 +71,7 @@
 #include <tbb/partitioner.h>
 #include <tlx/vector_free.hpp>
 
-#include "cetric/atomic_debug.h"
+#include <spdlog/spdlog.h>
 #include "cetric/communicator.h"
 #include "cetric/datastructures/auxiliary_node_data.h"
 #include "cetric/datastructures/distributed/helpers.h"
@@ -557,7 +557,7 @@ public:
             }
         }
         first_out_offset_[idx] = left - first_out_[idx];
-        // atomic_debug(head_);
+        SPDLOG_DEBUG("{}", head_);
         // if (ghosts_expanded_) {
         //     for_each_local_node_and_ghost(orient_neighborhoods);
         // } else {
@@ -703,9 +703,13 @@ public:
             first_out_offset_[to_local_idx(node)] = 0;
             return;
         }
-        // atomic_debug(fmt::format("Before internal edge removal N+({})={},
-        // N-({})={}", node, out_adj(node).neighbors(),
-        //                          node, in_adj(node).neighbors()));
+        SPDLOG_DEBUG(
+            "Before internal edge removal N+({})={}, N-({})={}",
+            node,
+            out_adj(node).neighbors(),
+            node,
+            in_adj(node).neighbors()
+        );
         auto   out_neighbors = adj_for<AdjacencyType::out>(node).neighbors();
         auto   in_neighbors  = adj_for<AdjacencyType::in>(node).neighbors();
         size_t old_outdegree = out_neighbors.end() - out_neighbors.begin();
@@ -758,9 +762,13 @@ public:
                 local_edge_count_ -= (old_indegree - new_indegree) + (old_outdegree - new_outdegree);
             }
         }
-        // atomic_debug(fmt::format("After internal edge removal N+({})={},
-        // N-({})={}", node, out_adj(node).neighbors(),
-        //                          node, in_adj(node).neighbors()));
+        SPDLOG_DEBUG(
+            "After internal edge removal N+({})={}, N-({})={}",
+            node,
+            out_adj(node).neighbors(),
+            node,
+            in_adj(node).neighbors()
+        );
     }
 
     // void expand_ghosts() {

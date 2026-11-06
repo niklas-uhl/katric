@@ -50,7 +50,7 @@
 #include <tlx/meta/has_method.hpp>
 #include <tlx/thread_barrier_mutex.hpp>
 
-#include "cetric/atomic_debug.h"
+#include <spdlog/spdlog.h>
 #include "cetric/config.h"
 #include "cetric/counters/cetric_edge_iterator.h"
 #include "cetric/counters/intersection.h"
@@ -103,7 +103,6 @@ preprocessing(DistributedGraph<NodeIndexer>& G, cetric::profiling::Preprocessing
 
 inline size_t run_shmem(DistributedGraph<>& G, cetric::profiling::Statistics& stats, const Config& conf) {
     tlx::MultiTimer phase_timer;
-    bool            debug = false;
     // if (conf.num_threads > 1) {
     //     if (conf.binary_rank_search) {
     //         G.find_ghost_ranks<true>(execution_policy::parallel{conf.num_threads});
@@ -120,7 +119,7 @@ inline size_t run_shmem(DistributedGraph<>& G, cetric::profiling::Statistics& st
     node_set ghosts;
     phase_timer.start("preprocessing");
     preprocessing(G, stats.local.preprocessing_local_phase, conf);
-    LOG << "Preprocessing finished";
+    SPDLOG_DEBUG("Preprocessing finished");
     phase_timer.start("local_phase");
     auto   ctr            = cetric::CetricEdgeIterator(G, conf, 0, 1, MessageQueuePolicy{});
     size_t triangle_count = 0;
@@ -129,13 +128,13 @@ inline size_t run_shmem(DistributedGraph<>& G, cetric::profiling::Statistics& st
     ctr.run_local(
         [&](Triangle<RankEncodedNodeId> t) {
             (void)t;
-            // atomic_debug(t);
+            SPDLOG_DEBUG("{}", t);
 
             if constexpr (KASSERT_ASSERTION_LEVEL >= kassert::assert::normal) {
                 t.normalize();
                 triangles.push_back(t);
             }
-            // atomic_debug(tbb::this_task_arena::current_thread_index());
+            SPDLOG_DEBUG("{}", tbb::this_task_arena::current_thread_index());
             // triangle_count++;
             triangle_count_local_phase.local()++;
         },
@@ -144,11 +143,11 @@ inline size_t run_shmem(DistributedGraph<>& G, cetric::profiling::Statistics& st
         node_ordering::degree_outward(G)
     );
     triangle_count += triangle_count_local_phase.combine(std::plus<>{});
-    LOG << "Local phase finished ";
+    SPDLOG_DEBUG("Local phase finished");
     ConditionalBarrier(conf.global_synchronization);
     phase_timer.stop();
     if constexpr (KASSERT_ENABLED(kassert::assert::normal)) {
-        LOG << "Verification started";
+        SPDLOG_DEBUG("Verification started");
         KASSERT(triangles.size() == triangle_count);
         std::sort(triangles.begin(), triangles.end(), [](auto const& lhs, auto const& rhs) {
             return std::tuple(lhs.x.id(), lhs.y.id(), lhs.z.id()) < std::tuple(rhs.x.id(), rhs.y.id(), rhs.z.id());
@@ -162,7 +161,7 @@ inline size_t run_shmem(DistributedGraph<>& G, cetric::profiling::Statistics& st
             KASSERT(false, "Duplicate triangle " << *current);
             current++;
         }
-        LOG << "Verification finished";
+        SPDLOG_DEBUG("Verification finished");
     }
     stats.local.ingest(phase_timer);
     return triangle_count;

@@ -30,6 +30,8 @@
 #include <graph-io/graph_definitions.h>
 #include <graph-io/graph_io.h>
 #include <magic_enum/magic_enum.hpp>
+#include <spdlog/cfg/env.h>
+#include <spdlog/spdlog.h>
 #ifdef CETRIC_HAS_OPENMP
     #include <omp.h>
 #endif
@@ -69,21 +71,20 @@ void print_summary(
         }
     } else {
         if (conf.rank == 0) {
-            std::cout << std::left << std::setw(15) << "triangles: " << std::right << std::setw(10)
-                      << all_stats[0].counted_triangles << std::endl;
+            SPDLOG_INFO("{:<15}{:>10}", "triangles: ", all_stats[0].counted_triangles);
             double min_time = std::numeric_limits<double>::max();
             for (size_t i = 0; i < all_stats.size(); ++i) {
-                std::cout << std::left << std::setw(15) << fmt::format("[{}] time: ", i + 1) << std::right
-                          << std::setw(10) << all_stats[i].global_wall_time << " s" << std::endl;
+                SPDLOG_INFO("{:<15}{:>10} s", fmt::format("[{}] time: ", i + 1), all_stats[i].global_wall_time);
                 min_time = std::min(all_stats[i].global_wall_time, min_time);
             }
-            std::cout << std::left << std::setw(15) << "min time: " << std::right << std::setw(10) << min_time << " s"
-                      << std::endl;
+            SPDLOG_INFO("{:<15}{:>10} s", "min time: ", min_time);
         }
     }
 }
 
 int main(int argc, char* argv[]) {
+    spdlog::cfg::load_env_levels();
+    spdlog::set_pattern("[%Y-%m-%d %T.%e] [%^%l%$] %v");
     auto                     conf            = shmetric::parse_config(argc, argv);
     size_t                   max_concurrency = tbb::this_task_arena::max_concurrency();
     if (conf.num_threads == 0) {
@@ -135,7 +136,6 @@ int main(int argc, char* argv[]) {
         cetric::profiling::Statistics stats(0, 1);
         cetric::profiling::Timer      timer;
         stats.local.wedges = wedges;
-        // atomic_debug(G);
         stats.local.io_time = timer.elapsed_time();
         cetric::profiling::Timer global_time;
 

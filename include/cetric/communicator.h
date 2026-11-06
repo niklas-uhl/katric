@@ -36,7 +36,7 @@
 #include <kassert/kassert.hpp>
 #include <mpi.h>
 
-#include "atomic_debug.h"
+#include <spdlog/spdlog.h>
 #include "message_statistics.h"
 #include <kamping/types/mpi_type_traits.hpp>
 #include "tlx/multi_timer.hpp"

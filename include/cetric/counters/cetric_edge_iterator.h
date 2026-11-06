@@ -63,7 +63,7 @@
 #include <tlx/meta/has_method.hpp>
 #include <tlx/thread_barrier_mutex.hpp>
 
-#include "cetric/atomic_debug.h"
+#include <spdlog/spdlog.h>
 #include "cetric/concurrent_buffered_queue.h"
 #include "cetric/config.h"
 #include "cetric/counters/intersection.h"
@@ -97,15 +97,15 @@ struct Merger {
     size_t
     operator()(VectorType<RankEncodedNodeId>& buffer, std::vector<RankEncodedNodeId> msg, int tag [[maybe_unused]]) {
         if constexpr (has_grow_by_v<VectorType<RankEncodedNodeId>>) {
-            // atomic_debug(fmt::format("grow by {} with {}", msg.size(), msg));
+            SPDLOG_DEBUG("grow by {} with {}", msg.size(), msg);
             auto insert_position = buffer.grow_by(msg.size() + 1);
             std::copy(msg.begin(), msg.end(), insert_position);
             *(insert_position + msg.size()) = RankEncodedNodeId::sentinel();
-            // atomic_debug(fmt::format(
-            //     "done with copy of {} -> {}",
-            //     msg,
-            //     boost::make_iterator_range(insert_position, insert_position + msg.size())
-            // ));
+            SPDLOG_DEBUG(
+                "done with copy of {} -> {}",
+                msg,
+                boost::make_iterator_range(insert_position, insert_position + msg.size())
+            );
         } else {
             for (auto elem: msg) {
                 buffer.push_back(elem);
@@ -260,10 +260,13 @@ public:
                     //     neighbor_index++;
                     //     continue;
                     // }
-                    // atomic_debug(
-                    //     fmt::format("Remaining neighbors {}",
-                    //                 boost::make_iterator_range(G.out_adj(v).neighbors().begin() + neighbor_index,
-                    //                                            G.out_adj(v).neighbors().end())));
+                    SPDLOG_DEBUG(
+                        "Remaining neighbors {}",
+                        boost::make_iterator_range(
+                            G.out_adj(v).neighbors().begin() + neighbor_index,
+                            G.out_adj(v).neighbors().end()
+                        )
+                    );
                     // TODO: we should be able to break here when the edges are properly sorted
                     KASSERT(std::all_of(
                         G.out_adj(v).neighbors().begin() + neighbor_index,
@@ -427,12 +430,12 @@ public:
             auto tail            = edge_locator.get_node(tail_idx);
             auto tail_first_edge = edge_locator.first_edge_id_for_idx(tail_idx);
             auto tail_last_edge  = edge_locator.last_edge_id_for_idx(tail_idx);
-            // atomic_debug(fmt::format(
-            //     "[t{}] processing edges {} to {}",
-            //     tbb::this_task_arena::current_thread_index(),
-            //     std::max(edge_id_range.begin(), tail_first_edge),
-            //     edge_id_range.end()
-            // ));
+            SPDLOG_DEBUG(
+                "[t{}] processing edges {} to {}",
+                tbb::this_task_arena::current_thread_index(),
+                std::max(edge_id_range.begin(), tail_first_edge),
+                edge_id_range.end()
+            );
             auto degree = [this](RankEncodedNodeId node) {
                 if (node.rank() == rank_) {
                     return G.outdegree(node);
@@ -483,10 +486,7 @@ public:
                     offset = edge_id - tail_first_edge;
                 }
                 // auto offset      = edge_id - tail_first_edge;
-                // atomic_debug(
-                //     fmt::format("[t{}] intersecting {} {}",
-                //     tbb::this_task_arena::current_thread_index(), v, u)
-                // );
+                SPDLOG_DEBUG("[t{}] intersecting {} {}", tbb::this_task_arena::current_thread_index(), v, u);
                 // for each edge (v, u) we check the open wedge (v, u, w)
                 // for w in N(u)+
                 wedge_checks += u_neighbors.end() - u_neighbors.begin();
@@ -566,8 +566,7 @@ public:
                 threads[i] = std::thread([&, i = i] {
                     EdgeId edge_begin = i * edges_per_thread;
                     EdgeId edge_end   = std::min((i + 1) * edges_per_thread, G.local_edge_count());
-                    // std::cout << fmt::format("[t{}] procesing edges {} to {}\n", i,
-                    // edge_begin, edge_end);
+                    SPDLOG_DEBUG("[t{}] procesing edges {} to {}", i, edge_begin, edge_end);
 
                     auto first_tail_idx  = edge_locator.edge_tail_idx(edge_begin);
                     auto tail_idx        = first_tail_idx;
@@ -597,8 +596,7 @@ public:
                         thread_local_cost[i] += cost(v, u);
                     }
                     barrier.wait([&] {
-                        // std::cout << fmt::format("thread local cost {}\n",
-                        // thread_local_cost);
+                        SPDLOG_DEBUG("thread local cost {}", thread_local_cost);
                         std::exclusive_scan(
                             thread_local_cost.begin(),
                             thread_local_cost.end(),
@@ -607,9 +605,8 @@ public:
                         );
                         auto total_cost = thread_local_cost.back();
                         per_thread_cost = total_cost / conf_.num_threads;
-                        // std::cout << fmt::format("thread local cost {}\n",
-                        // thread_local_cost); std::cout << fmt::format("per thread cost
-                        // {}\n", per_thread_cost);
+                        SPDLOG_DEBUG("thread local cost {}", thread_local_cost);
+                        SPDLOG_DEBUG("per thread cost {}", per_thread_cost);
                     });
                     tail_idx        = first_tail_idx;
                     tail            = node_indexer.get_node(tail_idx);
@@ -645,25 +642,24 @@ public:
                         }
                     }
                     barrier.wait([&] {
-                        // std::cout << fmt::format("first edge {}\n", first_edge);
+                        SPDLOG_DEBUG("first edge {}", first_edge);
                         first_edge[0]     = 0;
                         first_edge.back() = G.local_edge_count();
-                        // std::cout << fmt::format("first edge {}\n", first_edge);
+                        SPDLOG_DEBUG("first edge {}", first_edge);
                     });
                     edge_begin = first_edge[i];
                     edge_end   = first_edge[i + 1];
-                    // std::cout << fmt::format("[t{}] procesing edges {} to {}\n", i,
-                    // edge_begin, edge_end);
+                    SPDLOG_DEBUG("[t{}] procesing edges {} to {}", i, edge_begin, edge_end);
                     tail_idx        = edge_locator.edge_tail_idx(edge_begin);
                     tail            = node_indexer.get_node(tail_idx);
                     tail_first_edge = edge_locator.template first_edge_id_for_idx<AdjacencyType::out>(tail_idx);
                     tail_last_edge  = edge_locator.template last_edge_id_for_idx<AdjacencyType::out>(tail_idx);
-                    // atomic_debug(fmt::format(
-                    //     "[t{}] processing edges {} to {}",
-                    //     tbb::this_task_arena::current_thread_index(),
-                    //     std::max(edge_id_range.begin(), tail_first_edge),
-                    //     edge_id_range.end()
-                    // ));
+                    SPDLOG_DEBUG(
+                        "[t{}] processing edges {} to {}",
+                        tbb::this_task_arena::current_thread_index(),
+                        std::max(edge_begin, tail_first_edge),
+                        edge_end
+                    );
                     std::vector<std::atomic<bool>> is_interface;
                     constexpr bool                 fast_is_interface =
                         std::is_same_v<NodeOrdering, node_ordering::degree_outward<GraphType>>
@@ -722,10 +718,7 @@ public:
                         if constexpr (std::is_same_v<NodeOrdering, EdgeOrientationOrdering>) {
                             offset = edge_id - tail_first_edge;
                         }
-                        // atomic_debug(
-                        //     fmt::format("[t{}] intersecting {} {}",
-                        //     tbb::this_task_arena::current_thread_index(), v, u)
-                        // );
+                        SPDLOG_DEBUG("[t{}] intersecting {} {}", tbb::this_task_arena::current_thread_index(), v, u);
                         // for each edge (v, u) we check the open wedge (v, u,
                         // w) for w in N(u)+
                         thread_local_wedge_checks[i] += u_neighbors.end() - u_neighbors.begin();
@@ -782,12 +775,12 @@ public:
                 auto tail     = node_indexer.get_node(tail_idx);
                 auto tail_first_edge = edge_locator.template first_edge_id_for_idx<AdjacencyType::out>(tail_idx);
                 auto tail_last_edge = edge_locator.template last_edge_id_for_idx<AdjacencyType::out>(tail_idx);
-                // atomic_debug(fmt::format(
-                //     "[t{}] processing edges {} to {}",
-                //     tbb::this_task_arena::current_thread_index(),
-                //     std::max(edge_id_range.begin(), tail_first_edge),
-                //     edge_id_range.end()
-                // ));
+                SPDLOG_DEBUG(
+                    "[t{}] processing edges {} to {}",
+                    tbb::this_task_arena::current_thread_index(),
+                    std::max(edge_id_range.begin(), tail_first_edge),
+                    edge_id_range.end()
+                );
                 for (auto edge_id = std::max(edge_id_range.begin(), tail_first_edge); edge_id < edge_id_range.end();
                      edge_id++) {
                     while (edge_id >= tail_last_edge || (conf_.pseudo2core && G.outdegree(tail) < 2)) {
@@ -835,10 +828,7 @@ public:
                         offset = edge_id - tail_first_edge;
                     }
                     // auto offset      = edge_id - tail_first_edge;
-                    // atomic_debug(
-                    //     fmt::format("[t{}] intersecting {} {}",
-                    //     tbb::this_task_arena::current_thread_index(), v, u)
-                    // );
+                    SPDLOG_DEBUG("[t{}] intersecting {} {}", tbb::this_task_arena::current_thread_index(), v, u);
                     // for each edge (v, u) we check the open wedge (v, u, w)
                     // for w in N(u)+
                     wedge_checks += u_neighbors.end() - u_neighbors.begin();
@@ -933,11 +923,13 @@ public:
                     // if (conf_.algorithm == Algorithm::Patric) {
                     //     // neighbor_index++;
                     // }
-                    // atomic_debug(
-                    //     fmt::format("Remaining neighbors {}",
-                    //                 boost::make_iterator_range(G.out_adj(v).neighbors().begin()
-                    //                 + neighbor_index,
-                    //                                            G.out_adj(v).neighbors().end())));
+                    SPDLOG_DEBUG(
+                        "Remaining neighbors {}",
+                        boost::make_iterator_range(
+                            G.out_adj(v).neighbors().begin() + neighbor_index,
+                            G.out_adj(v).neighbors().end()
+                        )
+                    );
                     // TODO: we should be able to break here when the edges are
                     // properly sorted
                     KASSERT(std::all_of(
@@ -1441,8 +1433,7 @@ public:
                     PEID u_rank = u.rank();
                     assert(u_rank != rank_);
                     if (last_proc_[G.to_local_idx(v)] != u_rank) {
-                        // atomic_debug(fmt::format("Send N({}) to {}",
-                        // G.to_global_id(v), u_rank));
+                        SPDLOG_DEBUG("Send N({}) to {}", v, u_rank);
                         enqueue_for_sending_async(queue, v, u_rank, pool, write_jobs, emit, stats);
                     }
                 }
@@ -1508,9 +1499,7 @@ public:
         auto master_task = [&] {
             while (true) {
                 if (write_jobs == 0 && nodes_queued == 0) {
-                    // atomic_debug(fmt::format("No more polling, enqueued: {},
-                    // done:
-                    // {}", pool.enqueued(), pool.done()));
+                    SPDLOG_DEBUG("No more polling");
                     break;
                 }
                 queue.check_for_overflow_and_flush();
@@ -1533,7 +1522,7 @@ public:
                     }
                 }
             }
-            //atomic_debug("remaining high priority tasks: " + std::to_string(high_priority_tasks.unsafe_size()));
+            SPDLOG_DEBUG("remaining high priority tasks: {}", high_priority_tasks.unsafe_size());
             queue.terminate([&](SharedVectorSpan<RankEncodedNodeId> span, PEID sender [[maybe_unused]]) {
                 handle_buffer_hybrid(
                     std::move(span),
@@ -1545,7 +1534,7 @@ public:
                     ghosts
                 );
             });
-            //atomic_debug("priorized nodes: " + std::to_string(priorized_nodes.combine(std::plus<>{})));
+            SPDLOG_DEBUG("priorized nodes: {}", priorized_nodes.combine(std::plus<>{}));
             std::function<void()> intersect_task;
             if constexpr (Pool::use_priorities) {
                 std::function<void()> intersect_task;
@@ -1560,10 +1549,8 @@ public:
         };
         pool.run_and_wait(master_task);
         // pool.loop_until_empty();
-        // atomic_debug(tracker.dump());
         // pool.terminate();
-        //  atomic_debug(fmt::format("Finished Pool, enqueued: {}, done: {}",
-        //  pool.enqueued(), pool.done()));
+        SPDLOG_DEBUG("Finished pool");
         stats.local.global_phase_time += phase_time.elapsed_time();
         stats.local.message_statistics.add(queue.stats());
         stats.local.skipped_nodes += skipped_nodes.combine(std::plus<>{});
@@ -1666,7 +1653,7 @@ private:
                 buffer.emplace_back(e.head);
             }
         }
-        // atomic_debug(fmt::format("Sending {} to {}", buffer, u_rank));
+        SPDLOG_DEBUG("Sending {} to {}", buffer, u_rank);
         queue.post_message(std::move(buffer), u_rank);
         last_proc_[G.to_local_idx(v)] = u_rank;
     }
@@ -1681,22 +1668,22 @@ private:
         TriangleFunc                   emit [[maybe_unused]],
         cetric::profiling::Statistics& stats [[maybe_unused]]
     ) {
-        // atomic_debug(fmt::format("rank {}", u_rank));
-        // atomic_debug(u_rank);
+        SPDLOG_DEBUG("rank {}", u_rank);
+        SPDLOG_DEBUG("{}", u_rank);
         write_jobs++;
         // thread_pool.enqueue([&queue, &write_jobs, this, v, u_rank] {
         pool.submit_work([&queue, &write_jobs, this, v, u_rank]() {
             std::vector<RankEncodedNodeId> buffer;
             buffer.emplace_back(v);
             // size_t send_count = 0;
-            // atomic_debug(u_rank);
+            SPDLOG_DEBUG("{}", u_rank);
             for (RankEncodedNodeId node: G.out_adj(v).neighbors()) {
                 assert(conf_.algorithm == Algorithm::Patric || node.rank() != rank_);
                 if (send_neighbor(node, u_rank)) {
                     buffer.emplace_back(node);
                 }
             }
-            // atomic_debug(u_rank);
+            SPDLOG_DEBUG("{}", u_rank);
             queue.post_message(std::move(buffer), u_rank);
             write_jobs--;
         });
@@ -1728,9 +1715,7 @@ private:
     ) {
         auto task = [this, emit, span = std::move(span), &stats, &node_ordering, &ghosts] {
             RankEncodedNodeId v = *span.begin();
-            // atomic_debug(
-            //     fmt::format("Spawn task for {} on thread {}", v,
-            //     tbb::this_task_arena::current_thread_index()));
+            SPDLOG_DEBUG("Spawn task for {} on thread {}", v, tbb::this_task_arena::current_thread_index());
             process_neighborhood(
                 v,
                 span.begin() + 1,
@@ -1840,7 +1825,7 @@ private:
                 filtered_neighbors_it.begin(),
                 filtered_neighbors_it.end()
             );
-            // atomic_debug(fmt::format("intersecting N({})={} and N({}){}", u, u_neighbors, v, filtered_neighbors));
+            SPDLOG_DEBUG("intersecting N({})={} and N({}){}", u, u_neighbors, v, filtered_neighbors);
 
             // for each edge (v, u) we check the open wedge
             //  (v, u, w) for w in N(u)+
@@ -1909,8 +1894,7 @@ private:
         NodeOrdering&&                 node_ordering,
         GhostSet const&                ghosts
     ) {
-        // std::vector<RankEncodedNodeId> buffer{begin, end};
-        // atomic_debug(fmt::format("Handling message {}", buffer));
+        SPDLOG_DEBUG("Handling message {}", boost::make_iterator_range(begin, end));
         assert(v.rank() != rank_);
         // distributed_pre_intersect(v, begin, end);
         auto for_each_local_receiver = [&](auto on_node) {

@@ -46,10 +46,9 @@
 #include <mpi.h>
 #include <tbb/blocked_range.h>
 #include <tbb/parallel_scan.h>
-#include <tlx/logger.hpp>
 #include <unistd.h>
 
-#include "cetric/atomic_debug.h"
+#include <spdlog/spdlog.h>
 #include "cetric/datastructures/graph_definitions.h"
 
 namespace cetric {

@@ -126,7 +126,7 @@ private:
         }
     };
     size_t get_index(graph::RankEncodedNodeId node) const {
-        // atomic_debug(fmt::format("Lookup node {}", node));
+        SPDLOG_DEBUG("Lookup node {}", node);
         if (node >= from_ && node <= to_) {
             return node - from_;
         }

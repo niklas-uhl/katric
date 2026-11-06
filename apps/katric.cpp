@@ -40,8 +40,11 @@
 #include <graph-io/definitions.h>
 #include <graph-io/distributed_graph_io.h>
 #include <graph-io/local_graph_view.h>
+#include <kamping/spdlog_adapter/logging.hpp>
 #include <kassert/kassert.hpp>
 #include <magic_enum/magic_enum.hpp>
+#include <spdlog/cfg/env.h>
+#include <spdlog/spdlog.h>
 #include <mpi.h>
 #ifdef CETRIC_HAS_OPENMP
     #include <omp.h>
@@ -271,7 +274,6 @@ private:
                     G.info.local_to   = std::numeric_limits<cetric::NodeId>::max();
                 }
             }
-            // atomic_debug(G.edge_heads);
             return G;
         } else {
             return graphio::gen_local_graph(conf_.gen, conf_.rank, conf_.PEs);
@@ -311,16 +313,13 @@ void print_summary(
         }
     } else {
         if (conf.rank == 0) {
-            std::cout << std::left << std::setw(15) << "triangles: " << std::right << std::setw(10)
-                      << all_stats[0].counted_triangles << std::endl;
+            SPDLOG_INFO("{:<15}{:>10}", "triangles: ", all_stats[0].counted_triangles);
             double min_time = std::numeric_limits<double>::max();
             for (size_t i = 0; i < all_stats.size(); ++i) {
-                std::cout << std::left << std::setw(15) << fmt::format("[{}] time: ", i + 1) << std::right
-                          << std::setw(10) << all_stats[i].global_wall_time << " s" << std::endl;
+                SPDLOG_INFO("{:<15}{:>10} s", fmt::format("[{}] time: ", i + 1), all_stats[i].global_wall_time);
                 min_time = std::min(all_stats[i].global_wall_time, min_time);
             }
-            std::cout << std::left << std::setw(15) << "min time: " << std::right << std::setw(10) << min_time << " s"
-                      << std::endl;
+            SPDLOG_INFO("{:<15}{:>10} s", "min time: ", min_time);
         }
     }
 }
@@ -328,11 +327,12 @@ void print_summary(
 int main(int argc, char* argv[]) {
     int thread_support_level;
     MPI_Init_thread(&argc, &argv, MPI_THREAD_FUNNELED, &thread_support_level);
+    spdlog::cfg::load_env_levels();
+    kamping::logging::setup_logging();
     if (thread_support_level < MPI_THREAD_FUNNELED) {
-        std::cerr << "The MPI implementation must support MPI_THREAD_FUNNELED" << std::endl;
+        SPDLOG_CRITICAL("The MPI implementation must support MPI_THREAD_FUNNELED");
         std::exit(1);
     }
-    bool                     debug = false;
     cetric::PEID             rank;
     cetric::PEID             size;
     {
@@ -384,13 +384,9 @@ int main(int argc, char* argv[]) {
             cetric::graph::DistributedGraph<> G;
             cetric::profiling::Statistics     stats(rank, size);
             cetric::profiling::Timer          timer;
-            LOG << "[R" << rank << "] "
-                << "Loading from cache";
+            SPDLOG_DEBUG("Loading from cache");
             graphio::IOResult input = input_cache.get();
-            LOG << "[R" << rank << "] "
-                << "Finished loading from cache";
-            // atomic_debug(G_local.node_info);
-            //  atomic_debug(G_local.edge_heads);
+            SPDLOG_DEBUG("Finished loading from cache");
             G = cetric::graph::DistributedGraph<>(
                 std::move(input.G),
                 {input.info.local_from, input.info.local_to},
@@ -405,9 +401,7 @@ int main(int argc, char* argv[]) {
                 }
             });
             stats.local.wedges = wedges.combine(std::plus<>{});
-            // atomic_debug(G);
-            LOG << "[R" << rank << "] "
-                << "Finished conversion";
+            SPDLOG_DEBUG("Finished conversion");
             MPI_Barrier(MPI_COMM_WORLD);
             stats.local.io_time = timer.elapsed_time();
             cetric::profiling::Timer global_time;

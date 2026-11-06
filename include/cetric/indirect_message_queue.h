@@ -68,9 +68,7 @@ public:
         } else {
             proxy = get_proxy(rank_, receiver);
         }
-        std::stringstream out;
-        out << "Redirecting message to " << receiver << " via " << proxy;
-        // atomic_debug(out.str());
+        SPDLOG_DEBUG("Redirecting message to {} via {}", receiver, proxy);
         queue_.post_message(std::move(message), proxy);
     }
 
@@ -92,9 +90,7 @@ public:
                 on_message(received_message, original_sender);
             } else {
                 auto              proxy = get_proxy(rank_, receiver);
-                std::stringstream out;
-                out << "Redirecting message to " << receiver << " via " << proxy;
-                // atomic_debug(out.str());
+                SPDLOG_DEBUG("Redirecting message to {} via {}", receiver, proxy);
                 queue_.post_message(std::vector(begin, end), proxy);
             }
         });
@@ -114,9 +110,7 @@ public:
                 on_message(received_message, original_sender);
             } else {
                 auto              proxy = get_proxy(rank_, receiver);
-                std::stringstream out;
-                out << "Redirecting message to " << receiver << " via " << proxy;
-                // atomic_debug(out.str());
+                SPDLOG_DEBUG("Redirecting message to {} via {}", receiver, proxy);
                 queue_.post_message(std::vector(begin, end), proxy);
             }
         });

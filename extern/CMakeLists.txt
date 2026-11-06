@@ -20,6 +20,15 @@ FetchContent_Declare(
   # no FIND_PACKAGE_ARGS: the code does not compile with fmt 12 yet (e.g. Homebrew's)
   SYSTEM EXCLUDE_FROM_ALL)
 
+# spdlog uses the (header-only) fmt fetched above
+set(SPDLOG_FMT_EXTERNAL_HO ON)
+FetchContent_Declare(
+  spdlog
+  GIT_REPOSITORY https://github.com/gabime/spdlog
+  GIT_TAG v1.16.0
+  GIT_SHALLOW ON
+  SYSTEM EXCLUDE_FROM_ALL)
+
 set(JUST_INSTALL_CEREAL ON)
 FetchContent_Declare(
   cereal
@@ -80,16 +89,25 @@ FetchContent_Declare(
   GIT_SHALLOW ON
   SYSTEM EXCLUDE_FROM_ALL)
 
-# kamping-types (MPI datatype mapping) lives in the kamping repo; pinned here so that
-# kamping-v2 does not fetch an unpinned `main` of it.
+# KaMPIng (v1, master): provides kamping::types (MPI datatype mapping, used by katric) and kamping::kamping (used by the
+# spdlog adapter). Pinned to a commit so that kamping-v2 does not fetch an unpinned `main` of kamping-types; kamping-v2
+# and kamping-spdlog-adapter reuse these targets instead of fetching their own copies.
+set(KAMPING_ENABLE_REFLECTION OFF)
+set(KAMPING_ENABLE_SERIALIZATION OFF)
 FetchContent_Declare(
-  kamping_types
+  kamping
   GIT_REPOSITORY https://github.com/kamping-site/kamping
   GIT_TAG 001f21510a7edef33248a9d4063073a7b05b5696 # main
-  SOURCE_SUBDIR kamping-types
   SYSTEM EXCLUDE_FROM_ALL)
 
-set(KAMPING_ENABLE_REFLECTION OFF)
+# MPI-aware logging setup (rank pattern, root-only and gather sinks) on top of spdlog.
+FetchContent_Declare(
+  kamping-spdlog-adapter
+  GIT_REPOSITORY https://github.com/kamping-site/kamping-spdlog-adapter
+  GIT_TAG v1.0.0
+  GIT_SHALLOW ON
+  SYSTEM EXCLUDE_FROM_ALL)
+
 FetchContent_Declare(
   kamping-v2
   GIT_REPOSITORY https://github.com/kamping-site/kamping-v2
@@ -112,7 +130,7 @@ FetchContent_Declare(
   SYSTEM)
 
 # kagen has to be available before graph-io, which then reuses its target.
-FetchContent_MakeAvailable(cli11 fmt cereal magic_enum kassert tlx sparsehash utils_tm kamping_types kamping-v2 kagen graph-io message-queue)
+FetchContent_MakeAvailable(cli11 fmt spdlog cereal magic_enum kassert tlx sparsehash utils_tm kamping kamping-spdlog-adapter kamping-v2 kagen graph-io message-queue)
 
 add_library(utils_tm INTERFACE)
 target_include_directories(utils_tm INTERFACE ${utils_tm_SOURCE_DIR})

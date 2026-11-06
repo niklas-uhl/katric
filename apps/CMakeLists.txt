@@ -16,7 +16,7 @@ else()
 endif()
 add_executable(katric katric.cpp)
 
-target_link_libraries(katric PRIVATE cetric-lib CLI11::CLI11 MPI::MPI_CXX)
+target_link_libraries(katric PRIVATE cetric-lib CLI11::CLI11 MPI::MPI_CXX kamping::spdlog-adapter)
 target_link_libraries(katric PUBLIC git_hash)
 
 add_executable(shmetric shmetric.cpp)

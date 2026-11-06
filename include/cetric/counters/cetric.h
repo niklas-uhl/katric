@@ -38,10 +38,9 @@
 #include <tbb/concurrent_vector.h>
 #include <tbb/task_arena.h>
 #include <tlx/algorithm/multiway_merge.hpp>
-#include <tlx/logger.hpp>
 #include <tlx/multi_timer.hpp>
 
-#include "cetric/atomic_debug.h"
+#include <spdlog/spdlog.h>
 #include "cetric/config.h"
 #include "cetric/cost_function.h"
 #include "cetric/counters/cetric_edge_iterator.h"
@@ -163,7 +162,6 @@ run_patric(DistributedGraph<>& G, cetric::profiling::Statistics& stats, const Co
     tlx::MultiTimer phase_timer;
     size_t          threshold          = get_threshold(G, conf);
     stats.local.global_phase_threshold = threshold;
-    bool debug                         = false;
     if (conf.num_threads > 1) {
         if (conf.binary_rank_search) {
             G.find_ghost_ranks<true>(execution_policy::parallel{conf.num_threads});
@@ -228,8 +226,7 @@ run_patric(DistributedGraph<>& G, cetric::profiling::Statistics& stats, const Co
     }
     ConditionalBarrier(conf.global_synchronization);
     AuxiliaryNodeData<Degree> ghost_degrees;
-    LOG << "[R" << rank << "] "
-        << "Primary load balancing finished ";
+    SPDLOG_DEBUG("Primary load balancing finished");
     // G.expand_ghosts();
     phase_timer.start("preprocessing");
     preprocessing<node_ordering ::id, node_ordering::degree<decltype(G)>>(
@@ -240,8 +237,7 @@ run_patric(DistributedGraph<>& G, cetric::profiling::Statistics& stats, const Co
         conf,
         true
     );
-    LOG << "[R" << rank << "] "
-        << "Preprocessing finished";
+    SPDLOG_DEBUG("Preprocessing finished");
     ConditionalBarrier(conf.global_synchronization);
     phase_timer.start("local_phase");
     auto ctr = cetric::CetricEdgeIterator(G, conf, rank, size, CommunicationPolicy{});
@@ -252,13 +248,13 @@ run_patric(DistributedGraph<>& G, cetric::profiling::Statistics& stats, const Co
     ctr.run_local(
         [&](Triangle<RankEncodedNodeId> t) {
             (void)t;
-            // atomic_debug(t);
+            SPDLOG_DEBUG("{}", t);
 
             if constexpr (KASSERT_ASSERTION_LEVEL >= kassert::assert::normal) {
                 t.normalize();
                 triangles.push_back(t);
             }
-            // atomic_debug(tbb::this_task_arena::current_thread_index());
+            SPDLOG_DEBUG("{}", tbb::this_task_arena::current_thread_index());
             // triangle_count++;
             triangle_count_local_phase.local()++;
         },
@@ -267,8 +263,7 @@ run_patric(DistributedGraph<>& G, cetric::profiling::Statistics& stats, const Co
         node_ordering::degree(G, ghost_degrees)
     );
     triangle_count += triangle_count_local_phase.combine(std::plus<>{});
-    LOG << "[R" << rank << "] "
-        << "Local phase finished ";
+    SPDLOG_DEBUG("Local phase finished");
     ConditionalBarrier(conf.global_synchronization);
     phase_timer.start("global_phase");
     tbb::combinable<size_t> triangle_count_global_phase{0};
@@ -279,7 +274,7 @@ run_patric(DistributedGraph<>& G, cetric::profiling::Statistics& stats, const Co
                 t.normalize();
                 triangles.push_back(t);
             }
-            // atomic_debug(t);
+            SPDLOG_DEBUG("{}", t);
             // triangle_count++;
             triangle_count_global_phase.local()++;
         },
@@ -287,14 +282,12 @@ run_patric(DistributedGraph<>& G, cetric::profiling::Statistics& stats, const Co
         node_ordering::id()
     );
     triangle_count += triangle_count_global_phase.combine(std::plus<>{});
-    LOG << "[R" << rank << "] "
-        << "Global phase finished ";
+    SPDLOG_DEBUG("Global phase finished");
     phase_timer.start("reduction");
     MPI_Reduce(&triangle_count, &stats.counted_triangles, 1, MPI_NODE, MPI_SUM, 0, MPI_COMM_WORLD);
     phase_timer.stop();
     if constexpr (KASSERT_ENABLED(kassert::assert::normal)) {
-        LOG << "[R" << rank << "] "
-            << "Verification started";
+        SPDLOG_DEBUG("Verification started");
         KASSERT(triangles.size() == triangle_count);
         std::sort(triangles.begin(), triangles.end(), [](auto const& lhs, auto const& rhs) {
             return std::tuple(lhs.x.id(), lhs.y.id(), lhs.z.id()) < std::tuple(rhs.x.id(), rhs.y.id(), rhs.z.id());
@@ -308,8 +301,7 @@ run_patric(DistributedGraph<>& G, cetric::profiling::Statistics& stats, const Co
             KASSERT(false, "Duplicate triangle " << *current);
             current++;
         }
-        LOG << "[R" << rank << "] "
-            << "Verification finished";
+        SPDLOG_DEBUG("Verification finished");
     }
     stats.local.ingest(phase_timer);
     return stats.counted_triangles;
@@ -329,7 +321,6 @@ inline size_t run_cetric(
     phase_timer.start("ghost_ranks");
     size_t threshold                   = get_threshold(G, conf);
     stats.local.global_phase_threshold = threshold;
-    bool debug                         = false;
     if (conf.num_threads > 1) {
         if (conf.binary_rank_search) {
             G.find_ghost_ranks<true>(execution_policy::parallel{conf.num_threads});
@@ -393,8 +384,7 @@ inline size_t run_cetric(
         }
     }
     AuxiliaryNodeData<Degree> ghost_degrees;
-    LOG << "[R" << rank << "] "
-        << "Primary load balancing finished ";
+    SPDLOG_DEBUG("Primary load balancing finished");
     // G.expand_ghosts();
 
     ConditionalBarrier(conf.global_synchronization);
@@ -418,8 +408,7 @@ inline size_t run_cetric(
             false
         );
     }
-    LOG << "[R" << rank << "] "
-        << "Preprocessing finished ";
+    SPDLOG_DEBUG("Preprocessing finished");
     ConditionalBarrier(conf.global_synchronization);
     phase_timer.start("local_phase");
     auto ctr = cetric::CetricEdgeIterator(G, conf, rank, size, CommunicationPolicy{});
@@ -431,15 +420,15 @@ inline size_t run_cetric(
         ctr.run_local(
             [&](Triangle<RankEncodedNodeId> t) {
                 (void)t;
-                // atomic_debug(t);
+                SPDLOG_DEBUG("{}", t);
 
                 if constexpr (KASSERT_ASSERTION_LEVEL >= kassert::assert::normal) {
                     t.normalize();
                     triangles.push_back(t);
                 }
-                // atomic_debug(tbb::this_task_arena::current_thread_index());
+                SPDLOG_DEBUG("{}", tbb::this_task_arena::current_thread_index());
                 // triangle_count++;
-                // atomic_debug(omp_get_thread_num());
+                SPDLOG_DEBUG("{}", omp_get_thread_num());
                 triangle_count_local_phase.local()++;
             },
             stats,
@@ -450,15 +439,15 @@ inline size_t run_cetric(
         ctr.run_local(
             [&](Triangle<RankEncodedNodeId> t) {
                 (void)t;
-                // atomic_debug(t);
+                SPDLOG_DEBUG("{}", t);
 
                 if constexpr (KASSERT_ASSERTION_LEVEL >= kassert::assert::normal) {
                     t.normalize();
                     triangles.push_back(t);
                 }
-                // atomic_debug(tbb::this_task_arena::current_thread_index());
+                SPDLOG_DEBUG("{}", tbb::this_task_arena::current_thread_index());
                 // triangle_count++;
-                // atomic_debug(omp_get_thread_num());
+                SPDLOG_DEBUG("{}", omp_get_thread_num());
                 triangle_count_local_phase.local()++;
             },
             stats,
@@ -467,8 +456,7 @@ inline size_t run_cetric(
         );
     }
     triangle_count += triangle_count_local_phase.combine(std::plus<>{});
-    LOG << "[R" << rank << "] "
-        << "Local phase finished ";
+    SPDLOG_DEBUG("Local phase finished");
     ConditionalBarrier(conf.global_synchronization);
     phase_timer.start("contraction");
     auto nodes = G.local_nodes();
@@ -488,11 +476,9 @@ inline size_t run_cetric(
     }
     auto G_compact = conf.parallel_compact ? G.compact(execution_policy::parallel{conf.num_threads})
                                            : G.compact(execution_policy::sequential{});
-    LOG << "[R" << rank << "] "
-        << "Contraction finished ";
+    SPDLOG_DEBUG("Contraction finished");
     ghosts = decltype(ghosts){};
-    // atomic_debug(fmt::format("Found {} triangles in local phase",
-    // triangle_count_local_phase.combine(std::plus<>{})));
+    SPDLOG_DEBUG("Found {} triangles in local phase", triangle_count_local_phase.combine(std::plus<>{}));
     ConditionalBarrier(conf.global_synchronization);
     phase_timer.start("secondary_load_balancing");
     tbb::combinable<size_t> triangle_count_global_phase{0};
@@ -534,8 +520,7 @@ inline size_t run_cetric(
                 G_global_phase.find_ghost_ranks<false>(execution_policy::sequential{});
             }
         }
-        LOG << "[R" << rank << "] "
-            << "Secondary load balancing finished ";
+        SPDLOG_DEBUG("Secondary load balancing finished");
         ConditionalBarrier(conf.global_synchronization);
         phase_timer.start("preprocessing_global");
         preprocessing<node_ordering::id_outward, node_ordering::degree<decltype(G_global_phase)>>(
@@ -558,7 +543,7 @@ inline size_t run_cetric(
                     t.normalize();
                     triangles.push_back(t);
                 }
-                // atomic_debug(t);
+                SPDLOG_DEBUG("{}", t);
                 // triangle_count++;
                 triangle_count_global_phase.local()++;
             },
@@ -566,8 +551,7 @@ inline size_t run_cetric(
             node_ordering::id_outward(rank),
             node_ordering::degree_outward(G_global_phase, ghost_degrees)
         );
-        // atomic_debug(
-        //     fmt::format("Found {} triangles in global phase 1", triangle_count_global_phase.combine(std::plus<>{})));
+        SPDLOG_DEBUG("Found {} triangles in global phase 1", triangle_count_global_phase.combine(std::plus<>{}));
         auto nodes = G_global_phase.local_nodes();
         if (conf.local_parallel) {
             tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G_global_phase, &rank](auto const& r) {
@@ -587,7 +571,7 @@ inline size_t run_cetric(
                     t.normalize();
                     triangles.push_back(t);
                 }
-                // atomic_debug(t);
+                SPDLOG_DEBUG("{}", t);
                 // triangle_count++;
                 triangle_count_global_phase.local()++;
             },
@@ -595,8 +579,7 @@ inline size_t run_cetric(
             node_ordering::id() // even though the neighborhoods are sorted using id_outward, after removing the
                                 // internal edges, this is the same as id
         );
-        // atomic_debug(
-        // fmt::format("Found {} triangles in global phase 2", triangle_count_global_phase.combine(std::plus<>{})));
+        SPDLOG_DEBUG("Found {} triangles in global phase 2", triangle_count_global_phase.combine(std::plus<>{}));
     } else {
         ConditionalBarrier(conf.global_synchronization);
         phase_timer.start("preprocessing_global");
@@ -620,7 +603,7 @@ inline size_t run_cetric(
                     t.normalize();
                     triangles.push_back(t);
                 }
-                // atomic_debug(t);
+                SPDLOG_DEBUG("{}", t);
                 // triangle_count++;
                 triangle_count_global_phase.local()++;
             },
@@ -634,14 +617,12 @@ inline size_t run_cetric(
         // }
     }
     triangle_count += triangle_count_global_phase.combine(std::plus<>{});
-    LOG << "[R" << rank << "] "
-        << "Global phase finished ";
+    SPDLOG_DEBUG("Global phase finished");
     phase_timer.start("reduce");
     MPI_Reduce(&triangle_count, &stats.counted_triangles, 1, MPI_NODE, MPI_SUM, 0, MPI_COMM_WORLD);
     phase_timer.stop();
     if constexpr (KASSERT_ENABLED(kassert::assert::normal)) {
-        LOG << "[R" << rank << "] "
-            << "Verification started";
+        SPDLOG_DEBUG("Verification started");
         KASSERT(triangles.size() == triangle_count);
         std::sort(triangles.begin(), triangles.end(), [](auto const& lhs, auto const& rhs) {
             return std::tuple(lhs.x.id(), lhs.y.id(), lhs.z.id()) < std::tuple(rhs.x.id(), rhs.y.id(), rhs.z.id());
@@ -655,8 +636,7 @@ inline size_t run_cetric(
             KASSERT(false, "Duplicate triangle " << *current);
             current++;
         }
-        LOG << "[R" << rank << "] "
-            << "Verification finished ";
+        SPDLOG_DEBUG("Verification finished");
     }
     stats.local.ingest(phase_timer);
     return stats.counted_triangles;
@@ -669,7 +649,6 @@ run_cetric_new(DistributedGraph<>& G, cetric::profiling::Statistics& stats, cons
     phase_timer.start("ghost_ranks");
     size_t threshold                   = get_threshold(G, conf);
     stats.local.global_phase_threshold = threshold;
-    bool debug                         = false;
     if (conf.num_threads > 1) {
         if (conf.binary_rank_search) {
             G.find_ghost_ranks<true>(execution_policy::parallel{conf.num_threads});
@@ -733,8 +712,7 @@ run_cetric_new(DistributedGraph<>& G, cetric::profiling::Statistics& stats, cons
         }
     }
     AuxiliaryNodeData<Degree> ghost_degrees;
-    LOG << "[R" << rank << "] "
-        << "Primary load balancing finished ";
+    SPDLOG_DEBUG("Primary load balancing finished");
     // G.expand_ghosts();
 
     ConditionalBarrier(conf.global_synchronization);
@@ -814,8 +792,7 @@ run_cetric_new(DistributedGraph<>& G, cetric::profiling::Statistics& stats, cons
             );
         }
     }
-    LOG << "[R" << rank << "] "
-        << "Preprocessing finished ";
+    SPDLOG_DEBUG("Preprocessing finished");
     ConditionalBarrier(conf.global_synchronization);
     phase_timer.start("local_phase");
     auto ctr = cetric::CetricEdgeIterator(G, conf, rank, size, CommunicationPolicy{});
@@ -827,15 +804,15 @@ run_cetric_new(DistributedGraph<>& G, cetric::profiling::Statistics& stats, cons
         ctr.run_local(
             [&](Triangle<RankEncodedNodeId> t) {
                 (void)t;
-                // atomic_debug(t);
+                SPDLOG_DEBUG("{}", t);
 
                 if constexpr (KASSERT_ASSERTION_LEVEL >= kassert::assert::normal) {
                     t.normalize();
                     triangles.push_back(t);
                 }
-                // atomic_debug(tbb::this_task_arena::current_thread_index());
+                SPDLOG_DEBUG("{}", tbb::this_task_arena::current_thread_index());
                 // triangle_count++;
-                // atomic_debug(omp_get_thread_num());
+                SPDLOG_DEBUG("{}", omp_get_thread_num());
                 triangle_count_local_phase.local()++;
             },
             stats,
@@ -847,15 +824,15 @@ run_cetric_new(DistributedGraph<>& G, cetric::profiling::Statistics& stats, cons
         ctr.run_local(
             [&](Triangle<RankEncodedNodeId> t) {
                 (void)t;
-                // atomic_debug(t);
+                SPDLOG_DEBUG("{}", t);
 
                 if constexpr (KASSERT_ASSERTION_LEVEL >= kassert::assert::normal) {
                     t.normalize();
                     triangles.push_back(t);
                 }
-                // atomic_debug(tbb::this_task_arena::current_thread_index());
+                SPDLOG_DEBUG("{}", tbb::this_task_arena::current_thread_index());
                 // triangle_count++;
-                // atomic_debug(omp_get_thread_num());
+                SPDLOG_DEBUG("{}", omp_get_thread_num());
                 triangle_count_local_phase.local()++;
             },
             stats,
@@ -865,8 +842,7 @@ run_cetric_new(DistributedGraph<>& G, cetric::profiling::Statistics& stats, cons
         );
     }
     triangle_count += triangle_count_local_phase.combine(std::plus<>{});
-    LOG << "[R" << rank << "] "
-        << "Local phase finished ";
+    SPDLOG_DEBUG("Local phase finished");
     ConditionalBarrier(conf.global_synchronization);
     original_degrees = AuxiliaryNodeData<Degree>{};
     phase_timer.start("contraction");
@@ -930,11 +906,9 @@ run_cetric_new(DistributedGraph<>& G, cetric::profiling::Statistics& stats, cons
             }
         }
     }
-    LOG << "[R" << rank << "] "
-        << "Contraction finished ";
+    SPDLOG_DEBUG("Contraction finished");
     ghosts = decltype(ghosts){};
-    // atomic_debug(fmt::format("Found {} triangles in local phase",
-    // triangle_count_local_phase.combine(std::plus<>{})));
+    SPDLOG_DEBUG("Found {} triangles in local phase", triangle_count_local_phase.combine(std::plus<>{}));
     ConditionalBarrier(conf.global_synchronization);
     phase_timer.start("secondary_load_balancing");
     tbb::combinable<size_t> triangle_count_global_phase{0};
@@ -944,8 +918,8 @@ run_cetric_new(DistributedGraph<>& G, cetric::profiling::Statistics& stats, cons
     // ConditionalBarrier(conf.global_synchronization);
     phase_timer.start("global_phase");
     ghost_degrees = AuxiliaryNodeData<Degree>();
-    // atomic_debug(fmt::format("ghosts={}", ghosts));
-    // atomic_debug(fmt::format("ghost_degrees={}", ghost_degrees.range()));
+    SPDLOG_DEBUG("ghosts={}", ghosts);
+    SPDLOG_DEBUG("ghost_degrees={}", ghost_degrees.range());
     cetric::CetricEdgeIterator ctr_global(G_compact, conf, rank, size, CommunicationPolicy{});
     ctr_global.set_threshold(threshold);
     ctr_global.run_distributed(
@@ -955,7 +929,7 @@ run_cetric_new(DistributedGraph<>& G, cetric::profiling::Statistics& stats, cons
                 t.normalize();
                 triangles.push_back(t);
             }
-            // atomic_debug(t);
+            SPDLOG_DEBUG("{}", t);
             // triangle_count++;
             triangle_count_global_phase.local()++;
         },
@@ -973,14 +947,12 @@ run_cetric_new(DistributedGraph<>& G, cetric::profiling::Statistics& stats, cons
         // ghosts
     );
     triangle_count += triangle_count_global_phase.combine(std::plus<>{});
-    LOG << "[R" << rank << "] "
-        << "Global phase finished ";
+    SPDLOG_DEBUG("Global phase finished");
     phase_timer.start("reduce");
     MPI_Reduce(&triangle_count, &stats.counted_triangles, 1, MPI_NODE, MPI_SUM, 0, MPI_COMM_WORLD);
     phase_timer.stop();
     if constexpr (KASSERT_ENABLED(kassert::assert::normal)) {
-        LOG << "[R" << rank << "] "
-            << "Verification started";
+        SPDLOG_DEBUG("Verification started");
         KASSERT(triangles.size() == triangle_count);
         std::sort(triangles.begin(), triangles.end(), [](auto const& lhs, auto const& rhs) {
             return std::tuple(lhs.x.id(), lhs.y.id(), lhs.z.id()) < std::tuple(rhs.x.id(), rhs.y.id(), rhs.z.id());
@@ -994,8 +966,7 @@ run_cetric_new(DistributedGraph<>& G, cetric::profiling::Statistics& stats, cons
             KASSERT(false, "Duplicate triangle " << *current);
             current++;
         }
-        LOG << "[R" << rank << "] "
-            << "Verification finished ";
+        SPDLOG_DEBUG("Verification finished");
     }
     stats.local.ingest(phase_timer);
     return stats.counted_triangles;

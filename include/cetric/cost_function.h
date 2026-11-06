@@ -41,7 +41,7 @@
 #include <graph-io/local_graph_view.h>
 #include <tbb/task_arena.h>
 
-#include "cetric/atomic_debug.h"
+#include <spdlog/spdlog.h>
 #include "cetric/communicator.h"
 #include "cetric/datastructures/auxiliary_node_data.h"
 #include "cetric/datastructures/distributed/distributed_graph.h"

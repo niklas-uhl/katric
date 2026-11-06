@@ -128,7 +128,7 @@ public:
         if (!buffer.empty()) {
             std::vector<T> message;
             message = {buffer.begin(), buffer.end()};
-            // atomic_debug(fmt::format("Flushing buffer for {}", receiver));
+            SPDLOG_DEBUG("Flushing buffer for {}", receiver);
             buffer.clear();
             removed_elements = message.size();
             KASSERT(message.back() == cetric::graph::RankEncodedNodeId::sentinel());
@@ -162,7 +162,7 @@ public:
     void terminate(MessageHandler&& on_message) {
         queue_.terminate_impl(
             [&](std::vector<T> message, message_queue::PEID sender) {
-                // atomic_debug(fmt::format("Got message from {}", sender));
+                SPDLOG_DEBUG("Got message from {}", sender);
                 split(std::move(message), on_message, sender);
             },
             [&]() {

@@ -27,11 +27,11 @@
 #define PARALLEL_TRIANGLE_COUNTER_TIMER_H
 
 #include <chrono>
-#include <iostream>
 #include <string>
 #include <utility>
 
 #include <mpi.h>
+#include <spdlog/spdlog.h>
 #include <tlx/multi_timer.hpp>
 
 #include "cetric/util.h"
@@ -46,13 +46,13 @@ public:
     }
     void restart(bool report = true) {
         if (report) {
-            std::cout << "Starting " << name << " ..." << std::endl;
+            SPDLOG_INFO("Starting {} ...", name);
         }
         start = std::chrono::system_clock::now();
     }
     double report_elapsed_time() {
         double duration = elapsed_time();
-        std::cout << name << " took " << duration << " ms." << std::endl;
+        SPDLOG_INFO("{} took {} ms.", name, duration);
         return duration;
     }
 
@@ -77,9 +77,7 @@ public:
     }
     void restart(bool report = true) {
         if (report && rank == 0) {
-            std::stringstream out;
-            out << "Starting " << name << " ...";
-            atomic_debug(out.str());
+            SPDLOG_INFO("Starting {} ...", name);
         }
         start = MPI_Wtime();
     }
@@ -87,9 +85,7 @@ public:
     void report_total_elapsed_time() {
         double total_duration = get_total_elapsed_time();
         if (rank == 0) {
-            std::stringstream out;
-            out << name << " took " << total_duration << " s.";
-            atomic_debug(out.str());
+            SPDLOG_INFO("{} took {} s.", name, total_duration);
         }
     }
 
