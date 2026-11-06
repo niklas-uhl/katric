@@ -37,7 +37,7 @@
 #include <fmt/ostream.h>
 #include <graph-io/graph_definitions.h>
 #include <hash/murmur2_hash.hpp>
-#include <boost/mpi/datatype.hpp>
+#include <kamping/types/mpi_type_traits.hpp>
 
 #include "cetric/atomic_debug.h"
 
@@ -278,13 +278,8 @@ struct node_map : public google::dense_hash_map<graph::RankEncodedNodeId, T, has
 template <>
 struct fmt::formatter<cetric::graph::RankEncodedNodeId> : fmt::ostream_formatter {};
 
-namespace boost::mpi {
+// RankEncodedNodeId is transferred as its underlying 64 bit integer
 template <>
-MPI_Datatype get_mpi_datatype<cetric::graph::RankEncodedNodeId>(cetric::graph::RankEncodedNodeId const&) {
-    return get_mpi_datatype<std::uint64_t>();
-}
-template<>
-struct is_mpi_builtin_datatype<cetric::graph::RankEncodedNodeId> : is_mpi_builtin_datatype<std::uint64_t> {};
-}
+struct kamping::types::mpi_type_traits<cetric::graph::RankEncodedNodeId> : kamping::types::mpi_type_traits<std::uint64_t> {};
 
 #endif /* end of include guard: GRAPH_DEFINITIONS_H_8XAL43DH */

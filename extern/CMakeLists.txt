@@ -80,6 +80,22 @@ FetchContent_Declare(
   GIT_SHALLOW ON
   SYSTEM EXCLUDE_FROM_ALL)
 
+# kamping-types (MPI datatype mapping) lives in the kamping repo; pinned here so that
+# kamping-v2 does not fetch an unpinned `main` of it.
+FetchContent_Declare(
+  kamping_types
+  GIT_REPOSITORY https://github.com/kamping-site/kamping
+  GIT_TAG 001f21510a7edef33248a9d4063073a7b05b5696 # main
+  SOURCE_SUBDIR kamping-types
+  SYSTEM EXCLUDE_FROM_ALL)
+
+set(KAMPING_ENABLE_REFLECTION OFF)
+FetchContent_Declare(
+  kamping-v2
+  GIT_REPOSITORY https://github.com/kamping-site/kamping-v2
+  GIT_TAG 21e1c3030592ea7f9e3e1b25c7edac1e2dea6dfc # main
+  SYSTEM EXCLUDE_FROM_ALL)
+
 set(GRAPH_IO_MMAP ON CACHE BOOL "use mmap")
 FetchContent_Declare(
   graph-io
@@ -96,7 +112,7 @@ FetchContent_Declare(
   SYSTEM)
 
 # kagen has to be available before graph-io, which then reuses its target.
-FetchContent_MakeAvailable(cli11 fmt cereal magic_enum kassert tlx sparsehash utils_tm kagen graph-io message-queue)
+FetchContent_MakeAvailable(cli11 fmt cereal magic_enum kassert tlx sparsehash utils_tm kamping_types kamping-v2 kagen graph-io message-queue)
 
 add_library(utils_tm INTERFACE)
 target_include_directories(utils_tm INTERFACE ${utils_tm_SOURCE_DIR})
