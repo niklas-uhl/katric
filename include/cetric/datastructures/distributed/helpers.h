@@ -27,6 +27,8 @@
 #include <mpi.h>
 
 #include "cetric/datastructures/graph_definitions.h"
+#include <kamping/types/scoped_datatype.hpp>
+#include <kamping/types/std/utility.hpp>
 namespace cetric {
 using NodeId = graph::NodeId;
 
@@ -40,11 +42,9 @@ void gather_PE_ranges(
 ) {
     (void)rank;
     (void)size;
-    MPI_Datatype MPI_RANGE;
-    MPI_Type_vector(1, 2, 0, MPI_NODE, &MPI_RANGE);
-    MPI_Type_commit(&MPI_RANGE);
+    kamping::types::ScopedDatatype MPI_RANGE{kamping::types::mpi_type_traits<std::pair<NodeId, NodeId>>::data_type()};
     std::pair<NodeId, NodeId> local_range(local_from, local_to);
-    MPI_Allgather(&local_range, 1, MPI_RANGE, ranges.data(), 1, MPI_RANGE, comm);
+    MPI_Allgather(&local_range, 1, MPI_RANGE.data_type(), ranges.data(), 1, MPI_RANGE.data_type(), comm);
 #ifdef CHECK_RANGES
     if (rank == 0) {
         NodeId next_expected = 0;
@@ -77,7 +77,6 @@ void gather_PE_ranges(
         }
     }
 #endif
-    MPI_Type_free(&MPI_RANGE);
 }
 
 template <bool binary_search>

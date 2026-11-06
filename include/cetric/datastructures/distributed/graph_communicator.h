@@ -34,6 +34,8 @@
 #include <vector>
 
 #include <graph-io/local_graph_view.h>
+#include <kamping/types/contiguous_type.hpp>
+#include <kamping/types/scoped_datatype.hpp>
 #include <tlx/multi_timer.hpp>
 
 #include "cetric/communicator.h"
@@ -44,6 +46,12 @@
 
 namespace cetric {
 using namespace cetric::graph;
+
+// NodeInfo consists of two node ids, it is sent as a contiguous type of two of them
+inline kamping::types::ScopedDatatype node_info_type() {
+    static_assert(sizeof(LocalGraphView::NodeInfo) == 2 * sizeof(NodeId));
+    return kamping::types::ScopedDatatype{kamping::types::mpi_type_traits<std::array<NodeId, 2>>::data_type()};
+}
 
 template <class Graph>
 class DegreeCommunicator {
@@ -184,13 +192,22 @@ public:
             CommunicationUtility::sparse_all_to_all<RankEncodedNodeId>(
                 send_buffers,
                 recv_buf,
+                kamping::types::mpi_type_traits<RankEncodedNodeId>::data_type(),
                 rank_,
                 size_,
                 message_tag_,
                 stats
             );
         } else {
-            CommunicationUtility::all_to_all(send_buffers_vec, recv_buf, rank_, size_, message_tag_, stats);
+            CommunicationUtility::all_to_all(
+                send_buffers_vec,
+                recv_buf,
+                kamping::types::mpi_type_traits<RankEncodedNodeId>::data_type(),
+                rank_,
+                size_,
+                message_tag_,
+                stats
+            );
         }
         // timer.start("process");
         for (size_t i = 0; i < recv_vec.size(); i += 2) {
@@ -329,9 +346,7 @@ private:
             recv_running_sum += recv_counts[i];
         }
 
-        MPI_Datatype mpi_node_info;
-        MPI_Type_contiguous(2, MPI_NODE, &mpi_node_info);
-        MPI_Type_commit(&mpi_node_info);
+        kamping::types::ScopedDatatype mpi_node_info = node_info_type();
 
         std::vector<LocalGraphView::NodeInfo> node_info_recv(recv_displs[size - 1] + recv_counts[size - 1]);
 
@@ -341,11 +356,11 @@ private:
             G.node_info.data(),
             send_counts.data(),
             send_displs.data(),
-            mpi_node_info,
+            mpi_node_info.data_type(),
             node_info_recv.data(),
             recv_counts.data(),
             recv_displs.data(),
-            mpi_node_info,
+            mpi_node_info.data_type(),
             MPI_COMM_WORLD
         );
         check_mpi_error(errcode, __FILE__, __LINE__);
@@ -409,9 +424,11 @@ private:
 
         LocalGraphView G_balanced;
         CompactBuffer  node_recv_buffer(G_balanced.node_info, rank, size);
+        kamping::types::ScopedDatatype node_info_mpi_type = node_info_type();
         CommunicationUtility::sparse_all_to_all<LocalGraphView::NodeInfo>(
             to_send_node_info,
             node_recv_buffer,
+            node_info_mpi_type.data_type(),
             rank,
             size,
             as_int(MessageTag::LoadBalancing),
@@ -421,6 +438,7 @@ private:
         CommunicationUtility::sparse_all_to_all<NodeId>(
             to_send_head,
             edge_recv_buffer,
+            kamping::types::mpi_type_traits<NodeId>::data_type(),
             rank,
             size,
             as_int(MessageTag::LoadBalancing),

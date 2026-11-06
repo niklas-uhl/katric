@@ -38,7 +38,7 @@
 
 #include "atomic_debug.h"
 #include "message_statistics.h"
-#include "mpi_traits.h"
+#include <kamping/types/mpi_type_traits.hpp>
 #include "tlx/multi_timer.hpp"
 #include "util.h"
 
@@ -167,6 +167,7 @@ public:
     static void all_to_all(
         std::vector<std::vector<T>> const&    send_buf,
         CompactBuffer<T>&                     recv_buf,
+        MPI_Datatype                          mpi_type,
         PEID                                  rank [[maybe_unused]],
         PEID                                  size,
         int                                   message_tag [[maybe_unused]],
@@ -174,12 +175,6 @@ public:
     ) {
         // tlx::MultiTimer timer;
         // timer.start("count allocation");
-        MPI_Datatype mpi_type;
-        if constexpr (mpi_traits<T>::builtin) {
-            mpi_type = mpi_traits<T>::mpi_type;
-        } else {
-            mpi_type = mpi_traits<T>::register_type();
-        }
         std::vector<int> send_counts(size);
         std::vector<int> send_displs(size);
         std::vector<int> recv_counts(size);
@@ -237,6 +232,7 @@ public:
     static void sparse_all_to_all(
         SendBuf&                              to_send,
         RecvBuf&                              recv_buffers,
+        MPI_Datatype                          mpi_type,
         PEID                                  rank,
         PEID                                  size [[maybe_unused]],
         int                                   message_tag,
@@ -244,12 +240,6 @@ public:
     ) {
         static_assert(std::is_same_v<RecvBuf, HashedBuffer<T>> || std::is_same_v<RecvBuf, CompactBuffer<T>>);
         constexpr bool compact_buffer = std::is_same_v<RecvBuf, CompactBuffer<T>>;
-        MPI_Datatype   mpi_type;
-        if constexpr (mpi_traits<T>::builtin) {
-            mpi_type = mpi_traits<T>::mpi_type;
-        } else {
-            mpi_type = mpi_traits<T>::register_type();
-        }
         if constexpr (compact_buffer) {
             google::dense_hash_map<PEID, std::vector<size_t>> size_buf(size);
             google::dense_hash_map<PEID, std::vector<size_t>> size_buf_recv(size);
@@ -260,7 +250,9 @@ public:
                     size_buf[kv.first].emplace_back(kv.second.size());
                 }
             }
-            sparse_all_to_all<size_t>(size_buf, size_buf_recv, rank, size, message_tag + 1, stats);
+            sparse_all_to_all<size_t>(
+                size_buf, size_buf_recv, kamping::types::mpi_type_traits<size_t>::data_type(), rank, size, message_tag + 1, stats
+            );
             std::vector<std::pair<PEID, size_t>> recv_sizes;
             for (const auto& kv: size_buf_recv) {
                 recv_sizes.emplace_back(kv.first, kv.second[0]);
@@ -634,201 +626,6 @@ public:
         );
         return std::make_pair(std::move(receive_buffer), std::move(displs));
     }
-};
-
-template <typename T>
-class BufferedCommunicator {
-public:
-    BufferedCommunicator(
-        size_t       threshold,
-        MPI_Datatype mpi_type,
-        PEID         rank,
-        PEID         size,
-        int          message_tag,
-        bool         empty_pending_buffers_on_overflow = false
-    )
-        : message_tag_(message_tag),
-          mpi_type(mpi_type),
-          rank_(rank),
-          size_(size),
-          send_buffers_(size),
-          overflow_buffers_(size),
-          recv_buffers_(size),
-          requests_(size, MPI_REQUEST_NULL),
-          threshold_(threshold),
-          empty_pending_buffers_on_overflow(empty_pending_buffers_on_overflow) {
-        send_buffers_.set_empty_key(-1);
-        overflow_buffers_.set_empty_key(-1);
-        recv_buffers_.set_empty_key(-1);
-    }
-
-    template <typename MessageFunc, typename StatsType>
-    inline void add_message(const std::vector<T>& message, PEID recv, MessageFunc on_message, StatsType& stats) {
-        if (!empty_pending_buffers_on_overflow) {
-            if (!overflow_buffers_[recv].empty()) {
-                // we haven't finished sending yet
-                wait_and_receive(recv, on_message, stats);
-            }
-        }
-        for (const T& elem: message) {
-            send_buffers_[recv].emplace_back(elem);
-        }
-        if (send_buffers_[recv].size() > threshold_) {
-            if (empty_pending_buffers_on_overflow) {
-                if (!overflow_buffers_[recv].empty()) {
-                    // we haven't finished sending yet
-                    wait_and_receive(recv, on_message, stats);
-                }
-            }
-            assert(overflow_buffers_[recv].empty());
-            send_buffers_[recv].swap(overflow_buffers_[recv]);
-            const std::vector<T>& buffer = overflow_buffers_[recv];
-            stats.sent_messages++;
-            stats.send_volume += buffer.size();
-            MPI_Issend(buffer.data(), buffer.size(), mpi_type, recv, message_tag_, MPI_COMM_WORLD, &requests_[recv]);
-        }
-    }
-
-    template <typename MessageFunc, typename StatsType>
-    inline void wait_and_receive(PEID recv, MessageFunc on_message, StatsType& stats) {
-        assert(requests_[recv] != MPI_REQUEST_NULL);
-        int buffer_sent = 0;
-        while (buffer_sent == 0) {
-            check_for_message(on_message, stats);
-            MPI_Test(&requests_[recv], &buffer_sent, MPI_STATUS_IGNORE);
-        }
-        // the overflow buffer has been completely sent, we can clear it
-        overflow_buffers_[recv].clear();
-        assert(requests_[recv] == MPI_REQUEST_NULL);
-    }
-    template <typename MessageFunc, typename StatsType>
-    inline void finish_overflow_sending(MessageFunc on_message, StatsType& stats) {
-        if (threshold_ == std::numeric_limits<size_t>::max()) {
-            return;
-        }
-        int isend_done = 0;
-        while (isend_done == 0) {
-            check_for_message(on_message, stats);
-            isend_done = 0;
-            MPI_Testall(requests_.size(), requests_.data(), &isend_done, MPI_STATUSES_IGNORE);
-        }
-        // the overflow buffer has been completely sent, we can clear it
-        for (auto& kv: overflow_buffers_) {
-            kv.second.clear();
-        }
-    }
-
-    template <typename MessageFunc, typename StatsType>
-    inline void busy_waiting_for_receival(MessageFunc on_message, StatsType& stats) {
-        MPI_Request barrier_request;
-        MPI_Ibarrier(MPI_COMM_WORLD, &barrier_request);
-
-        int ibarrier_done = 0;
-        while (ibarrier_done == 0) {
-            int iprobe_success = 1;
-            while (iprobe_success > 0) {
-                iprobe_success = 0;
-                MPI_Status status;
-                MPI_Iprobe(MPI_ANY_SOURCE, message_tag_, MPI_COMM_WORLD, &iprobe_success, &status);
-                if (iprobe_success > 0) {
-                    int message_length;
-                    MPI_Get_count(&status, mpi_type, &message_length);
-                    assert(message_length > 0);
-                    std::vector<T> message(message_length);
-                    MPI_Status     rst;
-                    MPI_Recv(
-                        message.data(),
-                        message_length,
-                        mpi_type,
-                        status.MPI_SOURCE,
-                        status.MPI_TAG,
-                        MPI_COMM_WORLD,
-                        &rst
-                    );
-                    stats.receive_volume += message_length;
-                    stats.received_messages++;
-                    on_message(status.MPI_SOURCE, message);
-                }
-            }
-            MPI_Status test_status;
-            int        errcode = MPI_Test(&barrier_request, &ibarrier_done, &test_status);
-            check_mpi_error(errcode, __FILE__, __LINE__);
-        }
-    }
-
-    template <typename MessageFunc, typename StatsType>
-    inline void check_for_message(MessageFunc on_message, StatsType& stats) {
-        if (threshold_ == std::numeric_limits<size_t>::max()) {
-            return;
-        }
-        int iprobe_success = 1;
-        while (iprobe_success > 0) {
-            iprobe_success = 0;
-            MPI_Status status;
-            int        errcode = MPI_Iprobe(MPI_ANY_SOURCE, message_tag_, MPI_COMM_WORLD, &iprobe_success, &status);
-            check_mpi_error(errcode, __FILE__, __LINE__);
-            if (iprobe_success > 0) {
-                int message_length;
-                MPI_Get_count(&status, mpi_type, &message_length);
-                assert(message_length > 0);
-                std::vector<T> message(message_length);
-                MPI_Status     rst;
-                int            errcode = MPI_Recv(
-                    message.data(),
-                    message_length,
-                    mpi_type,
-                    status.MPI_SOURCE,
-                    status.MPI_TAG,
-                    MPI_COMM_WORLD,
-                    &rst
-                );
-                check_mpi_error(errcode, __FILE__, __LINE__);
-                stats.receive_volume += message_length;
-                stats.received_messages++;
-                on_message(status.MPI_SOURCE, message);
-            }
-        }
-    }
-
-    template <typename MessageFunc, typename StatsType>
-    inline void all_to_all(MessageFunc on_message, StatsType& stats, bool full_all_to_all = false) {
-        // TODO: ensure that old buffers have been sent
-
-        finish_overflow_sending(on_message, stats);
-        if (full_all_to_all) {
-            busy_waiting_for_receival(on_message, stats);
-            CommunicationUtility::all_to_all(send_buffers_, recv_buffers_, mpi_type, rank_, size_, stats, message_tag_);
-        } else {
-            CommunicationUtility::sparse_all_to_all(
-                send_buffers_,
-                recv_buffers_,
-                mpi_type,
-                rank_,
-                size_,
-                stats,
-                message_tag_
-            );
-        }
-        for (auto& kv: recv_buffers_) {
-            std::vector<T>& buffer = kv.second;
-            on_message(kv.first, buffer);
-            buffer.clear();
-        }
-    }
-
-private:
-    template <typename V>
-    using NodeBuffer = google::dense_hash_map<PEID, std::vector<V>>;
-    int                      message_tag_;
-    MPI_Datatype             mpi_type;
-    PEID                     rank_;
-    PEID                     size_;
-    NodeBuffer<T>            send_buffers_;
-    NodeBuffer<T>            overflow_buffers_;
-    NodeBuffer<T>            recv_buffers_;
-    std::vector<MPI_Request> requests_;
-    size_t                   threshold_;
-    bool                     empty_pending_buffers_on_overflow;
 };
 } // namespace cetric
 

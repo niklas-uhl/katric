@@ -51,7 +51,6 @@
 
 #include "cetric/atomic_debug.h"
 #include "cetric/datastructures/graph_definitions.h"
-#include "cetric/mpi_traits.h"
 
 namespace cetric {
 using PEID = int;
@@ -188,16 +187,6 @@ typename IteratorType::value_type parallel_prefix_sum(IteratorType begin, Iterat
 }
 } // namespace cetric
 
-template <>
-struct mpi_traits<graphio::LocalGraphView::NodeInfo> {
-    static MPI_Datatype register_type() {
-        MPI_Datatype mpi_node_info;
-        MPI_Type_contiguous(2, MPI_NODE, &mpi_node_info);
-        MPI_Type_commit(&mpi_node_info);
-        return mpi_node_info;
-    }
-    static constexpr bool builtin = false;
-};
 
 static thread_local int my_tid   = -1;
 static std::atomic<int> next_tid = 0;
