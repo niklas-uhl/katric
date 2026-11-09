@@ -31,14 +31,11 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
-#include <google/dense_hash_set>
-#include <google/sparse_hash_map>
 #include <iterator>
 #include <limits>
 #include <optional>
 #include <set>
-#include <sparsehash/dense_hash_map>
-#include <sparsehash/dense_hash_set>
+#include "cetric/datastructures/hash_map.h"
 #include <sstream>
 #include <stdexcept>
 #include <tuple>
@@ -1042,8 +1039,8 @@ public:
     template <typename NodeOrdering>
     void remove_in_edges_and_expand_ghosts(NodeOrdering&& node_ordering, execution_policy::sequential) {
         Degree                                                                    running_sum = 0;
-        google::dense_hash_map<RankEncodedNodeId, std::vector<RankEncodedNodeId>> ghost_edges;
-        ghost_edges.set_empty_key(RankEncodedNodeId::sentinel());
+        hash_map<RankEncodedNodeId, std::vector<RankEncodedNodeId>> ghost_edges;
+        set_empty_key(ghost_edges, RankEncodedNodeId::sentinel());
         for (auto node: local_nodes()) {
             for (auto neighbor: in_adj(node).neighbors()) {
                 if (neighbor.rank() != rank_) {

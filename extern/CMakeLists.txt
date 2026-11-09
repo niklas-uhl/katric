@@ -60,11 +60,29 @@ FetchContent_Declare(
   GIT_TAG 2dd63ab839909f0b43cd02108a1869c4670b2c8e
   SYSTEM EXCLUDE_FROM_ALL)
 
+# Hash tables: Abseil with CETRIC_USE_ABSEIL, sparsehash otherwise.
+set(ABSL_PROPAGATE_CXX_STD ON)
+set(ABSL_BUILD_TESTING OFF)
+FetchContent_Declare(
+  absl
+  GIT_REPOSITORY https://github.com/abseil/abseil-cpp
+  GIT_TAG 20250814.0
+  GIT_SHALLOW ON
+  # GCC on macOS: abseil defines _XOPEN_SOURCE, which hides quick_exit from <cstdlib>. The patch only changes the
+  # condition for __APPLE__, so it is applied on all platforms.
+  PATCH_COMMAND ${CMAKE_COMMAND} -DPATCH=${PROJECT_SOURCE_DIR}/cmake/patches/abseil_macos_no_define_xopen_source.patch
+                -P ${PROJECT_SOURCE_DIR}/cmake/apply_patch.cmake
+  SYSTEM EXCLUDE_FROM_ALL)
 FetchContent_Declare(
   sparsehash
   GIT_REPOSITORY https://github.com/niklas-uhl/sparsehash-cmake
   GIT_TAG 06457c996e01f4f222f6e9f9f4be088ce1e3901c # master
   SYSTEM EXCLUDE_FROM_ALL)
+if(CETRIC_USE_ABSEIL)
+  FetchContent_MakeAvailable(absl)
+else()
+  FetchContent_MakeAvailable(sparsehash)
+endif()
 
 # header-only, no releases: pinned to a commit
 FetchContent_Declare(
@@ -153,7 +171,7 @@ FetchContent_Declare(
   SYSTEM)
 
 # kagen has to be available before graph-io, which then reuses its target.
-FetchContent_MakeAvailable(cli11 fmt spdlog TBB cereal magic_enum kassert tlx sparsehash utils_tm kamping kamping-spdlog-adapter kamping-v2 kagen graph-io message-queue)
+FetchContent_MakeAvailable(cli11 fmt spdlog TBB cereal magic_enum kassert tlx utils_tm kamping kamping-spdlog-adapter kamping-v2 kagen graph-io message-queue)
 
 add_library(utils_tm INTERFACE)
 target_include_directories(utils_tm INTERFACE ${utils_tm_SOURCE_DIR})

@@ -22,7 +22,7 @@
 #pragma once
 
 #include <iterator>
-#include <sparsehash/dense_hash_map>
+#include "cetric/datastructures/hash_map.h"
 #include <utility>
 
 #include <fmt/ranges.h>
@@ -41,7 +41,7 @@ public:
           to_(to),
           index_map_(),
           data_(to - from) {
-        index_map_.set_empty_key(graph::RankEncodedNodeId::sentinel());
+        set_empty_key(index_map_, graph::RankEncodedNodeId::sentinel());
     }
 
     template <typename GhostIterator>
@@ -52,8 +52,7 @@ public:
           to_(to),
           index_map_(std::distance(ghost_begin, ghost_end)),
           data_(to - from + std::distance(ghost_begin, ghost_end)) {
-        index_map_.set_empty_key(graph::RankEncodedNodeId::sentinel());
-        index_map_.set_deleted_key(graph::RankEncodedNodeId::sentinel() - 1);
+        set_empty_key(index_map_, graph::RankEncodedNodeId::sentinel());
         size_t index = to - from;
         for (auto current = ghost_begin; current != ghost_end; current++) {
             index_map_[*current] = index;
@@ -121,7 +120,7 @@ private:
     }
     graph::RankEncodedNodeId                                 from_;
     graph::RankEncodedNodeId                                 to_;
-    google::dense_hash_map<graph::RankEncodedNodeId, size_t> index_map_;
+    hash_map<graph::RankEncodedNodeId, size_t>               index_map_;
     std::vector<T>                                           data_;
 };
 } // namespace cetric

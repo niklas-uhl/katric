@@ -68,16 +68,16 @@ A Caliper/Adiak measurement prototype is on `explore/caliper-adiak` (`34eb2b6`).
 
 ### 2. Hash tables: Abseil
 
-- [ ] Add option `CETRIC_USE_ABSEIL` (default OFF at first) that sets the compile definition of the same name
-- [ ] Fetch abseil `20250814.0` like kascade (`ABSL_PROPAGATE_CXX_STD`, macOS `_XOPEN_SOURCE` patch); fetch
-      sparsehash only when the option is OFF
-- [ ] New header with `hash_map` / `hash_set` aliases and a `set_empty_key` helper that does nothing under Abseil
-- [ ] Port the ~8 headers that use `google::dense_hash_*` (`communicator.h`, `graph_communicator.h`,
-      `compact_graph.h`, `simple_graph.h`, `graph_definitions.h`, `load_balancing.h`, `cost_function.h`,
-      `auxiliary_node_data.h`); unify the mixed `<google/...>` / `<sparsehash/...>` includes
-- [ ] Map `resize(0)` (used as shrink in `compact_graph.h` and `graph_communicator.h`) to `clear()` + `rehash(0)`;
-      rewrite `node_map` / `node_set`, which inherit from sparsehash types
-- [ ] Set `KAGEN_USE_SPARSEHASH OFF`; once both builds match, make Abseil the default and drop sparsehash
+- [x] Option `CETRIC_USE_ABSEIL` (default OFF) with compile definition of the same name; abseil `20250814.0` or
+      sparsehash fetched depending on it
+- [x] `cetric/datastructures/hash_map.h`: `hash_map` / `hash_set` aliases and `set_empty_key` (no-op under Abseil);
+      all `google::dense_hash_*` uses ported, `set_deleted_key` dropped (nothing erases)
+- [x] macOS: abseil's `_XOPEN_SOURCE` patch applied via `cmake/apply_patch.cmake` (skips if applied, fails loudly
+      otherwise; no `|| true`); abseil linked before system packages (Homebrew's abseil headers shadowed it)
+- [x] Dead `compact_graph.h` / `simple_graph.h` removed instead of ported (not included anywhere, did not compile)
+- [x] Validated: all tests pass with both; all 130 non-timing counters (messages, volumes, wedges, intersections)
+      identical for cetric and ditric on com-amazon, 4 ranks
+- [ ] Decide whether to make Abseil the default, then drop sparsehash (also removes a configure warning)
 
 ### 3. Measurement and JSON output
 

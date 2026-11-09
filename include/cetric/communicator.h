@@ -27,10 +27,9 @@
 #define PARALLEL_TRIANGLE_COUNTER_COMM_UTILS_H
 
 #include <cstddef>
-#include <google/dense_hash_map>
 #include <iterator>
 #include <numeric>
-#include <sparsehash/dense_hash_map>
+#include "cetric/datastructures/hash_map.h"
 #include <type_traits>
 
 #include <kassert/kassert.hpp>
@@ -138,7 +137,7 @@ template <typename T>
 class CompactBuffer {
 public:
     CompactBuffer(std::vector<T>& data, PEID rank [[maybe_unused]], PEID size) : views_(size), data_(data) {
-        views_.set_empty_key(size + 1);
+        set_empty_key(views_, size + 1);
     }
     VectorView<T>& operator[](PEID rank) {
         return views_[rank];
@@ -152,7 +151,7 @@ public:
     }
 
 private:
-    google::dense_hash_map<PEID, VectorView<T>> views_;
+    hash_map<PEID, VectorView<T>> views_;
     std::vector<T>&                             data_;
 };
 
@@ -225,9 +224,9 @@ public:
     }
 
     template <typename T>
-    using hashed_view_buffer = google::dense_hash_map<PEID, VectorView<T>>;
+    using hashed_view_buffer = hash_map<PEID, VectorView<T>>;
     template <typename T>
-    using HashedBuffer = google::dense_hash_map<PEID, std::vector<T>>;
+    using HashedBuffer = hash_map<PEID, std::vector<T>>;
     template <class T, typename SendBuf = hashed_view_buffer<T>, typename RecvBuf = HashedBuffer<T>>
     static void sparse_all_to_all(
         SendBuf&                              to_send,
@@ -241,10 +240,10 @@ public:
         static_assert(std::is_same_v<RecvBuf, HashedBuffer<T>> || std::is_same_v<RecvBuf, CompactBuffer<T>>);
         constexpr bool compact_buffer = std::is_same_v<RecvBuf, CompactBuffer<T>>;
         if constexpr (compact_buffer) {
-            google::dense_hash_map<PEID, std::vector<size_t>> size_buf(size);
-            google::dense_hash_map<PEID, std::vector<size_t>> size_buf_recv(size);
-            size_buf.set_empty_key(-1);
-            size_buf_recv.set_empty_key(-1);
+            hash_map<PEID, std::vector<size_t>> size_buf(size);
+            hash_map<PEID, std::vector<size_t>> size_buf_recv(size);
+            set_empty_key(size_buf, -1);
+            set_empty_key(size_buf_recv, -1);
             for (const auto& kv: to_send) {
                 if (!kv.second.empty()) {
                     size_buf[kv.first].emplace_back(kv.second.size());
@@ -353,8 +352,8 @@ public:
 
     template <class T, typename StatsType>
     static void sparse_all_to_all(
-        const google::dense_hash_map<PEID, std::vector<T>>& send_buffers,
-        google::dense_hash_map<PEID, std::vector<T>>&       recv_buffers,
+        const hash_map<PEID, std::vector<T>>& send_buffers,
+        hash_map<PEID, std::vector<T>>&       recv_buffers,
         MPI_Datatype                                        mpi_type,
         PEID                                                rank,
         PEID                                                size [[maybe_unused]],
@@ -469,8 +468,8 @@ public:
 
     template <class T>
     static void sparse_all_to_all(
-        google::dense_hash_map<PEID, std::vector<T>>& send_buffers,
-        google::dense_hash_map<PEID, std::vector<T>>& recv_buffers,
+        hash_map<PEID, std::vector<T>>& send_buffers,
+        hash_map<PEID, std::vector<T>>& recv_buffers,
         MPI_Datatype                                  mpi_type,
         PEID                                          rank,
         PEID                                          size,
@@ -482,8 +481,8 @@ public:
 
     template <typename T, typename StatsType>
     static void all_to_all(
-        google::dense_hash_map<PEID, std::vector<T>>& send_buffers,
-        google::dense_hash_map<PEID, std::vector<T>>& recv_buffers,
+        hash_map<PEID, std::vector<T>>& send_buffers,
+        hash_map<PEID, std::vector<T>>& recv_buffers,
         MPI_Datatype                                  mpi_type,
         PEID                                          rank,
         PEID                                          size,

@@ -27,8 +27,7 @@
 #define PARALLEL_TRIANGLE_COUNTER_GRAPH_COMMUNICATOR_H
 
 #include <cstddef>
-#include <google/dense_hash_map>
-#include <google/dense_hash_set>
+#include "cetric/datastructures/hash_map.h"
 #include <optional>
 #include <tuple>
 #include <vector>
@@ -64,9 +63,9 @@ public:
           receive_buffers(size),
           neighboring_PEs(size),
           message_tag_(message_tag) {
-        send_buffers.set_empty_key(-1);
-        receive_buffers.set_empty_key(-1);
-        neighboring_PEs.set_empty_key(-1);
+        set_empty_key(send_buffers, -1);
+        set_empty_key(receive_buffers, -1);
+        set_empty_key(neighboring_PEs, -1);
     }
 
     template <typename DegreeFunc>
@@ -276,9 +275,9 @@ private:
     const Graph&                                                 G;
     PEID                                                         rank_;
     PEID                                                         size_;
-    google::dense_hash_map<PEID, std::vector<RankEncodedNodeId>> send_buffers;
-    google::dense_hash_map<PEID, std::vector<RankEncodedNodeId>> receive_buffers;
-    google::dense_hash_set<PEID>                                 neighboring_PEs;
+    hash_map<PEID, std::vector<RankEncodedNodeId>> send_buffers;
+    hash_map<PEID, std::vector<RankEncodedNodeId>> receive_buffers;
+    hash_set<PEID>                                 neighboring_PEs;
     int                                                          message_tag_;
 };
 

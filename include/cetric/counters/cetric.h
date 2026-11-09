@@ -26,7 +26,6 @@
 #include <cstdint>
 #include <limits>
 #include <numeric>
-#include <sparsehash/dense_hash_set>
 #include <sstream>
 #include <utility>
 

@@ -26,7 +26,7 @@
 #include <cstddef>
 #include <iterator>
 #include <numeric>
-#include <sparsehash/dense_hash_map>
+#include "cetric/datastructures/hash_map.h"
 #include <sstream>
 #include <string>
 #include <vector>
@@ -68,7 +68,7 @@ public:
 
 private:
     template <typename CostFunction>
-    static google::dense_hash_map<PEID, GraphCommunicator::NodeRange>
+    static hash_map<PEID, GraphCommunicator::NodeRange>
     reassign_nodes(const graph::LocalGraphView& G, CostFunction& cost_function, const Config& conf) {
         using namespace cetric::graph;
         std::vector<size_t> cost(G.node_info.size());
@@ -90,8 +90,8 @@ private:
         }
         MPI_Bcast(&total_cost, 1, MPI_NODE, conf.PEs - 1, MPI_COMM_WORLD);
         size_t                                                     per_pe_cost = (total_cost + conf.PEs - 1) / conf.PEs;
-        google::dense_hash_map<PEID, GraphCommunicator::NodeRange> to_send(conf.PEs);
-        to_send.set_empty_key(conf.PEs);
+        hash_map<PEID, GraphCommunicator::NodeRange> to_send(conf.PEs);
+        set_empty_key(to_send, conf.PEs);
         for (size_t node = 0; node < cost.size(); ++node) {
             cost[node] += global_prefix;
             PEID new_pe = std::min(static_cast<int>(cost[node] / per_pe_cost), conf.PEs - 1);

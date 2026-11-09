@@ -64,6 +64,9 @@ cmake --build --preset experiments
 cmake --workflow --preset dev   # Debug, warnings, assertions; configure, build and run the tests
 ```
 
+Options: `-DCETRIC_USE_ABSEIL=ON` uses Abseil's `flat_hash_map` instead of sparsehash's `dense_hash_map`,
+`-DCETRIC_USE_OPENMP=OFF` disables OpenMP.
+
 For machine-specific settings (compiler, local checkouts of dependencies), copy `CMakeUserPresets.json.template` to
 `CMakeUserPresets.json` and adapt it; that file is not tracked.
 
