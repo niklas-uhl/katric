@@ -153,7 +153,7 @@ set(GRAPH_IO_MMAP ON CACHE BOOL "use mmap")
 FetchContent_Declare(
   graph-io
   GIT_REPOSITORY https://github.com/niklas-uhl/graph-io
-  GIT_TAG 5e2bd9c78ca07e6a748f79418516a863b676e22e # fix-modern-toolchain
+  GIT_TAG 44a1cd56b61f975a77289576619d61730c723b63 # fix-modern-toolchain
   SYSTEM)
 
 set(MESSAGE_QUEUE_BLOCKING_RECEIVE ON CACHE BOOL "Receive messages blocking")
@@ -161,7 +161,7 @@ set(MESSAGE_QUEUE_BLOCKING_RECEIVE ON CACHE BOOL "Receive messages blocking")
 FetchContent_Declare(
   message-queue
   GIT_REPOSITORY https://github.com/niklas-uhl/message-queue
-  GIT_TAG 3c48382c3500349fe29ee6b5a0e53163ecc3ac3a # katric-legacy
+  GIT_TAG 57b0b8a6129a78dc277a992b04f818038c9669f8 # katric-legacy
   SYSTEM)
 
 # kagen has to be available before graph-io, which then reuses its target.

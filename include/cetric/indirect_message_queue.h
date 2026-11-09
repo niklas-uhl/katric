@@ -136,7 +136,7 @@ private:
     struct GridPosition {
         int  row;
         int  column;
-        bool operator==(const GridPosition& rhs) {
+        bool operator==(const GridPosition& rhs) const {
             return row == rhs.row && column == rhs.column;
         }
     };

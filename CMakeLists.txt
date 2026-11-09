@@ -29,7 +29,7 @@ target_compile_options(cetric_cxx_flags INTERFACE ${CETRIC_CXX_FLAGS})
 add_library(cetric-lib INTERFACE)
 file(GLOB_RECURSE CETRIC_HEADERS CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/include/*.h")
 target_sources(cetric-lib INTERFACE FILE_SET HEADERS BASE_DIRS include FILES ${CETRIC_HEADERS})
-target_compile_features(cetric-lib INTERFACE cxx_std_17)
+target_compile_features(cetric-lib INTERFACE cxx_std_20)
 target_link_libraries(
   cetric-lib
   INTERFACE tlx
