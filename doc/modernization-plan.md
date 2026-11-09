@@ -56,7 +56,12 @@ A Caliper/Adiak measurement prototype is on `explore/caliper-adiak` (`34eb2b6`).
       `MPIEXEC_MAX_NUMPROCS`) replaces katric's own core filter; tests call KaTestrophe directly, no wrapper functions
 - [ ] Remaining configure warnings (old `cmake_minimum_required`): sparsehash (goes away with Abseil), KaGen's
       bundled xxHash (check a newer KaGen release)
-- [ ] Replace Boost ranges/iterators with `std::ranges` after the move to C++20, then drop Boost (108 MB download)
+- [x] C++20 (`cxx_std_20` on `cetric-lib`). katric had always been compiled as C++17: legacy-message-queue forced
+      `INTERFACE -std=c++17` (fixed there and in graph-io via `target_compile_features`); `GridPosition::operator==` made
+      `const` (C++20 reversed-operator ambiguity)
+- [x] End-to-end tests: katric on `examples/` (triangle, hiv, com-amazon) x cetric/ditric/ditric-grid/hybrid x 2/4
+      ranks, checking exit code and triangle count (`tests/check_triangle_count.cmake`)
+- [ ] Replace Boost ranges/iterators with `std::ranges`, then drop Boost (108 MB download)
 - [ ] When TBB is fetched, it is built as a static library (oneTBB warns against that); decide whether to build it shared
 - [x] Decide on the cetric → katric rename: keep cetric for now
 
