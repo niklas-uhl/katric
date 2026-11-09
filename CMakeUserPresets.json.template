@@ -1,0 +1,20 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "local-dev",
+      "displayName": "dev with a local compiler and local dependency checkouts",
+      "inherits": "dev",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc-16",
+        "CMAKE_CXX_COMPILER": "g++-16",
+        "FETCHCONTENT_SOURCE_DIR_GRAPH-IO": "${sourceDir}/../graph-io",
+        "FETCHCONTENT_SOURCE_DIR_MESSAGE-QUEUE": "${sourceDir}/../legacy-message-queue"
+      }
+    }
+  ],
+  "buildPresets": [{ "name": "local-dev", "configurePreset": "local-dev" }],
+  "testPresets": [
+    { "name": "local-dev", "configurePreset": "local-dev", "output": { "outputOnFailure": true } }
+  ]
+}

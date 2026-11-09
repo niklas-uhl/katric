@@ -1,58 +1,69 @@
 cmake_minimum_required(VERSION 3.25)
 project(cetric LANGUAGES C CXX)
 
-if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
-
-    set(CMAKE_CXX_STANDARD 17)
-
-    # Let's ensure -std=c++xx instead of -std=g++xx
-    # set(CMAKE_CXX_EXTENSIONS OFF)
-
-    # Let's nicely support folders in IDEs
-    set_property(GLOBAL PROPERTY USE_FOLDERS ON)
-
-    # Add build type Asan for using AddressSanitizer
-    #include(cmake/AddAsanBuildType.cmake)
-    include(CTest)
-endif()
-
-option(CETRIC_DEBUG_CONTAINERS "Use GNU debug containers" OFF)
+option(CETRIC_BUILD_APPS "Build the katric and shmetric executables" ON)
+option(CETRIC_BUILD_TESTS "Build the tests" ${PROJECT_IS_TOP_LEVEL})
 option(CETRIC_USE_OPENMP "Enable OpenMP-based parallelization (--parallelization-method omp_for)" ON)
-list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_LIST_DIR}/cmake)
+option(CETRIC_BINARY_INTERSECTION_RECURSIVE "Use recursion in binary search intersection" OFF)
+option(CETRIC_ENABLE_FORMAT_CMAKE "Fetch Format.cmake and provide the format/check-format/fix-format targets" OFF)
+set(CETRIC_CXX_FLAGS "" CACHE STRING "Additional compile options for katric's own targets (semicolon-separated)")
+set(CETRIC_ACTIVE_LOG_LEVEL "INFO" CACHE STRING
+    "Compile-time spdlog level; SPDLOG_DEBUG/SPDLOG_TRACE calls below it are compiled out")
+set_property(CACHE CETRIC_ACTIVE_LOG_LEVEL PROPERTY STRINGS TRACE DEBUG INFO WARN ERROR CRITICAL OFF)
+set(KASSERT_ASSERTION_LEVEL $<IF:$<CONFIG:Debug>,30,0> CACHE STRING "KASSERT assertion level")
 
-find_package(Boost REQUIRED CONFIG COMPONENTS headers)
-find_package(TBB REQUIRED)
-if (CETRIC_USE_OPENMP)
+# MPI and OpenMP always come from the system, Boost and TBB preferably (see extern/), everything else is fetched.
+find_package(MPI REQUIRED)
+if(CETRIC_USE_OPENMP)
   find_package(OpenMP REQUIRED COMPONENTS CXX)
 endif()
-find_package(MPI REQUIRED)
-message(STATUS "Run: ${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} ${MPIEXEC_MAX_NUMPROCS} ${MPIEXEC_PREFLAGS} EXECUTABLE ${MPIEXEC_POSTFLAGS} ARGS")
-
-#set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer -fsanitize=address")
-#set (CMAKE_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} -fno-omit-frame-pointer -fsanitize=address")
-if (CETRIC_DEBUG_CONTAINERS)
-  add_compile_definitions(_GLIBCXX_DEBUG)
-  add_compile_definitions(_GLIBCXX_DEBUG_PEDANTIC)
-endif()
-set(KASSERT_ASSERTION_LEVEL $<IF:$<CONFIG:Debug>,30,0> CACHE STRING "KASSERT assertion level")
 
 add_subdirectory(extern)
 
-# The compiled library code is here
-add_subdirectory(src)
+# Compile options for katric's own executables and tests (warnings are set by the dev preset). Linked PRIVATE, so they
+# never leak to consumers of cetric-lib.
+add_library(cetric_cxx_flags INTERFACE)
+target_compile_options(cetric_cxx_flags INTERFACE ${CETRIC_CXX_FLAGS})
 
-# The executable code is here
-add_subdirectory(apps)
+# The algorithms are header-only.
+add_library(cetric-lib INTERFACE)
+file(GLOB_RECURSE CETRIC_HEADERS CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/include/*.h")
+target_sources(cetric-lib INTERFACE FILE_SET HEADERS BASE_DIRS include FILES ${CETRIC_HEADERS})
+target_compile_features(cetric-lib INTERFACE cxx_std_17)
+target_link_libraries(
+  cetric-lib
+  INTERFACE tlx
+            sparsehash::sparsehash
+            cereal::cereal
+            magic_enum::magic_enum
+            fmt::fmt
+            spdlog::spdlog
+            kassert::kassert
+            kamping::types
+            utils_tm
+            graph-io
+            message-queue
+            # last: a system TBB/Boost adds e.g. /opt/homebrew/include, which must not shadow the pinned fmt/spdlog
+            MPI::MPI_CXX
+            TBB::tbb
+            cetric_boost)
+# kassert only reads the level from a KASSERT_ASSERTION_LEVEL property on each consuming target, never from the cache
+# variable, so the variable is passed on as a definition here.
+target_compile_definitions(cetric-lib INTERFACE SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_${CETRIC_ACTIVE_LOG_LEVEL}
+                                                KASSERT_ASSERTION_LEVEL=${KASSERT_ASSERTION_LEVEL})
+if(CETRIC_USE_OPENMP)
+  target_link_libraries(cetric-lib INTERFACE OpenMP::OpenMP_CXX)
+  target_compile_definitions(cetric-lib INTERFACE CETRIC_HAS_OPENMP)
+endif()
+if(CETRIC_BINARY_INTERSECTION_RECURSIVE)
+  target_compile_definitions(cetric-lib INTERFACE CETRIC_BINARY_INTERSECTION_RECURSIVE)
+endif()
 
-if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME AND BUILD_TESTING)
+if(CETRIC_BUILD_APPS)
+  add_subdirectory(apps)
+endif()
+
+if(CETRIC_BUILD_TESTS)
   enable_testing()
-  include(FetchContent)
-  FetchContent_Declare(
-    KaTestrophe
-    GIT_REPOSITORY https://github.com/kamping-site/KaTestrophe.cmake
-    GIT_TAG        v1.1.1
-  )
-  FetchContent_MakeAvailable(KaTestrophe)
-  include(GoogleTest)
   add_subdirectory(tests)
 endif()

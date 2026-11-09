@@ -73,3 +73,6 @@ flycheck_*.el
 # tag files
 tags*
 *.temp
+
+# Local CMake presets (copy CMakeUserPresets.json.template)
+CMakeUserPresets.json

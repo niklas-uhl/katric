@@ -1,0 +1,54 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 25, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "dev",
+      "displayName": "Development (Debug, warnings, assertions, debug logging, tests)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "CETRIC_CXX_FLAGS": "-Wall;-Wextra;-pedantic",
+        "KASSERT_ASSERTION_LEVEL": "30",
+        "CETRIC_ACTIVE_LOG_LEVEL": "DEBUG",
+        "CETRIC_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "experiments",
+      "displayName": "Experiments (Release, -march=native)",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CETRIC_CXX_FLAGS": "-march=native",
+        "KASSERT_ASSERTION_LEVEL": "0",
+        "CETRIC_ACTIVE_LOG_LEVEL": "INFO",
+        "CETRIC_BUILD_TESTS": "OFF"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "dev", "configurePreset": "dev" },
+    { "name": "experiments", "configurePreset": "experiments" }
+  ],
+  "testPresets": [
+    {
+      "name": "dev",
+      "configurePreset": "dev",
+      "output": { "outputOnFailure": true }
+    }
+  ],
+  "workflowPresets": [
+    {
+      "name": "dev",
+      "steps": [
+        { "type": "configure", "name": "dev" },
+        { "type": "build", "name": "dev" },
+        { "type": "test", "name": "dev" }
+      ]
+    }
+  ]
+}

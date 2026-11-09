@@ -19,14 +19,19 @@
 
 #include "git_hash.h"
 
-#ifdef CETRIC_REPO_GIT_HASH
-    #include "git_version.h"
-const std::string cetric::git_hash = kGitHash;
-#else
-    #ifdef CETRIC_FILE_GIT_HASH
-        #include "commit.h"
-const std::string cetric::git_hash = std::string(commit_data, commit_data + commit_size - 1);
-    #else
-const std::string cetric::git_hash = "undefined";
-    #endif
-#endif
+#include <git.h>
+
+namespace {
+std::string make_git_hash() {
+    if (!git_IsPopulated()) {
+        return "undefined";
+    }
+    std::string hash = std::string(git_CommitSHA1()).substr(0, 8);
+    if (git_AnyUncommittedChanges()) {
+        hash += "-dirty";
+    }
+    return hash;
+}
+} // namespace
+
+const std::string cetric::git_hash = make_git_hash();

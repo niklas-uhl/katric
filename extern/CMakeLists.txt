@@ -1,16 +1,16 @@
 include(FetchContent)
-set(CMAKE_FIND_PACKAGE_TARGETS_GLOBAL ON) # targets of system packages (FIND_PACKAGE_ARGS) must be visible outside extern/
-
-
+set(CMAKE_FIND_PACKAGE_TARGETS_GLOBAL ON) # targets found via FIND_PACKAGE_ARGS must be visible outside extern/
 # All dependencies are fetched here. To work on one locally, configure with
-# -DFETCHCONTENT_SOURCE_DIR_<NAME>=/path/to/checkout (e.g. ..._GRAPH-IO).
+# -DFETCHCONTENT_SOURCE_DIR_<NAME>=/path/to/checkout (e.g. ..._GRAPH-IO), see CMakeUserPresets.json.template.
+# Every dependency is pinned to a release tag or a commit SHA (with the branch name as comment), never to a branch:
+# FetchContent does not reliably update a branch checkout, so a branch pin silently builds against stale code.
 
 FetchContent_Declare(
   cli11
   GIT_REPOSITORY https://github.com/CLIUtils/CLI11
-  GIT_TAG v2.4.2
+  GIT_TAG v2.5.0
   GIT_SHALLOW ON
-  SYSTEM EXCLUDE_FROM_ALL FIND_PACKAGE_ARGS 2.4)
+  SYSTEM EXCLUDE_FROM_ALL)
 
 FetchContent_Declare(
   fmt
@@ -73,6 +73,41 @@ FetchContent_Declare(
   GIT_TAG 40b3893ee8dc4896aca2313cbd8ac3c4551dc1de
   SYSTEM EXCLUDE_FROM_ALL)
 
+# Boost and oneTBB are usually provided by the system (module, package manager): find_package is tried first, and
+# they are only fetched if that fails. Force fetching with -DFETCHCONTENT_TRY_FIND_PACKAGE_MODE=NEVER.
+# When fetched, only Boost's header-only iterator and range libraries (plus their dependencies) are configured.
+# TODO: replace with std::ranges once katric moves to C++20, then drop Boost.
+set(BOOST_INCLUDE_LIBRARIES iterator range)
+set(BOOST_ENABLE_CMAKE ON)
+FetchContent_Declare(
+  Boost
+  URL https://github.com/boostorg/boost/releases/download/boost-1.92.0/boost-1.92.0-cmake.tar.xz
+  URL_HASH SHA256=9bed76128d4e46755dbe818487788c6fceb6f72b378f4daa49b7e1e600d9088d
+  DOWNLOAD_EXTRACT_TIMESTAMP ON
+  SYSTEM EXCLUDE_FROM_ALL
+  FIND_PACKAGE_ARGS 1.74 CONFIG COMPONENTS headers)
+
+set(TBB_TEST OFF)
+set(TBB_EXAMPLES OFF)
+set(TBB_STRICT OFF) # do not build TBB itself with -Werror
+set(TBB_DISABLE_HWLOC_AUTOMATIC_SEARCH ON) # tbbbind (NUMA support) is not needed
+FetchContent_Declare(
+  TBB
+  GIT_REPOSITORY https://github.com/uxlfoundation/oneTBB
+  GIT_TAG v2023.2.0
+  GIT_SHALLOW ON
+  SYSTEM EXCLUDE_FROM_ALL
+  FIND_PACKAGE_ARGS 2021.5 CONFIG)
+
+# GoogleTest + MPI test helpers (only downloaded if tests are built, see the end of this file). Declared before
+# kamping-v2, which declares its own (older) KaTestrophe: the first declaration wins.
+FetchContent_Declare(
+  KaTestrophe
+  GIT_REPOSITORY https://github.com/kamping-site/KaTestrophe.cmake
+  GIT_TAG v1.2.0
+  GIT_SHALLOW ON
+  SYSTEM EXCLUDE_FROM_ALL)
+
 # KaGen is not used by katric directly yet, but it is declared here so that
 # graph-io (and later katric itself) build against exactly this version.
 set(KAGEN_BUILD_APPS OFF)
@@ -118,7 +153,7 @@ set(GRAPH_IO_MMAP ON CACHE BOOL "use mmap")
 FetchContent_Declare(
   graph-io
   GIT_REPOSITORY https://github.com/niklas-uhl/graph-io
-  GIT_TAG fix-modern-toolchain
+  GIT_TAG 5e2bd9c78ca07e6a748f79418516a863b676e22e # fix-modern-toolchain
   SYSTEM)
 
 set(MESSAGE_QUEUE_BLOCKING_RECEIVE ON CACHE BOOL "Receive messages blocking")
@@ -126,11 +161,46 @@ set(MESSAGE_QUEUE_BLOCKING_RECEIVE ON CACHE BOOL "Receive messages blocking")
 FetchContent_Declare(
   message-queue
   GIT_REPOSITORY https://github.com/niklas-uhl/message-queue
-  GIT_TAG katric-legacy
+  GIT_TAG 3c48382c3500349fe29ee6b5a0e53163ecc3ac3a # katric-legacy
   SYSTEM)
 
 # kagen has to be available before graph-io, which then reuses its target.
-FetchContent_MakeAvailable(cli11 fmt spdlog cereal magic_enum kassert tlx sparsehash utils_tm kamping kamping-spdlog-adapter kamping-v2 kagen graph-io message-queue)
+FetchContent_MakeAvailable(cli11 fmt spdlog Boost TBB cereal magic_enum kassert tlx sparsehash utils_tm kamping kamping-spdlog-adapter kamping-v2 kagen graph-io message-queue)
+
+# A system Boost provides Boost::headers, a fetched one only the configured libraries.
+add_library(cetric_boost INTERFACE)
+if(TARGET Boost::iterator)
+  target_link_libraries(cetric_boost INTERFACE Boost::iterator Boost::range)
+else()
+  target_link_libraries(cetric_boost INTERFACE Boost::headers)
+endif()
 
 add_library(utils_tm INTERFACE)
 target_include_directories(utils_tm INTERFACE ${utils_tm_SOURCE_DIR})
+
+# Tooling and app/test-only dependencies.
+if(CETRIC_ENABLE_FORMAT_CMAKE)
+  FetchContent_Declare(
+    Format.cmake
+    GIT_REPOSITORY https://github.com/TheLartians/Format.cmake
+    GIT_TAG v1.8.3)
+  FetchContent_MakeAvailable(Format.cmake)
+endif()
+
+if(CETRIC_BUILD_APPS)
+  # Commit hash and dirty state of the working tree, embedded into the executables (git.h).
+  FetchContent_Declare(
+    cmake_git_version_tracking
+    GIT_REPOSITORY https://github.com/niklas-uhl/cmake-git-version-tracking
+    GIT_TAG v1.0.0
+    GIT_SHALLOW ON
+    SYSTEM EXCLUDE_FROM_ALL)
+  FetchContent_MakeAvailable(cmake_git_version_tracking)
+endif()
+
+if(CETRIC_BUILD_TESTS)
+  # Only register MPI tests with rank counts this machine can run, instead of oversubscribing. A cache entry, so that
+  # tests/ sees it (a normal variable would only live in this directory scope).
+  set(KATESTROPHE_MAX_CORES ${MPIEXEC_MAX_NUMPROCS} CACHE STRING "Skip MPI tests with more ranks than this")
+  FetchContent_MakeAvailable(KaTestrophe)
+endif()

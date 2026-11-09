@@ -48,19 +48,24 @@ state of the art.
 To compile this project you need:
 - A modern, C++17-ready compiler such as `g++` version 9 or higher or `clang` version 11 or higher.
 - [OpenMPI](https://www.open-mpi.org/) or [Intel MPI](https://www.intel.com/content/www/us/en/developer/tools/oneapi/mpi-library.html#gs.pr0oht)
-- [oneTBB](https://oneapi-src.github.io/oneTBB/)
 - OpenMP (optional, enabled by default; disable with `-DCETRIC_USE_OPENMP=OFF`). Required only for `--parallelization-method omp_for`.
-- Boost
-- CMake 3.25 or higher and network access during configuration: all other dependencies (fmt, cereal, KaGen, tlx, Sparsehash, ...) are fetched via `FetchContent`
+- oneTBB and Boost (headers): used from the system if found, otherwise fetched
+- CMake 3.25 or higher and network access during configuration: all other dependencies (fmt, cereal, KaGen, tlx, Sparsehash, ...) are fetched via `FetchContent`, pinned to a release or commit.
 
 ### Compiling
 
+The project ships two CMake presets, both building into `build/`:
+
 ```shell
-mkdir build && cd build
-cmake -DCMAKE_BUILD_TYPE=Release ..
-make
+cmake --preset experiments      # Release, -march=native
+cmake --build --preset experiments
+# binary: build/apps/katric
+
+cmake --workflow --preset dev   # Debug, warnings, assertions; configure, build and run the tests
 ```
 
+For machine-specific settings (compiler, local checkouts of dependencies), copy `CMakeUserPresets.json.template` to
+`CMakeUserPresets.json` and adapt it; that file is not tracked.
 
 ## Running
 For reproducing our experiments see [the corresponding document](./experiments/README.md).
