@@ -52,15 +52,7 @@
 #include <tbb/task_arena.h>
 
 // #include <EliasFano.h>
-#include <boost/iterator/counting_iterator.hpp>
-#include <boost/iterator/iterator_categories.hpp>
-#include <boost/iterator/transform_iterator.hpp>
-#include <boost/range/adaptor/filtered.hpp>
-#include <boost/range/adaptor/reversed.hpp>
-#include <boost/range/adaptor/transformed.hpp>
-#include <boost/range/counting_range.hpp>
-#include <boost/range/iterator_range.hpp>
-#include <boost/range/iterator_range_core.hpp>
+#include <ranges>
 #include <default_hash.hpp>
 #include <fmt/core.h>
 #include <graph-io/local_graph_view.h>
@@ -185,12 +177,9 @@ struct ContinuousNodeIndexer {
     }
 
     auto nodes() const {
-        using counting_iterator_type =
-            boost::counting_iterator<RankEncodedNodeId, boost::random_access_traversal_tag, std::ptrdiff_t>;
-        return boost::make_iterator_range(
-            counting_iterator_type{RankEncodedNodeId(from, rank)},
-            counting_iterator_type{RankEncodedNodeId(to, rank)}
-        );
+        return std::views::iota(from, to) | std::views::transform([rank = rank](NodeId id) {
+                   return RankEncodedNodeId(id, static_cast<std::uint16_t>(rank));
+               });
     }
 
     inline size_t get_index(RankEncodedNodeId node) const {
@@ -232,7 +221,7 @@ struct SparseNodeIndexer {
         return idx_map.find(node) != idx_map.end();
     }
     auto nodes() const {
-        return boost::make_iterator_range(id_map.begin(), id_map.end());
+        return std::ranges::subrange(id_map.begin(), id_map.end());
     }
 
     inline size_t get_index(RankEncodedNodeId node) const {
@@ -366,22 +355,6 @@ public:
     // util::EliasFano<5>                   ef;
 };
 
-template <typename NodeIdType>
-class NodeRange {
-public:
-    explicit NodeRange(NodeIdType from, NodeIdType to) : from_(std::move(from)), to_(std::move(to)) {}
-    boost::counting_iterator<NodeIdType> begin() const {
-        return boost::counting_iterator(from_);
-    }
-    boost::counting_iterator<NodeIdType> end() const {
-        return boost::counting_iterator(to_);
-    }
-
-private:
-    NodeIdType from_;
-    NodeIdType to_;
-};
-
 enum RangeModifiability { modifiable, non_modifiable };
 template <typename NodeIdType, RangeModifiability modifiability>
 class EdgeRange {
@@ -395,13 +368,13 @@ public:
           begin_(std::move(begin)),
           end_(std::move(end)) {}
 
-    using neighbor_range_type = boost::iterator_range<head_iterator_type>;
+    using neighbor_range_type = std::ranges::subrange<head_iterator_type>;
 
     neighbor_range_type neighbors() const {
-        return boost::make_iterator_range(begin_, end_);
+        return std::ranges::subrange(begin_, end_);
     }
     auto edges() const {
-        return boost::adaptors::transform(neighbors(), [tail = tail_](NodeIdType neighbor) {
+        return std::views::transform(neighbors(), [tail = tail_](NodeIdType neighbor) {
             return graphio::Edge<NodeIdType>{RankEncodedNodeId(tail), neighbor};
         });
     }
@@ -857,8 +830,8 @@ public:
                 KASSERT(node_info.global_id < node_range_.second);
             }
         }
-        auto nodes = boost::adaptors::transform(
-            boost::make_iterator_range(G.node_info.begin(), G.node_info.end()),
+        auto nodes = std::views::transform(
+            G.node_info,
             [rank](auto node_info) {
                 return RankEncodedNodeId{node_info.global_id, static_cast<std::uint16_t>(rank)};
             }
@@ -987,7 +960,7 @@ public:
     DistributedGraph<SparseNodeIndexer> compact(ExecutionPolicy&& policy) {
         static_assert(std::is_same_v<ExecutionPolicy, execution_policy::sequential> || std::is_same_v<ExecutionPolicy, execution_policy::parallel>);
         auto remaining_nodes =
-            boost::adaptors::filter(this->local_nodes(), [this](auto node) { return this->degree(node) > 0; });
+            std::views::filter(this->local_nodes(), [this](auto node) { return this->degree(node) > 0; });
         SparseNodeIndexer sparse_indexer(this->node_range_, remaining_nodes.begin(), remaining_nodes.end(), rank_);
         auto              new_node_count = sparse_indexer.size();
         if constexpr (std::is_same_v<ExecutionPolicy, execution_policy::parallel>) {
@@ -1086,7 +1059,7 @@ public:
             first_out_offset_[i] = 0;
         }
         first_out_.back() = running_sum;
-        auto ghosts       = boost::adaptors::transform(
+        auto ghosts       = std::views::transform(
             ghost_edges,
             [](std::pair<RankEncodedNodeId, std::vector<RankEncodedNodeId>> const& kv) { return kv.first; }
         );
@@ -1148,7 +1121,7 @@ public:
             head_                   = std::move(new_head);
             first_out_              = std::move(degree);
             first_out_.back()       = running_sum;
-            auto ghosts             = boost::adaptors::transform(ghost_edges, [](auto const& kv) { return kv.first; });
+            auto ghosts             = std::views::transform(ghost_edges, [](auto const& kv) { return kv.first; });
             this->local_edge_count_ = running_sum;
             SparseNodeIndexer   ghost_indexer({}, ghosts.begin(), ghosts.end(), rank_);
             std::vector<EdgeId> ghost_first_out(ghost_indexer.size() + 1);
@@ -1295,7 +1268,7 @@ inline std::ostream& operator<<(std::ostream& out, DistributedGraph<GhostPayload
 template <typename GhostPayloadType, typename SetType = std::set<RankEncodedNodeId>>
 void find_ghosts(DistributedGraph<GhostPayloadType> const& G, SetType& ghosts) {
     for (auto node: G.local_nodes()) {
-        for (auto neighbor: boost::adaptors::reverse(G.adj(node).neighbors())) {
+        for (auto neighbor: std::views::reverse(G.adj(node).neighbors())) {
             if (neighbor.rank() == G.rank()) {
                 continue;
             }

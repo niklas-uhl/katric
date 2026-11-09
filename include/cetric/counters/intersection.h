@@ -26,8 +26,7 @@
 #include <iostream>
 #include <stack>
 
-#include <boost/range/iterator_range.hpp>
-#include <boost/range/iterator_range_core.hpp>
+#include <ranges>
 #include <fmt/core.h>
 #include <fmt/ranges.h>
 #include <kassert/kassert.hpp>
@@ -48,10 +47,10 @@ void intersection(
     Config const&    conf
 ) {
     KASSERT(std::adjacent_find(first1, last1) == last1);
-    KASSERT(std::is_sorted(first1, last1, comp), fmt::format("{}", boost::make_iterator_range(first1, last1)));
+    KASSERT(std::is_sorted(first1, last1, comp), fmt::format("{}", std::ranges::subrange(first1, last1)));
     KASSERT(std::is_sorted(first1, last1, comp));
     KASSERT(std::adjacent_find(first2, last2) == last2);
-    KASSERT(std::is_sorted(first2, last2, comp), fmt::format("{}", boost::make_iterator_range(first2, last2)));
+    KASSERT(std::is_sorted(first2, last2, comp), fmt::format("{}", std::ranges::subrange(first2, last2)));
 
     switch (conf.intersection_method) {
         case IntersectionMethod::merge:

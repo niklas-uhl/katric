@@ -39,10 +39,7 @@
 #include <thread>
 #include <type_traits>
 
-#include <boost/iterator/function_output_iterator.hpp>
-#include <boost/range/adaptor/filtered.hpp>
-#include <boost/range/iterator_range_core.hpp>
-#include <boost/range/join.hpp>
+#include <ranges>
 #include <message-queue/buffered_queue.h>
 #include <mpi.h>
 #ifdef CETRIC_HAS_OPENMP
@@ -104,7 +101,7 @@ struct Merger {
             SPDLOG_DEBUG(
                 "done with copy of {} -> {}",
                 msg,
-                boost::make_iterator_range(insert_position, insert_position + msg.size())
+                std::ranges::subrange(insert_position, insert_position + msg.size())
             );
         } else {
             for (auto elem: msg) {
@@ -262,7 +259,7 @@ public:
                     // }
                     SPDLOG_DEBUG(
                         "Remaining neighbors {}",
-                        boost::make_iterator_range(
+                        std::ranges::subrange(
                             G.out_adj(v).neighbors().begin() + neighbor_index,
                             G.out_adj(v).neighbors().end()
                         )
@@ -925,7 +922,7 @@ public:
                     // }
                     SPDLOG_DEBUG(
                         "Remaining neighbors {}",
-                        boost::make_iterator_range(
+                        std::ranges::subrange(
                             G.out_adj(v).neighbors().begin() + neighbor_index,
                             G.out_adj(v).neighbors().end()
                         )
@@ -1200,14 +1197,19 @@ public:
                 }
             }
         };
-        auto nodes = boost::join(G.local_nodes(), G.ghosts());
+        // Local nodes followed by ghosts, addressed by index (C++20 has no random-access concat view).
+        auto const local_nodes = G.local_nodes();
+        auto const ghosts      = G.ghosts();
+        auto const local_count = static_cast<size_t>(std::ranges::size(local_nodes));
+        auto const total_count = local_count + static_cast<size_t>(std::ranges::size(ghosts));
+        auto       node_at     = [&](size_t i) { return i < local_count ? local_nodes[i] : ghosts[i - local_count]; };
         switch (conf_.parallelization_method) {
             case ParallelizationMethod::tbb: {
                 tbb::task_arena arena(conf_.num_threads);
                 arena.execute([&] {
-                    tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&](auto const& r) {
-                        for (auto v: r) {
-                            node_loop_body(v);
+                    tbb::parallel_for(tbb::blocked_range<size_t>(0, total_count), [&](auto const& r) {
+                        for (size_t i = r.begin(); i < r.end(); ++i) {
+                            node_loop_body(node_at(i));
                         }
                     });
                 });
@@ -1221,8 +1223,8 @@ public:
 #else
                 throw std::runtime_error("parallelization method omp_for requires building with CETRIC_USE_OPENMP=ON");
 #endif
-                for (auto v: nodes) {
-                    node_loop_body(v);
+                for (size_t i = 0; i < total_count; ++i) {
+                    node_loop_body(node_at(i));
                 }
                 break;
             }
@@ -1818,7 +1820,7 @@ private:
         auto u_neighbors = G.out_adj(u).neighbors();
         if (!ghosts.empty()) {
             auto filtered_neighbors_it =
-                boost::adaptors::filter(boost::make_iterator_range(begin, end), [&ghosts](RankEncodedNodeId node) {
+                std::views::filter(std::ranges::subrange(begin, end), [&ghosts](RankEncodedNodeId node) {
                     return ghosts.find(node) != ghosts.end();
                 });
             std::vector<RankEncodedNodeId> filtered_neighbors(
@@ -1894,7 +1896,7 @@ private:
         NodeOrdering&&                 node_ordering,
         GhostSet const&                ghosts
     ) {
-        SPDLOG_DEBUG("Handling message {}", boost::make_iterator_range(begin, end));
+        SPDLOG_DEBUG("Handling message {}", std::ranges::subrange(begin, end));
         assert(v.rank() != rank_);
         // distributed_pre_intersect(v, begin, end);
         auto for_each_local_receiver = [&](auto on_node) {

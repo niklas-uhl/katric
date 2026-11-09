@@ -12,7 +12,7 @@ set(CETRIC_ACTIVE_LOG_LEVEL "INFO" CACHE STRING
 set_property(CACHE CETRIC_ACTIVE_LOG_LEVEL PROPERTY STRINGS TRACE DEBUG INFO WARN ERROR CRITICAL OFF)
 set(KASSERT_ASSERTION_LEVEL $<IF:$<CONFIG:Debug>,30,0> CACHE STRING "KASSERT assertion level")
 
-# MPI and OpenMP always come from the system, Boost and TBB preferably (see extern/), everything else is fetched.
+# MPI and OpenMP always come from the system, TBB preferably (see extern/), everything else is fetched.
 find_package(MPI REQUIRED)
 if(CETRIC_USE_OPENMP)
   find_package(OpenMP REQUIRED COMPONENTS CXX)
@@ -43,10 +43,9 @@ target_link_libraries(
             utils_tm
             graph-io
             message-queue
-            # last: a system TBB/Boost adds e.g. /opt/homebrew/include, which must not shadow the pinned fmt/spdlog
+            # last: a system TBB adds e.g. /opt/homebrew/include, which must not shadow the pinned fmt/spdlog
             MPI::MPI_CXX
-            TBB::tbb
-            cetric_boost)
+            TBB::tbb)
 # kassert only reads the level from a KASSERT_ASSERTION_LEVEL property on each consuming target, never from the cache
 # variable, so the variable is passed on as a definition here.
 target_compile_definitions(cetric-lib INTERFACE SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_${CETRIC_ACTIVE_LOG_LEVEL}

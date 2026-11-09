@@ -32,10 +32,6 @@
 #include <thread>
 #include <type_traits>
 
-#include <boost/iterator/function_output_iterator.hpp>
-#include <boost/range/adaptor/filtered.hpp>
-#include <boost/range/iterator_range_core.hpp>
-#include <boost/range/join.hpp>
 #include <mpi.h>
 #include <tbb/combinable.h>
 #include <tbb/concurrent_vector.h>

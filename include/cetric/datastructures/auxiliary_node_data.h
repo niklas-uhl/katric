@@ -25,11 +25,6 @@
 #include <sparsehash/dense_hash_map>
 #include <utility>
 
-#include <boost/iterator/counting_iterator.hpp>
-#include <boost/iterator/transform_iterator.hpp>
-#include <boost/range/adaptor/transformed.hpp>
-#include <boost/range/iterator_range_core.hpp>
-#include <boost/range/join.hpp>
 #include <fmt/ranges.h>
 #include <kassert/kassert.hpp>
 
@@ -99,32 +94,20 @@ public:
         return data_.size();
     }
 
-    auto range() const {
-        using counting_iterator_type =
-            boost::counting_iterator<graph::RankEncodedNodeId, boost::random_access_traversal_tag, std::ptrdiff_t>;
-        auto local = boost::adaptors::transform(
-            boost::make_iterator_range(counting_iterator_type{from_}, counting_iterator_type{to_}),
-            [&](graph::RankEncodedNodeId node) { return std::make_pair(node, get_index(node)); }
-        );
-        auto ghosts     = boost::make_iterator_range(index_map_.begin(), index_map_.end());
-        auto full_range = boost::join(local, ghosts);
-        return boost::adaptors::transform(full_range, Transformer{data_});
-    }
-
-    auto begin() const {
-        return range().begin();
-    }
-    auto end() const {
-        return range().end();
+    // All (node, value) pairs, local nodes first, then ghosts. Materialized, as it is only used for debug output.
+    std::vector<std::pair<graph::RankEncodedNodeId, T>> range() const {
+        std::vector<std::pair<graph::RankEncodedNodeId, T>> result;
+        result.reserve(data_.size());
+        for (auto node = from_; node < to_; ++node) {
+            result.emplace_back(node, data_[get_index(node)]);
+        }
+        for (auto const& [node, index]: index_map_) {
+            result.emplace_back(node, data_[index]);
+        }
+        return result;
     }
 
 private:
-    struct Transformer {
-        std::vector<T> const&                  data;
-        std::pair<graph::RankEncodedNodeId, T> operator()(std::pair<graph::RankEncodedNodeId, size_t> kv) const {
-            return std::make_pair(kv.first, data[kv.second]);
-        }
-    };
     size_t get_index(graph::RankEncodedNodeId node) const {
         SPDLOG_DEBUG("Lookup node {}", node);
         if (node >= from_ && node <= to_) {

@@ -73,20 +73,8 @@ FetchContent_Declare(
   GIT_TAG 40b3893ee8dc4896aca2313cbd8ac3c4551dc1de
   SYSTEM EXCLUDE_FROM_ALL)
 
-# Boost and oneTBB are usually provided by the system (module, package manager): find_package is tried first, and
-# they are only fetched if that fails. Force fetching with -DFETCHCONTENT_TRY_FIND_PACKAGE_MODE=NEVER.
-# When fetched, only Boost's header-only iterator and range libraries (plus their dependencies) are configured.
-# TODO: replace with std::ranges once katric moves to C++20, then drop Boost.
-set(BOOST_INCLUDE_LIBRARIES iterator range)
-set(BOOST_ENABLE_CMAKE ON)
-FetchContent_Declare(
-  Boost
-  URL https://github.com/boostorg/boost/releases/download/boost-1.92.0/boost-1.92.0-cmake.tar.xz
-  URL_HASH SHA256=9bed76128d4e46755dbe818487788c6fceb6f72b378f4daa49b7e1e600d9088d
-  DOWNLOAD_EXTRACT_TIMESTAMP ON
-  SYSTEM EXCLUDE_FROM_ALL
-  FIND_PACKAGE_ARGS 1.74 CONFIG COMPONENTS headers)
-
+# oneTBB is usually provided by the system (module, package manager): find_package is tried first, and it is only
+# fetched if that fails. Force fetching with -DFETCHCONTENT_TRY_FIND_PACKAGE_MODE=NEVER.
 set(TBB_TEST OFF)
 set(TBB_EXAMPLES OFF)
 set(TBB_STRICT OFF) # do not build TBB itself with -Werror
@@ -165,15 +153,7 @@ FetchContent_Declare(
   SYSTEM)
 
 # kagen has to be available before graph-io, which then reuses its target.
-FetchContent_MakeAvailable(cli11 fmt spdlog Boost TBB cereal magic_enum kassert tlx sparsehash utils_tm kamping kamping-spdlog-adapter kamping-v2 kagen graph-io message-queue)
-
-# A system Boost provides Boost::headers, a fetched one only the configured libraries.
-add_library(cetric_boost INTERFACE)
-if(TARGET Boost::iterator)
-  target_link_libraries(cetric_boost INTERFACE Boost::iterator Boost::range)
-else()
-  target_link_libraries(cetric_boost INTERFACE Boost::headers)
-endif()
+FetchContent_MakeAvailable(cli11 fmt spdlog TBB cereal magic_enum kassert tlx sparsehash utils_tm kamping kamping-spdlog-adapter kamping-v2 kagen graph-io message-queue)
 
 add_library(utils_tm INTERFACE)
 target_include_directories(utils_tm INTERFACE ${utils_tm_SOURCE_DIR})

@@ -49,7 +49,7 @@ To compile this project you need:
 - A modern, C++17-ready compiler such as `g++` version 9 or higher or `clang` version 11 or higher.
 - [OpenMPI](https://www.open-mpi.org/) or [Intel MPI](https://www.intel.com/content/www/us/en/developer/tools/oneapi/mpi-library.html#gs.pr0oht)
 - OpenMP (optional, enabled by default; disable with `-DCETRIC_USE_OPENMP=OFF`). Required only for `--parallelization-method omp_for`.
-- oneTBB and Boost (headers): used from the system if found, otherwise fetched
+- oneTBB: used from the system if found, otherwise fetched
 - CMake 3.25 or higher and network access during configuration: all other dependencies (fmt, cereal, KaGen, tlx, Sparsehash, ...) are fetched via `FetchContent`, pinned to a release or commit.
 
 ### Compiling
