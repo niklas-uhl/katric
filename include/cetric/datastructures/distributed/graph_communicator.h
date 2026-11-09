@@ -27,7 +27,8 @@
 #define PARALLEL_TRIANGLE_COUNTER_GRAPH_COMMUNICATOR_H
 
 #include <cstddef>
-#include "cetric/datastructures/hash_map.h"
+#include <absl/container/flat_hash_map.h>
+#include <absl/container/flat_hash_set.h>
 #include <optional>
 #include <tuple>
 #include <vector>
@@ -63,9 +64,6 @@ public:
           receive_buffers(size),
           neighboring_PEs(size),
           message_tag_(message_tag) {
-        set_empty_key(send_buffers, -1);
-        set_empty_key(receive_buffers, -1);
-        set_empty_key(neighboring_PEs, -1);
     }
 
     template <typename DegreeFunc>
@@ -275,9 +273,9 @@ private:
     const Graph&                                                 G;
     PEID                                                         rank_;
     PEID                                                         size_;
-    hash_map<PEID, std::vector<RankEncodedNodeId>> send_buffers;
-    hash_map<PEID, std::vector<RankEncodedNodeId>> receive_buffers;
-    hash_set<PEID>                                 neighboring_PEs;
+    absl::flat_hash_map<PEID, std::vector<RankEncodedNodeId>> send_buffers;
+    absl::flat_hash_map<PEID, std::vector<RankEncodedNodeId>> receive_buffers;
+    absl::flat_hash_set<PEID>                                 neighboring_PEs;
     int                                                          message_tag_;
 };
 

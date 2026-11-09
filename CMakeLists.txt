@@ -4,7 +4,6 @@ project(cetric LANGUAGES C CXX)
 option(CETRIC_BUILD_APPS "Build the katric and shmetric executables" ON)
 option(CETRIC_BUILD_TESTS "Build the tests" ${PROJECT_IS_TOP_LEVEL})
 option(CETRIC_USE_OPENMP "Enable OpenMP-based parallelization (--parallelization-method omp_for)" ON)
-option(CETRIC_USE_ABSEIL "Use Abseil's flat_hash_map/set instead of sparsehash's dense_hash_map/set" OFF)
 option(CETRIC_BINARY_INTERSECTION_RECURSIVE "Use recursion in binary search intersection" OFF)
 option(CETRIC_ENABLE_FORMAT_CMAKE "Fetch Format.cmake and provide the format/check-format/fix-format targets" OFF)
 set(CETRIC_CXX_FLAGS "" CACHE STRING "Additional compile options for katric's own targets (semicolon-separated)")
@@ -31,15 +30,11 @@ add_library(cetric-lib INTERFACE)
 file(GLOB_RECURSE CETRIC_HEADERS CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/include/*.h")
 target_sources(cetric-lib INTERFACE FILE_SET HEADERS BASE_DIRS include FILES ${CETRIC_HEADERS})
 target_compile_features(cetric-lib INTERFACE cxx_std_20)
-if(CETRIC_USE_ABSEIL)
-  set(CETRIC_HASH_TABLE_TARGETS absl::flat_hash_map absl::flat_hash_set absl::hash)
-  target_compile_definitions(cetric-lib INTERFACE CETRIC_USE_ABSEIL)
-else()
-  set(CETRIC_HASH_TABLE_TARGETS sparsehash::sparsehash)
-endif()
 target_link_libraries(
   cetric-lib
-  INTERFACE ${CETRIC_HASH_TABLE_TARGETS}
+  INTERFACE absl::flat_hash_map
+            absl::flat_hash_set
+            absl::hash
             tlx
             cereal::cereal
             magic_enum::magic_enum
@@ -47,7 +42,6 @@ target_link_libraries(
             spdlog::spdlog
             kassert::kassert
             kamping::types
-            utils_tm
             graph-io
             message-queue
             # last: a system TBB adds e.g. /opt/homebrew/include, which must not shadow pinned fmt/spdlog/abseil headers

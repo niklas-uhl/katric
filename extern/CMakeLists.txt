@@ -60,7 +60,7 @@ FetchContent_Declare(
   GIT_TAG 2dd63ab839909f0b43cd02108a1869c4670b2c8e
   SYSTEM EXCLUDE_FROM_ALL)
 
-# Hash tables: Abseil with CETRIC_USE_ABSEIL, sparsehash otherwise.
+# Hash tables.
 set(ABSL_PROPAGATE_CXX_STD ON)
 set(ABSL_BUILD_TESTING OFF)
 FetchContent_Declare(
@@ -73,23 +73,7 @@ FetchContent_Declare(
   PATCH_COMMAND ${CMAKE_COMMAND} -DPATCH=${PROJECT_SOURCE_DIR}/cmake/patches/abseil_macos_no_define_xopen_source.patch
                 -P ${PROJECT_SOURCE_DIR}/cmake/apply_patch.cmake
   SYSTEM EXCLUDE_FROM_ALL)
-FetchContent_Declare(
-  sparsehash
-  GIT_REPOSITORY https://github.com/niklas-uhl/sparsehash-cmake
-  GIT_TAG 06457c996e01f4f222f6e9f9f4be088ce1e3901c # master
-  SYSTEM EXCLUDE_FROM_ALL)
-if(CETRIC_USE_ABSEIL)
-  FetchContent_MakeAvailable(absl)
-else()
-  FetchContent_MakeAvailable(sparsehash)
-endif()
 
-# header-only, no releases: pinned to a commit
-FetchContent_Declare(
-  utils_tm
-  GIT_REPOSITORY https://github.com/toobiased/utils_tm
-  GIT_TAG 40b3893ee8dc4896aca2313cbd8ac3c4551dc1de
-  SYSTEM EXCLUDE_FROM_ALL)
 
 # oneTBB is usually provided by the system (module, package manager): find_package is tried first, and it is only
 # fetched if that fails. Force fetching with -DFETCHCONTENT_TRY_FIND_PACKAGE_MODE=NEVER.
@@ -171,10 +155,8 @@ FetchContent_Declare(
   SYSTEM)
 
 # kagen has to be available before graph-io, which then reuses its target.
-FetchContent_MakeAvailable(cli11 fmt spdlog TBB cereal magic_enum kassert tlx utils_tm kamping kamping-spdlog-adapter kamping-v2 kagen graph-io message-queue)
+FetchContent_MakeAvailable(cli11 fmt spdlog TBB absl cereal magic_enum kassert tlx kamping kamping-spdlog-adapter kamping-v2 kagen graph-io message-queue)
 
-add_library(utils_tm INTERFACE)
-target_include_directories(utils_tm INTERFACE ${utils_tm_SOURCE_DIR})
 
 # Tooling and app/test-only dependencies.
 if(CETRIC_ENABLE_FORMAT_CMAKE)

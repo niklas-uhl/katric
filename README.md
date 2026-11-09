@@ -50,7 +50,7 @@ To compile this project you need:
 - [OpenMPI](https://www.open-mpi.org/) or [Intel MPI](https://www.intel.com/content/www/us/en/developer/tools/oneapi/mpi-library.html#gs.pr0oht)
 - OpenMP (optional, enabled by default; disable with `-DCETRIC_USE_OPENMP=OFF`). Required only for `--parallelization-method omp_for`.
 - oneTBB: used from the system if found, otherwise fetched
-- CMake 3.25 or higher and network access during configuration: all other dependencies (fmt, cereal, KaGen, tlx, Sparsehash, ...) are fetched via `FetchContent`, pinned to a release or commit.
+- CMake 3.25 or higher and network access during configuration: all other dependencies (Abseil, fmt, cereal, KaGen, tlx, ...) are fetched via `FetchContent`, pinned to a release or commit.
 
 ### Compiling
 
@@ -64,8 +64,7 @@ cmake --build --preset experiments
 cmake --workflow --preset dev   # Debug, warnings, assertions; configure, build and run the tests
 ```
 
-Options: `-DCETRIC_USE_ABSEIL=ON` uses Abseil's `flat_hash_map` instead of sparsehash's `dense_hash_map`,
-`-DCETRIC_USE_OPENMP=OFF` disables OpenMP.
+Option: `-DCETRIC_USE_OPENMP=OFF` disables OpenMP.
 
 For machine-specific settings (compiler, local checkouts of dependencies), copy `CMakeUserPresets.json.template` to
 `CMakeUserPresets.json` and adapt it; that file is not tracked.

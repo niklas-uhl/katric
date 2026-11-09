@@ -35,7 +35,8 @@
 #include <limits>
 #include <optional>
 #include <set>
-#include "cetric/datastructures/hash_map.h"
+#include <absl/container/flat_hash_map.h>
+#include <absl/container/flat_hash_set.h>
 #include <sstream>
 #include <stdexcept>
 #include <tuple>
@@ -50,7 +51,6 @@
 
 // #include <EliasFano.h>
 #include <ranges>
-#include <default_hash.hpp>
 #include <fmt/core.h>
 #include <graph-io/local_graph_view.h>
 #include <kassert/kassert.hpp>
@@ -1039,8 +1039,7 @@ public:
     template <typename NodeOrdering>
     void remove_in_edges_and_expand_ghosts(NodeOrdering&& node_ordering, execution_policy::sequential) {
         Degree                                                                    running_sum = 0;
-        hash_map<RankEncodedNodeId, std::vector<RankEncodedNodeId>> ghost_edges;
-        set_empty_key(ghost_edges, RankEncodedNodeId::sentinel());
+        absl::flat_hash_map<RankEncodedNodeId, std::vector<RankEncodedNodeId>> ghost_edges;
         for (auto node: local_nodes()) {
             for (auto neighbor: in_adj(node).neighbors()) {
                 if (neighbor.rank() != rank_) {

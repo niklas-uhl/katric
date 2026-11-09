@@ -28,14 +28,15 @@
 #include <cstdint>
 #include <functional>
 #include <limits>
+#include <utility>
 #include <ostream>
-#include "cetric/datastructures/hash_map.h"
+#include <absl/container/flat_hash_map.h>
+#include <absl/container/flat_hash_set.h>
 #include <mpi.h>
 
 #include <fmt/core.h>
 #include <fmt/ostream.h>
 #include <graph-io/graph_definitions.h>
-#include <hash/murmur2_hash.hpp>
 #include <kamping/types/mpi_type_traits.hpp>
 
 #include <spdlog/spdlog.h>
@@ -103,6 +104,11 @@ public:
     }
     inline bool operator!=(RankEncodedNodeId const& rhs) const {
         return value_ != rhs.value_;
+    }
+    /// Makes the type hashable with absl::Hash (used by absl::flat_hash_map/set).
+    template <typename H>
+    friend H AbslHashValue(H state, RankEncodedNodeId const& node) {
+        return H::combine(std::move(state), node.value_);
     }
     // operator std::uint64_t() const {
     //     return value_;
@@ -223,38 +229,13 @@ struct std::hash<cetric::graph::RankEncodedNodeId> {
 };
 
 namespace cetric {
-struct hash {
-    size_t operator()(int rank) const {
-        int local = rank;
-        return murmur.MurmurHash64A(&local, sizeof(int), murmur.seed);
-    }
-    size_t operator()(graph::RankEncodedNodeId node) const {
-        std::uint64_t local = node.data();
-        return murmur.MurmurHash64A(&local, sizeof(local), murmur.seed);
-    }
-    utils_tm::hash_tm::murmur2_hash murmur;
-};
-struct node_set : public hash_set<graph::RankEncodedNodeId, hash> {
-    explicit node_set() : hash_set<graph::RankEncodedNodeId, hash>() {
-        cetric::set_empty_key(*this, graph::RankEncodedNodeId::sentinel());
-    }
-    explicit node_set(size_t size) : hash_set<graph::RankEncodedNodeId, hash>(size) {
-        cetric::set_empty_key(*this, graph::RankEncodedNodeId::sentinel());
-    }
-};
+using node_set = absl::flat_hash_set<graph::RankEncodedNodeId>;
 
 template <typename K, typename V>
-using default_map = hash_map<K, V, hash>;
+using default_map = absl::flat_hash_map<K, V>;
 
 template <typename T>
-struct node_map : public hash_map<graph::RankEncodedNodeId, T, hash> {
-    explicit node_map() : hash_map<graph::RankEncodedNodeId, T, hash>() {
-        cetric::set_empty_key(*this, graph::RankEncodedNodeId::sentinel());
-    }
-    explicit node_map(size_t size) : hash_map<graph::RankEncodedNodeId, T, hash>(size) {
-        cetric::set_empty_key(*this, graph::RankEncodedNodeId::sentinel());
-    }
-};
+using node_map = absl::flat_hash_map<graph::RankEncodedNodeId, T>;
 } // namespace cetric
 
 // template <>

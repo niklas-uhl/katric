@@ -22,7 +22,8 @@
 #pragma once
 
 #include <iterator>
-#include "cetric/datastructures/hash_map.h"
+#include <absl/container/flat_hash_map.h>
+#include <absl/container/flat_hash_set.h>
 #include <utility>
 
 #include <fmt/ranges.h>
@@ -41,7 +42,6 @@ public:
           to_(to),
           index_map_(),
           data_(to - from) {
-        set_empty_key(index_map_, graph::RankEncodedNodeId::sentinel());
     }
 
     template <typename GhostIterator>
@@ -52,7 +52,6 @@ public:
           to_(to),
           index_map_(std::distance(ghost_begin, ghost_end)),
           data_(to - from + std::distance(ghost_begin, ghost_end)) {
-        set_empty_key(index_map_, graph::RankEncodedNodeId::sentinel());
         size_t index = to - from;
         for (auto current = ghost_begin; current != ghost_end; current++) {
             index_map_[*current] = index;
@@ -120,7 +119,7 @@ private:
     }
     graph::RankEncodedNodeId                                 from_;
     graph::RankEncodedNodeId                                 to_;
-    hash_map<graph::RankEncodedNodeId, size_t>               index_map_;
+    absl::flat_hash_map<graph::RankEncodedNodeId, size_t>               index_map_;
     std::vector<T>                                           data_;
 };
 } // namespace cetric

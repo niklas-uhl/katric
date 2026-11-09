@@ -29,7 +29,8 @@
 #include <cstddef>
 #include <iterator>
 #include <numeric>
-#include "cetric/datastructures/hash_map.h"
+#include <absl/container/flat_hash_map.h>
+#include <absl/container/flat_hash_set.h>
 #include <type_traits>
 
 #include <kassert/kassert.hpp>
@@ -137,7 +138,6 @@ template <typename T>
 class CompactBuffer {
 public:
     CompactBuffer(std::vector<T>& data, PEID rank [[maybe_unused]], PEID size) : views_(size), data_(data) {
-        set_empty_key(views_, size + 1);
     }
     VectorView<T>& operator[](PEID rank) {
         return views_[rank];
@@ -151,7 +151,7 @@ public:
     }
 
 private:
-    hash_map<PEID, VectorView<T>> views_;
+    absl::flat_hash_map<PEID, VectorView<T>> views_;
     std::vector<T>&                             data_;
 };
 
@@ -224,9 +224,9 @@ public:
     }
 
     template <typename T>
-    using hashed_view_buffer = hash_map<PEID, VectorView<T>>;
+    using hashed_view_buffer = absl::flat_hash_map<PEID, VectorView<T>>;
     template <typename T>
-    using HashedBuffer = hash_map<PEID, std::vector<T>>;
+    using HashedBuffer = absl::flat_hash_map<PEID, std::vector<T>>;
     template <class T, typename SendBuf = hashed_view_buffer<T>, typename RecvBuf = HashedBuffer<T>>
     static void sparse_all_to_all(
         SendBuf&                              to_send,
@@ -240,10 +240,8 @@ public:
         static_assert(std::is_same_v<RecvBuf, HashedBuffer<T>> || std::is_same_v<RecvBuf, CompactBuffer<T>>);
         constexpr bool compact_buffer = std::is_same_v<RecvBuf, CompactBuffer<T>>;
         if constexpr (compact_buffer) {
-            hash_map<PEID, std::vector<size_t>> size_buf(size);
-            hash_map<PEID, std::vector<size_t>> size_buf_recv(size);
-            set_empty_key(size_buf, -1);
-            set_empty_key(size_buf_recv, -1);
+            absl::flat_hash_map<PEID, std::vector<size_t>> size_buf(size);
+            absl::flat_hash_map<PEID, std::vector<size_t>> size_buf_recv(size);
             for (const auto& kv: to_send) {
                 if (!kv.second.empty()) {
                     size_buf[kv.first].emplace_back(kv.second.size());
@@ -352,8 +350,8 @@ public:
 
     template <class T, typename StatsType>
     static void sparse_all_to_all(
-        const hash_map<PEID, std::vector<T>>& send_buffers,
-        hash_map<PEID, std::vector<T>>&       recv_buffers,
+        const absl::flat_hash_map<PEID, std::vector<T>>& send_buffers,
+        absl::flat_hash_map<PEID, std::vector<T>>&       recv_buffers,
         MPI_Datatype                                        mpi_type,
         PEID                                                rank,
         PEID                                                size [[maybe_unused]],
@@ -468,8 +466,8 @@ public:
 
     template <class T>
     static void sparse_all_to_all(
-        hash_map<PEID, std::vector<T>>& send_buffers,
-        hash_map<PEID, std::vector<T>>& recv_buffers,
+        absl::flat_hash_map<PEID, std::vector<T>>& send_buffers,
+        absl::flat_hash_map<PEID, std::vector<T>>& recv_buffers,
         MPI_Datatype                                  mpi_type,
         PEID                                          rank,
         PEID                                          size,
@@ -481,8 +479,8 @@ public:
 
     template <typename T, typename StatsType>
     static void all_to_all(
-        hash_map<PEID, std::vector<T>>& send_buffers,
-        hash_map<PEID, std::vector<T>>& recv_buffers,
+        absl::flat_hash_map<PEID, std::vector<T>>& send_buffers,
+        absl::flat_hash_map<PEID, std::vector<T>>& recv_buffers,
         MPI_Datatype                                  mpi_type,
         PEID                                          rank,
         PEID                                          size,

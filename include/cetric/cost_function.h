@@ -31,7 +31,8 @@
 #include <functional>
 #include <limits>
 #include <numeric>
-#include "cetric/datastructures/hash_map.h"
+#include <absl/container/flat_hash_map.h>
+#include <absl/container/flat_hash_set.h>
 #include <stdexcept>
 #include <type_traits>
 #include <unordered_map>
@@ -217,7 +218,6 @@ public:
           node_to_idx_(G.local_node_count()),
           cost(G.local_node_count()),
           name(name) {
-        set_empty_key(node_to_idx_, -1);
         cetric::profiling::Timer t;
         size_t                   node_index = 0;
         auto                     nodes      = G.local_nodes();

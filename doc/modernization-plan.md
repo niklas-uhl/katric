@@ -54,8 +54,7 @@ A Caliper/Adiak measurement prototype is on `explore/caliper-adiak` (`34eb2b6`).
 - [x] MPI tests: register only rank counts `<= MPIEXEC_MAX_NUMPROCS`
 - [x] KaTestrophe v1.2.0 (declared before kamping-v2, which pins an older one): `KATESTROPHE_MAX_CORES` (cache,
       `MPIEXEC_MAX_NUMPROCS`) replaces katric's own core filter; tests call KaTestrophe directly, no wrapper functions
-- [ ] Remaining configure warnings (old `cmake_minimum_required`): sparsehash (goes away with Abseil), KaGen's
-      bundled xxHash (check a newer KaGen release)
+- [ ] Remaining configure warning (old `cmake_minimum_required`): KaGen's bundled xxHash (check a newer KaGen release)
 - [x] C++20 (`cxx_std_20` on `cetric-lib`). katric had always been compiled as C++17: legacy-message-queue forced
       `INTERFACE -std=c++17` (fixed there and in graph-io via `target_compile_features`); `GridPosition::operator==` made
       `const` (C++20 reversed-operator ambiguity)
@@ -68,16 +67,15 @@ A Caliper/Adiak measurement prototype is on `explore/caliper-adiak` (`34eb2b6`).
 
 ### 2. Hash tables: Abseil
 
-- [x] Option `CETRIC_USE_ABSEIL` (default OFF) with compile definition of the same name; abseil `20250814.0` or
-      sparsehash fetched depending on it
-- [x] `cetric/datastructures/hash_map.h`: `hash_map` / `hash_set` aliases and `set_empty_key` (no-op under Abseil);
-      all `google::dense_hash_*` uses ported, `set_deleted_key` dropped (nothing erases)
+- [x] Option `CETRIC_USE_ABSEIL` with a sparsehash/Abseil switch (`4847c53`), validated: all tests pass, all
+      non-timing counters identical
+- [x] Abseil only: sparsehash, the switch, `cetric::hash` (MurmurHash64A) and utils_tm dropped; `absl::Hash` with an
+      `AbslHashValue` hook in `RankEncodedNodeId`. This also fixes `default_map<NodeId, ...>` hashing 64-bit ids
+      through an `int` overload. Counters again identical
 - [x] macOS: abseil's `_XOPEN_SOURCE` patch applied via `cmake/apply_patch.cmake` (skips if applied, fails loudly
-      otherwise; no `|| true`); abseil linked before system packages (Homebrew's abseil headers shadowed it)
-- [x] Dead `compact_graph.h` / `simple_graph.h` removed instead of ported (not included anywhere, did not compile)
-- [x] Validated: all tests pass with both; all 130 non-timing counters (messages, volumes, wedges, intersections)
-      identical for cetric and ditric on com-amazon, 4 ranks
-- [ ] Decide whether to make Abseil the default, then drop sparsehash (also removes a configure warning)
+      otherwise); abseil linked before system packages (Homebrew's abseil headers shadowed it)
+- [x] Dead `compact_graph.h` / `simple_graph.h` removed instead of ported
+- [ ] Measure run time against the sparsehash version (`4847c53` without the option) on the cluster before merging
 
 ### 3. Measurement and JSON output
 
