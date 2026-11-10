@@ -32,7 +32,8 @@ set_target_properties(
   graph_datastructure_test load_balancing_test orientation_test communicator_test rank_encoded_node_id_test
   intersection_test PROPERTIES CXX_CLANG_TIDY "${CETRIC_CLANG_TIDY_COMMAND}")
 
-# End-to-end tests: run katric on the example graphs with each algorithm configuration and check the triangle count.
+# End-to-end tests: run katric on the example graphs with each algorithm configuration and check the triangle count
+# (against the expected value here and, via --verify, against the sequential reference count).
 if(TARGET katric)
   # Inputs as KaGen option strings ($<SEMICOLON>: a plain ; would split the CMake list). Files are read edge-balanced
   # (formerly read-edge-partitioned in the configs). rgg2d gives the same graph for 2 and 4 ranks; KaGen's GNM and RHG
@@ -59,7 +60,7 @@ if(TARGET katric)
           continue()
         endif()
         set(command ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} ${ranks} ${KATESTROPHE_MPIEXEC_OVERSUBSCRIBE_FLAG}
-                    ${MPIEXEC_PREFLAGS} $<TARGET_FILE:katric> ${args_${config}})
+                    ${MPIEXEC_PREFLAGS} $<TARGET_FILE:katric> --verify ${args_${config}})
         add_test(NAME katric.${graph}.${config}.${ranks}cores
                  COMMAND ${CMAKE_COMMAND} "-DCOMMAND=${command}" "-DKAGEN_OPTION_STRING=${kagen_${graph}}"
                          -DEXPECTED=${expected} -P ${CMAKE_CURRENT_SOURCE_DIR}/check_triangle_count.cmake)

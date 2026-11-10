@@ -58,6 +58,7 @@ struct Config {
     double                max_degree_threshold_alpha        = 1.0;
     bool                  empty_pending_buffers_on_overflow = false;
     size_t                iterations                        = 1;
+    bool                  verify                            = false;
     std::string           primary_cost_function             = "N";
     std::string           secondary_cost_function           = "none";
     Algorithm             algorithm                         = Algorithm::cetric;

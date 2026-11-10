@@ -47,15 +47,14 @@
 #ifdef CETRIC_HAS_OPENMP
     #include <omp.h>
 #endif
-#include <tbb/blocked_range.h>
-#include <tbb/enumerable_thread_specific.h>
 #include <tbb/global_control.h>
-#include <tbb/parallel_for.h>
 #include <tbb/task_arena.h>
 #include <unistd.h>
 
+#include "./algorithm.h"
 #include "./input.h"
 #include "./parse_parameters.h"
+#include "./verify.h"
 #include "CLI/Error.hpp"
 #include "cetric/caliper.h"
 #include "cetric/config.h"
@@ -92,6 +91,12 @@ cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::P
         ->required();
 
     app.add_option("--iterations", conf.iterations);
+    app.add_flag(
+        "--verify",
+        conf.verify,
+        "Check the triangle count of every iteration against a sequential count on the graph gathered to rank 0 "
+        "(small inputs only); exit with 1 on a mismatch"
+    );
 
     app.add_option("--primary-cost-function", conf.primary_cost_function)
         ->transform(CLI::IsMember({"none", "N", "D", "DH", "DDH", "DH2", "DPD", "IDPD", "D*"}));
@@ -199,11 +204,13 @@ int main(int argc, char* argv[]) {
     }
     cetric::PEID rank;
     cetric::PEID size;
+    int          exit_code = 0;
     {
         MPI_Comm_rank(MPI_COMM_WORLD, &rank);
         MPI_Comm_size(MPI_COMM_WORLD, &size);
         DEBUG_BARRIER(rank);
         cetric::Config      conf = parse_config(argc, argv, rank, size);
+        size_t              expected_triangles = 0;
         tbb::global_control global_limit(tbb::global_control::max_allowed_parallelism, conf.num_threads);
 
 #ifdef CETRIC_HAS_OPENMP
@@ -231,21 +238,6 @@ int main(int argc, char* argv[]) {
         }
 #endif
 
-        // The input is generated (or read) once; every iteration starts from a copy of this unmodified local graph.
-        cetric::profiling::Timer input_timer;
-        cetric::LocalInput       input;
-        try {
-            input = cetric::to_local_input(cetric::generate_input(conf.kagen_option_string, MPI_COMM_WORLD));
-        } catch (std::exception const& e) {
-            SPDLOG_CRITICAL("KaGen failed for --kagen_option_string '{}': {}", conf.kagen_option_string, e.what());
-            MPI_Abort(MPI_COMM_WORLD, 1);
-        }
-        double local_input_time = input_timer.elapsed_time();
-        double input_time       = 0;
-        MPI_Allreduce(&local_input_time, &input_time, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
-        if (rank == 0) {
-            SPDLOG_INFO("input: {:.6f} s", input_time);
-        }
         // Caliper: region times and counters aggregated across ranks, iterations annotated as a loop; Adiak holds the
         // run metadata
         cali::ConfigManager caliper;
@@ -263,62 +255,70 @@ int main(int argc, char* argv[]) {
             }
             adiak::value("git_commit", conf.git_commit);
             adiak::collect_all(); // user, launch date, command line, hosts, job size, MPI version, ...
-            adiak::value("input_time", input_time);
             caliper.start();
         }
+
+        // The input is generated (or read) once and ingested; every iteration resets the algorithm to that state.
+        auto const   algorithm = cetric::make_algorithm(conf);
+        kagen::Graph graph;
+        {
+            CALI_CXX_MARK_SCOPE("input");
+            try {
+                graph = cetric::generate_input(conf.kagen_option_string, MPI_COMM_WORLD);
+            } catch (std::exception const& e) {
+                SPDLOG_CRITICAL("KaGen failed for --kagen_option_string '{}': {}", conf.kagen_option_string, e.what());
+                MPI_Abort(MPI_COMM_WORLD, 1);
+            }
+        }
+        if (conf.verify) {
+            CALI_CXX_MARK_SCOPE("verify");
+            expected_triangles = cetric::reference_triangle_count(graph, MPI_COMM_WORLD);
+            if (rank == 0) {
+                SPDLOG_INFO("reference: {} triangles", expected_triangles);
+            }
+        }
+        {
+            CALI_CXX_MARK_SCOPE("ingest");
+            algorithm->ingest(std::move(graph));
+        }
+
         size_t           triangles = 0;
+        bool             mismatch  = false;
         double           min_time  = std::numeric_limits<double>::max();
         cali::Annotation iteration_annotation("iteration", CALI_ATTR_NESTED);
         for (size_t iter = 0; iter < conf.iterations; ++iter) {
             iteration_annotation.begin(static_cast<int>(iter));
             MPI_Barrier(MPI_COMM_WORLD);
-
-            auto                                    local_graph = input.G;
-            cetric::graph::DistributedGraph<>       G(std::move(local_graph), input.node_range, rank, size);
-            tbb::enumerable_thread_specific<size_t> wedges = 0;
-            tbb::parallel_for(tbb::blocked_range(G.local_nodes().begin(), G.local_nodes().end()), [&](auto const& r) {
-                for (auto node: r) {
-                    auto degree = G.degree(node);
-                    wedges.local() += (degree * (degree - 1)) / 2;
-                }
-            });
-            cetric::profiling::counter_add("wedges", wedges.combine(std::plus<>{}));
-            SPDLOG_DEBUG("Finished conversion");
+            {
+                CALI_CXX_MARK_SCOPE("reset");
+                algorithm->reset();
+            }
             MPI_Barrier(MPI_COMM_WORLD);
             double local_time = 0;
             {
                 // the algorithm's run time; its maximum across ranks in the timers output is the iteration's run time
                 CALI_CXX_MARK_SCOPE("total");
                 cetric::profiling::Timer timer;
-                if (conf.algorithm == cetric::Algorithm::cetric) {
-                    if (conf.communication_policy == "new") {
-                        triangles =
-                            run_cetric(G, conf, rank, size, cetric::MessageQueuePolicy{}, conf.id_node_ordering);
-                    } else if (conf.communication_policy == "grid") {
-                        triangles = run_cetric(G, conf, rank, size, cetric::GridPolicy{}, conf.id_node_ordering);
-                    }
-                } else if (conf.algorithm == cetric::Algorithm::patric) {
-                    if (conf.communication_policy == "new") {
-                        triangles = run_patric(G, conf, rank, size, cetric::MessageQueuePolicy{});
-                    } else if (conf.communication_policy == "grid") {
-                        triangles = run_patric(G, conf, rank, size, cetric::GridPolicy{});
-                    }
-                } else if (conf.algorithm == cetric::Algorithm::cetric_x) {
-                    if (conf.communication_policy == "new") {
-                        triangles = run_cetric_new(G, conf, rank, size, cetric::MessageQueuePolicy{});
-                    } else if (conf.communication_policy == "grid") {
-                        triangles = run_cetric_new(G, conf, rank, size, cetric::GridPolicy{});
-                    }
-                }
+                algorithm->run();
                 MPI_Barrier(MPI_COMM_WORLD);
                 local_time = timer.elapsed_time();
             }
             iteration_annotation.end();
+            triangles   = algorithm->triangle_count();
             double time = 0; // only for the log, Caliper's results are available after the run
             MPI_Reduce(&local_time, &time, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
             min_time = std::min(min_time, time);
             if (rank == 0) {
                 SPDLOG_INFO("iteration {}/{}: {:.6f} s, {} triangles", iter + 1, conf.iterations, time, triangles);
+                if (conf.verify && triangles != expected_triangles) {
+                    SPDLOG_ERROR(
+                        "iteration {}: {} triangles, expected {} (reference)",
+                        iter + 1,
+                        triangles,
+                        expected_triangles
+                    );
+                    mismatch = true;
+                }
             }
         }
         if (!conf.caliper_config.empty()) {
@@ -329,6 +329,9 @@ int main(int argc, char* argv[]) {
         if (rank == 0 && conf.iterations > 1) {
             SPDLOG_INFO("min time: {:.6f} s", min_time);
         }
+        MPI_Bcast(&mismatch, 1, MPI_CXX_BOOL, 0, MPI_COMM_WORLD);
+        exit_code = mismatch ? 1 : 0;
     }
-    return MPI_Finalize();
+    MPI_Finalize();
+    return exit_code;
 }
