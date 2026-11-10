@@ -47,10 +47,8 @@ target_link_libraries(
             # last: a system TBB adds e.g. /opt/homebrew/include, which must not shadow pinned fmt/spdlog/abseil headers
             MPI::MPI_CXX
             TBB::tbb)
-# kassert only reads the level from a KASSERT_ASSERTION_LEVEL property on each consuming target, never from the cache
-# variable, so the variable is passed on as a definition here.
-target_compile_definitions(cetric-lib INTERFACE SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_${CETRIC_ACTIVE_LOG_LEVEL}
-                                                KASSERT_ASSERTION_LEVEL=${KASSERT_ASSERTION_LEVEL})
+# KASSERT_ASSERTION_LEVEL is applied by kassert itself (it is the default level of the instance, see extern/).
+target_compile_definitions(cetric-lib INTERFACE SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_${CETRIC_ACTIVE_LOG_LEVEL})
 if(CETRIC_USE_OPENMP)
   target_link_libraries(cetric-lib INTERFACE OpenMP::OpenMP_CXX)
   target_compile_definitions(cetric-lib INTERFACE CETRIC_HAS_OPENMP)

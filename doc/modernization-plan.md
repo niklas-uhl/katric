@@ -32,11 +32,10 @@ A Caliper/Adiak measurement prototype is on `explore/caliper-adiak` (`34eb2b6`).
       `CMakeUserPresets.json`
 - [x] `KASSERT_ASSERTION_LEVEL` actually reaches the code (kassert reads a target property, not the variable, so
       katric's assertions were never at level 30 in Debug)
-- [ ] KaMPIng: `kamping::types` does not define `KAMPING_ASSERT_ASSERTION_LEVEL` (only `kamping::kamping` does), so
-      every TU including kamping-types prints a `#warning`. Worked around in `extern/CMakeLists.txt`; fixed upstream
-      (kassert `KASSERT_DEFAULT_ASSERTION_LEVEL`, kamping-types with its own kassert instance and
-      `KAMPING_TYPES_ASSERTION_LEVEL`, kamping-v2). Once kassert v1.1.0, kamping v0.3.2 and kamping-v2 are released:
-      bump the kamping and kamping-v2 pins and drop the workaround
+- [x] KaMPIng: `kamping::types` did not define its assertion level, so every TU including kamping-types printed a
+      `#warning`. Fixed upstream (kassert v1.1.0 `KASSERT_DEFAULT_ASSERTION_LEVEL`, kamping v0.3.2 with a kassert
+      instance of its own for kamping-types, kamping-v2 main); katric pins these, and `KASSERT_ASSERTION_LEVEL` is now
+      the default of katric's kassert instance instead of a definition on `cetric-lib`
 - [x] Replace the `PUBLIC -Wall -Wextra -pedantic` on `cetric-lib` with a `<project>_cxx_flags` interface target
       driven by a `*_CXX_FLAGS` cache variable
 - [x] Make `cetric-lib` an `INTERFACE` library (it only compiles an empty `null.cpp`); list headers in a

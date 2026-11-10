@@ -49,7 +49,7 @@ FetchContent_Declare(
 FetchContent_Declare(
   kassert
   GIT_REPOSITORY https://github.com/kamping-site/kassert
-  GIT_TAG v1.0.0
+  GIT_TAG v1.1.0
   GIT_SHALLOW ON
   SYSTEM EXCLUDE_FROM_ALL)
 
@@ -115,14 +115,14 @@ FetchContent_Declare(
   SYSTEM EXCLUDE_FROM_ALL)
 
 # KaMPIng (v1, master): provides kamping::types (MPI datatype mapping, used by katric) and kamping::kamping (used by the
-# spdlog adapter). Pinned to a commit so that kamping-v2 does not fetch an unpinned `main` of kamping-types; kamping-v2
-# and kamping-spdlog-adapter reuse these targets instead of fetching their own copies.
+# spdlog adapter). kamping-v2 and kamping-spdlog-adapter reuse these targets instead of fetching their own copies.
 set(KAMPING_ENABLE_REFLECTION OFF)
 set(KAMPING_ENABLE_SERIALIZATION OFF)
 FetchContent_Declare(
   kamping
   GIT_REPOSITORY https://github.com/kamping-site/kamping
-  GIT_TAG 001f21510a7edef33248a9d4063073a7b05b5696 # main
+  GIT_TAG v0.3.2
+  GIT_SHALLOW ON
   SYSTEM EXCLUDE_FROM_ALL)
 
 # MPI-aware logging setup (rank pattern, root-only and gather sinks) on top of spdlog.
@@ -136,7 +136,7 @@ FetchContent_Declare(
 FetchContent_Declare(
   kamping-v2
   GIT_REPOSITORY https://github.com/kamping-site/kamping-v2
-  GIT_TAG 21e1c3030592ea7f9e3e1b25c7edac1e2dea6dfc # main
+  GIT_TAG ff22928f1c827fc5e569d04827861d9e48b48337 # main
   SYSTEM EXCLUDE_FROM_ALL)
 
 set(GRAPH_IO_MMAP ON CACHE BOOL "use mmap")
@@ -154,22 +154,21 @@ FetchContent_Declare(
   GIT_TAG 57b0b8a6129a78dc277a992b04f818038c9669f8 # katric-legacy
   SYSTEM)
 
+# katric's own kassert instance (kassert::kassert, used by no other dependency). Its default level applies to every target
+# linking to it; a single target can override it with the KASSERT_ASSERTION_LEVEL property.
+block()
+  set(KASSERT_DEFAULT_ASSERTION_LEVEL ${KASSERT_ASSERTION_LEVEL})
+  FetchContent_MakeAvailable(kassert)
+endblock()
+
 # kagen has to be available before graph-io, which then reuses its target.
-FetchContent_MakeAvailable(cli11 fmt spdlog TBB absl cereal magic_enum kassert tlx kamping kamping-spdlog-adapter kamping-v2 kagen graph-io message-queue)
+FetchContent_MakeAvailable(cli11 fmt spdlog TBB absl cereal magic_enum tlx kamping kamping-spdlog-adapter kamping-v2 kagen graph-io message-queue)
 
 # GCC on AArch64 emits a -Wpsabi note for every function passing std::pair<double, double> (ABI change in GCC 10.1).
 # It is irrelevant as long as nothing is mixed with objects from GCC < 10.1, and it floods the KaGen build.
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   target_compile_options(KaGen PRIVATE -Wno-psabi)
 endif()
-
-# The pinned KaMPIng only attaches its assertion level (derived from KAMPING_ASSERTION_LEVEL) to the full `kamping`
-# target, not to `kamping_types`, so users of kamping::types alone get kassert's "assertion level was not set" #warning.
-# Forward the same definition to kamping_types. Fixed upstream (kamping-types gets its own kassert instance with a
-# default level); drop this once the pin includes that fix (kamping v0.3.2).
-get_target_property(_kamping_defs kamping INTERFACE_COMPILE_DEFINITIONS)
-list(FILTER _kamping_defs INCLUDE REGEX "KAMPING_ASSERT_ASSERTION_LEVEL=")
-target_compile_definitions(kamping_types INTERFACE ${_kamping_defs})
 
 
 # Tooling and app/test-only dependencies.
