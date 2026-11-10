@@ -25,6 +25,7 @@
 
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
+#include <kamping/types/mpi_type_traits.hpp>
 #include <mpi.h>
 
 #include "cetric/datastructures/distributed/distributed_graph.h"
@@ -113,11 +114,11 @@ TEST(DistributedGraphTest, loading_works) {
     MPI_Gatherv(
         nodes.data(),
         local_count,
-        MPI_NODE,
+        kamping::types::mpi_type_traits<NodeId>::data_type(),
         all_nodes.data(),
         counts.data(),
         displs.data(),
-        MPI_NODE,
+        kamping::types::mpi_type_traits<NodeId>::data_type(),
         0,
         MPI_COMM_WORLD
     );

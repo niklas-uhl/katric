@@ -175,9 +175,6 @@ inline std::ostream& operator<<(std::ostream& os, const RankEncodedNodeId& node_
 }
 using EdgeId = std::uint64_t;
 using Degree = NodeId;
-// MPI datatype of NodeId, EdgeId and Degree
-#define MPI_NODE MPI_UINT64_T
-
 template <typename NodeIdType>
 struct BasicEdge {
     NodeIdType tail{};

@@ -54,6 +54,7 @@
 #include <fmt/core.h>
 #include "cetric/datastructures/local_graph_view.h"
 #include <kassert/kassert.hpp>
+#include <kamping/types/mpi_type_traits.hpp>
 #include <tbb/blocked_range.h>
 #include <tbb/concurrent_unordered_map.h>
 #include <tbb/parallel_for_each.h>
@@ -401,7 +402,7 @@ public:
     inline EdgeId total_edge_count() const {
         EdgeId total_edge_count = local_edge_count();
         if (size_ > 1) {
-            MPI_Allreduce(MPI_IN_PLACE, &total_edge_count, 1, MPI_NODE, MPI_SUM, MPI_COMM_WORLD);
+            MPI_Allreduce(MPI_IN_PLACE, &total_edge_count, 1, kamping::types::mpi_type_traits<EdgeId>::data_type(), MPI_SUM, MPI_COMM_WORLD);
         }
         return total_edge_count;
     }
@@ -890,7 +891,7 @@ public:
         //     for_each_local_node([&](NodeId node) {
         //         nodes[node] = to_global_id(node);
         //     });
-        //     auto [all_nodes, displs] = CommunicationUtility::all_gather(nodes, MPI_NODE, MPI_COMM_WORLD, rank_,
+        //     auto [all_nodes, displs] = CommunicationUtility::all_gather(nodes, MPI_COMM_WORLD, rank_,
         //     size_); for (PEID rank = 0; rank < size_; rank++) {
         //         for (int i = displs[rank]; i < displs[rank + 1]; ++i) {
         //             NodeId node = all_nodes[i];

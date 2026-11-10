@@ -111,8 +111,8 @@ The Caliper/Adiak measurement (step 3) was developed on `explore/caliper-adiak` 
 - [x] ctest: file inputs via KaGen (`balance-edges`) plus an rgg2d generator input
 - [x] graph-io removed. katric has its own `LocalGraphView` (`datastructures/local_graph_view.h`, the input and
       load-balancing exchange format; `first_out()` replaces graph-io's hash-map indexer) and `BasicEdge`;
-      `MPI_NODE` is plain `MPI_UINT64_T` (the typo'd `#ifdef MPI_UNINT64_T` always fell back to
-      `MPI_UNSIGNED_LONG_LONG`). The KaGen conversion moved to `cetric/input.h`; the unit tests read the examples
+      `MPI_NODE` is gone (its typo'd `#ifdef MPI_UNINT64_T` always fell back to `MPI_UNSIGNED_LONG_LONG`, also for
+      `size_t` sums): every MPI call takes the datatype of its buffer from kamping-types' `mpi_type_traits`. The KaGen conversion moved to `cetric/input.h`; the unit tests read the examples
       via KaGen (`tests/test_graphs.h`). No input post-processing is left: KaGen's output is only converted.
       Counters identical to the previous commit. Not done: building `DistributedGraph` from `kagen::Graph`
       directly; kept `LocalGraphView` because the load balancing exchanges it and its message volume is counted

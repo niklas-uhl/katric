@@ -34,6 +34,7 @@
 
 #include <fmt/core.h>
 #include "cetric/datastructures/local_graph_view.h"
+#include <kamping/types/mpi_type_traits.hpp>
 #include <mpi.h>
 
 #include "cetric/config.h"
@@ -73,7 +74,7 @@ private:
         }
 
         size_t global_prefix;
-        MPI_Exscan(&prefix_sum, &global_prefix, 1, MPI_NODE, MPI_SUM, MPI_COMM_WORLD);
+        MPI_Exscan(&prefix_sum, &global_prefix, 1, kamping::types::mpi_type_traits<size_t>::data_type(), MPI_SUM, MPI_COMM_WORLD);
         if (conf.rank == 0) {
             global_prefix = 0;
         }
@@ -81,7 +82,7 @@ private:
         if (conf.rank == conf.PEs - 1) {
             total_cost = global_prefix + prefix_sum;
         }
-        MPI_Bcast(&total_cost, 1, MPI_NODE, conf.PEs - 1, MPI_COMM_WORLD);
+        MPI_Bcast(&total_cost, 1, kamping::types::mpi_type_traits<size_t>::data_type(), conf.PEs - 1, MPI_COMM_WORLD);
         size_t                                                     per_pe_cost = (total_cost + conf.PEs - 1) / conf.PEs;
         absl::flat_hash_map<PEID, GraphCommunicator::NodeRange> to_send(conf.PEs);
         for (size_t node = 0; node < cost.size(); ++node) {

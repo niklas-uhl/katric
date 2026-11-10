@@ -34,6 +34,7 @@
 #include <vector>
 
 #include <kamping/types/contiguous_type.hpp>
+#include <kamping/types/mpi_type_traits.hpp>
 #include <kamping/types/scoped_datatype.hpp>
 #include <tlx/multi_timer.hpp>
 
@@ -117,7 +118,7 @@ public:
             CommunicationUtility::sparse_all_to_all(
                 send_buffers,
                 receive_buffers,
-                MPI_NODE,
+                kamping::types::mpi_type_traits<RankEncodedNodeId>::data_type(),
                 rank_,
                 size_,
                 message_tag_
@@ -126,7 +127,7 @@ public:
             CommunicationUtility::all_to_all(
                 send_buffers,
                 receive_buffers,
-                MPI_NODE,
+                kamping::types::mpi_type_traits<RankEncodedNodeId>::data_type(),
                 rank_,
                 size_,
                 message_tag_
@@ -248,7 +249,7 @@ public:
     //             });
     //         }
     //     }
-    //     CommunicationUtility::sparse_all_to_all(send_buffers, receive_buffers, MPI_NODE, rank_, size_, stats,
+    //     CommunicationUtility::sparse_all_to_all(send_buffers, receive_buffers,  rank_, size_, stats,
     //                                             message_tag_ + 1);
     //     for (const auto& elem : receive_buffers) {
     //         const std::vector<NodeId>& buffer = elem.second;
@@ -314,7 +315,15 @@ private:
         cetric::profiling::MessageStatistics   stats;
         stats.send_volume += 2;
         stats.receive_volume += 2;
-        int errcode = MPI_Alltoall(to_send.data(), 2, MPI_NODE, to_receive.data(), 2, MPI_NODE, MPI_COMM_WORLD);
+        int errcode = MPI_Alltoall(
+            to_send.data(),
+            2,
+            kamping::types::mpi_type_traits<NodeId>::data_type(),
+            to_receive.data(),
+            2,
+            kamping::types::mpi_type_traits<NodeId>::data_type(),
+            MPI_COMM_WORLD
+        );
         check_mpi_error(errcode, __FILE__, __LINE__);
 
         std::vector<int> send_counts(size);
@@ -373,11 +382,11 @@ private:
             G.edge_heads.data(),
             send_counts.data(),
             send_displs.data(),
-            MPI_NODE,
+            kamping::types::mpi_type_traits<NodeId>::data_type(),
             head.data(),
             recv_counts.data(),
             recv_displs.data(),
-            MPI_NODE,
+            kamping::types::mpi_type_traits<NodeId>::data_type(),
             MPI_COMM_WORLD
         );
         check_mpi_error(errcode, __FILE__, __LINE__);

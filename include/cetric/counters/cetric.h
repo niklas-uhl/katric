@@ -33,6 +33,7 @@
 #include "cetric/datastructures/local_graph_view.h"
 #include <kassert/internal/assertion_macros.hpp>
 #include <kassert/kassert.hpp>
+#include <kamping/types/mpi_type_traits.hpp>
 #include <mpi.h>
 #include <tbb/combinable.h>
 #include <tbb/concurrent_vector.h>
@@ -303,7 +304,15 @@ inline size_t run_patric(DistributedGraph<>& G, const Config& conf, PEID rank, P
     size_t counted_triangles = 0;
     {
         CALI_CXX_MARK_SCOPE("reduction");
-        MPI_Reduce(&triangle_count, &counted_triangles, 1, MPI_NODE, MPI_SUM, 0, MPI_COMM_WORLD);
+        MPI_Reduce(
+            &triangle_count,
+            &counted_triangles,
+            1,
+            kamping::types::mpi_type_traits<size_t>::data_type(),
+            MPI_SUM,
+            0,
+            MPI_COMM_WORLD
+        );
     }
     verify_triangles(triangles, triangle_count);
     return counted_triangles;
@@ -510,7 +519,15 @@ inline size_t run_cetric(
     size_t counted_triangles = 0;
     {
         CALI_CXX_MARK_SCOPE("reduce");
-        MPI_Reduce(&triangle_count, &counted_triangles, 1, MPI_NODE, MPI_SUM, 0, MPI_COMM_WORLD);
+        MPI_Reduce(
+            &triangle_count,
+            &counted_triangles,
+            1,
+            kamping::types::mpi_type_traits<size_t>::data_type(),
+            MPI_SUM,
+            0,
+            MPI_COMM_WORLD
+        );
     }
     verify_triangles(triangles, triangle_count);
     return counted_triangles;
@@ -717,7 +734,15 @@ inline size_t run_cetric_new(DistributedGraph<>& G, const Config& conf, PEID ran
     size_t counted_triangles = 0;
     {
         CALI_CXX_MARK_SCOPE("reduce");
-        MPI_Reduce(&triangle_count, &counted_triangles, 1, MPI_NODE, MPI_SUM, 0, MPI_COMM_WORLD);
+        MPI_Reduce(
+            &triangle_count,
+            &counted_triangles,
+            1,
+            kamping::types::mpi_type_traits<size_t>::data_type(),
+            MPI_SUM,
+            0,
+            MPI_COMM_WORLD
+        );
     }
     verify_triangles(triangles, triangle_count);
     return counted_triangles;

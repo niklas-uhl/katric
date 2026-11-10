@@ -21,6 +21,7 @@
 
 #include <gtest/gtest.h>
 #include "cetric/load_balancing.h"
+#include <kamping/types/mpi_type_traits.hpp>
 #include <mpi.h>
 #include "cetric/util.h"
 
@@ -74,7 +75,7 @@ TEST_P(LoadBalancing, BalancingWithConstCost) {
     }
     NodeId local_node_count = G_view.node_info.size();
     NodeId total_node_count = 0;
-    MPI_Reduce(&local_node_count, &total_node_count, 1, MPI_NODE, MPI_SUM, 0, MPI_COMM_WORLD);
+    MPI_Reduce(&local_node_count, &total_node_count, 1, kamping::types::mpi_type_traits<NodeId>::data_type(), MPI_SUM, 0, MPI_COMM_WORLD);
     if (rank == 0) {
         ASSERT_EQ(total_node_count, G_full.size());
     }
@@ -100,7 +101,7 @@ TEST_P(LoadBalancing, BalancingWithDegree) {
     }
     NodeId local_node_count = G_view.node_info.size();
     NodeId total_node_count = 0;
-    MPI_Reduce(&local_node_count, &total_node_count, 1, MPI_NODE, MPI_SUM, 0, MPI_COMM_WORLD);
+    MPI_Reduce(&local_node_count, &total_node_count, 1, kamping::types::mpi_type_traits<NodeId>::data_type(), MPI_SUM, 0, MPI_COMM_WORLD);
     if (rank == 0) {
         ASSERT_EQ(total_node_count, G_full.size());
     }
