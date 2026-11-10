@@ -90,8 +90,23 @@ If you want to enable the grid-based 2D indirect routing of messages, load the a
 
 To use the hybrid implementation add `--config configs/hybrid.toml` and control the number of threads used per MPI rank via the `--num-threads` parameter.
 
-By default, this only prints the running time and the total number of triangles to stdout.
-For detailed metrics of all algorithm phases and communication, use the `--json-ouput` flag with `stdout` or a outfile as parameter.
+By default, this only logs the running time and the number of triangles of each iteration.
+
+### Profiling
+Phase times and counters (wedge checks, intersection sizes, messages and volume, ...) are measured with
+[Caliper](https://github.com/LLNL/Caliper), aggregated across ranks (min/max/avg or sum), with the configuration and
+system information recorded via [Adiak](https://github.com/LLNL/Adiak):
+
+```shell
+mpiexec -np <NUM_PES> build/apps/katric <GRAPH> --config configs/cetric.toml --caliper-output run
+# run.timers.json:   per region (e.g. "0/total/local_phase" in iteration 0) min/max/avg time in s and calls
+# run.counters.json: per region and counter min/max/sum across ranks
+# both contain the run metadata ("globals"); scripts/caliper_to_json.py merges them into one document
+```
+
+`--caliper-config` selects other Caliper configs, e.g. `spot,katric-counters` writes the times as `run.cali` for
+[Thicket](https://github.com/LLNL/thicket), and `runtime-report` prints a region tree. Caliper's `CALI_CONFIG`
+environment variable works independently of these options.
 
 For additional parameters see `--help`.
 

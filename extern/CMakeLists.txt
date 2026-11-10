@@ -178,6 +178,9 @@ endblock()
 # Caliper builds its own tests (and googletest) if BUILD_TESTING is on
 block()
   set(BUILD_TESTING OFF)
+  # Caliper's MPI wrapper generator (wrap.py) fails on Python 3.15 ("Cannot use capturing groups in re.Scanner");
+  # pick an older interpreter, which Caliper's own find_package(Python) then reuses.
+  find_package(Python 3.6...<3.15 COMPONENTS Interpreter REQUIRED)
   FetchContent_MakeAvailable(adiak)
   # Adiak's BLT setup redirects the output directories of *all* targets into its own build directory
   unset(CMAKE_RUNTIME_OUTPUT_DIRECTORY CACHE)

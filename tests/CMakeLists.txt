@@ -18,14 +18,15 @@ add_executable(communicator_test gather_test.cpp)
 target_link_libraries(communicator_test PRIVATE KaTestrophe::main cetric-lib cetric_cxx_flags)
 katestrophe_add_mpi_test(communicator_test CORES 2 4 8 16)
 
-# Sequential tests.
+# Sequential tests. The first launch of a freshly linked binary can take seconds on macOS (more than gtest's default
+# discovery timeout of 5 s during a parallel build).
 add_executable(rank_encoded_node_id_test rank_encoded_node_id_test.cpp)
 target_link_libraries(rank_encoded_node_id_test PRIVATE GTest::gmock GTest::gtest_main cetric-lib cetric_cxx_flags)
-gtest_discover_tests(rank_encoded_node_id_test)
+gtest_discover_tests(rank_encoded_node_id_test DISCOVERY_TIMEOUT 60)
 
 add_executable(intersection_test intersection_test.cpp)
 target_link_libraries(intersection_test PRIVATE GTest::gmock GTest::gtest_main cetric-lib cetric_cxx_flags)
-gtest_discover_tests(intersection_test)
+gtest_discover_tests(intersection_test DISCOVERY_TIMEOUT 60)
 
 # End-to-end tests: run katric on the example graphs with each algorithm configuration and check the triangle count.
 if(TARGET katric)
