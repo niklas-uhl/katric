@@ -2,7 +2,7 @@
 """Merge the JSON written by katric's `katric-timers` and `katric-counters` Caliper configs (run with
 `--caliper-config katric-timers,katric-counters --caliper-output <prefix>`) into one JSON document per run:
 
-  {"config": ..., "triangles": N, "wall_times": [...],
+  {"config": ..., "triangles": N, "wall_times": [per iteration: maximum time of the "total" region],
    "timer":    [per iteration {region: {min, max, avg, exclusive_max, calls}}],
    "counters": [per iteration {region: {name: {min, max, sum}}}]}
 
@@ -34,13 +34,6 @@ def unflatten(flat, prefix):
         return node
 
     return listify(root)
-
-
-def parse_list(value):
-    """Adiak writes vectors as the string '{a,b,c}'."""
-    if isinstance(value, str) and value.startswith("{") and value.endswith("}"):
-        return [float(x) for x in value[1:-1].split(",") if x]
-    return value
 
 
 def split_path(path):
@@ -84,7 +77,7 @@ def main():
         {
             "config": unflatten(globals_, "config"),
             "triangles": globals_.get("triangles"),
-            "wall_times": parse_list(globals_.get("wall_times")),
+            "wall_times": [timer[i].get("total", {}).get("max") for i in sorted(timer)],
             "timer": [timer[i] for i in sorted(timer)],
             "counters": [counter.get(i, {}) for i in sorted(timer)],
         },
