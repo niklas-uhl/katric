@@ -52,12 +52,12 @@
 #include <unistd.h>
 
 #include "./algorithm.h"
-#include "./input.h"
 #include "./parse_parameters.h"
 #include "./verify.h"
 #include "CLI/Error.hpp"
 #include "cetric/caliper.h"
 #include "cetric/config.h"
+#include "cetric/input.h"
 #include "cetric/counters/cetric_edge_iterator.h"
 #include "cetric/datastructures/distributed/distributed_graph.h"
 #include "cetric/datastructures/graph_definitions.h"

@@ -19,9 +19,6 @@
 
 #include <cstddef>
 
-#include <graph-io/distributed_graph_io.h>
-#include <graph-io/local_graph_view.h>
-#include <graph-io/parsing.h>
 #include <gtest/gtest.h>
 #include "cetric/load_balancing.h"
 #include <mpi.h>
@@ -29,10 +26,11 @@
 
 #include "cetric/datastructures/distributed/distributed_graph.h"
 #include "cetric/datastructures/graph_definitions.h"
+#include "test_graphs.h"
 
 namespace {
 using namespace cetric;
-using namespace graphio;
+using namespace cetric::graph;
 class LoadBalancing : public ::testing::TestWithParam<const char*> {
 protected:
     void SetUp() override {
@@ -45,26 +43,17 @@ protected:
         MPI_Comm_rank(MPI_COMM_WORLD, &rank);
         MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-        // our metis parser should work sequentially, so we read the whole graph
-        EdgeId total_number_of_edges = 0;
-        graphio::internal::read_metis(
-            input,
-            [&](NodeId node_count, EdgeId edge_count) {
-                G_full.resize(node_count);
-                total_number_of_edges = edge_count;
-            },
-            [](NodeId) {},
-            [&](graphio::Edge<> edge) { G_full[edge.tail].push_back(edge); }
-        );
+        // the whole graph, read on every rank
+        G_full = cetric::testing::read_full_graph(input);
 
         conf.PEs  = size;
         conf.rank = rank;
 
         // read it distributed
-        G_view = graphio::read_local_graph(input, InputFormat::metis, rank, size).G;
+        G_view = cetric::testing::read_local_graph(input).G;
     }
 
-    std::vector<std::vector<graphio::Edge<>>> G_full;
+    std::vector<std::vector<Edge>>            G_full;
     LocalGraphView                            G_view;
     Config                                    conf;
     PEID                                      rank, size;

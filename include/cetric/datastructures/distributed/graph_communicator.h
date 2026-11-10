@@ -33,7 +33,6 @@
 #include <tuple>
 #include <vector>
 
-#include <graph-io/local_graph_view.h>
 #include <kamping/types/contiguous_type.hpp>
 #include <kamping/types/scoped_datatype.hpp>
 #include <tlx/multi_timer.hpp>
@@ -402,13 +401,13 @@ private:
     ) {
         std::vector<std::pair<PEID, VectorView<LocalGraphView::NodeInfo>>> to_send_node_info;
         std::vector<std::pair<PEID, VectorView<NodeId>>>                   to_send_head;
-        auto                                                               idx = G.build_indexer();
+        auto const                                                         first_out = G.first_out();
         for (const auto& kv: nodes_to_send) {
             PEID             pe    = kv.first;
             const NodeRange& range = kv.second;
             to_send_node_info.emplace_back(pe, slice(G.node_info, range.from, range.to - range.from + 1));
-            auto edge_begin = idx.neighborhood_index_range(range.from).first;
-            auto edge_end   = idx.neighborhood_index_range(range.to).second;
+            auto edge_begin = first_out[range.from];
+            auto edge_end   = first_out[range.to + 1];
             to_send_head.emplace_back(pe, slice(G.edge_heads, edge_begin, edge_end - edge_begin));
         }
 

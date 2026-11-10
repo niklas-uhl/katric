@@ -36,7 +36,6 @@
 
 #include <fmt/core.h>
 #include <fmt/ostream.h>
-#include <graph-io/graph_definitions.h>
 #include <kamping/types/mpi_type_traits.hpp>
 
 #include <spdlog/spdlog.h>
@@ -176,17 +175,26 @@ inline std::ostream& operator<<(std::ostream& os, const RankEncodedNodeId& node_
 }
 using EdgeId = std::uint64_t;
 using Degree = NodeId;
-//#ifdef MPI_VERSION
-#ifdef MPI_UNINT64_T
-    #define MPI_NODE MPI_UINT64_T
-#else
-static_assert(sizeof(unsigned long long) == 8, "We expect an unsigned long long to have 64 bit");
-    #define MPI_NODE MPI_UNSIGNED_LONG_LONG
-#endif
-//#endif
+// MPI datatype of NodeId, EdgeId and Degree
+#define MPI_NODE MPI_UINT64_T
 
-using Edge            = graphio::Edge<>;
-using RankEncodedEdge = graphio::Edge<RankEncodedNodeId>;
+template <typename NodeIdType>
+struct BasicEdge {
+    NodeIdType tail{};
+    NodeIdType head{};
+
+    BasicEdge() = default;
+    BasicEdge(NodeIdType tail_, NodeIdType head_) : tail(tail_), head(head_) {}
+    [[nodiscard]] BasicEdge reverse() const {
+        return BasicEdge{head, tail};
+    }
+    friend bool operator==(BasicEdge const&, BasicEdge const&) = default;
+    friend std::ostream& operator<<(std::ostream& out, BasicEdge const& edge) {
+        return out << "(" << edge.tail << ", " << edge.head << ")";
+    }
+};
+using Edge            = BasicEdge<NodeId>;
+using RankEncodedEdge = BasicEdge<RankEncodedNodeId>;
 
 template <typename NodeIdType = NodeId>
 struct Triangle {

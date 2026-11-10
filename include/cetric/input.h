@@ -5,16 +5,16 @@
 #include <utility>
 #include <vector>
 
-#include <graph-io/local_graph_view.h>
 #include <kagen.h>
 #include <mpi.h>
 
 #include "cetric/datastructures/graph_definitions.h"
+#include "cetric/datastructures/local_graph_view.h"
 
 namespace cetric {
 
 /// Generates or reads the input graph as described by a KaGen option string, e.g.
-/// "rgg2d;n=16384;m=131072;seed=7" or "file;filename=graph.metis;input_format=metis;distribution=balance_edges".
+/// "rgg2d;n=16384;m=131072;seed=7" or "file;filename=graph.metis;input_format=metis;distribution=balance-edges".
 inline kagen::Graph generate_input(std::string const& kagen_option_string, MPI_Comm comm) {
     kagen::KaGen gen(comm);
     gen.UseCSRRepresentation();
@@ -23,7 +23,7 @@ inline kagen::Graph generate_input(std::string const& kagen_option_string, MPI_C
 
 /// The local part of a KaGen graph as the view katric's DistributedGraph is built from.
 struct LocalInput {
-    graphio::LocalGraphView                 G;
+    graph::LocalGraphView                   G;
     std::pair<graph::NodeId, graph::NodeId> node_range; // [first, last) global ids of the local vertices
 };
 

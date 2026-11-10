@@ -52,7 +52,7 @@ target_link_libraries(
             spdlog::spdlog
             kassert::kassert
             kamping::types
-            graph-io
+            KaGen::KaGen
             message-queue
             caliper
             adiak

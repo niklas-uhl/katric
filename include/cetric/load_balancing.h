@@ -33,7 +33,7 @@
 #include <vector>
 
 #include <fmt/core.h>
-#include <graph-io/local_graph_view.h>
+#include "cetric/datastructures/local_graph_view.h"
 #include <mpi.h>
 
 #include "cetric/config.h"

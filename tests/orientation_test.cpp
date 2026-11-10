@@ -21,8 +21,6 @@
 #include <unordered_map>
 
 #include <gmock/gmock-matchers.h>
-#include <graph-io/distributed_graph_io.h>
-#include <graph-io/parsing.h>
 #include <gtest/gtest.h>
 #include <mpi.h>
 
@@ -32,6 +30,7 @@
 #include "cetric/datastructures/graph_definitions.h"
 #include "cetric/load_balancing.h"
 #include "cetric/util.h"
+#include "test_graphs.h"
 
 namespace {
 class Orientation : public ::testing::TestWithParam<const char*> {
@@ -46,26 +45,17 @@ protected:
         MPI_Comm_rank(MPI_COMM_WORLD, &rank);
         MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-        // our metis parser should work sequentially, so we read the whole graph
-        cetric::EdgeId total_number_of_edges = 0;
-        graphio::internal::read_metis(
-            input,
-            [&](cetric::NodeId node_count, cetric::EdgeId edge_count) {
-                G_full.resize(node_count);
-                total_number_of_edges = edge_count;
-            },
-            [](cetric::NodeId) {},
-            [&](cetric::Edge edge) { G_full[edge.tail].push_back(edge); }
-        );
+        // the whole graph, read on every rank
+        G_full = cetric::testing::read_full_graph(input);
 
         conf.PEs  = size;
         conf.rank = rank;
 
         // read it distributed
-        graphio::IOResult result = graphio::read_local_graph(input, graphio::InputFormat::metis, rank, size);
-        G                        = cetric::graph::DistributedGraph<>(
+        auto result = cetric::testing::read_local_graph(input);
+        G           = cetric::graph::DistributedGraph<>(
             std::move(result.G),
-            {result.info.local_from, result.info.local_to},
+            result.node_range,
             rank,
             size
         );

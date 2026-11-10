@@ -52,7 +52,7 @@
 // #include <EliasFano.h>
 #include <ranges>
 #include <fmt/core.h>
-#include <graph-io/local_graph_view.h>
+#include "cetric/datastructures/local_graph_view.h"
 #include <kassert/kassert.hpp>
 #include <tbb/blocked_range.h>
 #include <tbb/concurrent_unordered_map.h>
@@ -74,7 +74,6 @@ class LoadBalancer;
 }
 namespace graph {
 
-using LocalGraphView = graphio::LocalGraphView;
 namespace node_ordering {
 struct id {
     explicit id(){};
@@ -371,7 +370,7 @@ public:
     }
     auto edges() const {
         return std::views::transform(neighbors(), [tail = tail_](NodeIdType neighbor) {
-            return graphio::Edge<NodeIdType>{RankEncodedNodeId(tail), neighbor};
+            return BasicEdge<NodeIdType>{NodeIdType(tail), neighbor};
         });
     }
 

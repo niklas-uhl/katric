@@ -39,7 +39,7 @@
 #include <utility>
 
 #include <fmt/core.h>
-#include <graph-io/local_graph_view.h>
+#include "cetric/datastructures/local_graph_view.h"
 #include <caliper/cali.h>
 #include <tbb/task_arena.h>
 

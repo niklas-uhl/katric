@@ -42,7 +42,7 @@
 #include <fmt/core.h>
 #include <fmt/ostream.h>
 #include <fmt/ranges.h>
-#include <graph-io/local_graph_view.h>
+#include "cetric/datastructures/local_graph_view.h"
 #include <mpi.h>
 #include <tbb/blocked_range.h>
 #include <tbb/parallel_scan.h>

@@ -111,7 +111,7 @@ FetchContent_Declare(
   GIT_SHALLOW ON
   SYSTEM EXCLUDE_FROM_ALL)
 
-# KaGen: katric's input (--kagen_option_string); graph-io reuses this target.
+# KaGen: katric's input (--kagen_option_string).
 set(KAGEN_BUILD_APPS OFF)
 set(KAGEN_BUILD_TOOLS OFF)
 set(KAGEN_BUILD_EXAMPLES OFF)
@@ -151,15 +151,8 @@ FetchContent_Declare(
   GIT_TAG ff22928f1c827fc5e569d04827861d9e48b48337 # main
   SYSTEM EXCLUDE_FROM_ALL)
 
-set(GRAPH_IO_MMAP ON CACHE BOOL "use mmap")
-FetchContent_Declare(
-  graph-io
-  GIT_REPOSITORY https://github.com/niklas-uhl/graph-io
-  GIT_TAG 44a1cd56b61f975a77289576619d61730c723b63 # fix-modern-toolchain
-  SYSTEM)
-
 set(MESSAGE_QUEUE_BLOCKING_RECEIVE ON CACHE BOOL "Receive messages blocking")
-# Legacy branch of message-queue (BriefKAsten) which reuses the graph-io target.
+# Legacy branch of message-queue (the predecessor of BriefKAsten).
 FetchContent_Declare(
   message-queue
   GIT_REPOSITORY https://github.com/niklas-uhl/message-queue
@@ -194,8 +187,7 @@ endblock()
 # the build-tree target does not export its include directories
 target_include_directories(caliper SYSTEM INTERFACE $<BUILD_INTERFACE:${caliper_SOURCE_DIR}/include> $<BUILD_INTERFACE:${caliper_BINARY_DIR}/include>)
 
-# kagen has to be available before graph-io, which then reuses its target.
-FetchContent_MakeAvailable(cli11 fmt spdlog TBB absl magic_enum tlx kamping kamping-spdlog-adapter kamping-v2 kagen graph-io message-queue)
+FetchContent_MakeAvailable(cli11 fmt spdlog TBB absl magic_enum tlx kamping kamping-spdlog-adapter kamping-v2 kagen message-queue)
 
 # GCC on AArch64 emits a -Wpsabi note for every function passing std::pair<double, double> (ABI change in GCC 10.1).
 # It is irrelevant as long as nothing is mixed with objects from GCC < 10.1, and it floods the KaGen build.

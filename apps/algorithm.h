@@ -14,10 +14,10 @@
 #include <tbb/enumerable_thread_specific.h>
 #include <tbb/parallel_for.h>
 
-#include "./input.h"
 #include "cetric/caliper.h"
 #include "cetric/config.h"
 #include "cetric/counters/cetric.h"
+#include "cetric/input.h"
 #include "cetric/datastructures/distributed/distributed_graph.h"
 
 namespace cetric {
