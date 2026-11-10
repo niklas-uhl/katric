@@ -360,10 +360,7 @@ int main(int argc, char* argv[]) {
                 adiak::value("config." + name, value);
             }
             adiak::value("git_commit", conf.git_commit);
-            adiak::cmdline();
-            adiak::hostname();
-            adiak::jobsize();
-            adiak::launchdate();
+            adiak::collect_all(); // user, launch date, command line, hosts, job size, MPI version, ...
             if (io_time.has_value()) {
                 adiak::value("io_time", io_time.value());
             }
