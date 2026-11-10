@@ -129,16 +129,23 @@ instead re-reads or regenerates the input in every iteration (`--cache-input non
 
 ### 4c. Static analysis: clang-tidy
 
-- [ ] Add a `.clang-tidy` modelled on KaCCv2's (`bugprone-*`, `mpi-*`, `performance-*`, `cppcoreguidelines-*`,
-      `modernize-*`, `readability-*`, `misc-*` without `misc-include-*`); `HeaderFilterRegex: 'include/cetric/'`,
-      identifier-length exceptions for `G`, `u`, `v`, `it`
-- [ ] Run it on `build/compile_commands.json` (the dev preset exports it; Homebrew's `run-clang-tidy`). The build
-      uses g++-16, so check whether clang-tidy copes with GCC-only flags and libstdc++ 16 headers; otherwise use a
-      clang preset for the analysis
-- [ ] Triage `bugprone-*`, `mpi-*` and `cppcoreguidelines-*` findings first and fix real bugs in separate commits,
-      each validated by triangle and message counts. No mass `modernize-*`/`readability-*` rewrite of the
-      algorithm headers (noisy diffs); apply those only to code that is being touched anyway (apps, new harness)
-- [ ] Optional afterwards: a `CETRIC_ENABLE_CLANG_TIDY` option or a CI job on the bug-finding checks only
+- [x] `.clang-tidy` modelled on KaCCv2's, `HeaderFilterRegex: 'include/cetric/'`; `bugprone-chained-comparison`
+      disabled (fires on every `KASSERT(a <op> b)`); `.clangd` adds `-std=c++20` (`08524a7`)
+- [x] `CETRIC_ENABLE_CLANG_TIDY` sets `CXX_CLANG_TIDY` on katric's executables and tests only, with
+      `--extra-arg=-std=c++20` (g++-16 defaults to C++20, so CMake passes no `-std` flag). Homebrew's clang-tidy
+      analyzes against libc++, not libstdc++ 16; good enough for finding bugs (`08524a7`)
+- [x] fmt 11.0.2 -> 12.2.1: the "does not compile with fmt 12" note was stale, and fmt 11.0.2's consteval format
+      strings broke clang-tidy in spdlog's error handler (`6d81118`)
+- [x] Bug-class findings fixed: forwarding of the comparator, `throw` of a string literal, identical branches,
+      moved-from `node_range` (`61fb64a`); `compact()` set the edge count from the moved-from `head_`, so the
+      compacted graph reported 0 local edges; counts and counters unchanged on com-amazon (`db45af4`)
+- [ ] Remaining findings, none a confirmed bug: ~98 `bugprone-narrowing-conversions` (`size_t` -> `int` MPI counts
+      and displacements in `graph_communicator.h`, `cetric.h`; overflow above 2^31 elements per PE, same as
+      plain MPI), uninitialized members of default-constructed graphs/configs (`cppcoreguidelines-pro-type-member-init`;
+      always assigned before use today), `InputCache` (goes away with `--cache-input`, step 4b)
+- [ ] No mass `modernize-*`/`readability-*` rewrite of the algorithm headers (noisy diffs); apply those only to code
+      that is being touched anyway (apps, new harness)
+- [ ] Optional: a CI job on the bug-finding checks only
 
 ### 5. Experiment runner: kaval
 
@@ -198,8 +205,7 @@ instead re-reads or regenerates the input in every iteration (`--cache-input non
 2. Abseil option — done (cluster timing open)
 3. Caliper/Adiak measurement and JSON output, replacing tlx timers and cereal — done (cluster overhead open)
 4. Next, in this order:
-   1. clang-tidy config and a first run on the algorithm headers (4c): small, and real bugs found now are fixed
-      before the harness refactor moves code around
+   1. clang-tidy config and a first run on the algorithm headers (4c) — done
    2. KaGen input generated once (4 + first item of 4b)
    3. Abstract algorithm, factory, `reset`, `--verify` (4b); then remove graph-io
 5. kaval switch and removal of the old runner scripts
