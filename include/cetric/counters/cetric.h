@@ -52,7 +52,6 @@
 #include "cetric/datastructures/distributed/helpers.h"
 #include "cetric/datastructures/graph_definitions.h"
 #include "cetric/load_balancing.h"
-#include "cetric/statistics.h"
 #include "cetric/timer.h"
 #include "cetric/util.h"
 
@@ -62,7 +61,6 @@ enum class Phase { Local, Global };
 template <typename NodeOrdering, typename OrientationOrdering, typename NodeIndexer, typename GhostSet>
 inline void preprocessing(
     DistributedGraph<NodeIndexer>&              G,
-    cetric::profiling::PreprocessingStatistics& stats,
     AuxiliaryNodeData<Degree>&                  ghost_degree,
     GhostSet&                                   ghosts,
     const Config&                               conf,
@@ -76,7 +74,6 @@ inline void preprocessing(
         DegreeCommunicator comm(G, conf.rank, conf.PEs, as_int(MessageTag::Orientation));
         comm.get_ghost_degree(
             [&](RankEncodedNodeId node, Degree degree) { ghost_degree[node] = degree; },
-            stats.message_statistics,
             !conf.dense_degree_exchange,
             conf.compact_degree_exchange
         );
@@ -181,8 +178,7 @@ inline void primary_load_balancing(
     DistributedGraph<>&                         G,
     const Config&                               conf,
     PEID                                        rank,
-    PEID                                        size,
-    cetric::profiling::LoadBalancingStatistics& stats
+    PEID                                        size
 ) {
     if (conf.primary_cost_function == "none") {
         return;
@@ -193,7 +189,6 @@ inline void primary_load_balancing(
                 conf.primary_cost_function,
                 G,
                 conf,
-                stats,
                 execution_policy::parallel{conf.num_threads}
             );
         } else {
@@ -201,13 +196,12 @@ inline void primary_load_balancing(
                 conf.primary_cost_function,
                 G,
                 conf,
-                stats,
                 execution_policy::sequential{}
             );
         }
     }();
     LocalGraphView tmp = G.to_local_graph_view();
-    tmp                = cetric::load_balancing::LoadBalancer::run(std::move(tmp), cost_function, conf, stats);
+    tmp                = cetric::load_balancing::LoadBalancer::run(std::move(tmp), cost_function, conf);
     auto node_range    = tmp.local_node_count() == 0
                              ? std::make_pair(std::numeric_limits<NodeId>::max(), std::numeric_limits<NodeId>::max())
                              : std::make_pair(tmp.node_info.front().global_id, tmp.node_info.back().global_id + 1);
@@ -259,10 +253,6 @@ make_emit(tbb::concurrent_vector<Triangle<RankEncodedNodeId>>& triangles, tbb::c
 
 template <class CommunicationPolicy>
 inline size_t run_patric(DistributedGraph<>& G, const Config& conf, PEID rank, PEID size, CommunicationPolicy&&) {
-    // only written by preprocessing and load balancing, not reported
-    cetric::profiling::PreprocessingStatistics preprocessing_stats;
-    cetric::profiling::LoadBalancingStatistics load_balancing_stats;
-
     size_t threshold = get_threshold(G, conf);
     compute_ghost_ranks(G, conf);
     node_set ghosts;
@@ -270,7 +260,7 @@ inline size_t run_patric(DistributedGraph<>& G, const Config& conf, PEID rank, P
     AuxiliaryNodeData<Degree> ghost_degrees;
     {
         CALI_CXX_MARK_SCOPE("primary_load_balancing");
-        primary_load_balancing(G, conf, rank, size, load_balancing_stats);
+        primary_load_balancing(G, conf, rank, size);
         ConditionalBarrier(conf.global_synchronization);
         SPDLOG_DEBUG("Primary load balancing finished");
     }
@@ -278,7 +268,6 @@ inline size_t run_patric(DistributedGraph<>& G, const Config& conf, PEID rank, P
         CALI_CXX_MARK_SCOPE("preprocessing");
         preprocessing<node_ordering ::id, node_ordering::degree<decltype(G)>>(
             G,
-            preprocessing_stats,
             ghost_degrees,
             ghosts,
             conf,
@@ -329,10 +318,6 @@ inline size_t run_cetric(
     CommunicationPolicy&&,
     bool id_node_ordering = false
 ) {
-    // only written by preprocessing and load balancing, not reported
-    cetric::profiling::PreprocessingStatistics preprocessing_stats;
-    cetric::profiling::LoadBalancingStatistics load_balancing_stats;
-
     size_t   threshold = 0;
     node_set ghosts;
     {
@@ -344,7 +329,7 @@ inline size_t run_cetric(
     AuxiliaryNodeData<Degree> ghost_degrees;
     {
         CALI_CXX_MARK_SCOPE("primary_load_balancing");
-        primary_load_balancing(G, conf, rank, size, load_balancing_stats);
+        primary_load_balancing(G, conf, rank, size);
         SPDLOG_DEBUG("Primary load balancing finished");
         ConditionalBarrier(conf.global_synchronization);
     }
@@ -353,7 +338,6 @@ inline size_t run_cetric(
         if (!id_node_ordering) {
             preprocessing<node_ordering::degree_outward<decltype(G)>, node_ordering::degree_outward<decltype(G)>>(
                 G,
-                preprocessing_stats,
                 ghost_degrees,
                 ghosts,
                 conf,
@@ -362,7 +346,6 @@ inline size_t run_cetric(
         } else {
             preprocessing<node_ordering::id_outward, node_ordering::degree_outward<decltype(G)>>(
                 G,
-                preprocessing_stats,
                 ghost_degrees,
                 ghosts,
                 conf,
@@ -431,7 +414,6 @@ inline size_t run_cetric(
                         conf.secondary_cost_function,
                         G_compact,
                         conf,
-                        load_balancing_stats,
                         execution_policy::parallel{conf.num_threads}
                     );
                 } else {
@@ -439,7 +421,6 @@ inline size_t run_cetric(
                         conf.secondary_cost_function,
                         G_compact,
                         conf,
-                        load_balancing_stats,
                         execution_policy::sequential{}
                     );
                 }
@@ -458,7 +439,6 @@ inline size_t run_cetric(
             CALI_CXX_MARK_SCOPE("preprocessing_global");
             preprocessing<node_ordering::id_outward, node_ordering::degree<decltype(G_global_phase)>>(
                 G_global_phase,
-                preprocessing_stats,
                 ghost_degrees,
                 ghosts,
                 conf,
@@ -505,7 +485,6 @@ inline size_t run_cetric(
             CALI_CXX_MARK_SCOPE("preprocessing_global");
             preprocessing<node_ordering::id_outward, node_ordering::degree<decltype(G_compact)>>(
                 G_compact,
-                preprocessing_stats,
                 ghost_degrees,
                 ghosts,
                 conf,
@@ -539,10 +518,6 @@ inline size_t run_cetric(
 
 template <typename CommunicationPolicy>
 inline size_t run_cetric_new(DistributedGraph<>& G, const Config& conf, PEID rank, PEID size, CommunicationPolicy&&) {
-    // only written by preprocessing and load balancing, not reported
-    cetric::profiling::PreprocessingStatistics preprocessing_stats;
-    cetric::profiling::LoadBalancingStatistics load_balancing_stats;
-
     size_t   threshold = 0;
     node_set ghosts;
     {
@@ -554,7 +529,7 @@ inline size_t run_cetric_new(DistributedGraph<>& G, const Config& conf, PEID ran
     AuxiliaryNodeData<Degree> ghost_degrees;
     {
         CALI_CXX_MARK_SCOPE("primary_load_balancing");
-        primary_load_balancing(G, conf, rank, size, load_balancing_stats);
+        primary_load_balancing(G, conf, rank, size);
         SPDLOG_DEBUG("Primary load balancing finished");
         ConditionalBarrier(conf.global_synchronization);
     }
@@ -565,7 +540,6 @@ inline size_t run_cetric_new(DistributedGraph<>& G, const Config& conf, PEID ran
         if (!conf.id_node_ordering) {
             preprocessing<node_ordering::degree<decltype(G)>, node_ordering::degree<decltype(G)>>(
                 G,
-                preprocessing_stats,
                 ghost_degrees,
                 ghosts,
                 conf,
@@ -574,7 +548,6 @@ inline size_t run_cetric_new(DistributedGraph<>& G, const Config& conf, PEID ran
         } else {
             preprocessing<node_ordering::id_outward, node_ordering::degree<decltype(G)>>(
                 G,
-                preprocessing_stats,
                 ghost_degrees,
                 ghosts,
                 conf,

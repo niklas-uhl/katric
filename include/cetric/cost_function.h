@@ -40,6 +40,7 @@
 
 #include <fmt/core.h>
 #include <graph-io/local_graph_view.h>
+#include <caliper/cali.h>
 #include <tbb/task_arena.h>
 
 #include <spdlog/spdlog.h>
@@ -48,7 +49,6 @@
 #include "cetric/datastructures/distributed/distributed_graph.h"
 #include "cetric/datastructures/distributed/graph_communicator.h"
 #include "cetric/datastructures/graph_definitions.h"
-#include "cetric/statistics.h"
 #include "cetric/timer.h"
 #include "cetric/util.h"
 
@@ -96,7 +96,7 @@ template <typename Graph>
 class CostFunction {
 public:
     static inline void
-    init_nop(Graph&, node_set&, AuxiliaryNodeData<Degree>&, AuxiliaryNodeData<Degree>&, bool, bool, cetric::profiling::MessageStatistics&) {
+    init_nop(Graph&, node_set&, AuxiliaryNodeData<Degree>&, AuxiliaryNodeData<Degree>&, bool, bool) {
     }
 
     static inline void init_local_outdegree(
@@ -105,10 +105,9 @@ public:
         AuxiliaryNodeData<Degree>&            degree,
         AuxiliaryNodeData<Degree>&            out_degree,
         bool                                  dense_degree_exchange,
-        bool                                  compact_degree_exchange,
-        cetric::profiling::MessageStatistics& stats
+        bool                                  compact_degree_exchange
     ) {
-        init_degree(G, ghosts, degree, out_degree, dense_degree_exchange, compact_degree_exchange, stats);
+        init_degree(G, ghosts, degree, out_degree, dense_degree_exchange, compact_degree_exchange);
         if (out_degree.size() == 0) {
             out_degree = AuxiliaryNodeData<Degree>(
                 RankEncodedNodeId{G.node_range().first, static_cast<uint16_t>(G.rank())},
@@ -136,8 +135,7 @@ public:
         AuxiliaryNodeData<Degree>& degree,
         AuxiliaryNodeData<Degree>&,
         bool                                  dense_degree_exchange,
-        bool                                  compact_degree_exchange,
-        cetric::profiling::MessageStatistics& stats
+        bool                                  compact_degree_exchange
     ) {
         // (void)cache;
         DegreeCommunicator comm(G, G.rank(), G.size(), as_int(MessageTag::CostFunction));
@@ -151,7 +149,6 @@ public:
                     KASSERT(ghosts.find(node) != ghosts.end());
                     degree[node] = deg;
                 },
-                stats,
                 !dense_degree_exchange,
                 compact_degree_exchange
             );
@@ -164,11 +161,10 @@ public:
         AuxiliaryNodeData<Degree>&            degree,
         AuxiliaryNodeData<Degree>&            out_degree,
         bool                                  dense_degree_exchange,
-        bool                                  compact_degree_exchange,
-        cetric::profiling::MessageStatistics& stats
+        bool                                  compact_degree_exchange
     ) {
-        init_degree(G, ghosts, degree, out_degree, dense_degree_exchange, compact_degree_exchange, stats);
-        init_local_outdegree(G, ghosts, degree, out_degree, dense_degree_exchange, compact_degree_exchange, stats);
+        init_degree(G, ghosts, degree, out_degree, dense_degree_exchange, compact_degree_exchange);
+        init_local_outdegree(G, ghosts, degree, out_degree, dense_degree_exchange, compact_degree_exchange);
         if (ghosts.size() == 0) {
             find_ghosts(G, ghosts);
         }
@@ -181,7 +177,6 @@ public:
                     KASSERT(ghosts.find(node) != ghosts.end());
                     out_degree[node] = data.id();
                 },
-                stats,
                 !dense_degree_exchange,
                 compact_degree_exchange
             );
@@ -209,7 +204,6 @@ public:
         AuxiliaryNodeData<Degree> const&            degree,
         AuxiliaryNodeData<Degree> const&            outdegree,
         CostFunctionType&                           cost_function,
-        cetric::profiling::LoadBalancingStatistics& stats,
         ExecutionPolicy&&                           policy = {}
     )
         : G(G),
@@ -218,9 +212,9 @@ public:
           node_to_idx_(G.local_node_count()),
           cost(G.local_node_count()),
           name(name) {
-        cetric::profiling::Timer t;
-        size_t                   node_index = 0;
-        auto                     nodes      = G.local_nodes();
+        CALI_CXX_MARK_SCOPE("cost_function_evaluation");
+        size_t node_index = 0;
+        auto   nodes      = G.local_nodes();
         if constexpr (std::is_same_v<ExecutionPolicy, execution_policy::parallel>) {
             tbb::task_arena arena(policy.num_threads);
             arena.execute([&] {
@@ -242,7 +236,6 @@ public:
                 node_index++;
             }
         }
-        stats.cost_function_evaluation_time = t.elapsed_time();
     }
 
     inline size_t operator()(const LocalGraphView& G_local, NodeId local_node_id) {
@@ -291,7 +284,6 @@ struct CostFunctionRegistry {
     get(const std::string&                          name,
         Graph&                                      G,
         const Config&                               conf,
-        cetric::profiling::LoadBalancingStatistics& stats,
         ExecutionPolicy&&                           policy = {}) {
         (void)conf;
         using RefType   = CostFunction<Graph>&;
@@ -300,7 +292,7 @@ struct CostFunctionRegistry {
             std::string,
             std::pair<
                 std::function<
-                    void(GraphType, node_set&, AuxiliaryNodeData<Degree>&, AuxiliaryNodeData<Degree>&, bool, bool, cetric::profiling::MessageStatistics&)>,
+                    void(GraphType, node_set&, AuxiliaryNodeData<Degree>&, AuxiliaryNodeData<Degree>&, bool, bool)>,
                 std::function<size_t(RefType, GraphType, RankEncodedNodeId)>>>
             cost_functions = {
                 {"N",
@@ -357,18 +349,11 @@ struct CostFunctionRegistry {
         AuxiliaryNodeData<Degree> degree;
         AuxiliaryNodeData<Degree> outdegree;
         node_set                  ghosts;
-        cetric::profiling::Timer  t;
-        init(
-            G,
-            ghosts,
-            degree,
-            outdegree,
-            conf.dense_degree_exchange,
-            conf.compact_degree_exchange,
-            stats.message_statistics
-        );
-        stats.cost_function_communication_time += t.elapsed_time();
-        return CostFunction<Graph>(G, name, degree, outdegree, cost, stats, policy);
+        {
+            CALI_CXX_MARK_SCOPE("cost_function_communication");
+            init(G, ghosts, degree, outdegree, conf.dense_degree_exchange, conf.compact_degree_exchange);
+        }
+        return CostFunction<Graph>(G, name, degree, outdegree, cost, policy);
     }
 };
 } // namespace cetric

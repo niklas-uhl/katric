@@ -31,7 +31,6 @@
 #include "cetric/datastructures/distributed/helpers.h"
 #include "cetric/datastructures/graph_definitions.h"
 #include "cetric/load_balancing.h"
-#include "cetric/message_statistics.h"
 #include "cetric/util.h"
 
 namespace {
@@ -79,7 +78,6 @@ protected:
 };
 
 TEST_P(Orientation, GlobalDegree) {
-    cetric::profiling::MessageStatistics dummy;
     G.find_ghost_ranks<true>();
     std::unordered_set<cetric::graph::RankEncodedNodeId> ghosts;
     find_ghosts(G, ghosts);
@@ -87,7 +85,6 @@ TEST_P(Orientation, GlobalDegree) {
     cetric::DegreeCommunicator comm(G, conf.rank, conf.PEs, cetric::as_int(cetric::MessageTag::Orientation));
     comm.get_ghost_degree(
         [&](cetric::RankEncodedNodeId node, cetric::Degree degree) { ghost_degree[node] = degree; },
-        dummy,
         true,
         true
     );
@@ -111,7 +108,6 @@ TEST_P(Orientation, GlobalDegree) {
 }
 
 TEST_P(Orientation, LocalDegree) {
-    cetric::profiling::MessageStatistics dummy;
     G.find_ghost_ranks<true>();
     cetric::node_ordering::degree_outward ord(G);
     for (auto node: G.local_nodes()) {

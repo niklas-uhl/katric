@@ -35,7 +35,6 @@
 
 #include "cetric/datastructures/graph_definitions.h"
 #include "cetric/datastructures/span.h"
-#include "cetric/statistics.h"
 #include "thread_pool.h"
 
 namespace cetric {

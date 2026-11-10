@@ -41,7 +41,7 @@
 #include "cetric/communicator.h"
 #include "cetric/datastructures/distributed/distributed_graph.h"
 #include "cetric/datastructures/graph_definitions.h"
-#include "cetric/statistics.h"
+#include "cetric/message_statistics.h"
 #include "cetric/util.h"
 
 namespace cetric {
@@ -68,12 +68,11 @@ public:
 
     template <typename DegreeFunc>
     void get_ghost_degree(
-        DegreeFunc&& on_degree_receive, cetric::profiling::MessageStatistics& stats, bool sparse, bool compact
+        DegreeFunc&& on_degree_receive, bool sparse, bool compact
     ) {
         get_ghost_data(
             [this](auto node) { return RankEncodedNodeId{G.degree(node)}; },
             [&on_degree_receive](auto node, auto data) { on_degree_receive(node, data.id()); },
-            stats,
             sparse,
             compact
         );
@@ -83,7 +82,6 @@ public:
     void get_ghost_data(
         DataFunc&&                            get_data,
         ReceiveFunc&&                         on_receive,
-        cetric::profiling::MessageStatistics& stats,
         bool                                  sparse,
         bool                                  compact
     ) {
@@ -91,7 +89,6 @@ public:
             get_ghost_data_compact(
                 std::forward<DataFunc>(get_data),
                 std::forward<ReceiveFunc>(on_receive),
-                stats,
                 sparse
             );
             return;
@@ -124,7 +121,6 @@ public:
                 MPI_NODE,
                 rank_,
                 size_,
-                stats,
                 message_tag_
             );
         } else {
@@ -134,7 +130,6 @@ public:
                 MPI_NODE,
                 rank_,
                 size_,
-                stats,
                 message_tag_
             );
         }
@@ -149,7 +144,7 @@ public:
     }
     template <typename DataFunc, typename ReceiveFunc>
     void get_ghost_data_compact(
-        DataFunc&& get_data, ReceiveFunc&& on_receive, cetric::profiling::MessageStatistics& stats, bool sparse
+        DataFunc&& get_data, ReceiveFunc&& on_receive, bool sparse
     ) {
         //  assert(G.ghost_ranks_available());
         // tlx::MultiTimer timer;
@@ -192,8 +187,7 @@ public:
                 kamping::types::mpi_type_traits<RankEncodedNodeId>::data_type(),
                 rank_,
                 size_,
-                message_tag_,
-                stats
+                message_tag_
             );
         } else {
             CommunicationUtility::all_to_all(
@@ -202,8 +196,7 @@ public:
                 kamping::types::mpi_type_traits<RankEncodedNodeId>::data_type(),
                 rank_,
                 size_,
-                message_tag_,
-                stats
+                message_tag_
             );
         }
         // timer.start("process");
@@ -290,15 +283,14 @@ public:
     static LocalGraphView relocate(
         LocalGraphView&&                      G,
         const Map&                            nodes_to_send,
-        cetric::profiling::MessageStatistics& stats,
         [[maybe_unused]] PEID                 rank,
         PEID                                  size,
         bool                                  sparse = true
     ) {
         if (sparse) {
-            return relocate_sparse_impl(std::forward<LocalGraphView>(G), nodes_to_send, stats, rank, size);
+            return relocate_sparse_impl(std::forward<LocalGraphView>(G), nodes_to_send, rank, size);
         } else {
-            return relocate_full_impl(std::forward<LocalGraphView>(G), nodes_to_send, stats, rank, size);
+            return relocate_full_impl(std::forward<LocalGraphView>(G), nodes_to_send, rank, size);
         }
     }
 
@@ -307,7 +299,6 @@ private:
     static LocalGraphView relocate_full_impl(
         LocalGraphView&&                      G,
         const Map&                            nodes_to_send,
-        cetric::profiling::MessageStatistics& stats,
         [[maybe_unused]] PEID                 rank,
         PEID                                  size
     ) {
@@ -321,6 +312,7 @@ private:
             }
         }
         std::vector<std::pair<NodeId, NodeId>> to_receive(size);
+        cetric::profiling::MessageStatistics   stats;
         stats.send_volume += 2;
         stats.receive_volume += 2;
         int errcode = MPI_Alltoall(to_send.data(), 2, MPI_NODE, to_receive.data(), 2, MPI_NODE, MPI_COMM_WORLD);
@@ -392,6 +384,8 @@ private:
         check_mpi_error(errcode, __FILE__, __LINE__);
         G.edge_heads.shrink_to_fit();
 
+        stats.report();
+
         LocalGraphView G_balanced;
         G_balanced.node_info  = std::move(node_info_recv);
         G_balanced.edge_heads = std::move(head);
@@ -403,7 +397,6 @@ private:
     static LocalGraphView relocate_sparse_impl(
         LocalGraphView&&                      G,
         const Map&                            nodes_to_send,
-        cetric::profiling::MessageStatistics& stats,
         [[maybe_unused]] PEID                 rank,
         PEID                                  size
     ) {
@@ -428,8 +421,7 @@ private:
             node_info_mpi_type.data_type(),
             rank,
             size,
-            as_int(MessageTag::LoadBalancing),
-            stats
+            as_int(MessageTag::LoadBalancing)
         );
         CompactBuffer edge_recv_buffer(G_balanced.edge_heads, rank, size);
         CommunicationUtility::sparse_all_to_all<NodeId>(
@@ -438,8 +430,7 @@ private:
             kamping::types::mpi_type_traits<NodeId>::data_type(),
             rank,
             size,
-            as_int(MessageTag::LoadBalancing),
-            stats
+            as_int(MessageTag::LoadBalancing)
         );
         return G_balanced;
     }

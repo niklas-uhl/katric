@@ -57,7 +57,6 @@
 #include "cetric/datastructures/graph_definitions.h"
 #include "cetric/datastructures/span.h"
 #include "cetric/indirect_message_queue.h"
-#include "cetric/statistics.h"
 #include "cetric/thread_pool.h"
 #include "cetric/timer.h"
 #include "cetric/util.h"
@@ -66,7 +65,7 @@
 namespace cetric {
 template <typename NodeIndexer>
 inline void
-preprocessing(DistributedGraph<NodeIndexer>& G, cetric::profiling::PreprocessingStatistics& stats, const Config& conf) {
+preprocessing(DistributedGraph<NodeIndexer>& G, const Config& conf) {
     auto nodes = G.local_nodes();
     if (conf.num_threads > 1) {
         tbb::task_arena arena(conf.num_threads, 0);
@@ -103,8 +102,7 @@ preprocessing(DistributedGraph<NodeIndexer>& G, cetric::profiling::Preprocessing
 inline size_t run_shmem(DistributedGraph<>& G, const Config& conf) {
     {
         CALI_CXX_MARK_SCOPE("preprocessing");
-        cetric::profiling::PreprocessingStatistics preprocessing_stats; // not reported
-        preprocessing(G, preprocessing_stats, conf);
+        preprocessing(G, conf);
         SPDLOG_DEBUG("Preprocessing finished");
     }
     size_t                                              triangle_count = 0;

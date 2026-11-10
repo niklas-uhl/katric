@@ -49,26 +49,6 @@ struct has_data : std::false_type {};
 template <class T>
 struct has_data<T, std::void_t<typename T::data>> : std::true_type {};
 
-struct CommunicationStats {
-    size_t send_volume             = 0;
-    size_t recv_volume             = 0;
-    size_t number_of_sent_messages = 0;
-    size_t number_of_recv_messages = 0;
-    size_t cut_triangles           = 0;
-    size_t discarded_triangles     = 0;
-    double test_all_time           = 0;
-
-    void reset() {
-        send_volume             = 0;
-        recv_volume             = 0;
-        number_of_sent_messages = 0;
-        number_of_recv_messages = 0;
-        cut_triangles           = 0;
-        discarded_triangles     = 0;
-        test_all_time           = 0;
-    }
-};
-
 enum class MessageTag {
     CostFunction            = 0,
     LoadBalancing           = 5,
@@ -81,23 +61,6 @@ enum class MessageTag {
 
 inline int as_int(const MessageTag tag) {
     return static_cast<std::underlying_type<MessageTag>::type>(tag);
-}
-
-inline CommunicationStats reduce_stats(const CommunicationStats& stats) {
-    size_t local[4];
-    size_t global[4];
-    local[0] = stats.send_volume;
-    local[1] = stats.number_of_sent_messages;
-    local[2] = stats.cut_triangles;
-    local[3] = stats.discarded_triangles;
-    MPI_Reduce(&local, &global, 4, MPI_UNSIGNED_LONG_LONG, MPI_SUM, 0, MPI_COMM_WORLD);
-    CommunicationStats global_stats;
-    global_stats.send_volume             = global[0];
-    global_stats.number_of_sent_messages = global[1];
-    global_stats.cut_triangles           = global[2];
-    global_stats.discarded_triangles     = global[3];
-    MPI_Reduce(&stats.test_all_time, &global_stats.test_all_time, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
-    return global_stats;
 }
 
 template <typename T>
@@ -169,9 +132,9 @@ public:
         MPI_Datatype                          mpi_type,
         PEID                                  rank [[maybe_unused]],
         PEID                                  size,
-        int                                   message_tag [[maybe_unused]],
-        cetric::profiling::MessageStatistics& stats [[maybe_unused]]
+        int                                   message_tag [[maybe_unused]]
     ) {
+        cetric::profiling::MessageStatistics stats;
         // tlx::MultiTimer timer;
         // timer.start("count allocation");
         std::vector<int> send_counts(size);
@@ -215,7 +178,16 @@ public:
         // timer.start("extent");
         for (size_t i = 0; i < send_buf.size(); ++i) {
             recv_buf.set_extent(i, recv_displs[i], recv_displs[i] + recv_counts[i]);
+            if (static_cast<PEID>(i) != rank && send_counts[i] > 0) {
+                stats.sent_messages++;
+                stats.send_volume += send_counts[i];
+            }
+            if (static_cast<PEID>(i) != rank && recv_counts[i] > 0) {
+                stats.received_messages++;
+                stats.receive_volume += recv_counts[i];
+            }
         }
+        stats.report();
         // timer.stop();
         // std::stringstream out;
         // out << "[R" << rank << "] ";
@@ -234,9 +206,9 @@ public:
         MPI_Datatype                          mpi_type,
         PEID                                  rank,
         PEID                                  size [[maybe_unused]],
-        int                                   message_tag,
-        cetric::profiling::MessageStatistics& stats
+        int                                   message_tag
     ) {
+        cetric::profiling::MessageStatistics stats;
         static_assert(std::is_same_v<RecvBuf, HashedBuffer<T>> || std::is_same_v<RecvBuf, CompactBuffer<T>>);
         constexpr bool compact_buffer = std::is_same_v<RecvBuf, CompactBuffer<T>>;
         if constexpr (compact_buffer) {
@@ -247,8 +219,8 @@ public:
                     size_buf[kv.first].emplace_back(kv.second.size());
                 }
             }
-            sparse_all_to_all<size_t>(
-                size_buf, size_buf_recv, kamping::types::mpi_type_traits<size_t>::data_type(), rank, size, message_tag + 1, stats
+            sparse_all_to_all<size_t, decltype(size_buf), decltype(size_buf_recv)>(
+                size_buf, size_buf_recv, kamping::types::mpi_type_traits<size_t>::data_type(), rank, size, message_tag + 1
             );
             std::vector<std::pair<PEID, size_t>> recv_sizes;
             for (const auto& kv: size_buf_recv) {
@@ -346,19 +318,20 @@ public:
             MPI_Status test_status;
             MPI_Test(&barrier_request, &ibarrier_done, &test_status);
         }
+        stats.report();
     }
 
-    template <class T, typename StatsType>
+    template <class T>
     static void sparse_all_to_all(
         const absl::flat_hash_map<PEID, std::vector<T>>& send_buffers,
         absl::flat_hash_map<PEID, std::vector<T>>&       recv_buffers,
         MPI_Datatype                                        mpi_type,
         PEID                                                rank,
         PEID                                                size [[maybe_unused]],
-        StatsType&                                          stats,
         int                                                 message_tag
     ) {
-        PEID request_count = 0;
+        cetric::profiling::MessageStatistics stats;
+        PEID                                 request_count = 0;
         for (const auto& kv: send_buffers) {
             PEID pe = kv.first;
             if (!kv.second.empty()) {
@@ -462,33 +435,21 @@ public:
             MPI_Status test_status;
             MPI_Test(&barrier_request, &ibarrier_done, &test_status);
         }
+        stats.report();
     }
 
-    template <class T>
-    static void sparse_all_to_all(
-        absl::flat_hash_map<PEID, std::vector<T>>& send_buffers,
-        absl::flat_hash_map<PEID, std::vector<T>>& recv_buffers,
-        MPI_Datatype                                  mpi_type,
-        PEID                                          rank,
-        PEID                                          size,
-        int                                           message_tag
-    ) {
-        cetric::profiling::MessageStatistics stats;
-        sparse_all_to_all(send_buffers, recv_buffers, mpi_type, rank, size, stats, message_tag);
-    }
-
-    template <typename T, typename StatsType>
+    template <typename T>
     static void all_to_all(
         absl::flat_hash_map<PEID, std::vector<T>>& send_buffers,
         absl::flat_hash_map<PEID, std::vector<T>>& recv_buffers,
         MPI_Datatype                                  mpi_type,
         PEID                                          rank,
         PEID                                          size,
-        StatsType&                                    stats,
         int                                           message_tag
     ) {
         (void)rank;
         (void)message_tag;
+        cetric::profiling::MessageStatistics stats;
 
         std::vector<int> send_counts(size);
         std::vector<int> recv_counts(size);
@@ -554,6 +515,7 @@ public:
         }
         recv_buffer.clear();
         recv_buffer.shrink_to_fit();
+        stats.report();
     }
 
     template <typename T>

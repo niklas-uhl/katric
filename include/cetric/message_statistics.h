@@ -24,25 +24,24 @@
 
 #include <cstddef>
 
-#include <mpi.h>
+#include "cetric/caliper.h"
 
 namespace cetric {
 namespace profiling {
 
+/// Messages and volume (in elements) of one communication step, counted locally and reported once at its end.
 struct MessageStatistics {
-    size_t sent_messages;
-    size_t received_messages;
-    size_t send_volume;
-    size_t receive_volume;
+    size_t sent_messages     = 0;
+    size_t received_messages = 0;
+    size_t send_volume       = 0;
+    size_t receive_volume    = 0;
 
-    explicit MessageStatistics() : sent_messages(0), received_messages(0), send_volume(0), receive_volume(0) {}
-
-
-    void add(const MessageStatistics& rhs) {
-        sent_messages += rhs.sent_messages;
-        received_messages += rhs.received_messages;
-        send_volume += rhs.send_volume;
-        receive_volume += rhs.receive_volume;
+    /// Adds the counts to the open Caliper region (see counter_add()); call it from the thread that opened it.
+    void report() const {
+        counter_add("sent_messages", sent_messages);
+        counter_add("send_volume", send_volume);
+        counter_add("received_messages", received_messages);
+        counter_add("receive_volume", receive_volume);
     }
 };
 } // namespace profiling
