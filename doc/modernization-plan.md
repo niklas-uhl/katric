@@ -97,7 +97,7 @@ The Caliper/Adiak measurement (step 3) was developed on `explore/caliper-adiak` 
 ### 4. Graph input: KaGen
 
 - [x] `--kagen_option_string` (required) replaces `input`, `--input-format`, `--gen*`, `--read-edge-partitioned` and
-      `--cache-input`; KaGen's CSR output is converted to graph-io's `LocalGraphView` (`apps/input.h`). Validated
+      `--cache-input`; KaGen's CSR output is converted to the `LocalGraphView` (`apps/input.h`). Validated
       against the previous commit: triangle counts identical on examples + rgg2d/rhg/gnm (fixed seeds, 2 and 4 ranks);
       all counters identical except the (already nondeterministic) grid policy (`870128a`)
 - [x] `read-edge-partitioned = true` in `configs/cetric.toml`/`ditric.toml` is now `distribution=balance-edges` in the
@@ -109,8 +109,13 @@ The Caliper/Adiak measurement (step 3) was developed on `explore/caliper-adiak` 
 - [x] Pre-partitioned input (`--partitioning`) dropped: KaGen's distributions (`balance-edges`, `explicit` vertex
       ranges) are enough. `examples/partitions` removed; the `partitioned: True` suites become obsolete (step 5)
 - [x] ctest: file inputs via KaGen (`balance-edges`) plus an rgg2d generator input
-- [ ] Remove graph-io (including its `MPI_NODE` macro with the typo'd `#ifdef MPI_UNINT64_T`). Still used for
-      `LocalGraphView`/`Edge` in the library and by the unit tests
+- [x] graph-io removed. katric has its own `LocalGraphView` (`datastructures/local_graph_view.h`, the input and
+      load-balancing exchange format; `first_out()` replaces graph-io's hash-map indexer) and `BasicEdge`;
+      `MPI_NODE` is plain `MPI_UINT64_T` (the typo'd `#ifdef MPI_UNINT64_T` always fell back to
+      `MPI_UNSIGNED_LONG_LONG`). The KaGen conversion moved to `cetric/input.h`; the unit tests read the examples
+      via KaGen (`tests/test_graphs.h`). No input post-processing is left: KaGen's output is only converted.
+      Counters identical to the previous commit. Not done: building `DistributedGraph` from `kagen::Graph`
+      directly; kept `LocalGraphView` because the load balancing exchanges it and its message volume is counted
 
 ### 4b. Benchmark harness: abstract algorithm (like KaCCv2's `benchmark/`)
 
@@ -222,7 +227,7 @@ instead re-reads or regenerates the input in every iteration (`--cache-input non
 4. Next, in this order:
    1. clang-tidy config and a first run on the algorithm headers (4c) — done
    2. KaGen input generated once (4 + first item of 4b) — done
-   3. Abstract algorithm, factory, `reset`, `--verify` (4b) — done; next: remove graph-io
+   3. Abstract algorithm, factory, `reset`, `--verify` (4b), then remove graph-io — done
 5. kaval switch and removal of the old runner scripts
 6. Cluster validation through kaval: Abseil vs. sparsehash run time, Caliper overhead, Linux Adiak collectors
 7. CI (build, tests, clang-tidy bug checks) and README; competitors behind `AbstractAlgorithm` as needed
