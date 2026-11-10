@@ -35,8 +35,6 @@
 #include <utility>
 #include <vector>
 
-#include <graph-io/definitions.h>
-#include <graph-io/gen_parameters.h>
 #include <magic_enum/magic_enum.hpp>
 
 #include "cetric/datastructures/graph_definitions.h"
@@ -45,7 +43,6 @@
 namespace cetric {
 
 // Enum values are named after their command line spelling: `_` is written as `-` (both are accepted).
-enum class CacheInput { filesystem, in_memory, none };
 enum class Algorithm { patric, cetric, cetric_x };
 enum class Threshold { local_nodes, local_edges, none };
 enum class IntersectionMethod { merge, binary_search, binary, hybrid };
@@ -56,12 +53,7 @@ enum class TaskPoolType { std_thread, task_group };
 
 struct Config {
     Config() = default;
-    std::string           input_file;
-    std::string           output_file;
-    bool                  read_edge_partitioned = false;
-    graphio::InputFormat  input_format          = graphio::InputFormat::metis;
-    std::string           partitioning;
-    bool                  partitioned_input                 = false;
+    std::string           kagen_option_string;
     size_t                buffer_threshold                  = std::numeric_limits<size_t>::max();
     double                max_degree_threshold_alpha        = 1.0;
     bool                  empty_pending_buffers_on_overflow = false;
@@ -104,8 +96,7 @@ struct Config {
     bool skip_local_neighborhood = false;
     bool synchronized            = false;
 
-    int         verbosity_level = 0;
-    CacheInput  cache_input     = CacheInput::none;
+    int verbosity_level = 0;
     // Caliper ConfigManager configuration (e.g. "spot"); empty disables Caliper. Output file via caliper_output.
     std::string caliper_config = "";
     std::string caliper_output = "";
@@ -116,9 +107,6 @@ struct Config {
     size_t      grainsize   = 1;
 
     std::string git_commit;
-
-    // Generator parameters
-    graphio::GeneratorParameters gen;
 
     // name and parsed value of every command line option, recorded as run metadata
     std::vector<std::pair<std::string, std::string>> options;

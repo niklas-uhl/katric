@@ -17,8 +17,6 @@
 // IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-#include "cetric/counters/cetric.h"
-
 #include <algorithm>
 #include <cstddef>
 #include <cstdio>
@@ -35,18 +33,17 @@
 
 #include <CLI/CLI.hpp>
 #include <CLI/Validators.hpp>
-#include <caliper/ConfigManager.h>
 #include <adiak.hpp>
+#include <caliper/ConfigManager.h>
 #include <caliper/cali.h>
-#include <graph-io/definitions.h>
-#include <graph-io/distributed_graph_io.h>
-#include <graph-io/local_graph_view.h>
 #include <kamping/spdlog_adapter/logging.hpp>
 #include <kassert/kassert.hpp>
 #include <magic_enum/magic_enum.hpp>
+#include <mpi.h>
 #include <spdlog/cfg/env.h>
 #include <spdlog/spdlog.h>
-#include <mpi.h>
+
+#include "cetric/counters/cetric.h"
 #ifdef CETRIC_HAS_OPENMP
     #include <omp.h>
 #endif
@@ -57,6 +54,7 @@
 #include <tbb/task_arena.h>
 #include <unistd.h>
 
+#include "./input.h"
 #include "./parse_parameters.h"
 #include "CLI/Error.hpp"
 #include "cetric/caliper.h"
@@ -67,16 +65,16 @@
 #include "cetric/timer.h"
 #include "cetric/util.h"
 #include "git_hash.h"
-#include "graph-io/graph_definitions.h"
 
 cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::PEID size) {
     (void)size;
 
     CLI::App app("Parallel Triangle Counter");
     app.option_defaults()->always_capture_default();
-    app.set_config("--config")
-        ->expected(0, 3);
-    
+    app.set_config("--config")->expected(0, 3);
+    // unknown keys in a --config file are errors instead of being ignored (e.g. options that were removed)
+    app.allow_config_extras(CLI::config_extras_mode::error);
+
     cetric::Config conf;
     conf.git_commit = cetric::git_hash;
 
@@ -85,10 +83,13 @@ cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::P
     gethostname(hostname, sizeof(hostname));
     conf.hostname = hostname;
 
-    app.add_option("input", conf.input_file, "The input graph");
-
-    add_enum_option(app, "--input-format", conf.input_format, graphio::input_types);
-    app.add_option("--partitioning", conf.partitioning);
+    app.add_option(
+           "--kagen_option_string",
+           conf.kagen_option_string,
+           "KaGen generator or file input, e.g. \"rgg2d;n=16384;m=131072;seed=7\" or "
+           "\"file;filename=graph.metis;input_format=metis;distribution=balance-edges\""
+    )
+        ->required();
 
     app.add_option("--iterations", conf.iterations);
 
@@ -99,13 +100,11 @@ cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::P
 
     app.add_flag("-v", conf.verbosity_level, "verbosity level");
 
-    add_enum_option(app, "--cache-input", conf.cache_input);
-    app.add_flag("--read-edge-partitioned", conf.read_edge_partitioned);
-
     app.add_option(
         "--caliper-config",
         conf.caliper_config,
-        "Caliper config, e.g. \"katric-timers,katric-counters\" (JSON), \"spot,katric-counters\" or \"runtime-report\". "
+        "Caliper config, e.g. \"katric-timers,katric-counters\" (JSON), \"spot,katric-counters\" or "
+        "\"runtime-report\". "
         "Caliper's CALI_CONFIG environment variable works independently of this option."
     );
     app.add_option(
@@ -163,25 +162,7 @@ cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::P
     app.add_option("--binary-intersection-cutoff", conf.binary_intersection_cutoff);
     app.add_option("--hybrid-cutoff-scale", conf.hybrid_cutoff_scale);
 
-    parse_gen_parameters(app, conf);
-
-    CLI::Option* input_option = app.get_option("input");
-    CLI::Option* gen_option   = app.get_option("--gen");
-    input_option->excludes(gen_option);
-    gen_option->excludes(input_option);
-
     CLI11_PARSE_MPI(app, argc, argv, rank, size);
-    if (conf.input_file.empty() && conf.gen.generator.empty()) {
-        int retval;
-        if (rank == 0) {
-            CLI::RequiredError e("Provide an input file via 'input' or using the generator via '--gen'");
-            retval = app.exit(e);
-        } else {
-            retval = 1;
-        }
-        MPI_Finalize();
-        exit(retval);
-    }
 #ifndef CETRIC_HAS_OPENMP
     if (conf.parallelization_method == cetric::ParallelizationMethod::omp_for) {
         int retval;
@@ -195,22 +176,6 @@ cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::P
         exit(retval);
     }
 #endif
-    if (!conf.partitioning.empty()) {
-        conf.partitioned_input = true;
-    }
-    // if (conf.primary_cost_function == "none" && conf.gen.generator.empty() && !conf.partitioned_input) {
-    //     int retval;
-    //     if (rank == 0) {
-    //         CLI::RequiredError e("Primary cost function 'none' is only allowed for generated or prepartitioned
-    //         graphs."
-    //         );
-    //         retval = app.exit(e);
-    //     } else {
-    //         retval = 1;
-    //     }
-    //     MPI_Finalize();
-    //     exit(retval);
-    // }
     if (conf.num_threads == 0) {
         conf.num_threads = tbb::this_task_arena::max_concurrency();
     }
@@ -223,78 +188,6 @@ cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::P
     return conf;
 }
 
-class InputCache {
-public:
-    InputCache(const cetric::Config& conf) : conf_(conf), cache_file_(), G_() {
-        if (conf_.cache_input != cetric::CacheInput::none) {
-            auto [G, info] = load_graph();
-            G_             = std::move(G);
-            info_          = std::move(info);
-        }
-        if (conf_.cache_input == cetric::CacheInput::filesystem) {
-            auto tmp_file = graphio::dump_to_tmp(G_.value(), conf_.rank, conf_.PEs);
-            cache_file_   = tmp_file;
-            G_            = std::nullopt;
-        }
-    }
-    graphio::IOResult get() {
-        switch (conf_.cache_input) {
-            case cetric::CacheInput::none:
-                return load_graph();
-            case cetric::CacheInput::filesystem:
-                return graphio::read_graph_view(cache_file_, conf_.rank, conf_.PEs);
-            case cetric::CacheInput::in_memory:
-                return {G_.value(), info_};
-            default:
-                // unreachable
-                return {};
-        }
-    }
-    virtual ~InputCache() {
-        if (conf_.cache_input == cetric::CacheInput::filesystem) {
-            std::filesystem::remove(cache_file_);
-        }
-    }
-
-private:
-    graphio::IOResult load_graph() {
-        if (conf_.gen.generator == "") {
-            auto G = graphio::read_local_graph(
-                conf_.input_file,
-                conf_.input_format,
-                conf_.rank,
-                conf_.PEs,
-                conf_.read_edge_partitioned
-            );
-            if (conf_.partitioned_input) {
-                auto partitioning = graphio::read_local_partition(
-                    conf_.partitioning,
-                    G.info.local_from,
-                    G.info.local_to,
-                    conf_.rank,
-                    conf_.PEs
-                );
-                G.G = graphio::apply_partition(std::move(G.G), partitioning, MPI_COMM_WORLD);
-                graphio::relabel_consecutively(G.G, MPI_COMM_WORLD);
-                if (G.G.local_node_count() != 0) {
-                    G.info.local_from = G.G.node_info.front().global_id;
-                    G.info.local_to   = G.G.node_info.back().global_id + 1;
-                } else {
-                    G.info.local_from = std::numeric_limits<cetric::NodeId>::max();
-                    G.info.local_to   = std::numeric_limits<cetric::NodeId>::max();
-                }
-            }
-            return G;
-        } else {
-            return graphio::gen_local_graph(conf_.gen, conf_.rank, conf_.PEs);
-        }
-    }
-    const cetric::Config&                  conf_;
-    std::string                            cache_file_;
-    std::optional<graphio::LocalGraphView> G_;
-    graphio::internal::GraphInfo           info_;
-};
-
 int main(int argc, char* argv[]) {
     int thread_support_level;
     MPI_Init_thread(&argc, &argv, MPI_THREAD_FUNNELED, &thread_support_level);
@@ -304,13 +197,13 @@ int main(int argc, char* argv[]) {
         SPDLOG_CRITICAL("The MPI implementation must support MPI_THREAD_FUNNELED");
         std::exit(1);
     }
-    cetric::PEID             rank;
-    cetric::PEID             size;
+    cetric::PEID rank;
+    cetric::PEID size;
     {
         MPI_Comm_rank(MPI_COMM_WORLD, &rank);
         MPI_Comm_size(MPI_COMM_WORLD, &size);
         DEBUG_BARRIER(rank);
-        cetric::Config conf = parse_config(argc, argv, rank, size);
+        cetric::Config      conf = parse_config(argc, argv, rank, size);
         tbb::global_control global_limit(tbb::global_control::max_allowed_parallelism, conf.num_threads);
 
 #ifdef CETRIC_HAS_OPENMP
@@ -338,11 +231,20 @@ int main(int argc, char* argv[]) {
         }
 #endif
 
-        std::optional<double>    io_time;
-        cetric::profiling::Timer t;
-        InputCache               input_cache(conf);
-        if (conf.cache_input != cetric::CacheInput::none) {
-            io_time = t.elapsed_time();
+        // The input is generated (or read) once; every iteration starts from a copy of this unmodified local graph.
+        cetric::profiling::Timer input_timer;
+        cetric::LocalInput       input;
+        try {
+            input = cetric::to_local_input(cetric::generate_input(conf.kagen_option_string, MPI_COMM_WORLD));
+        } catch (std::exception const& e) {
+            SPDLOG_CRITICAL("KaGen failed for --kagen_option_string '{}': {}", conf.kagen_option_string, e.what());
+            MPI_Abort(MPI_COMM_WORLD, 1);
+        }
+        double local_input_time = input_timer.elapsed_time();
+        double input_time       = 0;
+        MPI_Allreduce(&local_input_time, &input_time, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+        if (rank == 0) {
+            SPDLOG_INFO("input: {:.6f} s", input_time);
         }
         // Caliper: region times and counters aggregated across ranks, iterations annotated as a loop; Adiak holds the
         // run metadata
@@ -361,9 +263,7 @@ int main(int argc, char* argv[]) {
             }
             adiak::value("git_commit", conf.git_commit);
             adiak::collect_all(); // user, launch date, command line, hosts, job size, MPI version, ...
-            if (io_time.has_value()) {
-                adiak::value("io_time", io_time.value());
-            }
+            adiak::value("input_time", input_time);
             caliper.start();
         }
         size_t           triangles = 0;
@@ -373,16 +273,8 @@ int main(int argc, char* argv[]) {
             iteration_annotation.begin(static_cast<int>(iter));
             MPI_Barrier(MPI_COMM_WORLD);
 
-            cetric::graph::DistributedGraph<> G;
-            SPDLOG_DEBUG("Loading from cache");
-            graphio::IOResult input = input_cache.get();
-            SPDLOG_DEBUG("Finished loading from cache");
-            G = cetric::graph::DistributedGraph<>(
-                std::move(input.G),
-                {input.info.local_from, input.info.local_to},
-                rank,
-                size
-            );
+            auto                                    local_graph = input.G;
+            cetric::graph::DistributedGraph<>       G(std::move(local_graph), input.node_range, rank, size);
             tbb::enumerable_thread_specific<size_t> wedges = 0;
             tbb::parallel_for(tbb::blocked_range(G.local_nodes().begin(), G.local_nodes().end()), [&](auto const& r) {
                 for (auto node: r) {
@@ -400,7 +292,8 @@ int main(int argc, char* argv[]) {
                 cetric::profiling::Timer timer;
                 if (conf.algorithm == cetric::Algorithm::cetric) {
                     if (conf.communication_policy == "new") {
-                        triangles = run_cetric(G, conf, rank, size, cetric::MessageQueuePolicy{}, conf.id_node_ordering);
+                        triangles =
+                            run_cetric(G, conf, rank, size, cetric::MessageQueuePolicy{}, conf.id_node_ordering);
                     } else if (conf.communication_policy == "grid") {
                         triangles = run_cetric(G, conf, rank, size, cetric::GridPolicy{}, conf.id_node_ordering);
                     }

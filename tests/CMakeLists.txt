@@ -34,7 +34,14 @@ set_target_properties(
 
 # End-to-end tests: run katric on the example graphs with each algorithm configuration and check the triangle count.
 if(TARGET katric)
-  set(example_graphs "triangle=1" "hiv=45" "com-amazon=667129")
+  # Inputs as KaGen option strings ($<SEMICOLON>: a plain ; would split the CMake list). Files are read edge-balanced
+  # (formerly read-edge-partitioned in the configs). rgg2d gives the same graph for 2 and 4 ranks; KaGen's GNM and RHG
+  # graphs depend on the number of PEs.
+  set(example_graphs "triangle=1" "hiv=45" "com-amazon=667129" "rgg2d=413610")
+  foreach(graph triangle hiv com-amazon)
+    set(kagen_${graph} "file$<SEMICOLON>filename=${PROJECT_SOURCE_DIR}/examples/${graph}.metis$<SEMICOLON>input_format=metis$<SEMICOLON>distribution=balance-edges")
+  endforeach()
+  set(kagen_rgg2d "rgg2d$<SEMICOLON>n=16384$<SEMICOLON>m=131072$<SEMICOLON>seed=7")
   set(example_configs "cetric" "ditric" "ditric-grid" "hybrid")
   set(args_cetric --config ${PROJECT_SOURCE_DIR}/configs/cetric.toml)
   set(args_ditric --config ${PROJECT_SOURCE_DIR}/configs/ditric.toml)
@@ -52,11 +59,10 @@ if(TARGET katric)
           continue()
         endif()
         set(command ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} ${ranks} ${KATESTROPHE_MPIEXEC_OVERSUBSCRIBE_FLAG}
-                    ${MPIEXEC_PREFLAGS} $<TARGET_FILE:katric> ${PROJECT_SOURCE_DIR}/examples/${graph}.metis
-                    --input-format metis ${args_${config}})
+                    ${MPIEXEC_PREFLAGS} $<TARGET_FILE:katric> ${args_${config}})
         add_test(NAME katric.${graph}.${config}.${ranks}cores
-                 COMMAND ${CMAKE_COMMAND} "-DCOMMAND=${command}" -DEXPECTED=${expected} -P
-                         ${CMAKE_CURRENT_SOURCE_DIR}/check_triangle_count.cmake)
+                 COMMAND ${CMAKE_COMMAND} "-DCOMMAND=${command}" "-DKAGEN_OPTION_STRING=${kagen_${graph}}"
+                         -DEXPECTED=${expected} -P ${CMAKE_CURRENT_SOURCE_DIR}/check_triangle_count.cmake)
       endforeach()
     endforeach()
   endforeach()

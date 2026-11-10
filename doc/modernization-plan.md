@@ -96,11 +96,21 @@ The Caliper/Adiak measurement (step 3) was developed on `explore/caliper-adiak` 
 
 ### 4. Graph input: KaGen
 
-- [ ] Add `--kagen_option_string` and build the distributed graph from KaGen's output (generators and file input)
-- [ ] Check whether KaGen reads the binary `first_out`/`head` format (`examples/hiv.*`); if not, convert the
-      examples to METIS or KaGen's binary format
-- [ ] Check KaGen support for pre-partitioned input (`examples/partitions`, `partitioned: True` in suites)
-- [ ] Remove graph-io (including its `MPI_NODE` macro with the typo'd `#ifdef MPI_UNINT64_T`)
+- [x] `--kagen_option_string` (required) replaces `input`, `--input-format`, `--gen*`, `--read-edge-partitioned` and
+      `--cache-input`; KaGen's CSR output is converted to graph-io's `LocalGraphView` (`apps/input.h`). Validated
+      against the previous commit: triangle counts identical on examples + rgg2d/rhg/gnm (fixed seeds, 2 and 4 ranks);
+      all counters identical except the (already nondeterministic) grid policy
+- [x] `read-edge-partitioned = true` in `configs/cetric.toml`/`ditric.toml` is now `distribution=balance-edges` in the
+      option string (counters identical with it; KaGen's default `balance-vertices` gives a different split). Experiment
+      inputs must pass it to reproduce the paper setup. Unknown keys in `--config` files are errors now (CLI11 silently
+      ignored the removed key)
+- [x] KaGen does not read the binary `first_out`/`head` format; the examples all have METIS versions, the binary
+      copies are removed. Convert large inputs to ParHIP
+- [x] Pre-partitioned input (`--partitioning`) dropped: KaGen's distributions (`balance-edges`, `explicit` vertex
+      ranges) are enough. `examples/partitions` removed; the `partitioned: True` suites become obsolete (step 5)
+- [x] ctest: file inputs via KaGen (`balance-edges`) plus an rgg2d generator input
+- [ ] Remove graph-io (including its `MPI_NODE` macro with the typo'd `#ifdef MPI_UNINT64_T`). Still used for
+      `LocalGraphView`/`Edge` in the library and by the unit tests
 
 ### 4b. Benchmark harness: abstract algorithm (like KaCCv2's `benchmark/`)
 
@@ -109,8 +119,10 @@ getters) built by a factory (`get_algorithm(config, comm)`), and verifies agains
 instead re-reads or regenerates the input in every iteration (`--cache-input none` is the default), rebuilds the
 `DistributedGraph` per iteration and dispatches algorithm x communication policy in a 6-way if-chain.
 
-- [ ] `generate_input(config, comm) -> kagen::Graph`, called once before the iteration loop (comes with step 4);
-      remove `InputCache` and `--cache-input`. Pre-partitioning (`--partitioning`) is applied here
+- [x] `generate_input(option string, comm) -> kagen::Graph`, called once before the iteration loop; `InputCache` and
+      `--cache-input` removed. Each iteration copies the unmodified `LocalGraphView` and builds the `DistributedGraph`
+      from it (as `--cache-input in-memory` did). Generation time: log line `input:` and Adiak `input_time`
+      (replaces `io_time`)
 - [ ] `AbstractAlgorithm` with `ingest(kagen::Graph&&)`, `reset()`, `run()`, `triangle_count()`; a factory replaces
       the if-chain (cetric / patric / cetric-x x message-queue / grid policy)
 - [ ] katric's algorithms modify the graph (orientation, `remove_internal_edges`, `compact`, ghost expansion), so
@@ -206,7 +218,7 @@ instead re-reads or regenerates the input in every iteration (`--cache-input non
 3. Caliper/Adiak measurement and JSON output, replacing tlx timers and cereal — done (cluster overhead open)
 4. Next, in this order:
    1. clang-tidy config and a first run on the algorithm headers (4c) — done
-   2. KaGen input generated once (4 + first item of 4b)
+   2. KaGen input generated once (4 + first item of 4b) — done
    3. Abstract algorithm, factory, `reset`, `--verify` (4b); then remove graph-io
 5. kaval switch and removal of the old runner scripts
 6. Cluster validation through kaval: Abseil vs. sparsehash run time, Caliper overhead, Linux Adiak collectors

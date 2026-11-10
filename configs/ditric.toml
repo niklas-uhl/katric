@@ -17,4 +17,3 @@ global-synchronization = true
 communication-policy = "new"
 primary-cost-function = "none"
 intersection-method = "merge"
-read-edge-partitioned = true

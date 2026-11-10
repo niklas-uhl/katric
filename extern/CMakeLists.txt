@@ -111,8 +111,7 @@ FetchContent_Declare(
   GIT_SHALLOW ON
   SYSTEM EXCLUDE_FROM_ALL)
 
-# KaGen is not used by katric directly yet, but it is declared here so that
-# graph-io (and later katric itself) build against exactly this version.
+# KaGen: katric's input (--kagen_option_string); graph-io reuses this target.
 set(KAGEN_BUILD_APPS OFF)
 set(KAGEN_BUILD_TOOLS OFF)
 set(KAGEN_BUILD_EXAMPLES OFF)

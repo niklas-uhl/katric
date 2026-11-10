@@ -21,9 +21,9 @@
 
 #pragma once
 
-#include <memory>
 #include <algorithm>
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -33,19 +33,11 @@
 #include "cetric/config.h"
 #include "magic_enum/magic_enum.hpp"
 
-inline std::shared_ptr<CLI::App> parse_parameters(const std::string& app_name, cetric::Config& conf) {
-    auto app = std::make_shared<CLI::App>(app_name);
-
-    app->add_option("input", conf.input_file, "The input graph")->required()->check(CLI::ExistingFile);
-    return app;
-}
-
 /// Adds an option for an enum. Its values are spelled as cetric::cli_name() (case-insensitive, `_` for `-` works as
 /// well), `aliases` are accepted in addition. The help text and option_values() show the value by name.
 template <typename Enum>
-CLI::Option* add_enum_option(
-    CLI::App& app, std::string const& name, Enum& variable, std::map<std::string, Enum> aliases = {}
-) {
+CLI::Option*
+add_enum_option(CLI::App& app, std::string const& name, Enum& variable, std::map<std::string, Enum> aliases = {}) {
     std::map<std::string, Enum> values;
     for (Enum value: magic_enum::enum_values<Enum>()) {
         values.emplace(cetric::cli_name(value), value);
@@ -104,22 +96,4 @@ inline std::vector<std::pair<std::string, std::string>> option_values(CLI::App& 
             exit(retval);                                \
         }
 #endif
-
-inline void parse_gen_parameters(CLI::App& app, cetric::Config& conf) {
-    app.add_option("--seed", conf.gen.seed);
-    app.add_option("--gen", conf.gen.generator)
-        ->transform(CLI::IsMember({"gnm", "rdg_2d", "rdg_3d", "rgg_2d", "rgg_3d", "rhg", "ba", "grid_2d", "rmat"}));
-    app.add_option("--gen_n", conf.gen.n);
-    app.add_option("--gen_m", conf.gen.m);
-    // app.add_option("--gen_r", conf.gen_r);
-    app.add_option("--gen_p", conf.gen.p);
-    app.add_flag("--gen_periodic", conf.gen.periodic);
-    app.add_option("--gen_gamma", conf.gen.gamma);
-    app.add_option("--gen_d", conf.gen.d);
-    app.add_option("--gen_a", conf.gen.a);
-    app.add_option("--gen_b", conf.gen.b);
-    app.add_option("--gen_c", conf.gen.c);
-    app.add_flag("--gen_verify_graph", conf.gen.verify_graph);
-    app.add_flag("--gen_statistics", conf.gen.statistics);
-}
 
