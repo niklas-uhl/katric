@@ -102,6 +102,44 @@ The Caliper/Adiak measurement (step 3) was developed on `explore/caliper-adiak` 
 - [ ] Check KaGen support for pre-partitioned input (`examples/partitions`, `partitioned: True` in suites)
 - [ ] Remove graph-io (including its `MPI_NODE` macro with the typo'd `#ifdef MPI_UNINT64_T`)
 
+### 4b. Benchmark harness: abstract algorithm (like KaCCv2's `benchmark/`)
+
+KaCCv2's runner generates the input once, hands it to an `AbstractAlgorithm` (`ingest`, `reset`, `run`, result
+getters) built by a factory (`get_algorithm(config, comm)`), and verifies against a reference. katric's `main`
+instead re-reads or regenerates the input in every iteration (`--cache-input none` is the default), rebuilds the
+`DistributedGraph` per iteration and dispatches algorithm x communication policy in a 6-way if-chain.
+
+- [ ] `generate_input(config, comm) -> kagen::Graph`, called once before the iteration loop (comes with step 4);
+      remove `InputCache` and `--cache-input`. Pre-partitioning (`--partitioning`) is applied here
+- [ ] `AbstractAlgorithm` with `ingest(kagen::Graph&&)`, `reset()`, `run()`, `triangle_count()`; a factory replaces
+      the if-chain (cetric / patric / cetric-x x message-queue / grid policy)
+- [ ] katric's algorithms modify the graph (orientation, `remove_internal_edges`, `compact`, ghost expansion), so
+      `ingest` keeps a pristine `DistributedGraph` and `reset()` copies it into the working graph. Same memory as
+      today's `--cache-input in-memory`, but the conversion runs once. Caliper regions: `ingest` once, `reset` per
+      iteration, `total` unchanged (so run times stay comparable)
+- [ ] Optional `--reread-input`: call `generate_input` + `ingest` before each iteration instead of keeping the
+      unmodified copy, for inputs where two copies do not fit (fast with KaGen's binary ParHIP format; convert the
+      large inputs to it)
+- [ ] `--verify`: gather the graph on rank 0 and count sequentially (small inputs only), like KaCCv2's `BFSCC`
+      reference; exit with an error on a mismatch
+- [ ] Competitors behind the same interface (later, not part of this step): TriC, HavoqGT, Tom2D and Bader's code
+      run today as separate binaries via `runners.py`. Each needs a converter from `kagen::Graph` to its own input
+      format and a pinned fork via FetchContent (`EXCLUDE_FROM_ALL`), like KaCCv2's ParConnect/CombBLAS/KaCCv1.
+      Decide per competitor whether hooking it in is worth it or kaval runs its binary
+
+### 4c. Static analysis: clang-tidy
+
+- [ ] Add a `.clang-tidy` modelled on KaCCv2's (`bugprone-*`, `mpi-*`, `performance-*`, `cppcoreguidelines-*`,
+      `modernize-*`, `readability-*`, `misc-*` without `misc-include-*`); `HeaderFilterRegex: 'include/cetric/'`,
+      identifier-length exceptions for `G`, `u`, `v`, `it`
+- [ ] Run it on `build/compile_commands.json` (the dev preset exports it; Homebrew's `run-clang-tidy`). The build
+      uses g++-16, so check whether clang-tidy copes with GCC-only flags and libstdc++ 16 headers; otherwise use a
+      clang preset for the analysis
+- [ ] Triage `bugprone-*`, `mpi-*` and `cppcoreguidelines-*` findings first and fix real bugs in separate commits,
+      each validated by triangle and message counts. No mass `modernize-*`/`readability-*` rewrite of the
+      algorithm headers (noisy diffs); apply those only to code that is being touched anyway (apps, new harness)
+- [ ] Optional afterwards: a `CETRIC_ENABLE_CLANG_TIDY` option or a CI job on the bug-finding checks only
+
 ### 5. Experiment runner: kaval
 
 - [ ] Fetch kaval into `./kaval` like kascade/KaCCv2, pinned to a SHA and gitignored; add `justfile` and
@@ -141,6 +179,10 @@ The Caliper/Adiak measurement (step 3) was developed on `explore/caliper-adiak` 
 - [x] Measurement: Caliper/Adiak instead of kamping timers (step 3)
 - [ ] Keep or drop `shmetric`?
 - [ ] Abseil: opt-in until the counts match (current plan), or the default right away?
+- [x] Drop `--cache-input` entirely. If two in-memory copies do not fit, an optional `--reread-input` can run
+      `generate_input` again before each iteration instead of keeping the unmodified copy; with KaGen's binary
+      ParHIP format, rereading is about as fast as the old cache
+- [x] Reference for `--verify`: sequential count on a gathered graph (small inputs only)
 
 ## Deferred (no action now)
 
@@ -152,15 +194,22 @@ The Caliper/Adiak measurement (step 3) was developed on `explore/caliper-adiak` 
 
 ## Order and validation
 
-1. CMake structure and presets (including the git-version swap and the SHA pins)
-2. Abseil option
-3. Caliper/Adiak measurement and JSON output, replacing tlx timers and cereal
-4. KaGen option string, then remove graph-io
+1. CMake structure and presets (including the git-version swap and the SHA pins) — done
+2. Abseil option — done (cluster timing open)
+3. Caliper/Adiak measurement and JSON output, replacing tlx timers and cereal — done (cluster overhead open)
+4. Next, in this order:
+   1. clang-tidy config and a first run on the algorithm headers (4c): small, and real bugs found now are fixed
+      before the harness refactor moves code around
+   2. KaGen input generated once (4 + first item of 4b)
+   3. Abstract algorithm, factory, `reset`, `--verify` (4b); then remove graph-io
 5. kaval switch and removal of the old runner scripts
-6. CI and README
+6. Cluster validation through kaval: Abseil vs. sparsehash run time, Caliper overhead, Linux Adiak collectors
+7. CI (build, tests, clang-tidy bug checks) and README; competitors behind `AbstractAlgorithm` as needed
 
-CMake comes first because every later step adds options and dependencies. kaval comes last because it needs both
-the new JSON output and `--kagen_option_string`.
+CMake came first because every later step adds options and dependencies. KaGen and the harness come before kaval
+because kaval needs `--kagen_option_string`, and with generation done once per run the measured iterations no longer
+include input I/O. The open cluster measurements wait for kaval so they run through the new pipeline once instead
+of the broken `runners.py`.
 
 After each step: build with the `dev` preset, run the tests, and compare triangle counts on `examples/` plus a few
 KaGen graphs with fixed seeds against the previous commit. For the Abseil step, also compare message counts; small
