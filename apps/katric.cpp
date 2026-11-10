@@ -105,12 +105,14 @@ cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::P
     app.add_option(
         "--caliper-config",
         conf.caliper_config,
-        "Caliper config, e.g. \"katric-timers,katric-counters\" (JSON), \"spot,katric-counters\" or \"runtime-report\""
+        "Caliper config, e.g. \"katric-timers,katric-counters\" (JSON), \"spot,katric-counters\" or \"runtime-report\". "
+        "Caliper's CALI_CONFIG environment variable works independently of this option."
     );
     app.add_option(
         "--caliper-output",
         conf.caliper_output,
-        "Output prefix: <prefix>.timers.json, <prefix>.counters.json and <prefix>.cali (spot)"
+        "Output prefix: <prefix>.timers.json, <prefix>.counters.json and <prefix>.cali (spot). Enables "
+        "katric-timers,katric-counters unless --caliper-config is given."
     );
 
     app.add_flag("--degree-filtering", conf.degree_filtering);
@@ -212,6 +214,9 @@ cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::P
     if (conf.num_threads == 0) {
         conf.num_threads = tbb::this_task_arena::max_concurrency();
     }
+    if (conf.caliper_config.empty() && !conf.caliper_output.empty()) {
+        conf.caliper_config = "katric-timers,katric-counters";
+    }
     conf.rank    = rank;
     conf.PEs     = size;
     conf.options = option_values(app);
@@ -289,16 +294,6 @@ private:
     std::optional<graphio::LocalGraphView> G_;
     graphio::internal::GraphInfo           info_;
 };
-
-void print_summary(size_t triangles, std::vector<double> const& wall_times) {
-    SPDLOG_INFO("{:<15}{:>10}", "triangles: ", triangles);
-    for (size_t i = 0; i < wall_times.size(); ++i) {
-        SPDLOG_INFO("{:<15}{:>10} s", fmt::format("[{}] time: ", i + 1), wall_times[i]);
-    }
-    if (!wall_times.empty()) {
-        SPDLOG_INFO("{:<15}{:>10} s", "min time: ", *std::min_element(wall_times.begin(), wall_times.end()));
-    }
-}
 
 int main(int argc, char* argv[]) {
     int thread_support_level;
@@ -429,6 +424,9 @@ int main(int argc, char* argv[]) {
             double wall_time = 0;
             MPI_Reduce(&local_wall_time, &wall_time, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
             wall_times.push_back(wall_time);
+            if (rank == 0) {
+                SPDLOG_INFO("iteration {}/{}: {:.6f} s, {} triangles", iter + 1, conf.iterations, wall_time, triangles);
+            }
         }
         if (!conf.caliper_config.empty()) {
             adiak::value("triangles", static_cast<long>(triangles));
@@ -436,8 +434,8 @@ int main(int argc, char* argv[]) {
             caliper.flush(); // collective, has to happen before MPI_Finalize
             adiak::fini();
         }
-        if (rank == 0) {
-            print_summary(triangles, wall_times);
+        if (rank == 0 && wall_times.size() > 1) {
+            SPDLOG_INFO("min time: {:.6f} s", *std::min_element(wall_times.begin(), wall_times.end()));
         }
     }
     return MPI_Finalize();

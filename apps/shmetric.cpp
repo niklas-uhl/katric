@@ -41,16 +41,6 @@
 #include "git_hash.h"
 #include "parse_parameters.h"
 
-void print_summary(size_t triangles, std::vector<double> const& wall_times) {
-    SPDLOG_INFO("{:<15}{:>10}", "triangles: ", triangles);
-    for (size_t i = 0; i < wall_times.size(); ++i) {
-        SPDLOG_INFO("{:<15}{:>10} s", fmt::format("[{}] time: ", i + 1), wall_times[i]);
-    }
-    if (!wall_times.empty()) {
-        SPDLOG_INFO("{:<15}{:>10} s", "min time: ", *std::min_element(wall_times.begin(), wall_times.end()));
-    }
-}
-
 int main(int argc, char* argv[]) {
     spdlog::cfg::load_env_levels();
     spdlog::set_pattern("[%Y-%m-%d %T.%e] [%^%l%$] %v");
@@ -94,6 +84,9 @@ int main(int argc, char* argv[]) {
         cetric::profiling::Timer global_time;
         triangles = cetric::run_shmem(G, conf);
         wall_times.push_back(global_time.elapsed_time());
+        SPDLOG_INFO("iteration {}/{}: {:.6f} s, {} triangles", iter + 1, conf.iterations, wall_times.back(), triangles);
     }
-    print_summary(triangles, wall_times);
+    if (wall_times.size() > 1) {
+        SPDLOG_INFO("min time: {:.6f} s", *std::min_element(wall_times.begin(), wall_times.end()));
+    }
 }

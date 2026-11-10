@@ -21,7 +21,7 @@ The algorithms stay unchanged. Every step is checked by comparing triangle count
 | `25be39d` | Empty `.gitmodules` and `load_submodules.sh` removed, README updated                                         |
 | `ff681d8` | All dependencies via FetchContent; backward-cpp, sanitizers-cmake and others dropped                         |
 
-A Caliper/Adiak measurement prototype is on `explore/caliper-adiak` (`34eb2b6`). It is not merged.
+A Caliper/Adiak measurement prototype is on `explore/caliper-adiak` (rebased onto this branch). It is not merged.
 
 ## Work items
 
@@ -87,6 +87,12 @@ A Caliper/Adiak measurement prototype is on `explore/caliper-adiak` (`34eb2b6`).
       `apps/katric.cpp`, `apps/shmetric.cpp`)
 - [ ] Fix the `LocalStatistics` copy constructor and assignment, which drop `intersection_size_local/global` and `wedges`
 - [ ] Make the JSON layout match what kaval and the kascade/KaCCv2 eval scripts expect
+
+The Caliper alternative on `explore/caliper-adiak` covers this step without kamping timers or nlohmann_json:
+scoped Caliper regions per phase, counters added on the fly (`counter_add`), cross-rank min/max/avg written as JSON
+(`--caliper-output <prefix>` → `<prefix>.timers.json`, `<prefix>.counters.json`), the CLI11 option values as Adiak
+run metadata, and `scripts/caliper_to_json.py` merging both files into the per-iteration layout. cereal, the
+`Statistics` struct (including the broken `LocalStatistics` copy) and `--json-output` are removed there.
 
 ### 4. Graph input: KaGen
 
