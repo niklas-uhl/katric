@@ -157,6 +157,20 @@ FetchContent_Declare(
 # kagen has to be available before graph-io, which then reuses its target.
 FetchContent_MakeAvailable(cli11 fmt spdlog TBB absl cereal magic_enum kassert tlx kamping kamping-spdlog-adapter kamping-v2 kagen graph-io message-queue)
 
+# GCC on AArch64 emits a -Wpsabi note for every function passing std::pair<double, double> (ABI change in GCC 10.1).
+# It is irrelevant as long as nothing is mixed with objects from GCC < 10.1, and it floods the KaGen build.
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+  target_compile_options(KaGen PRIVATE -Wno-psabi)
+endif()
+
+# The pinned KaMPIng only attaches its assertion level (derived from KAMPING_ASSERTION_LEVEL) to the full `kamping`
+# target, not to `kamping_types`, so users of kamping::types alone get kassert's "assertion level was not set" #warning.
+# Forward the same definition to kamping_types. Fixed upstream (kamping-types gets its own kassert instance with a
+# default level); drop this once the pin includes that fix (kamping v0.3.2).
+get_target_property(_kamping_defs kamping INTERFACE_COMPILE_DEFINITIONS)
+list(FILTER _kamping_defs INCLUDE REGEX "KAMPING_ASSERT_ASSERTION_LEVEL=")
+target_compile_definitions(kamping_types INTERFACE ${_kamping_defs})
+
 
 # Tooling and app/test-only dependencies.
 if(CETRIC_ENABLE_FORMAT_CMAKE)
