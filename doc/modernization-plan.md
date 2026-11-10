@@ -106,6 +106,8 @@ The Caliper/Adiak measurement (step 3) was developed on `explore/caliper-adiak` 
 
 - [ ] Fetch kaval into `./kaval` like kascade/KaCCv2, pinned to a SHA and gitignored; add `justfile` and
       `pyproject.toml` / uv setup
+- [ ] kaval passes `--caliper-output <run prefix>` and reads the JSON back. Decide then whether `--caliper-output`
+      alone should also write spot's `.cali` (for Thicket), i.e. default to `spot,katric-timers,katric-counters`
 - [ ] Convert `experiments/paper-suites/*.suite.yaml` and `all-suites`; check `threads_per_rank` and the graph specs
       against kaval's format
 - [ ] Remove `expcore.py`, `runners.py`, `run-experiments.py`, `simple_runner.py`, `slugify.py`, the templates,
