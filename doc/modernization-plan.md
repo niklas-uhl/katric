@@ -91,8 +91,8 @@ The Caliper/Adiak measurement (step 3) was developed on `explore/caliper-adiak` 
 - [x] Configure with Python < 3.15 for Caliper's MPI wrapper generator (`321a55a`)
 - [ ] Measure the profiling overhead and check the Linux-only Adiak collectors (command line, libraries) on the
       cluster
-- [ ] Make kaval read the JSON (`scripts/caliper_to_json.py` merges both files into a per-iteration document);
-      until then `experiments/runners.py` does not work (it needs `--json-output`), accepted until the kaval switch
+- [x] Read the JSON of a kaval run back: `just collect <output dir>` (`scripts/caliper_to_json.py` on a directory,
+      one merged document per run and line). kaval itself only runs, it does not read results
 
 ### 4. Graph input: KaGen
 
@@ -169,14 +169,20 @@ instead re-reads or regenerates the input in every iteration (`--cache-input non
 
 ### 5. Experiment runner: kaval
 
-- [ ] Fetch kaval into `./kaval` like kascade/KaCCv2, pinned to a SHA and gitignored; add `justfile` and
-      `pyproject.toml` / uv setup
-- [ ] kaval passes `--caliper-output <run prefix>` and reads the JSON back. Decide then whether `--caliper-output`
-      alone should also write spot's `.cali` (for Thicket), i.e. default to `spot,katric-timers,katric-counters`
-- [ ] Convert `experiments/paper-suites/*.suite.yaml` and `all-suites`; check `threads_per_rank` and the graph specs
-      against kaval's format
-- [ ] Remove `expcore.py`, `runners.py`, `run-experiments.py`, `simple_runner.py`, `slugify.py`, the templates,
-      `*.env` and `cetric-from-config.py` (keep `configs/*.toml`: they are CLI11 algorithm presets for `--config`)
+- [x] `just kaval` clones kaval into `./kaval` (gitignored) at a pinned SHA (`9bc527c`, main); `justfile` (local,
+      SuperMUC with the IntelMPI-OpenMP template so competitors get the right thread count, HoreKa) and a root
+      `pyproject.toml` for uv
+- [x] kaval passes `--caliper-output <run>` (`output_path_option_name`) and `--num-threads` (`threads_option_name`).
+      Open: should `--caliper-output` alone also write spot's `.cali` (for Thicket)?
+- [x] Ported only the katric paper suites, in KaCCv2's style: `paper-real-world`, `paper-weak-scaling`,
+      `paper-hybrid-real-world`, instance sets `real-world-core` / `paper-real-world` (ParHIP under
+      `${WORK_pn72pu}/graphs`, `distribution=balance-edges` for the old `--read-edge-partitioned`) and
+      `paper-weak-scaling` (graph-io's generators and seed), plus `local/smoke` (2 and 4 cores, `--verify`; passes).
+      Old suites in `experiments/legacy/`. TriC and HavoqGT suites deferred to step 7: their generator flags take
+      log2 sizes, which kaval's weak scaling cannot express (user decision)
+- [x] Removed the old runner (`expcore.py`, `runners.py`, `run-experiments.py`, `simple_runner.py`, `slugify.py`,
+      templates, `*.env`, `cetric-from-config.py`, `partition.sh`); `configs/*.toml` stay as `--config` presets
+- [ ] Verify the `europe` and `usa` ParHIP paths in `real-world-core` / `paper-real-world` (marked TODO)
 
 ### 6. Cleanup
 
@@ -228,7 +234,7 @@ instead re-reads or regenerates the input in every iteration (`--cache-input non
    1. clang-tidy config and a first run on the algorithm headers (4c) — done
    2. KaGen input generated once (4 + first item of 4b) — done
    3. Abstract algorithm, factory, `reset`, `--verify` (4b), then remove graph-io — done
-5. kaval switch and removal of the old runner scripts
+5. kaval switch and removal of the old runner scripts — done (europe/usa paths open)
 6. Cluster validation through kaval: Abseil vs. sparsehash run time, Caliper overhead, Linux Adiak collectors
 7. CI (build, tests, clang-tidy bug checks) and README; competitors behind `AbstractAlgorithm` as needed
 
