@@ -5,8 +5,8 @@ Working checklist for the `chore/modernize` branch. Tick items (`[x]`) as they l
 ## Goal
 
 Bring katric's build, measurement, input and experiment setup in line with kascade and KaCCv2. That means
-FetchContent for every dependency, CMake 3.25 presets, kamping timers with nlohmann JSON output, KaGen input and
-kaval as the experiment runner. Where those projects have weak spots, do it better here instead of copying them
+FetchContent for every dependency, CMake 3.25 presets, KaGen input and kaval as the experiment runner. Measurement
+deliberately differs: Caliper/Adiak with JSON output instead of kamping timers (see step 3). Where those projects have weak spots, do it better here instead of copying them
 (see "Where katric should do better").
 
 The algorithms stay unchanged. Every step is checked by comparing triangle counts on fixed inputs and seeds.
@@ -21,7 +21,7 @@ The algorithms stay unchanged. Every step is checked by comparing triangle count
 | `25be39d` | Empty `.gitmodules` and `load_submodules.sh` removed, README updated                                         |
 | `ff681d8` | All dependencies via FetchContent; backward-cpp, sanitizers-cmake and others dropped                         |
 
-A Caliper/Adiak measurement prototype is on `explore/caliper-adiak` (rebased onto this branch). It is not merged.
+The Caliper/Adiak measurement (step 3) was developed on `explore/caliper-adiak` and merged.
 
 ## Work items
 
@@ -79,20 +79,20 @@ A Caliper/Adiak measurement prototype is on `explore/caliper-adiak` (rebased ont
 - [x] Dead `compact_graph.h` / `simple_graph.h` removed instead of ported
 - [ ] Measure run time against the sparsehash version (`4847c53` without the option) on the cluster before merging
 
-### 3. Measurement and JSON output
+### 3. Measurement and JSON output: Caliper/Adiak
 
-- [ ] Replace `tlx::MultiTimer` with `kamping::measurements::timer` (plus counters where useful)
-- [ ] Replace cereal with nlohmann_json v3.12.0 + kamping-nlohmann-json-adaptor v1.0.0 for config, statistics and
-      `--json-output` (~73 cereal/MultiTimer uses, mainly `statistics.h`, `config.h`, `message_statistics.h`,
-      `apps/katric.cpp`, `apps/shmetric.cpp`)
-- [ ] Fix the `LocalStatistics` copy constructor and assignment, which drop `intersection_size_local/global` and `wedges`
-- [ ] Make the JSON layout match what kaval and the kascade/KaCCv2 eval scripts expect
-
-The Caliper alternative on `explore/caliper-adiak` covers this step without kamping timers or nlohmann_json:
-scoped Caliper regions per phase, counters added on the fly (`counter_add`), cross-rank min/max/avg written as JSON
-(`--caliper-output <prefix>` → `<prefix>.timers.json`, `<prefix>.counters.json`), the CLI11 option values as Adiak
-run metadata, and `scripts/caliper_to_json.py` merging both files into the per-iteration layout. cereal, the
-`Statistics` struct (including the broken `LocalStatistics` copy) and `--json-output` are removed there.
+- [x] Phases as scoped Caliper regions under a top-level `total` per iteration; counters added on the fly
+      (`counter_add`) in the edge iterator and every communication step; cross-rank min/max/avg (sum for counters)
+      written as JSON via `--caliper-output <prefix>` → `<prefix>.timers.json` / `<prefix>.counters.json`
+      (`74defff`, `c1037d6`, `b9b5028`, `0941c41`). `spot` and Caliper's other configs work via `--caliper-config`
+- [x] Run metadata via Adiak: the CLI11 option values (enum options named via magic_enum) and Adiak's standard
+      collectors; cereal, `Statistics` (with the broken `LocalStatistics` copy) and `--json-output` removed
+      (`9db1c7f`, `03fb46f`)
+- [x] Configure with Python < 3.15 for Caliper's MPI wrapper generator (`321a55a`)
+- [ ] Measure the profiling overhead and check the Linux-only Adiak collectors (command line, libraries) on the
+      cluster
+- [ ] Make kaval read the JSON (`scripts/caliper_to_json.py` merges both files into a per-iteration document);
+      until then `experiments/runners.py` does not work (it needs `--json-output`), accepted until the kaval switch
 
 ### 4. Graph input: KaGen
 
@@ -113,7 +113,8 @@ run metadata, and `scripts/caliper_to_json.py` merging both files into the per-i
 
 ### 6. Cleanup
 
-- [ ] Decide whether `shmetric` stays; if so, port it to the new input and JSON code. `apps/shmetric-benchmark.cpp`
+- [ ] Decide whether `shmetric` stays; if so, port it to the new input and give it Caliper output (it has the
+      regions, but no `--caliper-*` options). `apps/shmetric-benchmark.cpp`
       is not built by any target (dead file)
 - [ ] Add a GitHub Actions job that builds and runs the tests
 - [ ] Rewrite the README: presets, kaval usage, `--kagen_option_string`
@@ -135,8 +136,7 @@ run metadata, and `scripts/caliper_to_json.py` merging both files into the per-i
 
 ## Open decisions
 
-- [ ] Measurement: kamping timers (matches kascade/KaCCv2) or the Caliper prototype on `explore/caliper-adiak`?
-      If kamping wins, keep that branch only for reference.
+- [x] Measurement: Caliper/Adiak instead of kamping timers (step 3)
 - [ ] Keep or drop `shmetric`?
 - [ ] Abseil: opt-in until the counts match (current plan), or the default right away?
 
@@ -152,7 +152,7 @@ run metadata, and `scripts/caliper_to_json.py` merging both files into the per-i
 
 1. CMake structure and presets (including the git-version swap and the SHA pins)
 2. Abseil option
-3. kamping timers + nlohmann JSON, replacing cereal
+3. Caliper/Adiak measurement and JSON output, replacing tlx timers and cereal
 4. KaGen option string, then remove graph-io
 5. kaval switch and removal of the old runner scripts
 6. CI and README
