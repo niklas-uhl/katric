@@ -189,7 +189,9 @@ struct Config {
 
     int         verbosity_level = 0;
     CacheInput  cache_input     = CacheInput::None;
-    std::string json_output     = "";
+    // Caliper ConfigManager configuration (e.g. "spot"); empty disables Caliper. Output file via caliper_output.
+    std::string caliper_config = "";
+    std::string caliper_output = "";
     std::string hostname;
     PEID        PEs;
     PEID        rank;

@@ -48,6 +48,7 @@
 
 #include <spdlog/spdlog.h>
 #include "cetric/config.h"
+#include <caliper/cali.h>
 #include "cetric/counters/cetric_edge_iterator.h"
 #include "cetric/counters/intersection.h"
 #include "cetric/datastructures/auxiliary_node_data.h"
@@ -66,18 +67,19 @@ namespace cetric {
 template <typename NodeIndexer>
 inline void
 preprocessing(DistributedGraph<NodeIndexer>& G, cetric::profiling::PreprocessingStatistics& stats, const Config& conf) {
-    tlx::MultiTimer phase_timer;
-    phase_timer.start("orientation");
     auto nodes = G.local_nodes();
     if (conf.num_threads > 1) {
         tbb::task_arena arena(conf.num_threads, 0);
         arena.execute([&] {
-            tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G](auto const& r) {
-                for (auto node: r) {
-                    G.orient(node, node_ordering::degree_outward(G));
-                }
-            });
-            phase_timer.start("sorting");
+            {
+                CALI_CXX_MARK_SCOPE("orientation");
+                tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G](auto const& r) {
+                    for (auto node: r) {
+                        G.orient(node, node_ordering::degree_outward(G));
+                    }
+                });
+            }
+            CALI_CXX_MARK_SCOPE("sorting");
             tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G, &conf](auto const& r) {
                 for (auto node: r) {
                     G.sort_neighborhoods(node, node_ordering::id());
@@ -85,63 +87,51 @@ preprocessing(DistributedGraph<NodeIndexer>& G, cetric::profiling::Preprocessing
             });
         });
     } else {
-        for (auto node: nodes) {
-            G.orient(node, node_ordering::degree_outward(G));
+        {
+            CALI_CXX_MARK_SCOPE("orientation");
+            for (auto node: nodes) {
+                G.orient(node, node_ordering::degree_outward(G));
+            }
         }
-        phase_timer.start("sorting");
+        CALI_CXX_MARK_SCOPE("sorting");
         for (auto node: nodes) {
             G.sort_neighborhoods(node, node_ordering::id_outward(0));
         }
     }
-    phase_timer.stop();
-    stats.ingest(phase_timer);
 }
 
-inline size_t run_shmem(DistributedGraph<>& G, cetric::profiling::Statistics& stats, const Config& conf) {
-    tlx::MultiTimer phase_timer;
-    // if (conf.num_threads > 1) {
-    //     if (conf.binary_rank_search) {
-    //         G.find_ghost_ranks<true>(execution_policy::parallel{conf.num_threads});
-    //     } else {
-    //         G.find_ghost_ranks<false>(execution_policy::parallel{conf.num_threads});
-    //     }
-    // } else {
-    //     if (conf.binary_rank_search) {
-    //         G.find_ghost_ranks<true>(execution_policy::sequential{});
-    //     } else {
-    //         G.find_ghost_ranks<false>(execution_policy::sequential{});
-    //     }
-    // }
-    node_set ghosts;
-    phase_timer.start("preprocessing");
-    preprocessing(G, stats.local.preprocessing_local_phase, conf);
-    SPDLOG_DEBUG("Preprocessing finished");
-    phase_timer.start("local_phase");
-    auto   ctr            = cetric::CetricEdgeIterator(G, conf, 0, 1, MessageQueuePolicy{});
-    size_t triangle_count = 0;
+inline size_t run_shmem(DistributedGraph<>& G, const Config& conf) {
+    {
+        CALI_CXX_MARK_SCOPE("preprocessing");
+        cetric::profiling::PreprocessingStatistics preprocessing_stats; // not reported
+        preprocessing(G, preprocessing_stats, conf);
+        SPDLOG_DEBUG("Preprocessing finished");
+    }
+    size_t                                              triangle_count = 0;
     tbb::concurrent_vector<Triangle<RankEncodedNodeId>> triangles;
-    tbb::combinable<size_t>                             triangle_count_local_phase{0};
-    ctr.run_local(
-        [&](Triangle<RankEncodedNodeId> t) {
-            (void)t;
-            SPDLOG_DEBUG("{}", t);
+    {
+        CALI_CXX_MARK_SCOPE("local_phase");
+        auto                    ctr = cetric::CetricEdgeIterator(G, conf, 0, 1, MessageQueuePolicy{});
+        tbb::combinable<size_t> triangle_count_local_phase{0};
+        ctr.run_local(
+            [&](Triangle<RankEncodedNodeId> t) {
+                (void)t;
+                SPDLOG_DEBUG("{}", t);
 
-            if constexpr (KASSERT_ASSERTION_LEVEL >= kassert::assert::normal) {
-                t.normalize();
-                triangles.push_back(t);
-            }
-            SPDLOG_DEBUG("{}", tbb::this_task_arena::current_thread_index());
-            // triangle_count++;
-            triangle_count_local_phase.local()++;
-        },
-        stats,
-        node_ordering::id_outward(0),
-        node_ordering::degree_outward(G)
-    );
-    triangle_count += triangle_count_local_phase.combine(std::plus<>{});
-    SPDLOG_DEBUG("Local phase finished");
-    ConditionalBarrier(conf.global_synchronization);
-    phase_timer.stop();
+                if constexpr (KASSERT_ASSERTION_LEVEL >= kassert::assert::normal) {
+                    t.normalize();
+                    triangles.push_back(t);
+                }
+                SPDLOG_DEBUG("{}", tbb::this_task_arena::current_thread_index());
+                triangle_count_local_phase.local()++;
+            },
+            node_ordering::id_outward(0),
+            node_ordering::degree_outward(G)
+        );
+        triangle_count += triangle_count_local_phase.combine(std::plus<>{});
+        SPDLOG_DEBUG("Local phase finished");
+        ConditionalBarrier(conf.global_synchronization);
+    }
     if constexpr (KASSERT_ENABLED(kassert::assert::normal)) {
         SPDLOG_DEBUG("Verification started");
         KASSERT(triangles.size() == triangle_count);
@@ -159,7 +149,6 @@ inline size_t run_shmem(DistributedGraph<>& G, cetric::profiling::Statistics& st
         }
         SPDLOG_DEBUG("Verification finished");
     }
-    stats.local.ingest(phase_timer);
     return triangle_count;
 }
 } // namespace cetric

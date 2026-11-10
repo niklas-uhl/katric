@@ -35,7 +35,9 @@
 
 #include <CLI/CLI.hpp>
 #include <CLI/Validators.hpp>
-#include <cereal/archives/json.hpp>
+#include <caliper/ConfigManager.h>
+#include <adiak.hpp>
+#include <caliper/cali.h>
 #include <cereal/cereal.hpp>
 #include <graph-io/definitions.h>
 #include <graph-io/distributed_graph_io.h>
@@ -58,11 +60,12 @@
 
 #include "./parse_parameters.h"
 #include "CLI/Error.hpp"
+#include "cetric/adiak_archive.h"
+#include "cetric/caliper.h"
 #include "cetric/config.h"
 #include "cetric/counters/cetric_edge_iterator.h"
 #include "cetric/datastructures/distributed/distributed_graph.h"
 #include "cetric/datastructures/graph_definitions.h"
-#include "cetric/statistics.h"
 #include "cetric/timer.h"
 #include "cetric/util.h"
 #include "git_hash.h"
@@ -103,7 +106,16 @@ cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::P
         ->transform(CLI::CheckedTransformer(cetric::cache_input_map, CLI::ignore_case));
     app.add_flag("--read-edge-partitioned", conf.read_edge_partitioned);
 
-    app.add_option("--json-output", conf.json_output);
+    app.add_option(
+        "--caliper-config",
+        conf.caliper_config,
+        "Caliper config, e.g. \"katric-timers,katric-counters\" (JSON), \"spot,katric-counters\" or \"runtime-report\""
+    );
+    app.add_option(
+        "--caliper-output",
+        conf.caliper_output,
+        "Output prefix: <prefix>.timers.json, <prefix>.counters.json and <prefix>.cali (spot)"
+    );
 
     app.add_flag("--degree-filtering", conf.degree_filtering);
 
@@ -285,43 +297,12 @@ private:
     graphio::internal::GraphInfo           info_;
 };
 
-void print_summary(
-    const cetric::Config&                       conf,
-    std::vector<cetric::profiling::Statistics>& all_stats,
-    std::optional<double>                       io_time = std::nullopt
-) {
-    MPI_Barrier(MPI_COMM_WORLD);
-    if (!conf.json_output.empty()) {
-        if (conf.rank == 0) {
-            KASSERT(all_stats[0].triangles == all_stats[0].counted_triangles);
-            auto write_json_to_stream = [&](auto& stream) {
-                cereal::JSONOutputArchive ar(stream);
-                ar(cereal::make_nvp("stats", all_stats));
-                if (io_time.has_value()) {
-                    ar(cereal::make_nvp("io_time", io_time.value()));
-                }
-                ar(cereal::make_nvp("config", conf));
-            };
-            if (conf.json_output == "stdout") {
-                std::stringstream out;
-                write_json_to_stream(out);
-                std::cout << out.str();
-            } else {
-                std::ofstream out(conf.json_output);
-                write_json_to_stream(out);
-            }
-        }
-    } else {
-        if (conf.rank == 0) {
-            SPDLOG_INFO("{:<15}{:>10}", "triangles: ", all_stats[0].counted_triangles);
-            double min_time = std::numeric_limits<double>::max();
-            for (size_t i = 0; i < all_stats.size(); ++i) {
-                SPDLOG_INFO("{:<15}{:>10} s", fmt::format("[{}] time: ", i + 1), all_stats[i].global_wall_time);
-                min_time = std::min(all_stats[i].global_wall_time, min_time);
-            }
-            SPDLOG_INFO("{:<15}{:>10} s", "min time: ", min_time);
-        }
+void print_summary(size_t triangles, std::vector<double> const& wall_times) {
+    SPDLOG_INFO("{:<15}{:>10}", "triangles: ", triangles);
+    for (size_t i = 0; i < wall_times.size(); ++i) {
+        SPDLOG_INFO("{:<15}{:>10} s", fmt::format("[{}] time: ", i + 1), wall_times[i]);
     }
+    SPDLOG_INFO("{:<15}{:>10} s", "min time: ", *std::min_element(wall_times.begin(), wall_times.end()));
 }
 
 int main(int argc, char* argv[]) {
@@ -377,13 +358,33 @@ int main(int argc, char* argv[]) {
         if (conf.cache_input != cetric::CacheInput::None) {
             io_time = t.elapsed_time();
         }
-        std::vector<cetric::profiling::Statistics> all_stats;
+        // Caliper: region times and counters aggregated across ranks, iterations annotated as a loop; Adiak holds the
+        // run metadata
+        cali::ConfigManager caliper;
+        if (!conf.caliper_config.empty()) {
+            cetric::profiling::add_katric_configs(caliper, conf.caliper_output);
+            caliper.add(conf.caliper_config.c_str());
+            if (caliper.error()) {
+                SPDLOG_CRITICAL("Invalid Caliper config: {}", caliper.error_msg());
+                MPI_Abort(MPI_COMM_WORLD, 1);
+            }
+            MPI_Comm adiak_comm = MPI_COMM_WORLD;
+            adiak::init(&adiak_comm);
+            cetric::AdiakOutputArchive("")(cereal::make_nvp("config", conf));
+            adiak::value("mpi_size", size);
+            if (io_time.has_value()) {
+                adiak::value("io_time", io_time.value());
+            }
+            caliper.start();
+        }
+        size_t              triangles = 0;
+        std::vector<double> wall_times;
+        cali::Annotation    iteration_annotation("iteration", CALI_ATTR_NESTED);
         for (size_t iter = 0; iter < conf.iterations; ++iter) {
+            iteration_annotation.begin(static_cast<int>(iter));
             MPI_Barrier(MPI_COMM_WORLD);
 
             cetric::graph::DistributedGraph<> G;
-            cetric::profiling::Statistics     stats(rank, size);
-            cetric::profiling::Timer          timer;
             SPDLOG_DEBUG("Loading from cache");
             graphio::IOResult input = input_cache.get();
             SPDLOG_DEBUG("Finished loading from cache");
@@ -400,39 +401,47 @@ int main(int argc, char* argv[]) {
                     wedges.local() += (degree * (degree - 1)) / 2;
                 }
             });
-            stats.local.wedges = wedges.combine(std::plus<>{});
+            cetric::profiling::counter_add("wedges", wedges.combine(std::plus<>{}));
             SPDLOG_DEBUG("Finished conversion");
             MPI_Barrier(MPI_COMM_WORLD);
-            stats.local.io_time = timer.elapsed_time();
             cetric::profiling::Timer global_time;
 
             if (conf.algorithm == cetric::Algorithm::Cetric) {
                 if (conf.communication_policy == "new") {
-                    run_cetric(G, stats, conf, rank, size, cetric::MessageQueuePolicy{}, conf.id_node_ordering);
+                    triangles = run_cetric(G, conf, rank, size, cetric::MessageQueuePolicy{}, conf.id_node_ordering);
                 } else if (conf.communication_policy == "grid") {
-                    run_cetric(G, stats, conf, rank, size, cetric::GridPolicy{}, conf.id_node_ordering);
+                    triangles = run_cetric(G, conf, rank, size, cetric::GridPolicy{}, conf.id_node_ordering);
                 }
             } else if (conf.algorithm == cetric::Algorithm::Patric) {
                 if (conf.communication_policy == "new") {
-                    run_patric(G, stats, conf, rank, size, cetric::MessageQueuePolicy{});
+                    triangles = run_patric(G, conf, rank, size, cetric::MessageQueuePolicy{});
                 } else if (conf.communication_policy == "grid") {
-                    run_patric(G, stats, conf, rank, size, cetric::GridPolicy{});
+                    triangles = run_patric(G, conf, rank, size, cetric::GridPolicy{});
                 }
             } else if (conf.algorithm == cetric::Algorithm::CetricX) {
                 if (conf.communication_policy == "new") {
-                    run_cetric_new(G, stats, conf, rank, size, cetric::MessageQueuePolicy{});
+                    triangles = run_cetric_new(G, conf, rank, size, cetric::MessageQueuePolicy{});
                 } else if (conf.communication_policy == "grid") {
-                    run_cetric_new(G, stats, conf, rank, size, cetric::GridPolicy{});
+                    triangles = run_cetric_new(G, conf, rank, size, cetric::GridPolicy{});
                 }
             }
 
             MPI_Barrier(MPI_COMM_WORLD);
-            stats.local.local_wall_time = global_time.elapsed_time();
-
-            stats.reduce();
-            all_stats.emplace_back(std::move(stats));
+            double local_wall_time = global_time.elapsed_time();
+            iteration_annotation.end();
+            double wall_time = 0;
+            MPI_Reduce(&local_wall_time, &wall_time, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+            wall_times.push_back(wall_time);
         }
-        print_summary(conf, all_stats, io_time);
+        if (!conf.caliper_config.empty()) {
+            adiak::value("triangles", static_cast<long>(triangles));
+            adiak::value("wall_times", wall_times);
+            caliper.flush(); // collective, has to happen before MPI_Finalize
+            adiak::fini();
+        }
+        if (rank == 0) {
+            print_summary(triangles, wall_times);
+        }
     }
     return MPI_Finalize();
 }

@@ -29,6 +29,28 @@ FetchContent_Declare(
   GIT_SHALLOW ON
   SYSTEM EXCLUDE_FROM_ALL)
 
+# Caliper: annotation-based performance profiling (phase timings), configured at runtime (--caliper-config)
+set(WITH_MPI ON CACHE BOOL "" FORCE)
+set(WITH_TOOLS ON CACHE BOOL "" FORCE)
+set(WITH_ADIAK ON CACHE BOOL "" FORCE)
+set(WITH_DOCS OFF CACHE BOOL "" FORCE)
+# Adiak: run metadata (config, counters) recorded next to the Caliper profile
+set(ENABLE_MPI ON CACHE BOOL "" FORCE)
+set(ENABLE_TESTS OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+  adiak
+  GIT_REPOSITORY https://github.com/LLNL/adiak
+  GIT_TAG v0.5.0
+  GIT_SHALLOW ON
+  SYSTEM EXCLUDE_FROM_ALL
+  OVERRIDE_FIND_PACKAGE)
+FetchContent_Declare(
+  caliper
+  GIT_REPOSITORY https://github.com/LLNL/Caliper
+  GIT_TAG v2.15.0
+  GIT_SHALLOW ON
+  SYSTEM EXCLUDE_FROM_ALL)
+
 set(JUST_INSTALL_CEREAL ON)
 FetchContent_Declare(
   cereal
@@ -160,6 +182,24 @@ block()
   set(KASSERT_DEFAULT_ASSERTION_LEVEL ${KASSERT_ASSERTION_LEVEL})
   FetchContent_MakeAvailable(kassert)
 endblock()
+
+# Caliper builds its own tests (and googletest) if BUILD_TESTING is on
+block()
+  set(BUILD_TESTING OFF)
+  FetchContent_MakeAvailable(adiak)
+  # Adiak's BLT setup redirects the output directories of *all* targets into its own build directory
+  unset(CMAKE_RUNTIME_OUTPUT_DIRECTORY CACHE)
+  unset(LIBRARY_OUTPUT_PATH CACHE)
+  unset(EXECUTABLE_OUTPUT_PATH CACHE)
+  # Caliper's find_package(adiak) is redirected to the fetched project; it expects adiak_LIBRARIES and reads the
+  # LOCATION property of its first entry, which is only allowed on imported targets.
+  add_library(adiak-imported INTERFACE IMPORTED GLOBAL)
+  target_link_libraries(adiak-imported INTERFACE adiak)
+  file(WRITE ${CMAKE_FIND_PACKAGE_REDIRECTS_DIR}/adiak-extra.cmake "set(adiak_LIBRARIES adiak-imported)\nset(adiak_INCLUDE_DIRS ${adiak_SOURCE_DIR}/include)\n")
+  FetchContent_MakeAvailable(caliper)
+endblock()
+# the build-tree target does not export its include directories
+target_include_directories(caliper SYSTEM INTERFACE $<BUILD_INTERFACE:${caliper_SOURCE_DIR}/include> $<BUILD_INTERFACE:${caliper_BINARY_DIR}/include>)
 
 # kagen has to be available before graph-io, which then reuses its target.
 FetchContent_MakeAvailable(cli11 fmt spdlog TBB absl cereal magic_enum tlx kamping kamping-spdlog-adapter kamping-v2 kagen graph-io message-queue)

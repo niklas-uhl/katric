@@ -44,6 +44,8 @@ target_link_libraries(
             kamping::types
             graph-io
             message-queue
+            caliper
+            adiak
             # last: a system TBB adds e.g. /opt/homebrew/include, which must not shadow pinned fmt/spdlog/abseil headers
             MPI::MPI_CXX
             TBB::tbb)

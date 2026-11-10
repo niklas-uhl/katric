@@ -107,7 +107,6 @@ cetric::Config parse_config(int argc, char* argv[]) {
 
     app.add_flag("-v", conf.verbosity_level, "verbosity level");
 
-    app.add_option("--json-output", conf.json_output);
 
     app.add_flag("--degree-filtering", conf.degree_filtering);
 

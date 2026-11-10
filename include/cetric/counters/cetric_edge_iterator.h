@@ -61,6 +61,7 @@
 #include <tlx/thread_barrier_mutex.hpp>
 
 #include <spdlog/spdlog.h>
+#include "cetric/caliper.h"
 #include "cetric/concurrent_buffered_queue.h"
 #include "cetric/config.h"
 #include "cetric/counters/intersection.h"
@@ -70,7 +71,6 @@
 #include "cetric/datastructures/graph_definitions.h"
 #include "cetric/datastructures/span.h"
 #include "cetric/indirect_message_queue.h"
-#include "cetric/statistics.h"
 #include "cetric/task_pool.h"
 #include "cetric/timer.h"
 #include "cetric/util.h"
@@ -172,20 +172,18 @@ public:
 
     template <typename TriangleFunc, typename NodeOrdering, typename EdgeOrientationOrdering>
     inline void
-    run_local(TriangleFunc emit, cetric::profiling::Statistics& stats, NodeOrdering&& node_ordering, EdgeOrientationOrdering&&) {
+    run_local(TriangleFunc emit, NodeOrdering&& node_ordering, EdgeOrientationOrdering&&) {
         if (conf_.local_parallel && conf_.num_threads > 1) {
             if (conf_.algorithm == Algorithm::CetricX) {
                 if (conf_.edge_partitioning) {
                     run_local_parallel_edge_partitioned_with_ghosts<EdgeOrientationOrdering>(
                         emit,
-                        stats,
                         interface_nodes_,
                         std::forward<NodeOrdering>(node_ordering)
                     );
                 } else {
                     run_local_parallel_with_ghosts<EdgeOrientationOrdering>(
                         emit,
-                        stats,
                         interface_nodes_,
                         std::forward<NodeOrdering>(node_ordering)
                     );
@@ -195,7 +193,6 @@ public:
             if (conf_.edge_partitioning) {
                 run_local_parallel_edge_partitioned<EdgeOrientationOrdering>(
                     emit,
-                    stats,
                     interface_nodes_,
                     std::forward<NodeOrdering>(node_ordering)
                 );
@@ -203,7 +200,6 @@ public:
             }
             run_local_parallel<EdgeOrientationOrdering>(
                 emit,
-                stats,
                 interface_nodes_,
                 std::forward<NodeOrdering>(node_ordering)
             );
@@ -211,14 +207,12 @@ public:
             if (conf_.algorithm == Algorithm::CetricX) {
                 run_local_sequential_with_ghosts<EdgeOrientationOrdering>(
                     emit,
-                    stats,
                     interface_nodes_.local(),
                     std::forward<NodeOrdering>(node_ordering)
                 );
             } else {
                 run_local_sequential<EdgeOrientationOrdering>(
                     emit,
-                    stats,
                     interface_nodes_.local(),
                     std::forward<NodeOrdering>(node_ordering)
                 );
@@ -229,15 +223,17 @@ public:
     template <typename EdgeOrientationOrdering, typename TriangleFunc, typename NodeOrdering>
     inline void run_local_sequential(
         TriangleFunc                    emit,
-        cetric::profiling::Statistics&  stats,
         std::vector<RankEncodedNodeId>& interface_nodes,
         NodeOrdering&&                  node_ordering
     ) {
-        cetric::profiling::Timer phase_time;
         interface_nodes.clear();
+        size_t skipped_nodes           = 0;
+        size_t wedge_checks            = 0;
+        size_t intersection_size_local = 0;
+        size_t local_triangles         = 0;
         for (auto v: G.local_nodes()) {
             if (conf_.pseudo2core && G.outdegree(v) < 2) {
-                stats.local.skipped_nodes++;
+                skipped_nodes++;
                 continue;
             }
             bool   interface_node_pushed = false;
@@ -279,8 +275,8 @@ public:
                     offset = neighbor_index;
                 }
                 // for each edge (v, u) we check the open wedge (v, u, w) for w in N(u)+
-                stats.local.wedge_checks += u_neighbors.end() - u_neighbors.begin();
-                stats.local.intersection_size_local +=
+                wedge_checks += u_neighbors.end() - u_neighbors.begin();
+                intersection_size_local +=
                     v_neighbors.end() - v_neighbors.begin() + u_neighbors.end() - u_neighbors.begin();
                 cetric::intersection(
                     v_neighbors.begin() + offset,
@@ -288,7 +284,7 @@ public:
                     u_neighbors.begin(),
                     u_neighbors.end(),
                     [&](RankEncodedNodeId w) {
-                        stats.local.local_triangles++;
+                        local_triangles++;
                         emit(Triangle<RankEncodedNodeId>{v, u, w});
                     },
                     node_ordering,
@@ -297,21 +293,26 @@ public:
                 neighbor_index++;
             }
         }
-        stats.local.local_phase_time += phase_time.elapsed_time();
+        profiling::counter_add("skipped_nodes", skipped_nodes);
+        profiling::counter_add("wedge_checks", wedge_checks);
+        profiling::counter_add("intersection_size_local", intersection_size_local);
+        profiling::counter_add("local_triangles", local_triangles);
     }
 
     template <typename EdgeOrientationOrdering, typename TriangleFunc, typename NodeOrdering>
     inline void run_local_sequential_with_ghosts(
         TriangleFunc                    emit,
-        cetric::profiling::Statistics&  stats,
         std::vector<RankEncodedNodeId>& interface_nodes,
         NodeOrdering&&                  node_ordering
     ) {
-        cetric::profiling::Timer phase_time;
         interface_nodes.clear();
+        size_t skipped_nodes           = 0;
+        size_t wedge_checks            = 0;
+        size_t intersection_size_local = 0;
+        size_t local_triangles         = 0;
         for (auto v: G.local_nodes()) {
             if (conf_.pseudo2core && G.outdegree(v) < 2) {
-                stats.local.skipped_nodes++;
+                skipped_nodes++;
                 continue;
             }
             bool   interface_node_pushed = false;
@@ -335,8 +336,8 @@ public:
                 if constexpr (std::is_same_v<NodeOrdering, EdgeOrientationOrdering>) {
                     offset = neighbor_index;
                 }
-                stats.local.wedge_checks += u_neighbors.end() - u_neighbors.begin();
-                stats.local.intersection_size_local +=
+                wedge_checks += u_neighbors.end() - u_neighbors.begin();
+                intersection_size_local +=
                     v_neighbors.end() - v_neighbors.begin() + u_neighbors.end() - u_neighbors.begin();
                 cetric::intersection(
                     v_neighbors.begin() + offset,
@@ -344,7 +345,7 @@ public:
                     u_neighbors.begin(),
                     u_neighbors.end(),
                     [&](RankEncodedNodeId w) {
-                        stats.local.local_triangles++;
+                        local_triangles++;
                         emit(Triangle<RankEncodedNodeId>{v, u, w});
                     },
                     node_ordering,
@@ -355,7 +356,7 @@ public:
         }
         for (auto v: G.ghosts()) {
             if (conf_.pseudo2core && G.ghost_degree(v) < 2) {
-                stats.local.skipped_nodes++;
+                skipped_nodes++;
                 continue;
             }
             size_t neighbor_index = 0;
@@ -365,12 +366,12 @@ public:
                 auto u_neighbors = G.out_adj(u).neighbors();
                 // for each edge (v, u) we check the open wedge (v, u, w) for
                 // w in N(u)+
-                stats.local.wedge_checks += u_neighbors.end() - u_neighbors.begin();
+                wedge_checks += u_neighbors.end() - u_neighbors.begin();
                 size_t offset = 0;
                 if constexpr (std::is_same_v<NodeOrdering, EdgeOrientationOrdering>) {
                     offset = neighbor_index;
                 }
-                stats.local.intersection_size_local +=
+                intersection_size_local +=
                     v_neighbors.end() - v_neighbors.begin() + u_neighbors.end() - u_neighbors.begin();
                 cetric::intersection(
                     v_neighbors.begin() + offset,
@@ -378,7 +379,7 @@ public:
                     u_neighbors.begin(),
                     u_neighbors.end(),
                     [&](RankEncodedNodeId w) {
-                        stats.local.local_triangles++;
+                        local_triangles++;
                         emit(Triangle<RankEncodedNodeId>{v, u, w});
                     },
                     node_ordering,
@@ -387,17 +388,18 @@ public:
                 neighbor_index++;
             }
         }
-        stats.local.local_phase_time += phase_time.elapsed_time();
+        profiling::counter_add("skipped_nodes", skipped_nodes);
+        profiling::counter_add("wedge_checks", wedge_checks);
+        profiling::counter_add("intersection_size_local", intersection_size_local);
+        profiling::counter_add("local_triangles", local_triangles);
     }
 
     template <typename EdgeOrientationOrdering, typename TriangleFunc, typename NodeOrdering>
     inline void run_local_parallel_edge_partitioned_with_ghosts(
         TriangleFunc                                                     emit,
-        cetric::profiling::Statistics&                                   stats,
         tbb::enumerable_thread_specific<std::vector<RankEncodedNodeId>>& interface_nodes,
         NodeOrdering&&                                                   node_ordering
     ) {
-        cetric::profiling::Timer phase_time;
         interface_nodes.clear();
 
         auto edge_locator = G.build_ghost_edge_locator();
@@ -526,21 +528,18 @@ public:
         //     << i);
         // }
 
-        stats.local.local_phase_time += phase_time.elapsed_time();
-        stats.local.skipped_nodes += thread_local_skipped_nodes.combine(std::plus<>{});
-        stats.local.wedge_checks += thread_local_wedge_checks.combine(std::plus<>{});
-        stats.local.intersection_size_local += thread_local_intersection_size_local.combine(std::plus<>{});
-        stats.local.local_triangles += thread_local_local_triangles.combine(std::plus<>{});
+        profiling::counter_add("skipped_nodes", thread_local_skipped_nodes.combine(std::plus<>{}));
+        profiling::counter_add("wedge_checks", thread_local_wedge_checks.combine(std::plus<>{}));
+        profiling::counter_add("intersection_size_local", thread_local_intersection_size_local.combine(std::plus<>{}));
+        profiling::counter_add("local_triangles", thread_local_local_triangles.combine(std::plus<>{}));
     }
 
     template <typename EdgeOrientationOrdering, typename TriangleFunc, typename NodeOrdering>
     inline void run_local_parallel_edge_partitioned(
         TriangleFunc                                                     emit,
-        cetric::profiling::Statistics&                                   stats,
         tbb::enumerable_thread_specific<std::vector<RankEncodedNodeId>>& interface_nodes,
         NodeOrdering&&                                                   node_ordering
     ) {
-        cetric::profiling::Timer phase_time;
         interface_nodes.clear();
 
         auto        edge_locator = G.build_edge_locator();
@@ -739,13 +738,10 @@ public:
                 });
             }
             std::for_each(threads.begin(), threads.end(), [](auto& t) { t.join(); });
-            stats.local.skipped_nodes =
-                std::reduce(thread_local_skipped_nodes.begin(), thread_local_skipped_nodes.end());
-            stats.local.intersection_size_local =
-                std::reduce(thread_local_intersection_size_local.begin(), thread_local_intersection_size_local.end());
-            stats.local.wedge_checks = std::reduce(thread_local_wedge_checks.begin(), thread_local_wedge_checks.end());
-            stats.local.local_triangles =
-                std::reduce(thread_local_local_triangles.begin(), thread_local_local_triangles.end());
+            profiling::counter_add("skipped_nodes", std::reduce(thread_local_skipped_nodes.begin(), thread_local_skipped_nodes.end()));
+            profiling::counter_add("intersection_size_local", std::reduce(thread_local_intersection_size_local.begin(), thread_local_intersection_size_local.end()));
+            profiling::counter_add("wedge_checks", std::reduce(thread_local_wedge_checks.begin(), thread_local_wedge_checks.end()));
+            profiling::counter_add("local_triangles", std::reduce(thread_local_local_triangles.begin(), thread_local_local_triangles.end()));
         } else {
             tbb::task_arena            arena(conf_.num_threads);
             tbb::blocked_range<EdgeId> edge_ids(EdgeId{0}, G.local_edge_count(), conf_.grainsize);
@@ -863,26 +859,23 @@ public:
                     arena.execute([&] { tbb::parallel_for(edge_ids, body, partitioner); });
                     break;
             }
-            stats.local.skipped_nodes += thread_local_skipped_nodes.combine(std::plus<>{});
-            stats.local.wedge_checks += thread_local_wedge_checks.combine(std::plus<>{});
-            stats.local.intersection_size_local += thread_local_intersection_size_local.combine(std::plus<>{});
-            stats.local.local_triangles += thread_local_local_triangles.combine(std::plus<>{});
+            profiling::counter_add("skipped_nodes", thread_local_skipped_nodes.combine(std::plus<>{}));
+            profiling::counter_add("wedge_checks", thread_local_wedge_checks.combine(std::plus<>{}));
+            profiling::counter_add("intersection_size_local", thread_local_intersection_size_local.combine(std::plus<>{}));
+            profiling::counter_add("local_triangles", thread_local_local_triangles.combine(std::plus<>{}));
         }
         // for (size_t i = 0; i < edges.size(); ++i) {
         //     KASSERT(edges[i].size() == processed_edges[i].size(), "Failed for " << i);
         // }
 
-        stats.local.local_phase_time += phase_time.elapsed_time();
     }
 
     template <typename EdgeOrientationOrdering, typename TriangleFunc, typename NodeOrdering>
     inline void run_local_parallel(
         TriangleFunc                                                     emit,
-        cetric::profiling::Statistics&                                   stats,
         tbb::enumerable_thread_specific<std::vector<RankEncodedNodeId>>& interface_nodes,
         NodeOrdering&&                                                   node_ordering
     ) {
-        cetric::profiling::Timer phase_time;
         interface_nodes.clear();
         auto                    nodes = G.local_nodes();
         tbb::combinable<size_t> thread_local_skipped_nodes{0};
@@ -956,7 +949,7 @@ public:
                         u_neighbors.end(),
                         [&](RankEncodedNodeId w) {
                             local_triangles++;
-                            // stats.local.local_triangles++;
+                            // local_triangles++;
                             emit(Triangle<RankEncodedNodeId>{v, u, w});
                         },
                         node_ordering,
@@ -1054,21 +1047,18 @@ public:
                 //                 break;
             }
         }
-        stats.local.local_phase_time += phase_time.elapsed_time();
-        stats.local.skipped_nodes += thread_local_skipped_nodes.combine(std::plus<>{});
-        stats.local.wedge_checks += thread_local_wedge_checks.combine(std::plus<>{});
-        stats.local.intersection_size_local += thread_local_intersection_size_local.combine(std::plus<>{});
-        stats.local.local_triangles += thread_local_local_triangles.combine(std::plus<>{});
+        profiling::counter_add("skipped_nodes", thread_local_skipped_nodes.combine(std::plus<>{}));
+        profiling::counter_add("wedge_checks", thread_local_wedge_checks.combine(std::plus<>{}));
+        profiling::counter_add("intersection_size_local", thread_local_intersection_size_local.combine(std::plus<>{}));
+        profiling::counter_add("local_triangles", thread_local_local_triangles.combine(std::plus<>{}));
     }
 
     template <typename EdgeOrientationOrdering, typename TriangleFunc, typename NodeOrdering>
     inline void run_local_parallel_with_ghosts(
         TriangleFunc                                                     emit,
-        cetric::profiling::Statistics&                                   stats,
         tbb::enumerable_thread_specific<std::vector<RankEncodedNodeId>>& interface_nodes,
         NodeOrdering&&                                                   node_ordering
     ) {
-        cetric::profiling::Timer phase_time;
         interface_nodes.clear();
 
         tbb::combinable<size_t> thread_local_skipped_nodes{0};
@@ -1145,7 +1135,7 @@ public:
                     u_neighbors.begin(),
                     u_neighbors.end(),
                     [&](RankEncodedNodeId w) {
-                        // stats.local.local_triangles++;
+                        // local_triangles++;
                         local_triangles++;
                         emit(Triangle<RankEncodedNodeId>{v, u, w});
                     },
@@ -1232,23 +1222,21 @@ public:
                 throw "currently unsupported";
             }
         }
-        stats.local.local_phase_time += phase_time.elapsed_time();
-        stats.local.skipped_nodes += thread_local_skipped_nodes.combine(std::plus<>{});
-        stats.local.wedge_checks += thread_local_wedge_checks.combine(std::plus<>{});
-        stats.local.intersection_size_local += thread_local_intersection_size_local.combine(std::plus<>{});
-        stats.local.local_triangles += thread_local_local_triangles.combine(std::plus<>{});
+        profiling::counter_add("skipped_nodes", thread_local_skipped_nodes.combine(std::plus<>{}));
+        profiling::counter_add("wedge_checks", thread_local_wedge_checks.combine(std::plus<>{}));
+        profiling::counter_add("intersection_size_local", thread_local_intersection_size_local.combine(std::plus<>{}));
+        profiling::counter_add("local_triangles", thread_local_local_triangles.combine(std::plus<>{}));
     }
 
     template <typename TriangleFunc, typename NodeOrdering>
-    inline void run_distributed(TriangleFunc emit, cetric::profiling::Statistics& stats, NodeOrdering&& node_ordering) {
+    inline void run_distributed(TriangleFunc emit, NodeOrdering&& node_ordering) {
         std::set<RankEncodedNodeId> ghosts;
-        run_distributed(emit, stats, std::forward<NodeOrdering>(node_ordering), ghosts);
+        run_distributed(emit, std::forward<NodeOrdering>(node_ordering), ghosts);
     }
 
     template <typename TriangleFunc, typename NodeIterator, typename NodeOrdering>
     inline void run_distributed(
         TriangleFunc                   emit,
-        cetric::profiling::Statistics& stats,
         NodeIterator                   interface_nodes_begin,
         NodeIterator                   interface_ndoes_end,
         NodeOrdering&&                 node_ordering
@@ -1256,7 +1244,6 @@ public:
         std::set<RankEncodedNodeId> ghosts;
         run_distributed(
             emit,
-            stats,
             interface_nodes_begin,
             interface_ndoes_end,
             std::forward<NodeOrdering>(node_ordering),
@@ -1266,12 +1253,11 @@ public:
 
     template <typename TriangleFunc, typename NodeOrdering, typename GhostSet>
     inline void run_distributed(
-        TriangleFunc emit, cetric::profiling::Statistics& stats, NodeOrdering&& node_ordering, GhostSet const& ghosts
+        TriangleFunc emit, NodeOrdering&& node_ordering, GhostSet const& ghosts
     ) {
         auto all_interface_nodes = tbb::flatten2d(interface_nodes_);
         run_distributed(
             emit,
-            stats,
             all_interface_nodes.begin(),
             all_interface_nodes.end(),
             std::forward<NodeOrdering>(node_ordering),
@@ -1282,7 +1268,6 @@ public:
     template <typename TriangleFunc, typename NodeIterator, typename NodeOrdering, typename GhostSet>
     inline void run_distributed(
         TriangleFunc                   emit,
-        cetric::profiling::Statistics& stats,
         NodeIterator                   interface_nodes_begin,
         NodeIterator                   interface_nodes_end,
         NodeOrdering&&                 node_ordering,
@@ -1292,7 +1277,6 @@ public:
             auto do_run = [&](auto& pool) {
                 run_distributed_parallel(
                     emit,
-                    stats,
                     interface_nodes_begin,
                     interface_nodes_end,
                     std::forward<NodeOrdering>(node_ordering),
@@ -1321,7 +1305,6 @@ public:
         } else {
             run_distributed_sequential(
                 emit,
-                stats,
                 interface_nodes_begin,
                 interface_nodes_end,
                 std::forward<NodeOrdering>(node_ordering),
@@ -1333,7 +1316,6 @@ public:
     template <typename TriangleFunc, typename NodeIterator, typename NodeOrdering, typename GhostSet>
     inline void run_distributed_sequential(
         TriangleFunc                   emit,
-        cetric::profiling::Statistics& stats,
         NodeIterator                   interface_nodes_begin,
         NodeIterator                   interface_nodes_end,
         NodeOrdering&&                 node_ordering,
@@ -1348,12 +1330,12 @@ public:
             }
         }();
         queue.set_threshold(threshold_);
-        cetric::profiling::Timer phase_time;
+        size_t skipped_nodes = 0;
         for (auto current = interface_nodes_begin; current != interface_nodes_end; current++) {
             RankEncodedNodeId v = *current;
             // iterate over neighborhood and delegate to other PEs if necessary
             if (conf_.pseudo2core && G.outdegree(v) < 2) {
-                stats.local.skipped_nodes++;
+                skipped_nodes++;
             } else {
                 for (RankEncodedEdge edge: G.out_adj(v).edges()) {
                     RankEncodedNodeId u = edge.head;
@@ -1365,28 +1347,27 @@ public:
                         PEID u_rank = u.rank();
                         assert(u_rank != rank_);
                         if (last_proc_[G.to_local_idx(v)] != u_rank) {
-                            enqueue_for_sending(queue, v, u_rank, emit, stats);
+                            enqueue_for_sending(queue, v, u_rank, emit);
                         }
                     }
                 }
             }
             // timer.start("Communication");
             queue.poll([&](SharedVectorSpan<RankEncodedNodeId> span, PEID sender [[maybe_unused]]) {
-                handle_buffer(span.begin(), span.end(), emit, stats, node_ordering, ghosts);
+                handle_buffer(span.begin(), span.end(), emit, node_ordering, ghosts);
             });
         }
         queue.terminate([&](SharedVectorSpan<RankEncodedNodeId> span, PEID sender [[maybe_unused]]) {
-            handle_buffer(span.begin(), span.end(), emit, stats, node_ordering, ghosts);
+            handle_buffer(span.begin(), span.end(), emit, node_ordering, ghosts);
         });
-        stats.local.global_phase_time += phase_time.elapsed_time();
-        stats.local.message_statistics.add(queue.stats());
+        report_distributed_counters(queue.stats());
+        profiling::counter_add("skipped_nodes", skipped_nodes);
         queue.reset();
     }
 
     template <typename TriangleFunc, typename NodeIterator, typename NodeOrdering, typename GhostSet, typename Pool>
     inline void run_distributed_parallel(
         TriangleFunc                   emit,
-        cetric::profiling::Statistics& stats,
         NodeIterator                   interface_nodes_begin,
         NodeIterator                   interface_nodes_end,
         NodeOrdering&&                 node_ordering,
@@ -1409,7 +1390,6 @@ public:
             }
         }();
         queue.set_threshold(threshold_);
-        cetric::profiling::Timer phase_time;
         std::atomic<size_t>      nodes_queued = 0;
         std::atomic<size_t>      write_jobs   = 0;
         tbb::task_arena          arena(conf_.num_threads);
@@ -1436,7 +1416,7 @@ public:
                     assert(u_rank != rank_);
                     if (last_proc_[G.to_local_idx(v)] != u_rank) {
                         SPDLOG_DEBUG("Send N({}) to {}", v, u_rank);
-                        enqueue_for_sending_async(queue, v, u_rank, pool, write_jobs, emit, stats);
+                        enqueue_for_sending_async(queue, v, u_rank, pool, write_jobs, emit);
                     }
                 }
             }
@@ -1511,7 +1491,6 @@ public:
                         pool,
                         high_priority_tasks,
                         emit,
-                        stats,
                         std::forward<NodeOrdering>(node_ordering),
                         ghosts
                     );
@@ -1531,7 +1510,6 @@ public:
                     pool,
                     high_priority_tasks,
                     emit,
-                    stats,
                     std::forward<NodeOrdering>(node_ordering),
                     ghosts
                 );
@@ -1553,36 +1531,25 @@ public:
         // pool.loop_until_empty();
         // pool.terminate();
         SPDLOG_DEBUG("Finished pool");
-        stats.local.global_phase_time += phase_time.elapsed_time();
-        stats.local.message_statistics.add(queue.stats());
-        stats.local.skipped_nodes += skipped_nodes.combine(std::plus<>{});
+        report_distributed_counters(queue.stats());
+        profiling::counter_add("skipped_nodes", skipped_nodes.combine(std::plus<>{}));
         queue.reset();
     }
 
-    template <typename TriangleFunc, typename NodeOrdering>
-    inline void run(TriangleFunc emit, cetric::profiling::Statistics& stats, NodeOrdering&& node_ordering) {
-        std::set<RankEncodedNodeId> ghosts;
-        run(emit, stats, std::forward<NodeOrdering>(node_ordering), ghosts);
-    }
-    template <typename TriangleFunc, typename NodeOrdering, typename GhostSet>
-    inline void
-    run(TriangleFunc emit, cetric::profiling::Statistics& stats, NodeOrdering&& node_ordering, GhostSet const& ghosts) {
-        run_local(emit, stats, node_ordering);
-        cetric::profiling::Timer phase_time;
-        for (auto node: G.local_nodes()) {
-            G.remove_internal_edges(node);
-        }
-        stats.local.contraction_time += phase_time.elapsed_time();
-        run_distributed(emit, stats, node_ordering, ghosts);
-    }
-
-    inline size_t get_triangle_count(cetric::profiling::Statistics& stats) {
-        size_t triangle_count = 0;
-        run([&](auto) { triangle_count++; }, stats);
-        return triangle_count;
-    }
-
 private:
+    /// Reports the counts of a distributed run (made on the pool threads) and the message statistics of its queue
+    /// to the open Caliper region, and resets them for the next run.
+    template <typename MessageStatistics>
+    void report_distributed_counters(MessageStatistics const& messages) {
+        profiling::counter_add("wedge_checks", distributed_wedge_checks_.exchange(0));
+        profiling::counter_add("intersection_size_global", distributed_intersection_size_.exchange(0));
+        profiling::counter_add("type3_triangles", distributed_triangles_.exchange(0));
+        profiling::counter_add("sent_messages", messages.sent_messages);
+        profiling::counter_add("send_volume", messages.send_volume);
+        profiling::counter_add("received_messages", messages.received_messages);
+        profiling::counter_add("receive_volume", messages.receive_volume);
+    }
+
     void pre_intersection(RankEncodedNodeId v) {
         if (conf_.flag_intersection) {
             G.for_each_local_out_edge(v, [&](RankEncodedEdge edge) {
@@ -1634,8 +1601,7 @@ private:
         MessageQueue&                  queue,
         RankEncodedNodeId              v,
         PEID                           u_rank,
-        TriangleFunc                   emit [[maybe_unused]],
-        cetric::profiling::Statistics& stats [[maybe_unused]]
+        TriangleFunc                   emit [[maybe_unused]]
     ) {
         std::vector<RankEncodedNodeId> buffer;
         buffer.emplace_back(v);
@@ -1667,8 +1633,7 @@ private:
         PEID                           u_rank,
         Pool&                          pool,
         std::atomic<size_t>&           write_jobs,
-        TriangleFunc                   emit [[maybe_unused]],
-        cetric::profiling::Statistics& stats [[maybe_unused]]
+        TriangleFunc                   emit [[maybe_unused]]
     ) {
         SPDLOG_DEBUG("rank {}", u_rank);
         SPDLOG_DEBUG("{}", u_rank);
@@ -1697,12 +1662,11 @@ private:
         IterType                       begin,
         IterType                       end,
         TriangleFunc                   emit,
-        cetric::profiling::Statistics& stats,
         NodeOrdering&&                 node_ordering,
         GhostSet const&                ghosts
     ) {
         RankEncodedNodeId v = *begin;
-        process_neighborhood(v, begin + 1, end, emit, stats, std::forward<NodeOrdering>(node_ordering), ghosts);
+        process_neighborhood(v, begin + 1, end, emit, std::forward<NodeOrdering>(node_ordering), ghosts);
     }
 
     template <typename TriangleFunc, typename NodeOrdering, typename GhostSet, typename Pool>
@@ -1711,11 +1675,10 @@ private:
         Pool&                                         pool [[maybe_unused]],
         tbb::concurrent_queue<std::function<void()>>& high_priority_tasks,
         TriangleFunc                                  emit,
-        cetric::profiling::Statistics&                stats,
         NodeOrdering&&                                node_ordering,
         GhostSet const&                               ghosts
     ) {
-        auto task = [this, emit, span = std::move(span), &stats, &node_ordering, &ghosts] {
+        auto task = [this, emit, span = std::move(span), &node_ordering, &ghosts] {
             RankEncodedNodeId v = *span.begin();
             SPDLOG_DEBUG("Spawn task for {} on thread {}", v, tbb::this_task_arena::current_thread_index());
             process_neighborhood(
@@ -1723,7 +1686,6 @@ private:
                 span.begin() + 1,
                 span.end(),
                 emit,
-                stats,
                 std::forward<NodeOrdering>(node_ordering),
                 ghosts
             );
@@ -1737,7 +1699,7 @@ private:
         // pool.submit_work(task);
         // pool.submit_work();
         // thread_pool.enqueue(
-        //     [this, emit, span = std::move(span), &stats, &node_ordering,
+        //     [this, emit, span = std::move(span), &node_ordering,
         //     &ghosts] {
         //         RankEncodedNodeId v = *span.begin();
         //         // atomic_debug(
@@ -1748,7 +1710,6 @@ private:
         //             span.begin() + 1,
         //             span.end(),
         //             emit,
-        //             stats,
         //             std::forward<NodeOrdering>(node_ordering),
         //             ghosts
         //         );
@@ -1799,7 +1760,6 @@ private:
         NodeBufferIter                 begin,
         NodeBufferIter                 end,
         IntersectFunc                  on_intersection,
-        cetric::profiling::Statistics& stats,
         NodeOrdering&&                 node_ordering,
         GhostSet const&                ghosts
     ) {
@@ -1831,8 +1791,8 @@ private:
 
             // for each edge (v, u) we check the open wedge
             //  (v, u, w) for w in N(u)+
-            stats.local.wedge_checks.fetch_add(u_neighbors.end() - u_neighbors.begin(), std::memory_order_relaxed);
-            stats.local.intersection_size_global.fetch_add(
+            distributed_wedge_checks_.fetch_add(u_neighbors.end() - u_neighbors.begin(), std::memory_order_relaxed);
+            distributed_intersection_size_.fetch_add(
                 filtered_neighbors.end() - filtered_neighbors.begin() + u_neighbors.end() - u_neighbors.begin(),
                 std::memory_order_relaxed
             );
@@ -1848,9 +1808,9 @@ private:
         } else {
             // for each edge (v, u) we check the open wedge (v, u, w) for w in
             // N(u)+
-            stats.local.wedge_checks.fetch_add(u_neighbors.end() - u_neighbors.begin(), std::memory_order_relaxed);
+            distributed_wedge_checks_.fetch_add(u_neighbors.end() - u_neighbors.begin(), std::memory_order_relaxed);
 
-            stats.local.intersection_size_global.fetch_add(
+            distributed_intersection_size_.fetch_add(
                 end - begin + u_neighbors.end() - u_neighbors.begin(),
                 std::memory_order_relaxed
             );
@@ -1868,8 +1828,8 @@ private:
             auto v_neighbors = G.out_adj(v).neighbors();
             // for each edge (v, u) we check the open wedge (v, u, w) for w in
             // N(u)+
-            stats.local.wedge_checks.fetch_add(u_neighbors.end() - u_neighbors.begin(), std::memory_order_relaxed);
-            stats.local.intersection_size_global.fetch_add(
+            distributed_wedge_checks_.fetch_add(u_neighbors.end() - u_neighbors.begin(), std::memory_order_relaxed);
+            distributed_intersection_size_.fetch_add(
                 v_neighbors.end() - v_neighbors.begin() + u_neighbors.end() - u_neighbors.begin(),
                 std::memory_order_relaxed
             );
@@ -1892,7 +1852,6 @@ private:
         NodeBufferIter                 begin,
         NodeBufferIter                 end,
         TriangleFunc                   emit,
-        cetric::profiling::Statistics& stats,
         NodeOrdering&&                 node_ordering,
         GhostSet const&                ghosts
     ) {
@@ -1944,9 +1903,8 @@ private:
                 end,
                 [&](RankEncodedNodeId local_intersection) {
                     emit(Triangle<RankEncodedNodeId>{v, u, local_intersection});
-                    stats.local.type3_triangles.fetch_add(1, std::memory_order_relaxed);
+                    distributed_triangles_.fetch_add(1, std::memory_order_relaxed);
                 },
-                stats,
                 node_ordering,
                 ghosts
             );
@@ -1963,6 +1921,10 @@ private:
     std::vector<Degree>                                             pe_min_degree;
     size_t                                                          threshold_;
     size_t                                                          high_degree_threshold_;
+    // counted concurrently by the tasks of run_distributed_*(), see report_distributed_counters()
+    std::atomic<size_t> distributed_wedge_checks_{0};
+    std::atomic<size_t> distributed_intersection_size_{0};
+    std::atomic<size_t> distributed_triangles_{0};
 }; // namespace cetric
 
 } // namespace cetric
