@@ -1032,7 +1032,7 @@ public:
                 break;
             }
             case ParallelizationMethod::omp_task: {
-                throw "currently unsupported";
+                throw std::runtime_error("parallelization method omp_task is currently unsupported");
                 //                 int grainsize = conf_.grainsize;
                 // #pragma omp parallel
                 //                 {
@@ -1161,12 +1161,7 @@ public:
                         interface_nodes.local().emplace_back(v);
                     }
                 }
-                size_t v_neighbors_size;
-                if (v.rank() == rank_) {
-                    v_neighbors_size = v_degree;
-                } else {
-                    v_neighbors_size = v_degree;
-                }
+                size_t v_neighbors_size = v_degree;
                 if (conf_.parallelization_method == ParallelizationMethod::tbb && partition_neighborhood_2d(v)) {
                     // stats.local.nodes_parallel2d++;
                     tbb::parallel_for(
@@ -1219,7 +1214,7 @@ public:
                 break;
             }
             case ParallelizationMethod::omp_task: {
-                throw "currently unsupported";
+                throw std::runtime_error("parallelization method omp_task is currently unsupported");
             }
         }
         profiling::counter_add("skipped_nodes", thread_local_skipped_nodes.combine(std::plus<>{}));

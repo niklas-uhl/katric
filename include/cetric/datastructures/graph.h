@@ -256,7 +256,7 @@ public:
             v_neighbors.begin(),
             v_neighbors.end(),
             on_intersection,
-            std::move(comp),
+            std::forward<Comp>(comp),
             IntersectionPolicy{}
         );
     }
@@ -281,7 +281,7 @@ public:
             v_neighbors.begin(),
             v_neighbors.end(),
             on_intersection,
-            std::move(comp),
+            std::forward<Comp>(comp),
             IntersectionPolicy{}
         );
     }
@@ -301,18 +301,18 @@ public:
         IntersectionPolicy&& = {}
     ) const {
         if constexpr (std::is_same_v<IntersectionPolicy, intersection_policy::merge>) {
-            intersect_neighborhoods_merge(u_begin, u_end, v_begin, v_end, on_intersection, std::move(comp));
+            intersect_neighborhoods_merge(u_begin, u_end, v_begin, v_end, on_intersection, std::forward<Comp>(comp));
         } else if constexpr (std::is_same_v<IntersectionPolicy, intersection_policy::binary_search>) {
-            intersect_neighborhoods_binary(u_begin, u_end, v_begin, v_end, on_intersection, std::move(comp));
+            intersect_neighborhoods_binary(u_begin, u_end, v_begin, v_end, on_intersection, std::forward<Comp>(comp));
         } else {
             auto   u_degree    = std::distance(u_begin, u_end);
             auto   v_degree    = std::distance(v_begin, v_end);
             size_t merge_time  = u_degree + v_degree;
             size_t binary_time = std::min(u_degree, v_degree) * std::log2(std::max(u_degree, v_degree));
             if (merge_time < binary_time) {
-                intersect_neighborhoods_merge(u_begin, u_end, v_begin, v_end, on_intersection, std::move(comp));
+                intersect_neighborhoods_merge(u_begin, u_end, v_begin, v_end, on_intersection, std::forward<Comp>(comp));
             } else {
-                intersect_neighborhoods_binary(u_begin, u_end, v_begin, v_end, on_intersection, std::move(comp));
+                intersect_neighborhoods_binary(u_begin, u_end, v_begin, v_end, on_intersection, std::forward<Comp>(comp));
             }
         }
     }

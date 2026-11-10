@@ -804,7 +804,7 @@ public:
           ghost_ranks_available_(false),
           oriented_(false),
           local_edge_count_{G.edge_heads.size()},
-          node_range_(std::move(node_range)),
+          node_range_(node_range),
           rank_(rank),
           size_(size),
           node_indexer_() {
