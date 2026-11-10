@@ -99,13 +99,15 @@ system information recorded via [Adiak](https://github.com/LLNL/Adiak):
 
 ```shell
 mpiexec -np <NUM_PES> build/apps/katric --kagen_option_string <KAGEN_OPTIONS> --config configs/cetric.toml --caliper-output run
+# run.cali:          spot profile (region times, run metadata) for Thicket; read by eval/katric_eval.py
 # run.timers.json:   per region (e.g. "0/total/local_phase" in iteration 0) min/max/avg time in s and calls
 # run.counters.json: per region and counter min/max/sum across ranks
-# both contain the run metadata ("globals"); scripts/caliper_to_json.py merges them into one document
+# the JSON files contain the run metadata ("globals"); scripts/caliper_to_json.py merges them into one document
 ```
 
-`--caliper-config` selects other Caliper configs, e.g. `spot,katric-counters` writes the times as `run.cali` for
-[Thicket](https://github.com/LLNL/thicket), and `runtime-report` prints a region tree. Caliper's `CALI_CONFIG`
+The JSON files are for looking at a single run; evaluations load the `.cali` profiles with
+[Thicket](https://github.com/LLNL/thicket) (see [`eval/`](./eval)). `--caliper-config` selects other Caliper
+configs instead, e.g. `katric-timers,katric-counters` (JSON only) or `runtime-report` (prints a region tree). Caliper's `CALI_CONFIG`
 environment variable works independently of these options.
 
 For additional parameters see `--help`.

@@ -34,6 +34,13 @@ run-supermuc-experiment experiment +args="": kaval
 run-horeka-experiment experiment +args="": kaval
     {{ kaval }} --machine horeka --command-template ./kaval/command-templates/horeka-IntelMPI.txt {{ experiment }} {{ args }}
 
-# Merge the Caliper JSON of every run in an output directory into one JSON document per run (JSON lines)
-collect output_dir:
-    uv run scripts/caliper_to_json.py {{ output_dir }}
+# Copy experiment output from a cluster into eval/data/<cluster> (job binaries excluded)
+fetch-from-supermuc:
+    rsync -aP --exclude 'bin/' supermuc:katric/experiment_data/ eval/data/supermuc
+
+fetch-from-horeka:
+    rsync -aP --exclude 'bin/' horeka:katric/experiment_data/ eval/data/horeka
+
+# Summarize experiment directories (kaval's <suite>_<date>): mean of the maximum "total" time per configuration
+summary +dirs:
+    uv run --group eval eval/katric_eval.py {{ dirs }}

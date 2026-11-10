@@ -9,3 +9,12 @@ dependencies = [
 
 [tool.uv]
 package = false
+
+[dependency-groups]
+# evaluation (eval/): Thicket reads the Caliper profiles, polars and plotnine for tables and plots
+eval = [
+    "llnl-thicket[plotting]",  # [plotting]: seaborn, which thicket otherwise complains about on import
+    "polars",
+    "pyarrow",
+    "plotnine",
+]

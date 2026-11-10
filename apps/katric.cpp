@@ -115,8 +115,8 @@ cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::P
     app.add_option(
         "--caliper-output",
         conf.caliper_output,
-        "Output prefix: <prefix>.timers.json, <prefix>.counters.json and <prefix>.cali (spot). Enables "
-        "katric-timers,katric-counters unless --caliper-config is given."
+        "Output prefix: <prefix>.cali (spot, for Thicket), <prefix>.timers.json and <prefix>.counters.json. Enables "
+        "spot,katric-timers,katric-counters unless --caliper-config is given."
     );
 
     app.add_flag("--degree-filtering", conf.degree_filtering);
@@ -185,7 +185,7 @@ cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::P
         conf.num_threads = tbb::this_task_arena::max_concurrency();
     }
     if (conf.caliper_config.empty() && !conf.caliper_output.empty()) {
-        conf.caliper_config = "katric-timers,katric-counters";
+        conf.caliper_config = "spot,katric-timers,katric-counters";
     }
     conf.rank    = rank;
     conf.PEs     = size;

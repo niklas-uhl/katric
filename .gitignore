@@ -82,3 +82,6 @@ CMakeUserPresets.json
 /.venv/
 /experiment_data/
 __pycache__/
+
+# Experiment output fetched for evaluation (just fetch-from-*), plots
+/eval/data/

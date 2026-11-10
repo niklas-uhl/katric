@@ -10,12 +10,16 @@ just kaval                                  # clone kaval into ./kaval at the co
 just list                                   # suites in experiments/
 just run-local                              # the smoke suite on the example graphs, 2 and 4 cores, with --verify
 just run-supermuc-experiment paper-real-world --module-config <modules> --account <project>
-just collect experiment_data/<suite>_<date>/output > results.jsonl
+just fetch-from-supermuc                    # rsync experiment_data/ into eval/data/supermuc
+just summary eval/data/supermuc/<suite>_<date>   # mean run time per input, configuration and core count
 ```
 
-kaval passes `--caliper-output <run>` to every run, so each run writes `<run>.timers.json` and
-`<run>.counters.json` into the suite's output directory. `just collect` (`scripts/caliper_to_json.py`) merges them
-into one JSON document per run: the options, the triangle count, per-iteration timers and counters.
+kaval passes `--caliper-output <run>` to every run, so each run writes `<run>.cali` (spot profile: region times and
+the run metadata from Adiak), `<run>.timers.json` and `<run>.counters.json` into the suite's output directory. The
+JSON files are for looking at single runs (`scripts/caliper_to_json.py <run>`). For evaluation,
+[`eval/katric_eval.py`](../eval/katric_eval.py) loads experiment directories with
+[Thicket](https://github.com/LLNL/thicket) into polars tables (runs with all options as columns, timers, counters);
+plot them with plotnine. `uv sync --group eval` installs these.
 
 ## Suites
 
