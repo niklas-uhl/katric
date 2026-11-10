@@ -6,7 +6,7 @@ Working checklist for the `chore/modernize` branch. Tick items (`[x]`) as they l
 
 Bring katric's build, measurement, input and experiment setup in line with kascade and KaCCv2. That means
 FetchContent for every dependency, CMake 3.25 presets, KaGen input and kaval as the experiment runner. Measurement
-deliberately differs: Caliper/Adiak with JSON output instead of kamping timers (see step 3). Where those projects have weak spots, do it better here instead of copying them
+deliberately differs: Caliper/Adiak (spot profiles evaluated with Thicket in Python, JSON for single runs) instead of kamping timers and Julia (see step 3). Where those projects have weak spots, do it better here instead of copying them
 (see "Where katric should do better").
 
 The algorithms stay unchanged. Every step is checked by comparing triangle counts on fixed inputs and seeds.
@@ -91,8 +91,12 @@ The Caliper/Adiak measurement (step 3) was developed on `explore/caliper-adiak` 
 - [x] Configure with Python < 3.15 for Caliper's MPI wrapper generator (`321a55a`)
 - [ ] Measure the profiling overhead and check the Linux-only Adiak collectors (command line, libraries) on the
       cluster
-- [x] Read the JSON of a kaval run back: `just collect <output dir>` (`scripts/caliper_to_json.py` on a directory,
-      one merged document per run and line). kaval itself only runs, it does not read results
+- [x] Evaluation in Python instead of KaCCv2's Julia: `--caliper-output` alone writes spot's `.cali` as well
+      (`spot,katric-timers,katric-counters`); `eval/katric_eval.py` loads experiment directories with Thicket into
+      polars tables (runs: all CLI options from Adiak as columns, graph label from the KaGen string, cores; timers per
+      iteration and region; counters from the JSON, which spot cannot hold), `just summary` prints mean times per
+      cell; plotnine for plots (`uv sync --group eval`). The timers JSON stays for peeking into single runs
+      (`scripts/caliper_to_json.py`)
 
 ### 4. Graph input: KaGen
 
@@ -173,7 +177,6 @@ instead re-reads or regenerates the input in every iteration (`--cache-input non
       SuperMUC with the IntelMPI-OpenMP template so competitors get the right thread count, HoreKa) and a root
       `pyproject.toml` for uv
 - [x] kaval passes `--caliper-output <run>` (`output_path_option_name`) and `--num-threads` (`threads_option_name`).
-      Open: should `--caliper-output` alone also write spot's `.cali` (for Thicket)?
 - [x] Ported only the katric paper suites, in KaCCv2's style: `paper-real-world`, `paper-weak-scaling`,
       `paper-hybrid-real-world`, instance sets `real-world-core` / `paper-real-world` (ParHIP under
       `${WORK_pn72pu}/graphs`, `distribution=balance-edges` for the old `--read-edge-partitioned`) and
