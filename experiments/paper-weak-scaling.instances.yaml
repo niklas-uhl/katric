@@ -1,6 +1,6 @@
-# Generated graphs of the paper's weak scaling: 2^N vertices and 2^M edges per core. graph-io called the same KaGen
-# generators (gnm = gnm-undirected without self loops) with seed 28475421; the KaGen version differs, so the graphs
-# are not bit-identical to the paper's.
+# Generated graphs of the paper's weak scaling, as KaGen option strings: 2^N vertices and 2^M edges per core.
+# Same generators and sizes as the paper (rgg2d, rhg with gamma 2.8, gnm-undirected); the seed is the one the
+# paper's runs used. The KaGen version is newer, so the graphs need not be bit-identical to the paper's.
 name: paper-weak-scaling
 graphs:
   - generator: kagen
