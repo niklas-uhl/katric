@@ -67,7 +67,6 @@
 #include "cetric/datastructures/graph_definitions.h"
 #include "cetric/datastructures/span.h"
 #include "cetric/util.h"
-#include "graph-io/graph.h"
 
 namespace cetric {
 namespace load_balancing {
@@ -771,30 +770,6 @@ public:
     //     }
     //     ghosts_expanded_ = true;
     // }
-
-    DistributedGraph(graphio::Graph&& G)
-        : first_out_(std::move(G.first_out_)),
-          first_out_offset_(first_out_.size() - 1),
-          degree_(first_out_.size() - 1),
-          head_(G.head_.size()),
-          ghost_ranks_available_(false),
-          oriented_(false),
-          local_edge_count_{head_.size()},
-          node_range_(0, first_out_.size() - 1),
-          rank_(0),
-          size_(1),
-          node_indexer_(node_range_, nullptr, nullptr, rank_) {
-        for (auto node = NodeId{0}; node < local_node_count(); ++node) {
-            degree_[node] = first_out_[node + 1] - first_out_[node];
-        }
-        std::transform(G.head_.begin(), G.head_.end(), head_.begin(), [this](auto id) {
-            auto head = RankEncodedNodeId{id};
-            KASSERT(head.id() >= node_range_.first);
-            KASSERT(head.id() < node_range_.second);
-            head.set_rank(rank_);
-            return head;
-        });
-    }
 
     DistributedGraph(cetric::graph::LocalGraphView&& G, std::pair<NodeId, NodeId> node_range, PEID rank, PEID size)
         : first_out_(node_range.second - node_range.first + 1),

@@ -160,9 +160,9 @@ instead re-reads or regenerates the input in every iteration (`--cache-input non
 
 ### 6. Cleanup
 
-- [ ] Decide whether `shmetric` stays; if so, port it to the new input and give it Caliper output (it has the
-      regions, but no `--caliper-*` options). `apps/shmetric-benchmark.cpp`
-      is not built by any target (dead file)
+- [x] `shmetric` removed, with what only it used: `shared_memory_cetric.h`, `AdjacencyGraph`
+      (`datastructures/graph.h`), the `DistributedGraph(graphio::Graph&&)` constructor, `shmetric-benchmark.cpp`
+      and `experiments/run_shmem.sh`
 - [ ] Add a GitHub Actions job that builds and runs the tests
 - [ ] Rewrite the README: presets, kaval usage, `--kagen_option_string`
 
@@ -184,7 +184,7 @@ instead re-reads or regenerates the input in every iteration (`--cache-input non
 ## Open decisions
 
 - [x] Measurement: Caliper/Adiak instead of kamping timers (step 3)
-- [ ] Keep or drop `shmetric`?
+- [x] Keep or drop `shmetric`? Dropped
 - [ ] Abseil: opt-in until the counts match (current plan), or the default right away?
 - [x] Drop `--cache-input` entirely. If two in-memory copies do not fit, an optional `--reread-input` can run
       `generate_input` again before each iteration instead of keeping the unmodified copy; with KaGen's binary

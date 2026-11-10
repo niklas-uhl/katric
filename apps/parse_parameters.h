@@ -31,7 +31,6 @@
 #include <CLI/Validators.hpp>
 
 #include "cetric/config.h"
-#include "git_hash.h"
 #include "magic_enum/magic_enum.hpp"
 
 inline std::shared_ptr<CLI::App> parse_parameters(const std::string& app_name, cetric::Config& conf) {
@@ -124,84 +123,3 @@ inline void parse_gen_parameters(CLI::App& app, cetric::Config& conf) {
     app.add_flag("--gen_statistics", conf.gen.statistics);
 }
 
-namespace shmetric {
-cetric::Config parse_config(int argc, char* argv[]) {
-    CLI::App app("Parallel Triangle Counter");
-    app.option_defaults()->always_capture_default();
-    cetric::Config conf;
-    conf.git_commit = cetric::git_hash;
-
-    // conf.hostname = std::getenv("HOST");
-    char hostname[256];
-    gethostname(hostname, sizeof(hostname));
-    conf.hostname = hostname;
-
-    app.add_option("input", conf.input_file, "The input graph");
-
-    add_enum_option(app, "--input-format", conf.input_format, graphio::input_types);
-    app.add_option("--partitioning", conf.partitioning);
-
-    app.add_option("--iterations", conf.iterations);
-
-    app.add_flag("-v", conf.verbosity_level, "verbosity level");
-
-
-    app.add_flag("--degree-filtering", conf.degree_filtering);
-
-    app.add_option("--num-threads", conf.num_threads);
-    app.add_option("--grainsize", conf.grainsize);
-    app.add_option("--local-degree-of-parallelism", conf.local_degree_of_parallelism);
-
-    app.add_flag("--pseudo2core", conf.pseudo2core);
-
-    app.add_flag("--id-node-ordering", conf.id_node_ordering);
-
-    app.add_flag("--flag-intersection", conf.flag_intersection);
-
-    app.add_flag("--skip-local-neighborhood", conf.skip_local_neighborhood);
-
-    conf.local_parallel = true;
-    // app.add_flag("--local-parallel", conf.local_parallel);
-
-    add_enum_option(app, "--parallelization-method", conf.parallelization_method);
-    app.add_flag("--edge-partitioning", conf.edge_partitioning);
-    app.add_flag("--edge-partitioning-static", conf.edge_partitioning_static);
-    add_enum_option(app, "--omp-schedule", conf.omp_schedule);
-    app.add_option("--omp-chunksize", conf.omp_chunksize);
-
-    add_enum_option(app, "--tbb-partitioner", conf.tbb_partitioner);
-
-    app.add_option("--high-degree-threshold-scale", conf.high_degree_threshold_scale);
-
-    add_enum_option(app, "--intersection-method", conf.intersection_method);
-    app.add_option("--binary-intersection-cutoff", conf.binary_intersection_cutoff);
-    app.add_option("--hybrid-cutoff-scale", conf.hybrid_cutoff_scale);
-
-    parse_gen_parameters(app, conf);
-
-    CLI::Option* input_option = app.get_option("input");
-    CLI::Option* gen_option   = app.get_option("--gen");
-    input_option->excludes(gen_option);
-    gen_option->excludes(input_option);
-
-    try {
-        app.parse(argc, argv);
-    } catch (const CLI ::ParseError& e) {
-        app.exit(e);
-    }
-    if (conf.input_file.empty() && conf.gen.generator.empty()) {
-        CLI::RequiredError e("Provide an input file via 'input' or using the "
-                             "generator via '--gen'");
-        exit(app.exit(e));
-    }
-#ifndef CETRIC_HAS_OPENMP
-    if (conf.parallelization_method == cetric::ParallelizationMethod::omp_for) {
-        CLI::ValidationError e("--parallelization-method", "omp_for requires building with CETRIC_USE_OPENMP=ON");
-        exit(app.exit(e));
-    }
-#endif
-    conf.rank = 0;
-    conf.PEs  = 1;
-    return conf;
-}
-} // namespace shmetric

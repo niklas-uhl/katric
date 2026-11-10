@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 project(cetric LANGUAGES C CXX)
 
-option(CETRIC_BUILD_APPS "Build the katric and shmetric executables" ON)
+option(CETRIC_BUILD_APPS "Build the katric executable" ON)
 option(CETRIC_BUILD_TESTS "Build the tests" ${PROJECT_IS_TOP_LEVEL})
 option(CETRIC_USE_OPENMP "Enable OpenMP-based parallelization (--parallelization-method omp_for)" ON)
 option(CETRIC_BINARY_INTERSECTION_RECURSIVE "Use recursion in binary search intersection" OFF)
