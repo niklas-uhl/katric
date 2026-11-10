@@ -121,19 +121,22 @@ instead re-reads or regenerates the input in every iteration (`--cache-input non
 
 - [x] `generate_input(option string, comm) -> kagen::Graph`, called once before the iteration loop; `InputCache` and
       `--cache-input` removed. Each iteration copies the unmodified `LocalGraphView` and builds the `DistributedGraph`
-      from it (as `--cache-input in-memory` did). Generation time: log line `input:` and Adiak `input_time`
-      (replaces `io_time`)
-- [ ] `AbstractAlgorithm` with `ingest(kagen::Graph&&)`, `reset()`, `run()`, `triangle_count()`; a factory replaces
-      the if-chain (cetric / patric / cetric-x x message-queue / grid policy)
-- [ ] katric's algorithms modify the graph (orientation, `remove_internal_edges`, `compact`, ghost expansion), so
+      from it (as `--cache-input in-memory` did) (`870128a`). Generation time is now the Caliper region `input`
+      (the `input:` log line and Adiak `input_time` are gone)
+- [x] `AbstractAlgorithm` with `ingest(kagen::Graph&&)`, `reset()`, `run()`, `triangle_count()`
+      (`apps/algorithm.h`); `make_algorithm(conf)` replaces the if-chain (cetric / patric / cetric-x x message-queue /
+      grid policy)
+- [x] katric's algorithms modify the graph (orientation, `remove_internal_edges`, `compact`, ghost expansion), so
       `ingest` keeps a pristine `DistributedGraph` and `reset()` copies it into the working graph. Same memory as
-      today's `--cache-input in-memory`, but the conversion runs once. Caliper regions: `ingest` once, `reset` per
-      iteration, `total` unchanged (so run times stay comparable)
+      the old `--cache-input in-memory`, but the conversion runs once. Caliper regions: `input`, `verify`, `ingest`
+      once, `reset` per iteration, `total` unchanged (so run times stay comparable). The `wedges` counter is computed
+      once in `ingest`. Validated against `870128a`: triangle counts and all counters identical (com-amazon, rgg2d,
+      rhg x cetric/ditric/hybrid/patric/cetric-x, 4 ranks)
 - [ ] Optional `--reread-input`: call `generate_input` + `ingest` before each iteration instead of keeping the
       unmodified copy, for inputs where two copies do not fit (fast with KaGen's binary ParHIP format; convert the
       large inputs to it)
-- [ ] `--verify`: gather the graph on rank 0 and count sequentially (small inputs only), like KaCCv2's `BFSCC`
-      reference; exit with an error on a mismatch
+- [x] `--verify`: gather the graph on rank 0 and count sequentially (small inputs only, `apps/verify.h`), like
+      KaCCv2's `BFSCC` reference; checks every iteration, exits with 1 on a mismatch. The end-to-end ctests pass it
 - [ ] Competitors behind the same interface (later, not part of this step): TriC, HavoqGT, Tom2D and Bader's code
       run today as separate binaries via `runners.py`. Each needs a converter from `kagen::Graph` to its own input
       format and a pinned fork via FetchContent (`EXCLUDE_FROM_ALL`), like KaCCv2's ParConnect/CombBLAS/KaCCv1.
@@ -219,7 +222,7 @@ instead re-reads or regenerates the input in every iteration (`--cache-input non
 4. Next, in this order:
    1. clang-tidy config and a first run on the algorithm headers (4c) — done
    2. KaGen input generated once (4 + first item of 4b) — done
-   3. Abstract algorithm, factory, `reset`, `--verify` (4b); then remove graph-io
+   3. Abstract algorithm, factory, `reset`, `--verify` (4b) — done; next: remove graph-io
 5. kaval switch and removal of the old runner scripts
 6. Cluster validation through kaval: Abseil vs. sparsehash run time, Caliper overhead, Linux Adiak collectors
 7. CI (build, tests, clang-tidy bug checks) and README; competitors behind `AbstractAlgorithm` as needed
