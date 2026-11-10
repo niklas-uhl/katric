@@ -15,9 +15,8 @@ FetchContent_Declare(
 FetchContent_Declare(
   fmt
   GIT_REPOSITORY https://github.com/fmtlib/fmt
-  GIT_TAG 11.0.2
+  GIT_TAG 12.2.1
   GIT_SHALLOW ON
-  # no FIND_PACKAGE_ARGS: the code does not compile with fmt 12 yet (e.g. Homebrew's)
   SYSTEM EXCLUDE_FROM_ALL)
 
 # spdlog uses the (header-only) fmt fetched above
