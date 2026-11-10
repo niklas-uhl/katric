@@ -1,0 +1,26 @@
+# All real-world graphs of the paper (strong scaling): real-world-core plus the three the hybrid runs left out.
+name: paper-real-world
+root: ${WORK_pn72pu}/graphs
+graphs:
+  - import: real-world-core
+  - generator: kagen
+    type: file
+    graph_name: webbase-2001
+    filename: misc/webbase-2001.parhip
+    input_format: parhip
+    distribution: balance-edges
+    time_limit: 5
+  - generator: kagen
+    type: file
+    graph_name: usa
+    filename: road/usa.parhip  # TODO: path not verified
+    input_format: parhip
+    distribution: balance-edges
+    time_limit: 5
+  - generator: kagen
+    type: file
+    graph_name: friendster
+    filename: snap/com-Friendster.parhip
+    input_format: parhip
+    distribution: balance-edges
+    time_limit: 10

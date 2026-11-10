@@ -1,0 +1,41 @@
+# The real-world graphs of the hybrid runs (paper-hybrid-real-world), ParHIP files on SuperMUC-NG. Paths as in KaCCv2's
+# instance sets. Edge-balanced distribution, as the old --read-edge-partitioned (KaGen wants the hyphen).
+# Time limits (minutes per run) from the old real-world paper suite.
+name: real-world-core
+root: ${WORK_pn72pu}/graphs
+graphs:
+  - generator: kagen
+    type: file
+    graph_name: europe
+    filename: road/europe.parhip  # TODO: path not verified
+    input_format: parhip
+    distribution: balance-edges
+    time_limit: 5
+  - generator: kagen
+    type: file
+    graph_name: uk-2007-05
+    filename: clustering_dimacs10/uk-2007-05.parhip
+    input_format: parhip
+    distribution: balance-edges
+    time_limit: 20
+  - generator: kagen
+    type: file
+    graph_name: orkut
+    filename: snap/com-orkut.ungraph.parhip
+    input_format: parhip
+    distribution: balance-edges
+    time_limit: 5
+  - generator: kagen
+    type: file
+    graph_name: live-journal
+    filename: snap/com-lj.ungraph.parhip
+    input_format: parhip
+    distribution: balance-edges
+    time_limit: 5
+  - generator: kagen
+    type: file
+    graph_name: twitter
+    filename: misc/twitter-2010.parhip
+    input_format: parhip
+    distribution: balance-edges
+    time_limit: 10

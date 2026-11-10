@@ -1,0 +1,11 @@
+[project]
+name = "katric-experiments"
+version = "0.1.0"
+description = "Experiment runner (kaval) and evaluation scripts for katric."
+requires-python = ">=3.9"
+dependencies = [
+    "pyyaml",
+]
+
+[tool.uv]
+package = false

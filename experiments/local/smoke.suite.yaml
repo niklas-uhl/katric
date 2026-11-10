@@ -1,0 +1,36 @@
+# Runs the paper configurations on small inputs with up to 4 cores and checks every triangle count (--verify).
+name: smoke
+executable: apps/katric
+output_path_option_name: caliper-output
+threads_option_name: num-threads
+ncores: [2, 4]
+threads_per_rank: [1, 2]
+time_limit: 1
+graphs:
+  - import: examples
+config:
+  - algorithm: [patric, cetric-x]
+    binary-rank-search: true
+    threshold: local-nodes
+    id-node-ordering: true
+    dense-degree-exchange: true
+    global-synchronization: true
+    communication-policy: [new, grid]
+    intersection-method: merge
+    iterations: 2
+    verify: true
+  - algorithm: cetric-x
+    binary-rank-search: true
+    threshold: local-nodes
+    edge-partitioning: true
+    id-node-ordering: true
+    local-parallel: true
+    global-parallel: true
+    dense-degree-exchange: true
+    global-synchronization: true
+    communication-policy: grid
+    intersection-method: merge
+    task-pool-type: task-group
+    task-priorities: true
+    iterations: 2
+    verify: true

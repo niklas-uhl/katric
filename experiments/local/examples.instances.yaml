@@ -1,0 +1,22 @@
+# Small inputs for trying the pipeline on a laptop: the example graphs (KATRIC_DIR is set by the justfile) and a
+# generated graph.
+name: examples
+root: ${KATRIC_DIR}/examples
+graphs:
+  - generator: kagen
+    type: file
+    graph_name: hiv
+    filename: hiv.metis
+    input_format: metis
+    distribution: balance-edges
+  - generator: kagen
+    type: file
+    graph_name: com-amazon
+    filename: com-amazon.metis
+    input_format: metis
+    distribution: balance-edges
+  - generator: kagen
+    type: rgg2d
+    N: 10
+    M: 13
+    scale_weak: true

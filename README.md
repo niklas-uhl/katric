@@ -70,7 +70,7 @@ For machine-specific settings (compiler, local checkouts of dependencies), copy 
 `CMakeUserPresets.json` and adapt it; that file is not tracked.
 
 ## Running
-For reproducing our experiments see [the corresponding document](./experiments/README.md).
+For reproducing our experiments with kaval, see [experiments/README.md](./experiments/README.md).
 
 We provide two base configurations of our algorithm:
 - DiTriC, which uses the asynchronous buffered messaging approach from our publication 

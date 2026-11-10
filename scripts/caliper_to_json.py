@@ -7,9 +7,13 @@
    "counters": [per iteration {region: {name: {min, max, sum}}}]}
 
 Times are in seconds, min/max/avg are across ranks. Counters recorded outside a phase (e.g. `wedges`) are listed
-under the region "iteration"."""
+under the region "iteration".
+
+Given a directory (e.g. the output directory of a kaval suite), it prints one such document per run and line, with
+the run's name (the prefix without directory) as "run"."""
 import argparse
 import json
+import os
 import sys
 
 
@@ -44,14 +48,11 @@ def split_path(path):
     return int(iteration), region or "iteration"
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("prefix", help="the --caliper-output prefix (reads <prefix>.timers.json and <prefix>.counters.json)")
-    args = ap.parse_args()
-
-    with open(f"{args.prefix}.timers.json") as f:
+def load_run(prefix):
+    """The merged document of the run written to `prefix` (see the module docstring)."""
+    with open(f"{prefix}.timers.json") as f:
         timers = json.load(f)
-    with open(f"{args.prefix}.counters.json") as f:
+    with open(f"{prefix}.counters.json") as f:
         counters = json.load(f)
     globals_ = timers["globals"]
 
@@ -73,18 +74,42 @@ def main():
             k: row[k] for k in ("min", "max", "sum")
         }
 
-    json.dump(
-        {
-            "config": unflatten(globals_, "config"),
-            "triangles": globals_.get("triangles"),
-            "wall_times": [timer[i].get("total", {}).get("max") for i in sorted(timer)],
-            "timer": [timer[i] for i in sorted(timer)],
-            "counters": [counter.get(i, {}) for i in sorted(timer)],
-        },
-        sys.stdout,
-        indent=2,
+    return {
+        "run": os.path.basename(prefix),
+        "config": unflatten(globals_, "config"),
+        "triangles": globals_.get("triangles"),
+        "wall_times": [timer[i].get("total", {}).get("max") for i in sorted(timer)],
+        "timer": [timer[i] for i in sorted(timer)],
+        "counters": [counter.get(i, {}) for i in sorted(timer)],
+    }
+
+
+def prefixes_in(directory):
+    """The --caliper-output prefixes of all runs in `directory` (e.g. a kaval output directory), sorted."""
+    suffix = ".timers.json"
+    return sorted(
+        os.path.join(directory, name[: -len(suffix)]) for name in os.listdir(directory) if name.endswith(suffix)
     )
-    print()
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument(
+        "path",
+        help="the --caliper-output prefix of one run (reads <prefix>.timers.json and <prefix>.counters.json), "
+        "or a directory: then every run in it, one JSON document per line",
+    )
+    args = ap.parse_args()
+
+    if os.path.isdir(args.path):
+        for prefix in prefixes_in(args.path):
+            try:
+                print(json.dumps(load_run(prefix)))
+            except (OSError, ValueError, KeyError) as e:  # e.g. a run that was killed before writing its output
+                print(f"skipping {prefix}: {e!r}", file=sys.stderr)
+    else:
+        json.dump(load_run(args.path), sys.stdout, indent=2)
+        print()
 
 
 if __name__ == "__main__":

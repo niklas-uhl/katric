@@ -76,3 +76,9 @@ tags*
 
 # Local CMake presets (copy CMakeUserPresets.json.template)
 CMakeUserPresets.json
+
+# Experiments: kaval checkout (`just kaval`), Python environment, experiment output
+/kaval/
+/.venv/
+/experiment_data/
+__pycache__/

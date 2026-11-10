@@ -1,6 +1,0 @@
-echo "[LOG] Starting ${jobname}"
-start=$$(date +%s.%N)
-I_MPI_PIN_CELL=core I_MPI_PIN_DOMAIN=${threads_per_rank}:compact I_MPI_JOB_TIMEOUT=${timeout} mpiexec -n ${mpi_ranks} --perhost ${ranks_per_node} ${cmd}
-end=$$(date +%s.%N)
-diff=$$(echo "$$end - $$start" | bc)
-echo "[LOG] Finished ${jobname} in $${diff} seconds"
