@@ -1,0 +1,4 @@
+# -*- mode: yaml; -*-
+# g++-16 defaults to C++20, so CMake passes no -std flag and clang would parse katric as C++17.
+CompileFlags:
+  Add: [-std=c++20]

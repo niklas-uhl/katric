@@ -1,0 +1,18 @@
+# -*- mode: yaml; -*-
+Checks:
+  - 'bugprone-*'
+  - 'mpi-*'
+  - 'performance-*'
+  - 'cppcoreguidelines-*'
+  - 'modernize-*'
+  - 'readability-*'
+  - 'misc-*'
+  - '-misc-include-*'
+  # false positive on every KASSERT(a <op> b): kassert's expression decomposition chains the comparison
+  - '-bugprone-chained-comparison'
+HeaderFilterRegex: 'include/cetric/'
+CheckOptions:
+  readability-identifier-length.IgnoredVariableNames: '^([Guv]|it|kv)$'
+  readability-identifier-length.IgnoredParameterNames: '^([Guv]|it|kv)$'
+  readability-function-cognitive-complexity.Threshold: 80
+  misc-non-private-member-variables-in-classes.IgnorePublicMemberVariables: true

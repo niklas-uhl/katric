@@ -28,6 +28,10 @@ add_executable(intersection_test intersection_test.cpp)
 target_link_libraries(intersection_test PRIVATE GTest::gmock GTest::gtest_main cetric-lib cetric_cxx_flags)
 gtest_discover_tests(intersection_test DISCOVERY_TIMEOUT 60)
 
+set_target_properties(
+  graph_datastructure_test load_balancing_test orientation_test communicator_test rank_encoded_node_id_test
+  intersection_test PROPERTIES CXX_CLANG_TIDY "${CETRIC_CLANG_TIDY_COMMAND}")
+
 # End-to-end tests: run katric on the example graphs with each algorithm configuration and check the triangle count.
 if(TARGET katric)
   set(example_graphs "triangle=1" "hiv=45" "com-amazon=667129")

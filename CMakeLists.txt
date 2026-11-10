@@ -5,6 +5,7 @@ option(CETRIC_BUILD_APPS "Build the katric and shmetric executables" ON)
 option(CETRIC_BUILD_TESTS "Build the tests" ${PROJECT_IS_TOP_LEVEL})
 option(CETRIC_USE_OPENMP "Enable OpenMP-based parallelization (--parallelization-method omp_for)" ON)
 option(CETRIC_BINARY_INTERSECTION_RECURSIVE "Use recursion in binary search intersection" OFF)
+option(CETRIC_ENABLE_CLANG_TIDY "Run clang-tidy (.clang-tidy) on katric's own sources while building" OFF)
 option(CETRIC_ENABLE_FORMAT_CMAKE "Fetch Format.cmake and provide the format/check-format/fix-format targets" OFF)
 set(CETRIC_CXX_FLAGS "" CACHE STRING "Additional compile options for katric's own targets (semicolon-separated)")
 set(CETRIC_ACTIVE_LOG_LEVEL "INFO" CACHE STRING
@@ -24,6 +25,16 @@ add_subdirectory(extern)
 # never leak to consumers of cetric-lib.
 add_library(cetric_cxx_flags INTERFACE)
 target_compile_options(cetric_cxx_flags INTERFACE ${CETRIC_CXX_FLAGS})
+
+# clang-tidy command for katric's own executables and tests (their CXX_CLANG_TIDY property; empty = off). The headers
+# in include/cetric are checked through these sources (HeaderFilterRegex in .clang-tidy). -std=c++20 is passed
+# explicitly: compilers that default to C++20 (GCC >= 16) get no -std flag from CMake, so clang-tidy would parse katric
+# as C++17.
+set(CETRIC_CLANG_TIDY_COMMAND "")
+if(CETRIC_ENABLE_CLANG_TIDY)
+  find_program(CETRIC_CLANG_TIDY_EXE NAMES clang-tidy REQUIRED)
+  set(CETRIC_CLANG_TIDY_COMMAND ${CETRIC_CLANG_TIDY_EXE} --extra-arg=-std=c++20)
+endif()
 
 # The algorithms are header-only.
 add_library(cetric-lib INTERFACE)
