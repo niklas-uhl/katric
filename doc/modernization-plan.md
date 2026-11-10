@@ -99,7 +99,7 @@ The Caliper/Adiak measurement (step 3) was developed on `explore/caliper-adiak` 
 - [x] `--kagen_option_string` (required) replaces `input`, `--input-format`, `--gen*`, `--read-edge-partitioned` and
       `--cache-input`; KaGen's CSR output is converted to graph-io's `LocalGraphView` (`apps/input.h`). Validated
       against the previous commit: triangle counts identical on examples + rgg2d/rhg/gnm (fixed seeds, 2 and 4 ranks);
-      all counters identical except the (already nondeterministic) grid policy
+      all counters identical except the (already nondeterministic) grid policy (`870128a`)
 - [x] `read-edge-partitioned = true` in `configs/cetric.toml`/`ditric.toml` is now `distribution=balance-edges` in the
       option string (counters identical with it; KaGen's default `balance-vertices` gives a different split). Experiment
       inputs must pass it to reproduce the paper setup. Unknown keys in `--config` files are errors now (CLI11 silently
@@ -174,7 +174,7 @@ instead re-reads or regenerates the input in every iteration (`--cache-input non
 
 - [x] `shmetric` removed, with what only it used: `shared_memory_cetric.h`, `AdjacencyGraph`
       (`datastructures/graph.h`), the `DistributedGraph(graphio::Graph&&)` constructor, `shmetric-benchmark.cpp`
-      and `experiments/run_shmem.sh`
+      and `experiments/run_shmem.sh` (`a5328cf`)
 - [ ] Add a GitHub Actions job that builds and runs the tests
 - [ ] Rewrite the README: presets, kaval usage, `--kagen_option_string`
 
