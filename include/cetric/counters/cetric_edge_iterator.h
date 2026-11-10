@@ -174,7 +174,7 @@ public:
     inline void
     run_local(TriangleFunc emit, NodeOrdering&& node_ordering, EdgeOrientationOrdering&&) {
         if (conf_.local_parallel && conf_.num_threads > 1) {
-            if (conf_.algorithm == Algorithm::CetricX) {
+            if (conf_.algorithm == Algorithm::cetric_x) {
                 if (conf_.edge_partitioning) {
                     run_local_parallel_edge_partitioned_with_ghosts<EdgeOrientationOrdering>(
                         emit,
@@ -204,7 +204,7 @@ public:
                 std::forward<NodeOrdering>(node_ordering)
             );
         } else {
-            if (conf_.algorithm == Algorithm::CetricX) {
+            if (conf_.algorithm == Algorithm::cetric_x) {
                 run_local_sequential_with_ghosts<EdgeOrientationOrdering>(
                     emit,
                     interface_nodes_.local(),
@@ -249,7 +249,7 @@ public:
                         neighbor_index++;
                         continue;
                     }
-                    // if (conf_.algorithm == Algorithm::Patric || conf_.algorithm == Algorithm::CetricX) {
+                    // if (conf_.algorithm == Algorithm::patric || conf_.algorithm == Algorithm::cetric_x) {
                     //     neighbor_index++;
                     //     continue;
                     // }
@@ -910,7 +910,7 @@ public:
                     if constexpr (!std::is_same_v<NodeOrdering, node_ordering::id_outward> && !std::is_same_v<NodeOrdering, node_ordering::degree_outward<GraphType>>) {
                         continue;
                     }
-                    // if (conf_.algorithm == Algorithm::Patric) {
+                    // if (conf_.algorithm == Algorithm::patric) {
                     //     // neighbor_index++;
                     // }
                     SPDLOG_DEBUG(
@@ -1339,7 +1339,7 @@ public:
             } else {
                 for (RankEncodedEdge edge: G.out_adj(v).edges()) {
                     RankEncodedNodeId u = edge.head;
-                    if (/*conf_.algorithm == Algorithm::Cetric || */ u.rank() != rank_) {
+                    if (/*conf_.algorithm == Algorithm::cetric || */ u.rank() != rank_) {
                         // assert(G.is_local_from_local(v));
                         // assert(G.is_local(G.to_global_id(v)));
                         // assert(!G.is_local(G.to_global_id(u)));
@@ -1407,7 +1407,7 @@ public:
             }
             for (RankEncodedEdge edge: G.out_adj(v).edges()) {
                 RankEncodedNodeId u = edge.head;
-                if (/*conf_.algorithm == Algorithm::Cetric || */ u.rank() != rank_) {
+                if (/*conf_.algorithm == Algorithm::cetric || */ u.rank() != rank_) {
                     // assert(G.is_local_from_local(v));
                     // assert(G.is_local(G.to_global_id(v)));
                     // assert(!G.is_local(G.to_global_id(u)));
@@ -1584,7 +1584,7 @@ private:
 
     bool send_neighbor(RankEncodedNodeId u, PEID rank) {
         if (conf_.skip_local_neighborhood) {
-            if (conf_.algorithm == Algorithm::Cetric) {
+            if (conf_.algorithm == Algorithm::cetric) {
                 // we omit all vertices located on the receiving PE (all vertices are ghosts)
                 return u.rank() != rank;
             } else {
@@ -1607,7 +1607,7 @@ private:
         buffer.emplace_back(v);
         // size_t send_count = 0;
         for (RankEncodedEdge e: G.out_adj(v).edges()) {
-            assert(conf_.algorithm == Algorithm::Patric || e.head.rank() != rank_);
+            assert(conf_.algorithm == Algorithm::patric || e.head.rank() != rank_);
             // using payload_type = typename GraphType::payload_type;
             // if constexpr (std::is_convertible_v<decltype(payload_type{}.degree), Degree>) {
             //     if (conf_.degree_filtering) {
@@ -1645,7 +1645,7 @@ private:
             // size_t send_count = 0;
             SPDLOG_DEBUG("{}", u_rank);
             for (RankEncodedNodeId node: G.out_adj(v).neighbors()) {
-                assert(conf_.algorithm == Algorithm::Patric || node.rank() != rank_);
+                assert(conf_.algorithm == Algorithm::patric || node.rank() != rank_);
                 if (send_neighbor(node, u_rank)) {
                     buffer.emplace_back(node);
                 }
@@ -1728,7 +1728,7 @@ private:
     //         }
     //         // for CETRIC we don't have to consider the local neighbors of v, because these are no ghost
     //         // vertices
-    //         if (conf_.algorithm == Algorithm::Patric && conf_.skip_local_neighborhood) {
+    //         if (conf_.algorithm == Algorithm::patric && conf_.skip_local_neighborhood) {
     //             G.for_each_local_out_edge(G.to_local_id(v),
     //                                       [&](RankEncodedEdge edge) { is_v_neighbor_[edge.head.id()] = true; });
     //         }
@@ -1746,7 +1746,7 @@ private:
     //         }
     //         // for CETRIC we don't have to consider the local neighbors of v, because these are no ghost
     //         // vertices
-    //         if (conf_.algorithm == Algorithm::Patric && conf_.skip_local_neighborhood) {
+    //         if (conf_.algorithm == Algorithm::patric && conf_.skip_local_neighborhood) {
     //             G.for_each_local_out_edge(G.to_local_id(v),
     //                                       [&](RankEncodedEdge edge) { is_v_neighbor_[edge.head.id()] = false; });
     //         }
@@ -1771,7 +1771,7 @@ private:
         //         }
         //     });
         // } else {
-        if (conf_.algorithm == Algorithm::CetricX) {
+        if (conf_.algorithm == Algorithm::cetric_x) {
             // this node may have no out edges and was therefore removed
             if (!G.is_local(u)) {
                 return;
@@ -1824,7 +1824,7 @@ private:
                 conf_
             );
         }
-        if (conf_.skip_local_neighborhood && conf_.algorithm == Algorithm::Patric) {
+        if (conf_.skip_local_neighborhood && conf_.algorithm == Algorithm::patric) {
             auto v_neighbors = G.out_adj(v).neighbors();
             // for each edge (v, u) we check the open wedge (v, u, w) for w in
             // N(u)+

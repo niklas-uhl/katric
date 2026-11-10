@@ -38,7 +38,6 @@
 #include <caliper/ConfigManager.h>
 #include <adiak.hpp>
 #include <caliper/cali.h>
-#include <cereal/cereal.hpp>
 #include <graph-io/definitions.h>
 #include <graph-io/distributed_graph_io.h>
 #include <graph-io/local_graph_view.h>
@@ -60,7 +59,6 @@
 
 #include "./parse_parameters.h"
 #include "CLI/Error.hpp"
-#include "cetric/adiak_archive.h"
 #include "cetric/caliper.h"
 #include "cetric/config.h"
 #include "cetric/counters/cetric_edge_iterator.h"
@@ -89,8 +87,7 @@ cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::P
 
     app.add_option("input", conf.input_file, "The input graph");
 
-    app.add_option("--input-format", conf.input_format)
-        ->transform(CLI::CheckedTransformer(graphio::input_types, CLI::ignore_case));
+    add_enum_option(app, "--input-format", conf.input_format, graphio::input_types);
     app.add_option("--partitioning", conf.partitioning);
 
     app.add_option("--iterations", conf.iterations);
@@ -102,8 +99,7 @@ cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::P
 
     app.add_flag("-v", conf.verbosity_level, "verbosity level");
 
-    app.add_option("--cache-input", conf.cache_input)
-        ->transform(CLI::CheckedTransformer(cetric::cache_input_map, CLI::ignore_case));
+    add_enum_option(app, "--cache-input", conf.cache_input);
     app.add_flag("--read-edge-partitioned", conf.read_edge_partitioned);
 
     app.add_option(
@@ -135,8 +131,7 @@ cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::P
     app.add_flag("--binary-rank-search", conf.binary_rank_search);
     app.add_flag("--id-node-ordering", conf.id_node_ordering);
 
-    app.add_option("--algorithm", conf.algorithm)
-        ->transform(CLI::CheckedTransformer(cetric::algorithm_map, CLI::ignore_case));
+    add_enum_option(app, "--algorithm", conf.algorithm);
 
     app.add_flag("--flag-intersection", conf.flag_intersection);
 
@@ -148,27 +143,21 @@ cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::P
     app.add_flag("--global-parallel", conf.global_parallel);
     app.add_flag("--parallel-compact", conf.parallel_compact);
 
-    app.add_option("--parallelization-method", conf.parallelization_method)
-        ->transform(CLI::CheckedTransformer(enum_name_to_value_map<cetric::ParallelizationMethod>(), CLI::ignore_case));
+    add_enum_option(app, "--parallelization-method", conf.parallelization_method);
     app.add_flag("--edge-partitioning", conf.edge_partitioning);
     app.add_flag("--edge-partitioning-static", conf.edge_partitioning_static);
-    app.add_option("--omp-schedule", conf.omp_schedule)
-        ->transform(CLI::CheckedTransformer(enum_name_to_value_map<cetric::OMPSchedule>(), CLI::ignore_case));
+    add_enum_option(app, "--omp-schedule", conf.omp_schedule);
     app.add_option("--omp-chunksize", conf.omp_chunksize);
 
-    app.add_option("--tbb-partitioner", conf.tbb_partitioner)
-        ->transform(CLI::CheckedTransformer(enum_name_to_value_map<cetric::TBBPartitioner>(), CLI::ignore_case));
-    app.add_option("--task-pool-type", conf.task_pool_type)
-        ->transform(CLI::CheckedTransformer(enum_name_to_value_map<cetric::TaskPoolType>(), CLI::ignore_case));
+    add_enum_option(app, "--tbb-partitioner", conf.tbb_partitioner);
+    add_enum_option(app, "--task-pool-type", conf.task_pool_type);
     app.add_flag("--task-priorities", conf.task_priorities);
 
-    app.add_option("--threshold", conf.threshold)
-        ->transform(CLI::CheckedTransformer(cetric::threshold_map, CLI::ignore_case));
+    add_enum_option(app, "--threshold", conf.threshold);
     app.add_option("--threshold-scale", conf.threshold_scale);
     app.add_option("--high-degree-threshold-scale", conf.high_degree_threshold_scale);
 
-    app.add_option("--intersection-method", conf.intersection_method)
-        ->transform(CLI::CheckedTransformer(cetric::intersection_method_map, CLI::ignore_case));
+    add_enum_option(app, "--intersection-method", conf.intersection_method);
     app.add_option("--binary-intersection-cutoff", conf.binary_intersection_cutoff);
     app.add_option("--hybrid-cutoff-scale", conf.hybrid_cutoff_scale);
 
@@ -220,20 +209,24 @@ cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::P
     //     MPI_Finalize();
     //     exit(retval);
     // }
-    conf.rank = rank;
-    conf.PEs  = size;
+    if (conf.num_threads == 0) {
+        conf.num_threads = tbb::this_task_arena::max_concurrency();
+    }
+    conf.rank    = rank;
+    conf.PEs     = size;
+    conf.options = option_values(app);
     return conf;
 }
 
 class InputCache {
 public:
     InputCache(const cetric::Config& conf) : conf_(conf), cache_file_(), G_() {
-        if (conf_.cache_input != cetric::CacheInput::None) {
+        if (conf_.cache_input != cetric::CacheInput::none) {
             auto [G, info] = load_graph();
             G_             = std::move(G);
             info_          = std::move(info);
         }
-        if (conf_.cache_input == cetric::CacheInput::Filesystem) {
+        if (conf_.cache_input == cetric::CacheInput::filesystem) {
             auto tmp_file = graphio::dump_to_tmp(G_.value(), conf_.rank, conf_.PEs);
             cache_file_   = tmp_file;
             G_            = std::nullopt;
@@ -241,11 +234,11 @@ public:
     }
     graphio::IOResult get() {
         switch (conf_.cache_input) {
-            case cetric::CacheInput::None:
+            case cetric::CacheInput::none:
                 return load_graph();
-            case cetric::CacheInput::Filesystem:
+            case cetric::CacheInput::filesystem:
                 return graphio::read_graph_view(cache_file_, conf_.rank, conf_.PEs);
-            case cetric::CacheInput::InMemory:
+            case cetric::CacheInput::in_memory:
                 return {G_.value(), info_};
             default:
                 // unreachable
@@ -253,7 +246,7 @@ public:
         }
     }
     virtual ~InputCache() {
-        if (conf_.cache_input == cetric::CacheInput::Filesystem) {
+        if (conf_.cache_input == cetric::CacheInput::filesystem) {
             std::filesystem::remove(cache_file_);
         }
     }
@@ -302,7 +295,9 @@ void print_summary(size_t triangles, std::vector<double> const& wall_times) {
     for (size_t i = 0; i < wall_times.size(); ++i) {
         SPDLOG_INFO("{:<15}{:>10} s", fmt::format("[{}] time: ", i + 1), wall_times[i]);
     }
-    SPDLOG_INFO("{:<15}{:>10} s", "min time: ", *std::min_element(wall_times.begin(), wall_times.end()));
+    if (!wall_times.empty()) {
+        SPDLOG_INFO("{:<15}{:>10} s", "min time: ", *std::min_element(wall_times.begin(), wall_times.end()));
+    }
 }
 
 int main(int argc, char* argv[]) {
@@ -320,11 +315,7 @@ int main(int argc, char* argv[]) {
         MPI_Comm_rank(MPI_COMM_WORLD, &rank);
         MPI_Comm_size(MPI_COMM_WORLD, &size);
         DEBUG_BARRIER(rank);
-        cetric::Config conf            = parse_config(argc, argv, rank, size);
-        size_t         max_concurrency = tbb::this_task_arena::max_concurrency();
-        if (conf.num_threads == 0) {
-            conf.num_threads = max_concurrency;
-        }
+        cetric::Config conf = parse_config(argc, argv, rank, size);
         tbb::global_control global_limit(tbb::global_control::max_allowed_parallelism, conf.num_threads);
 
 #ifdef CETRIC_HAS_OPENMP
@@ -355,7 +346,7 @@ int main(int argc, char* argv[]) {
         std::optional<double>    io_time;
         cetric::profiling::Timer t;
         InputCache               input_cache(conf);
-        if (conf.cache_input != cetric::CacheInput::None) {
+        if (conf.cache_input != cetric::CacheInput::none) {
             io_time = t.elapsed_time();
         }
         // Caliper: region times and counters aggregated across ranks, iterations annotated as a loop; Adiak holds the
@@ -370,8 +361,14 @@ int main(int argc, char* argv[]) {
             }
             MPI_Comm adiak_comm = MPI_COMM_WORLD;
             adiak::init(&adiak_comm);
-            cetric::AdiakOutputArchive("")(cereal::make_nvp("config", conf));
-            adiak::value("mpi_size", size);
+            for (auto const& [name, value]: conf.options) {
+                adiak::value("config." + name, value);
+            }
+            adiak::value("git_commit", conf.git_commit);
+            adiak::cmdline();
+            adiak::hostname();
+            adiak::jobsize();
+            adiak::launchdate();
             if (io_time.has_value()) {
                 adiak::value("io_time", io_time.value());
             }
@@ -406,19 +403,19 @@ int main(int argc, char* argv[]) {
             MPI_Barrier(MPI_COMM_WORLD);
             cetric::profiling::Timer global_time;
 
-            if (conf.algorithm == cetric::Algorithm::Cetric) {
+            if (conf.algorithm == cetric::Algorithm::cetric) {
                 if (conf.communication_policy == "new") {
                     triangles = run_cetric(G, conf, rank, size, cetric::MessageQueuePolicy{}, conf.id_node_ordering);
                 } else if (conf.communication_policy == "grid") {
                     triangles = run_cetric(G, conf, rank, size, cetric::GridPolicy{}, conf.id_node_ordering);
                 }
-            } else if (conf.algorithm == cetric::Algorithm::Patric) {
+            } else if (conf.algorithm == cetric::Algorithm::patric) {
                 if (conf.communication_policy == "new") {
                     triangles = run_patric(G, conf, rank, size, cetric::MessageQueuePolicy{});
                 } else if (conf.communication_policy == "grid") {
                     triangles = run_patric(G, conf, rank, size, cetric::GridPolicy{});
                 }
-            } else if (conf.algorithm == cetric::Algorithm::CetricX) {
+            } else if (conf.algorithm == cetric::Algorithm::cetric_x) {
                 if (conf.communication_policy == "new") {
                     triangles = run_cetric_new(G, conf, rank, size, cetric::MessageQueuePolicy{});
                 } else if (conf.communication_policy == "grid") {

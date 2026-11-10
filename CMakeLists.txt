@@ -36,7 +36,6 @@ target_link_libraries(
             absl::flat_hash_set
             absl::hash
             tlx
-            cereal::cereal
             magic_enum::magic_enum
             fmt::fmt
             spdlog::spdlog

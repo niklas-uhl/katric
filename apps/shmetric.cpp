@@ -23,7 +23,6 @@
 
 #include <CLI/CLI.hpp>
 #include <CLI/Validators.hpp>
-#include <cereal/cereal.hpp>
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 #include <graph-io/graph_definitions.h>
@@ -47,7 +46,9 @@ void print_summary(size_t triangles, std::vector<double> const& wall_times) {
     for (size_t i = 0; i < wall_times.size(); ++i) {
         SPDLOG_INFO("{:<15}{:>10} s", fmt::format("[{}] time: ", i + 1), wall_times[i]);
     }
-    SPDLOG_INFO("{:<15}{:>10} s", "min time: ", *std::min_element(wall_times.begin(), wall_times.end()));
+    if (!wall_times.empty()) {
+        SPDLOG_INFO("{:<15}{:>10} s", "min time: ", *std::min_element(wall_times.begin(), wall_times.end()));
+    }
 }
 
 int main(int argc, char* argv[]) {

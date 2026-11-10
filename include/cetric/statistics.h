@@ -22,7 +22,6 @@
 #ifndef STATISTICS_H_PLFYJDX0
 #define STATISTICS_H_PLFYJDX0
 
-#include <cereal/cereal.hpp>
 
 #include "cetric/message_statistics.h"
 
@@ -36,16 +35,6 @@ struct PreprocessingStatistics {
     MessageStatistics message_statistics;
 
     explicit PreprocessingStatistics() : orientation_time(0), sorting_time(0), message_statistics() {}
-
-    template <class Archive>
-    void serialize(Archive& archive) {
-        archive(
-            CEREAL_NVP(degree_exchange_time),
-            CEREAL_NVP(orientation_time),
-            CEREAL_NVP(sorting_time),
-            CEREAL_NVP(message_statistics)
-        );
-    }
 };
 
 struct LoadBalancingStatistics {
@@ -63,18 +52,6 @@ struct LoadBalancingStatistics {
           redistribution_time(0),
           phase_time(0),
           message_statistics() {}
-
-    template <class Archive>
-    void serialize(Archive& archive) {
-        archive(
-            CEREAL_NVP(cost_function_evaluation_time),
-            CEREAL_NVP(cost_function_communication_time),
-            CEREAL_NVP(computation_time),
-            CEREAL_NVP(redistribution_time),
-            CEREAL_NVP(phase_time),
-            CEREAL_NVP(message_statistics)
-        );
-    }
 };
 
 } /* end of namespace profiling */

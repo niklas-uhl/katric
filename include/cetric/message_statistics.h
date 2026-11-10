@@ -24,7 +24,6 @@
 
 #include <cstddef>
 
-#include <cereal/cereal.hpp>
 #include <mpi.h>
 
 namespace cetric {
@@ -38,15 +37,6 @@ struct MessageStatistics {
 
     explicit MessageStatistics() : sent_messages(0), received_messages(0), send_volume(0), receive_volume(0) {}
 
-    template <class Archive>
-    void serialize(Archive& archive) {
-        archive(
-            CEREAL_NVP(sent_messages),
-            CEREAL_NVP(received_messages),
-            CEREAL_NVP(send_volume),
-            CEREAL_NVP(receive_volume)
-        );
-    }
 
     void add(const MessageStatistics& rhs) {
         sent_messages += rhs.sent_messages;

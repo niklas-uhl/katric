@@ -68,7 +68,7 @@ inline void preprocessing(
     const Config&                               conf,
     bool                                        fetch_ghost_degree
 ) {
-    // if (phase == Phase::Global || conf.algorithm == Algorithm::Patric) {
+    // if (phase == Phase::Global || conf.algorithm == Algorithm::patric) {
     if (fetch_ghost_degree) {
         CALI_CXX_MARK_SCOPE("degree_exchange");
         find_ghosts(G, ghosts);
@@ -100,9 +100,9 @@ inline void preprocessing(
                 [&G, &conf, &ghost_degree](auto const& r) {
                     for (auto node: r) {
                         G.sort_neighborhoods(node, NodeOrdering(G, ghost_degree));
-                        // if (conf.algorithm == Algorithm::Patric) {
+                        // if (conf.algorithm == Algorithm::patric) {
                         //     G.sort_neighborhoods(node, node_ordering::id());
-                        // } else if (conf.algorithm == Algorithm::CetricX) {
+                        // } else if (conf.algorithm == Algorithm::cetric_x) {
                         //     G.sort_neighborhoods(node, node_ordering::id_outward(G.rank()));
                         // } else {
                         //     G.sort_neighborhoods(node, node_ordering::id_outward(G.rank()));
@@ -121,9 +121,9 @@ inline void preprocessing(
         CALI_CXX_MARK_SCOPE("sorting");
         for (auto node: nodes) {
             G.sort_neighborhoods(node, NodeOrdering(G, ghost_degree));
-            // if (conf.algorithm == Algorithm::Patric) {
+            // if (conf.algorithm == Algorithm::patric) {
             //   G.sort_neighborhoods(node, node_ordering::id());
-            // } else if (conf.algorithm == Algorithm::CetricX) {
+            // } else if (conf.algorithm == Algorithm::cetric_x) {
             //   G.sort_neighborhoods(node, node_ordering::id_outward(G.rank()));
             // } else {
             //   G.sort_neighborhoods(node, node_ordering::id_outward(G.rank()));

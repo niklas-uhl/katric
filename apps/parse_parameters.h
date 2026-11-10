@@ -22,7 +22,10 @@
 #pragma once
 
 #include <memory>
+#include <algorithm>
+#include <map>
 #include <string>
+#include <vector>
 
 #include <CLI/CLI.hpp>
 #include <CLI/Validators.hpp>
@@ -38,15 +41,51 @@ inline std::shared_ptr<CLI::App> parse_parameters(const std::string& app_name, c
     return app;
 }
 
-template <typename E>
-constexpr auto enum_name_to_value_map() {
-    std::map<std::string, E> mapping;
-    constexpr auto           values = magic_enum::enum_values<E>();
-    constexpr auto           names  = magic_enum::enum_names<E>();
-    for (unsigned i = 0; i < magic_enum::enum_count<E>(); ++i) {
-        mapping[std::string(names[i])] = values[i];
+/// Adds an option for an enum. Its values are spelled as cetric::cli_name() (case-insensitive, `_` for `-` works as
+/// well), `aliases` are accepted in addition. The help text and option_values() show the value by name.
+template <typename Enum>
+CLI::Option* add_enum_option(
+    CLI::App& app, std::string const& name, Enum& variable, std::map<std::string, Enum> aliases = {}
+) {
+    std::map<std::string, Enum> values;
+    for (Enum value: magic_enum::enum_values<Enum>()) {
+        values.emplace(cetric::cli_name(value), value);
     }
-    return mapping;
+    values.merge(aliases);
+    std::vector<std::string> names;
+    for (auto const& [name, value]: values) {
+        names.push_back(name);
+    }
+    auto underscores_as_hyphens = [](std::string str) {
+        std::replace(str.begin(), str.end(), '_', '-');
+        return str;
+    };
+    // IsMember normalizes the name and gives the help text and error message, then the (unchecked) Transformer
+    // converts it. Transforms run in reverse order of addition.
+    return app.add_option(name, variable)
+        ->transform(CLI::Transformer(values, CLI::ignore_case, underscores_as_hyphens).description(""))
+        ->transform(CLI::IsMember(names, CLI::ignore_case, underscores_as_hyphens))
+        ->default_function([&variable] { return cetric::cli_name(variable); })
+        ->capture_default_str();
+}
+
+/// Name and parsed value of every option of `app`, e.g. to record the configuration of a run. Call it after parsing
+/// (and after adjusting parsed values, which are read from the bound variables).
+inline std::vector<std::pair<std::string, std::string>> option_values(CLI::App& app) {
+    std::vector<std::pair<std::string, std::string>> values;
+    for (CLI::Option* option: app.get_options()) {
+        auto name = option->get_single_name();
+        if (name == "help") {
+            continue;
+        }
+        if (option->get_expected_min() == 0) { // flags capture no default; they all default to false
+            values.emplace_back(name, option->count() > 0 ? option->as<std::string>() : "false");
+        } else {
+            option->capture_default_str(); // formats the bound variable, i.e. the parsed value
+            values.emplace_back(name, option->get_default_str());
+        }
+    }
+    return values;
 }
 
 #ifndef CLI11_PARSE_MPI
@@ -99,8 +138,7 @@ cetric::Config parse_config(int argc, char* argv[]) {
 
     app.add_option("input", conf.input_file, "The input graph");
 
-    app.add_option("--input-format", conf.input_format)
-        ->transform(CLI::CheckedTransformer(graphio::input_types, CLI::ignore_case));
+    add_enum_option(app, "--input-format", conf.input_format, graphio::input_types);
     app.add_option("--partitioning", conf.partitioning);
 
     app.add_option("--iterations", conf.iterations);
@@ -125,21 +163,17 @@ cetric::Config parse_config(int argc, char* argv[]) {
     conf.local_parallel = true;
     // app.add_flag("--local-parallel", conf.local_parallel);
 
-    app.add_option("--parallelization-method", conf.parallelization_method)
-        ->transform(CLI::CheckedTransformer(enum_name_to_value_map<cetric::ParallelizationMethod>(), CLI::ignore_case));
+    add_enum_option(app, "--parallelization-method", conf.parallelization_method);
     app.add_flag("--edge-partitioning", conf.edge_partitioning);
     app.add_flag("--edge-partitioning-static", conf.edge_partitioning_static);
-    app.add_option("--omp-schedule", conf.omp_schedule)
-        ->transform(CLI::CheckedTransformer(enum_name_to_value_map<cetric::OMPSchedule>(), CLI::ignore_case));
+    add_enum_option(app, "--omp-schedule", conf.omp_schedule);
     app.add_option("--omp-chunksize", conf.omp_chunksize);
 
-    app.add_option("--tbb-partitioner", conf.tbb_partitioner)
-        ->transform(CLI::CheckedTransformer(enum_name_to_value_map<cetric::TBBPartitioner>(), CLI::ignore_case));
+    add_enum_option(app, "--tbb-partitioner", conf.tbb_partitioner);
 
     app.add_option("--high-degree-threshold-scale", conf.high_degree_threshold_scale);
 
-    app.add_option("--intersection-method", conf.intersection_method)
-        ->transform(CLI::CheckedTransformer(cetric::intersection_method_map, CLI::ignore_case));
+    add_enum_option(app, "--intersection-method", conf.intersection_method);
     app.add_option("--binary-intersection-cutoff", conf.binary_intersection_cutoff);
     app.add_option("--hybrid-cutoff-scale", conf.hybrid_cutoff_scale);
 

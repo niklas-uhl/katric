@@ -51,14 +51,6 @@ FetchContent_Declare(
   GIT_SHALLOW ON
   SYSTEM EXCLUDE_FROM_ALL)
 
-set(JUST_INSTALL_CEREAL ON)
-FetchContent_Declare(
-  cereal
-  GIT_REPOSITORY https://github.com/USCiLab/cereal
-  GIT_TAG v1.3.2
-  GIT_SHALLOW ON
-  SYSTEM EXCLUDE_FROM_ALL)
-
 set(MAGIC_ENUM_OPT_BUILD_EXAMPLES OFF)
 set(MAGIC_ENUM_OPT_BUILD_TESTS OFF)
 FetchContent_Declare(
@@ -202,7 +194,7 @@ endblock()
 target_include_directories(caliper SYSTEM INTERFACE $<BUILD_INTERFACE:${caliper_SOURCE_DIR}/include> $<BUILD_INTERFACE:${caliper_BINARY_DIR}/include>)
 
 # kagen has to be available before graph-io, which then reuses its target.
-FetchContent_MakeAvailable(cli11 fmt spdlog TBB absl cereal magic_enum tlx kamping kamping-spdlog-adapter kamping-v2 kagen graph-io message-queue)
+FetchContent_MakeAvailable(cli11 fmt spdlog TBB absl magic_enum tlx kamping kamping-spdlog-adapter kamping-v2 kagen graph-io message-queue)
 
 # GCC on AArch64 emits a -Wpsabi note for every function passing std::pair<double, double> (ABI change in GCC 10.1).
 # It is irrelevant as long as nothing is mixed with objects from GCC < 10.1, and it floods the KaGen build.
