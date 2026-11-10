@@ -1024,7 +1024,7 @@ public:
         G_compact.head_                  = std::move(this->head_);
         G_compact.ghost_ranks_available_ = ghost_ranks_available_;
         G_compact.oriented_              = false;
-        G_compact.local_edge_count_      = head_.size();
+        G_compact.local_edge_count_      = G_compact.head_.size();
         G_compact.node_range_            = node_range_;
         G_compact.rank_                  = rank_;
         G_compact.size_                  = size_;
