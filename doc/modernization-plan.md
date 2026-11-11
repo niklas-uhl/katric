@@ -95,7 +95,8 @@ The Caliper/Adiak measurement (step 3) was developed on `explore/caliper-adiak` 
       (`spot,katric-timers,katric-counters`); `eval/katric_eval.py` loads experiment directories with Thicket into
       polars tables (runs: all CLI options from Adiak as columns, graph label from the KaGen string, cores; timers per
       iteration and region; counters from the JSON, which spot cannot hold), `just summary` prints mean times per
-      cell; plotnine for plots (`uv sync --group eval`). The timers JSON stays for peeking into single runs
+      cell; marimo notebooks with altair plots for exploration (`just notebook`, `eval/scaling.py`), paper figures
+      in pgfplots from CSVs (`uv sync --group eval`). The timers JSON stays for peeking into single runs
       (`scripts/caliper_to_json.py`)
 
 ### 4. Graph input: KaGen
