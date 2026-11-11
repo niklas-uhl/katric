@@ -19,7 +19,9 @@ the run metadata from Adiak), `<run>.timers.json` and `<run>.counters.json` into
 JSON files are for looking at single runs (`scripts/caliper_to_json.py <run>`). For evaluation,
 [`eval/katric_eval.py`](../eval/katric_eval.py) loads experiment directories with
 [Thicket](https://github.com/LLNL/thicket) into polars tables (runs with all options as columns, timers, counters);
-plot them with plotnine. `uv sync --group eval` installs these.
+explore them in marimo notebooks with altair plots: `just notebook` opens the example
+[`eval/scaling.py`](../eval/scaling.py), which imports the module and plots time over cores; put further notebooks next
+to it. `uv sync --group eval` installs these.
 
 ## Suites
 

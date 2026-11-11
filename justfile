@@ -44,3 +44,7 @@ fetch-from-horeka:
 # Summarize experiment directories (kaval's <suite>_<date>): mean of the maximum "total" time per configuration
 summary +dirs:
     uv run --group eval eval/katric_eval.py {{ dirs }}
+
+# Open a marimo notebook from eval/ in the browser (eval/scaling.py: scaling plot per graph and configuration)
+notebook name="scaling":
+    uv run --group eval marimo edit eval/{{ name }}.py

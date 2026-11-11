@@ -85,3 +85,4 @@ __pycache__/
 
 # Experiment output fetched for evaluation (just fetch-from-*), plots
 /eval/data/
+/eval/__marimo__/

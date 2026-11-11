@@ -19,7 +19,8 @@ The run time of an iteration is the maximum across ranks of the region "total", 
     t = r.timers.filter(region="total").join(r.runs, on="run")
     t.group_by("graph", "algorithm", "communication-policy", "cores").agg(pl.col("max").mean())
 
-plotnine takes these DataFrames directly. `load_thicket` gives the Thicket itself, e.g. for its tree view.
+altair takes these DataFrames directly (see the marimo notebook eval/scaling.py). `load_thicket` gives the Thicket
+itself, e.g. for its tree view.
 """
 
 import argparse
@@ -191,17 +192,21 @@ def load(*dirs):
     return Results(_runs(tk, run_of_profile, dir_of_profile), _timers(tk, run_of_profile), _counters(files))
 
 
+def config_options(runs):
+    """The CLI options that differ between the runs, i.e. what distinguishes the configurations (not the input or the
+    number of ranks and threads)."""
+    other = {"run", "dir", "graph", "launchdate", "caliper-output", "triangles", "ranks", "threads", "num-threads",
+             "cores", "git_commit", "cluster", "kagen_option_string"}
+    return [c for c in runs.columns if c not in other and not c.startswith("kagen.") and runs[c].n_unique() > 1]
+
+
 def main():
     ap = argparse.ArgumentParser(description="Mean of the per-iteration run time (maximum of the region 'total' "
                                  "across ranks) per input, configuration and core count.")
     ap.add_argument("dirs", nargs="+", help="kaval experiment directories (<suite>_<date>)")
     args = ap.parse_args()
     r = load(*args.dirs)
-    options = [c for c in r.runs.columns
-               if c not in {"run", "dir", "graph", "launchdate", "caliper-output", "triangles", "ranks", "threads", "cores",
-                            "git_commit", "cluster", "kagen_option_string"}
-               and not c.startswith("kagen.") and r.runs[c].n_unique() > 1]
-    keys = ["graph", *options, "ranks", "threads"]
+    keys = ["graph", *config_options(r.runs), "ranks", "threads"]
     summary = (
         r.timers.filter(region="total")
         .join(r.runs, on="run")
