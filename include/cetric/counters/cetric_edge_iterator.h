@@ -154,7 +154,6 @@ public:
           rank_(rank),
           size_(size),
           last_proc_(G.local_node_count(), -1),
-          is_v_neighbor_(/*G.local_node_count() + G.ghost_count(), false*/),
           interface_nodes_(),
           pe_min_degree(),
           threshold_(std::numeric_limits<size_t>::max()) {
@@ -1304,38 +1303,6 @@ private:
         profiling::counter_add("receive_volume", messages.receive_volume);
     }
 
-    void pre_intersection(RankEncodedNodeId v) {
-        if (conf_.flag_intersection) {
-            G.for_each_local_out_edge(v, [&](RankEncodedEdge edge) {
-                assert(is_v_neighbor_[edge.head.id()] == false);
-                is_v_neighbor_[edge.head.id()] = true;
-            });
-        }
-    }
-
-    void post_intersection(RankEncodedNodeId v) {
-        if (conf_.flag_intersection) {
-            G.for_each_local_out_edge(v, [&](RankEncodedEdge edge) {
-                assert(is_v_neighbor_[edge.head.id()] == true);
-                is_v_neighbor_[edge.head.id()] = false;
-            });
-        }
-    }
-
-    template <typename IntersectFunc>
-    void intersect(RankEncodedNodeId v, RankEncodedNodeId u, IntersectFunc on_intersection) {
-        if (conf_.flag_intersection) {
-            G.for_each_local_out_edge(u, [&](RankEncodedEdge uw) {
-                NodeId w = uw.head.id();
-                if (is_v_neighbor_[w]) {
-                    on_intersection(w);
-                }
-            });
-        } else {
-            G.intersect_neighborhoods(v, u, on_intersection);
-        }
-    }
-
     template <typename MessageQueue, typename TriangleFunc>
     void enqueue_for_sending(
         MessageQueue&                  queue,
@@ -1615,7 +1582,6 @@ private:
     PEID                                                            rank_;
     PEID                                                            size_;
     std::vector<PEID>                                               last_proc_;
-    std::vector<bool>                                               is_v_neighbor_;
     tbb::enumerable_thread_specific<std::vector<RankEncodedNodeId>> interface_nodes_;
     std::vector<Degree>                                             pe_min_degree;
     size_t                                                          threshold_;

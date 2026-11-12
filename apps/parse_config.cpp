@@ -97,8 +97,6 @@ cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::P
 
     add_enum_option(app, "--algorithm", conf.algorithm);
 
-    app.add_flag("--flag-intersection", conf.flag_intersection);
-
     app.add_option("--communication-policy", conf.communication_policy)->transform(CLI::IsMember({"new", "grid"}));
 
     app.add_flag("--local-parallel", conf.local_parallel);

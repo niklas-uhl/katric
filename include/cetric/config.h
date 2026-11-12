@@ -76,7 +76,6 @@ struct Config {
     bool binary_rank_search      = false;
 
     bool pseudo2core             = false;
-    bool flag_intersection       = false;
 
     // Caliper ConfigManager configuration (e.g. "spot"); empty disables Caliper. Output file via caliper_output.
     std::string caliper_config = "";

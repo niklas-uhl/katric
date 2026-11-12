@@ -76,7 +76,7 @@ Options that are dead or only used in old exploration suites (`experiments/legac
       OpenMP dependency): `--degree-filtering`, `--dense-load-balancing`,
       `--edge-partitioning-static`, `--high-degree-threshold-scale`, `--parallelization-method` (OpenMP variants),
       `--tbb-partitioner`
-- [ ] `--flag-intersection`: dead today. `pre_intersection` / `post_intersection` / `intersect` are never called,
+- [x] `--flag-intersection`: dead today. `pre_intersection` / `post_intersection` / `intersect` are never called,
       `is_v_neighbor_` is never sized and would be indexed by global ID. Remove it; it comes back on compact IDs
       (idea 4, after step 4)
 - Keep `--algorithm cetric` (pre-CETRIC, `run_cetric`). Not in the paper suites, but it orients cut edges outward
