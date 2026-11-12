@@ -117,6 +117,16 @@ in `AuxiliaryNodeData`'s `absl::flat_hash_map`, which is the orientation cost th
 Replacement: number the sorted union of local vertices and ghosts 0..n+g-1. Local vertices are one contiguous
 block (local index = offset + `v - first`, still arithmetic); per-ghost arrays hold global ID, rank and degree.
 
+Open: which order the compact IDs follow.
+
+- Global ID order (as above): the global phase merges received global-ID lists against `to_global(N+(u))`
+  directly. The local phase gets no skip (see idea 3).
+- Orientation order (degree, id), computed once after the degree exchange: sorting by ID is then sorting in
+  orientation order, so the local phase gets the compact-forward skip (idea 3) and the sender can trim messages
+  (idea 2) with plain integer comparisons. Local vertices are then no longer one contiguous block (local index via
+  an array), and the global phase sorts the contracted graph by global ID (small with locality) or merges by key.
+- Decide together with ideas 2–4: with flag intersection (idea 4) the local phase needs no order at all.
+
 - [ ] Adopt KaCCv2's `VertexPartition` and `DenseIndexer` / `SparseIndexer` (`KaCCv2/src/kacc/graph/`, without the
       split-vertex `ReplicaIndexer`) for the partition table and the local indexers, on plain `uint64` global IDs.
       Copy or share them (a small common library) — decide when starting
@@ -141,8 +151,18 @@ The algorithm ideas (models in [model/](model/)):
 
 1. Compute at the tail + one rebalancing step (cost-based, DPD/IDPD): the growing imbalance on skewed inputs
 2. Forward-style message trimming: send volume of the global phase
-3. Compact-forward ordering in the local phase: neighborhoods local-first, then in orientation order with a cheap
-   key, so intersections start after u in N+(v)
+3. Compact-forward skip in the local phase: for an edge v→u every common out-neighbor w comes after u in
+   orientation order, so with N+(v) in orientation order the intersection can start after u. Today's degree order
+   is slow because of its comparator (degree lookups per comparison, hash map for ghosts), not the order. Ways to
+   get the skip cheaply:
+   - a precomputed integer rank per vertex (one sort of local vertices and ghosts by (degree, id)), or compact IDs
+     numbered in orientation order (step 4), so neighborhoods sort by plain integers
+   - the forward algorithm (Schank & Wagner): process vertices in orientation order and append each v to A(u) of
+     its out-neighbors; the A lists are in orientation order by construction and intersect with the skip built
+     in, without sorting neighborhoods (one vertex sort, m extra entries of memory)
+   - flag intersection (idea 4) makes the skip unnecessary: it never scans N+(v) per edge
+   In the global phase, message trimming (idea 2) is the same skip on the sender's side; it needs the orientation
+   order as a cheap key there
 4. Flag intersection in the local phase on compact IDs: mark N+(v) in an array of n+g flags, then scan each N+(u).
    Saves the d+(v) term per edge (the hubs' quadratic share) and the sorting of local neighborhoods. The global
    phase keeps merging (received lists hold global IDs) and needs only the contracted graph sorted. Compare with
