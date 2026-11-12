@@ -30,7 +30,7 @@ to it. `uv sync --group eval` installs these.
 | `paper-real-world` | Strong scaling of DiTriC (`patric`) and CETRIC (`cetric-x`), 512 to 32768 cores |
 | `paper-weak-scaling` | Weak scaling on RGG 2D, RHG and GNM, 512 to 32768 cores |
 | `paper-hybrid-real-world` | Hybrid CETRIC (MPI + TBB), 1 to 48 threads per rank |
-| `phases` | Phase breakdown of DiTriC and CETRIC (one thread per rank) on RGG 2D / RHG with and without vertex permutation (locality x skew), core counts per run via `--cores`; `just notebook phases` |
+| `phases` | Phase breakdown of DiTriC and CETRIC (one thread per rank) on RGG 2D / RHG with and without vertex permutation (locality x skew), node multiples up to 3072 cores; `just notebook phases` |
 | `local/smoke` | The paper configurations on small inputs, every count verified |
 | `local/phases` | `phases` on a laptop (1 to 8 cores, smaller graphs) |
 
