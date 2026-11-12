@@ -34,6 +34,10 @@ run-supermuc-experiment experiment +args="": kaval
 run-horeka-experiment experiment +args="": kaval
     {{ kaval }} --machine horeka --module-config katric --command-template ./kaval/command-templates/horeka-IntelMPI.txt --cores node-size-pow2 --min-cores 64 {{ experiment }} {{ args }}
 
+# Generate (and submit) SLURM jobs for HoreKa2
+run-horeka2-experiment experiment +args="": kaval
+    {{ kaval }} --machine horeka2 --module-config katric --cores node-size-pow2 --min-cores 64 {{ experiment }} {{ args }}
+
 # Copy experiment output from a cluster into eval/data/<cluster> (job binaries excluded)
 fetch-from-supermuc:
     rsync -aP --exclude 'bin/' supermuc:cetric/experiment_data/ eval/data/supermuc
