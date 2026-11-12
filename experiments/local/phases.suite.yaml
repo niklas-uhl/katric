@@ -29,3 +29,26 @@ config:
     primary-cost-function: none
     intersection-method: merge
     iterations: 3
+  # appended (so the indices of the configurations above stay the same): pre-CETRIC, cut edges oriented outward in
+  # the local phase, no ghost expansion
+  - algorithm: cetric
+    binary-rank-search: true
+    threshold: local-nodes
+    id-node-ordering: true
+    dense-degree-exchange: true
+    global-synchronization: true
+    communication-policy: new
+    primary-cost-function: none
+    intersection-method: merge
+    iterations: 3
+  # appended: the three algorithms with the 2D grid indirection in the global phase (the paper's choice at large p)
+  - algorithm: [patric, cetric-x, cetric]
+    binary-rank-search: true
+    threshold: local-nodes
+    id-node-ordering: true
+    dense-degree-exchange: true
+    global-synchronization: true
+    communication-policy: grid
+    primary-cost-function: none
+    intersection-method: merge
+    iterations: 3

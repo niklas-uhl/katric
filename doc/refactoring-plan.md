@@ -60,9 +60,11 @@ by those `.cpp` files):
 
 - [ ] `phases` on SuperMUC-NG and HoreKa2 at `1962d4e` (first results in, the remaining core counts and permuted RHG
       pending); tag `pre-refactor` on `1962d4e` (the algorithm code is unchanged since)
-- [ ] `cetric` (pre-CETRIC) appended to `phases` as a fourth configuration, so a rerun only adds its runs (the
+- [x] `cetric` (pre-CETRIC) appended to `phases` as a fourth configuration, so a rerun only adds its runs (the
       indices of the running configurations stay the same)
-- [ ] `communication-policy: grid` appended to `phases` as further configurations (decided 2026-11-12: yes)
+- [x] `communication-policy: grid` appended to `phases` (patric, cetric-x, cetric; decided 2026-11-12). Run the
+      remaining baseline from this commit: the algorithm code is unchanged since `1962d4e`, step 1 changes the
+      suite (`id-node-ordering` goes away)
 
 ### 1. Prune
 
