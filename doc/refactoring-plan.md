@@ -85,7 +85,7 @@ Options that are dead or only used in old exploration suites (`experiments/legac
   √(2m) bound on out-degrees does not hold for vertices with many cut edges. Old real-world data: same
   local/global split as cetric-x, as fast or faster single-threaded. Decide between `cetric` and `cetric-x` from
   `phases` (step 0)
-- [ ] Remove (decided 2026-11-12): `--skip-local-neighborhood`, `--compact-degree-exchange` (step 3 replaces the
+- [x] Remove (decided 2026-11-12): `--skip-local-neighborhood`, `--compact-degree-exchange` (step 3 replaces the
       degree exchange anyway)
 - Keep for now: `--intersection-method binary|hybrid` (galloping for very different sizes, as at the hubs on RHG;
   measure before removing, idea 8) and `--pseudo2core` (real-world graphs have many degree-1 vertices, idea 10)

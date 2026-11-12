@@ -72,14 +72,12 @@ struct Config {
     double                hybrid_cutoff_scale               = 1.0;
 
     bool dense_degree_exchange   = false;
-    bool compact_degree_exchange = false;
     bool global_synchronization  = false;
     bool binary_rank_search      = false;
     bool id_node_ordering        = false;
 
     bool pseudo2core             = false;
     bool flag_intersection       = false;
-    bool skip_local_neighborhood = false;
 
     // Caliper ConfigManager configuration (e.g. "spot"); empty disables Caliper. Output file via caliper_output.
     std::string caliper_config = "";

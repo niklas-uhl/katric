@@ -1336,20 +1336,6 @@ private:
         }
     }
 
-    bool send_neighbor(RankEncodedNodeId u, PEID rank) {
-        if (conf_.skip_local_neighborhood) {
-            if (conf_.algorithm == Algorithm::cetric) {
-                // we omit all vertices located on the receiving PE (all vertices are ghosts)
-                return u.rank() != rank;
-            } else {
-                // we send all vertices, but omit those already located on the receiving PE
-                return u.rank() == rank_ || u.rank() != rank;
-            }
-        } else {
-            return true;
-        }
-    }
-
     template <typename MessageQueue, typename TriangleFunc>
     void enqueue_for_sending(
         MessageQueue&                  queue,
@@ -1371,9 +1357,7 @@ private:
             //         }
             //     }
             // }
-            if (send_neighbor(e.head, u_rank)) {
-                buffer.emplace_back(e.head);
-            }
+            buffer.emplace_back(e.head);
         }
         SPDLOG_DEBUG("Sending {} to {}", buffer, u_rank);
         queue.post_message(std::move(buffer), u_rank);
@@ -1400,9 +1384,7 @@ private:
             SPDLOG_DEBUG("{}", u_rank);
             for (RankEncodedNodeId node: G.out_adj(v).neighbors()) {
                 assert(conf_.algorithm == Algorithm::patric || node.rank() != rank_);
-                if (send_neighbor(node, u_rank)) {
-                    buffer.emplace_back(node);
-                }
+                buffer.emplace_back(node);
             }
             SPDLOG_DEBUG("{}", u_rank);
             queue.post_message(std::move(buffer), u_rank);
@@ -1578,25 +1560,6 @@ private:
                 conf_
             );
         }
-        if (conf_.skip_local_neighborhood && conf_.algorithm == Algorithm::patric) {
-            auto v_neighbors = G.out_adj(v).neighbors();
-            // for each edge (v, u) we check the open wedge (v, u, w) for w in
-            // N(u)+
-            distributed_wedge_checks_.fetch_add(u_neighbors.end() - u_neighbors.begin(), std::memory_order_relaxed);
-            distributed_intersection_size_.fetch_add(
-                v_neighbors.end() - v_neighbors.begin() + u_neighbors.end() - u_neighbors.begin(),
-                std::memory_order_relaxed
-            );
-            cetric::intersection(
-                u_neighbors.begin(),
-                u_neighbors.end(),
-                v_neighbors.begin(),
-                v_neighbors.end(),
-                on_intersection,
-                node_ordering,
-                conf_
-            );
-        }
         // }
     }
 
@@ -1613,37 +1576,19 @@ private:
         assert(v.rank() != rank_);
         // distributed_pre_intersect(v, begin, end);
         auto for_each_local_receiver = [&](auto on_node) {
-            if (conf_.skip_local_neighborhood) {
-                auto neighbors = G.out_adj(v).neighbors();
-                if (conf_.global_degree_of_parallelism > 2) {
-                    tbb::parallel_for(
-                        tbb::blocked_range(neighbors.begin(), neighbors.end()),
-                        [&on_node](auto const& r) {
-                            for (auto node: r) {
-                                on_node(node);
-                            }
-                        }
-                    );
-                } else {
-                    for (auto node: G.out_adj(v).neighbors()) {
-                        on_node(node);
-                    }
-                }
-            } else {
-                if (conf_.global_degree_of_parallelism > 2) {
-                    tbb::parallel_for(tbb::blocked_range(begin, end), [&on_node, this](auto const& r) {
-                        for (auto u: r) {
-                            if (u.rank() == rank_) {
-                                on_node(u);
-                            }
-                        }
-                    });
-                } else {
-                    for (auto current = begin; current != end; current++) {
-                        RankEncodedNodeId u = *current;
+            if (conf_.global_degree_of_parallelism > 2) {
+                tbb::parallel_for(tbb::blocked_range(begin, end), [&on_node, this](auto const& r) {
+                    for (auto u: r) {
                         if (u.rank() == rank_) {
                             on_node(u);
                         }
+                    }
+                });
+            } else {
+                for (auto current = begin; current != end; current++) {
+                    RankEncodedNodeId u = *current;
+                    if (u.rank() == rank_) {
+                        on_node(u);
                     }
                 }
             }

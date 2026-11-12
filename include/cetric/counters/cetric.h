@@ -75,8 +75,7 @@ inline void preprocessing(
         DegreeCommunicator comm(G, conf.rank, conf.PEs, as_int(MessageTag::Orientation));
         comm.get_ghost_degree(
             [&](RankEncodedNodeId node, Degree degree) { ghost_degree[node] = degree; },
-            !conf.dense_degree_exchange,
-            conf.compact_degree_exchange
+            !conf.dense_degree_exchange
         );
     }
 

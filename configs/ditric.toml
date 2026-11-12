@@ -11,7 +11,6 @@ global-parallel = false
 local-degree-of-parallelism = 2
 global-degree-of-parallelism = 2
 dense-degree-exchange = true
-skip-local-neighborhood = false
 global-synchronization = true
 communication-policy = "new"
 primary-cost-function = "none"

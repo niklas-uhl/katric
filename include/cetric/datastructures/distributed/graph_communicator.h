@@ -68,13 +68,12 @@ public:
 
     template <typename DegreeFunc>
     void get_ghost_degree(
-        DegreeFunc&& on_degree_receive, bool sparse, bool compact
+        DegreeFunc&& on_degree_receive, bool sparse
     ) {
         get_ghost_data(
             [this](auto node) { return RankEncodedNodeId{G.degree(node)}; },
             [&on_degree_receive](auto node, auto data) { on_degree_receive(node, data.id()); },
-            sparse,
-            compact
+            sparse
         );
     }
 
@@ -82,17 +81,8 @@ public:
     void get_ghost_data(
         DataFunc&&                            get_data,
         ReceiveFunc&&                         on_receive,
-        bool                                  sparse,
-        bool                                  compact
+        bool                                  sparse
     ) {
-        if (compact) {
-            get_ghost_data_compact(
-                std::forward<DataFunc>(get_data),
-                std::forward<ReceiveFunc>(on_receive),
-                sparse
-            );
-            return;
-        }
         //  assert(G.ghost_ranks_available());
         send_buffers.clear();
         receive_buffers.clear();
@@ -141,74 +131,6 @@ public:
                 on_receive(node, buffer[i + 1]);
             }
         }
-    }
-    template <typename DataFunc, typename ReceiveFunc>
-    void get_ghost_data_compact(
-        DataFunc&& get_data, ReceiveFunc&& on_receive, bool sparse
-    ) {
-        //  assert(G.ghost_ranks_available());
-        // tlx::MultiTimer timer;
-        // timer.start("copy_degree");
-        send_buffers.clear();
-        receive_buffers.clear();
-        std::vector<std::vector<RankEncodedNodeId>> send_buffers_vec;
-        if (!sparse) {
-            send_buffers_vec.resize(size_);
-        }
-        for (auto node: G.local_nodes()) {
-            neighboring_PEs.clear();
-            if (G.template is_interface_node<AdjacencyType::full>(node)) {
-                auto data = get_data(node);
-                for (auto neighbor: G.adj(node).neighbors()) {
-                    if (neighbor.rank() != rank_) {
-                        PEID rank = neighbor.rank();
-                        if (neighboring_PEs.find(rank) == neighboring_PEs.end()) {
-                            SPDLOG_DEBUG("Sending degree of {} to rank {}", node, rank);
-                            if (sparse) {
-                                send_buffers[rank].emplace_back(node);
-                                send_buffers[rank].emplace_back(data);
-                            } else {
-                                send_buffers_vec[rank].emplace_back(node);
-                                send_buffers_vec[rank].emplace_back(data);
-                            }
-                            neighboring_PEs.insert(rank);
-                        }
-                    }
-                }
-            }
-        }
-        // timer.start("all2all");
-        std::vector<RankEncodedNodeId> recv_vec;
-        CompactBuffer                  recv_buf(recv_vec, rank_, size_);
-        if (sparse) {
-            CommunicationUtility::sparse_all_to_all<RankEncodedNodeId>(
-                send_buffers,
-                recv_buf,
-                kamping::types::mpi_type_traits<RankEncodedNodeId>::data_type(),
-                rank_,
-                size_,
-                message_tag_
-            );
-        } else {
-            CommunicationUtility::all_to_all(
-                send_buffers_vec,
-                recv_buf,
-                kamping::types::mpi_type_traits<RankEncodedNodeId>::data_type(),
-                rank_,
-                size_,
-                message_tag_
-            );
-        }
-        // timer.start("process");
-        for (size_t i = 0; i < recv_vec.size(); i += 2) {
-            RankEncodedNodeId node = recv_vec[i];
-            on_receive(node, recv_vec[i + 1]);
-        }
-        // timer.stop();
-        // std::stringstream out;
-        // out << "[R" << rank_ << "] ";
-        // timer.print("info", out);
-        // std::cout << out.str();
     }
 
     // template <typename OnDegreeFunc>

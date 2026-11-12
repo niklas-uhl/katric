@@ -92,7 +92,6 @@ cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::P
     app.add_flag("--pseudo2core", conf.pseudo2core);
 
     app.add_flag("--dense-degree-exchange", conf.dense_degree_exchange);
-    app.add_flag("--compact-degree-exchange", conf.compact_degree_exchange);
     app.add_flag("--global-synchronization", conf.global_synchronization);
     app.add_flag("--binary-rank-search", conf.binary_rank_search);
     app.add_flag("--id-node-ordering", conf.id_node_ordering);
@@ -100,8 +99,6 @@ cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::P
     add_enum_option(app, "--algorithm", conf.algorithm);
 
     app.add_flag("--flag-intersection", conf.flag_intersection);
-
-    app.add_flag("--skip-local-neighborhood", conf.skip_local_neighborhood);
 
     app.add_option("--communication-policy", conf.communication_policy)->transform(CLI::IsMember({"new", "grid"}));
 

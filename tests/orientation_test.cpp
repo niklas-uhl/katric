@@ -75,7 +75,6 @@ TEST_P(Orientation, GlobalDegree) {
     cetric::DegreeCommunicator comm(G, conf.rank, conf.PEs, cetric::as_int(cetric::MessageTag::Orientation));
     comm.get_ghost_degree(
         [&](cetric::RankEncodedNodeId node, cetric::Degree degree) { ghost_degree[node] = degree; },
-        true,
         true
     );
     cetric::node_ordering::degree ord(G, ghost_degree);
