@@ -168,6 +168,18 @@ The algorithm ideas (models in [model/](model/)):
    phase keeps merging (received lists hold global IDs) and needs only the contracted graph sorted. Compare with
    idea 3, both target the local phase
 
+5. Interleave the local and global phase: send the global phase's messages first (they depend only on the
+   oriented graph; for CETRIC the remote part of N+(v), contraction is structural) and handle received messages
+   by polling within the local phase. A rank then needs its own local + global work instead of the slowest rank's
+   local phase plus the slowest rank's global phase, and waiting overlaps with computation. Pre-CETRIC could also
+   run the contracted graph's degree exchange during the local phase (its local phase needs no ghost degrees).
+   Upper bound from the first runs (barriers between the phases + `termination`): 2–5% of an iteration without
+   locality or skew, 13% on RHG at 192 cores and 20–25% at 768, growing with p; complements idea 1 (hides the
+   imbalance that idea 1 removes). Costs: no separate phase regions (measure with accumulated counters, keep it
+   switchable), polling granularity, peak memory (no contraction before messages are buffered). A first
+   approximation needs no code: `global-synchronization` off removes the barriers. After step 2 (a driver of
+   swappable phases)
+
 Plus: without locality, CETRIC should not pay for ghost expansion (fall back to patric's path, or pre-CETRIC).
 
 ## Open decisions
