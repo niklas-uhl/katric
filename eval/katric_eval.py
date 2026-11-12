@@ -116,6 +116,8 @@ def graph_label(options, cores):
     args = [a for a in (per_core("n"), per_core("m")) if a is not None]
     if "gamma" in options:
         args.append(f"gamma={options['gamma']}")
+    if options.get("permute") in ("1", "true"):
+        args.append("permuted")
     return f"{options.get('type', '?')}({','.join(args)})"
 
 

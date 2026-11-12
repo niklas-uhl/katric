@@ -1,0 +1,35 @@
+# Locality x degree skew, 2 x 2, for looking into the phases (suite `phases`): 2^N vertices and 2^M edges per core,
+# the size and seed of the paper's weak scaling (paper-weak-scaling.instances.yaml).
+#   rgg2d (Poisson degrees) and rhg (gamma 2.8, heavy tail) partition well: geometric, and the vertex ids follow the
+#   space-filling order. `permute: 1` (KaGen, any generator) relabels the vertices randomly, so the permuted copy is
+#   the same graph without locality.
+name: phases
+graphs:
+  - generator: kagen
+    type: rgg2d
+    N: 18
+    M: 22
+    seed: 28475421
+    scale_weak: true
+  - generator: kagen
+    type: rgg2d
+    N: 18
+    M: 22
+    permute: 1
+    seed: 28475421
+    scale_weak: true
+  - generator: kagen
+    type: rhg
+    N: 18
+    M: 22
+    gamma: 2.8
+    seed: 28475421
+    scale_weak: true
+  - generator: kagen
+    type: rhg
+    N: 18
+    M: 22
+    gamma: 2.8
+    permute: 1
+    seed: 28475421
+    scale_weak: true

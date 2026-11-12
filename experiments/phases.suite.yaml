@@ -1,0 +1,37 @@
+# Where the time goes: DiTriC (patric) and CETRIC (cetric-x), one thread per rank, on locality x skew inputs
+# (phases.instances.yaml). 48 cores (one SuperMUC-NG node) as the reference, then 32 and 64 nodes.
+# Phases are separated by barriers (global-synchronization), which run in nested `barrier` regions, so a phase's
+# exclusive time is the rank's own work and `barrier` is the imbalance. The global phase additionally has
+# `termination` and the counters send_ns / handle_ns; the input's shape (cut edges, interface nodes) is in `ingest`.
+# The cetric-x variant without id-node-ordering sorts neighborhoods by degree in the local phase (algorithm idea 3).
+# Evaluate with `just notebook phases`. A laptop version is local/phases.suite.yaml.
+name: phases
+executable: apps/katric
+output_path_option_name: caliper-output
+threads_option_name: num-threads
+ncores: [48, 1536, 3072]
+threads_per_rank: [1]
+time_limit: 15
+graphs:
+  - import: phases
+config:
+  - algorithm: [patric, cetric-x]
+    binary-rank-search: true
+    threshold: local-nodes
+    id-node-ordering: true
+    dense-degree-exchange: true
+    global-synchronization: true
+    communication-policy: new
+    primary-cost-function: none
+    intersection-method: merge
+    iterations: 3
+  - algorithm: cetric-x
+    binary-rank-search: true
+    threshold: local-nodes
+    id-node-ordering: false
+    dense-degree-exchange: true
+    global-synchronization: true
+    communication-policy: new
+    primary-cost-function: none
+    intersection-method: merge
+    iterations: 3

@@ -1,0 +1,31 @@
+# Laptop-sized version of ../phases.instances.yaml (locality x degree skew): 2^16 vertices and 2^20 edges per core.
+name: phases
+graphs:
+  - generator: kagen
+    type: rgg2d
+    N: 16
+    M: 20
+    seed: 28475421
+    scale_weak: true
+  - generator: kagen
+    type: rgg2d
+    N: 16
+    M: 20
+    permute: 1
+    seed: 28475421
+    scale_weak: true
+  - generator: kagen
+    type: rhg
+    N: 16
+    M: 20
+    gamma: 2.8
+    seed: 28475421
+    scale_weak: true
+  - generator: kagen
+    type: rhg
+    N: 16
+    M: 20
+    gamma: 2.8
+    permute: 1
+    seed: 28475421
+    scale_weak: true

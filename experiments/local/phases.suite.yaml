@@ -1,0 +1,31 @@
+# Laptop version of ../phases.suite.yaml (see there): 1 core is the sequential baseline (no global phase).
+name: phases
+executable: apps/katric
+output_path_option_name: caliper-output
+threads_option_name: num-threads
+ncores: [1, 2, 4, 8]
+threads_per_rank: [1]
+time_limit: 10
+graphs:
+  - import: phases
+config:
+  - algorithm: [patric, cetric-x]
+    binary-rank-search: true
+    threshold: local-nodes
+    id-node-ordering: true
+    dense-degree-exchange: true
+    global-synchronization: true
+    communication-policy: new
+    primary-cost-function: none
+    intersection-method: merge
+    iterations: 3
+  - algorithm: cetric-x
+    binary-rank-search: true
+    threshold: local-nodes
+    id-node-ordering: false
+    dense-degree-exchange: true
+    global-synchronization: true
+    communication-policy: new
+    primary-cost-function: none
+    intersection-method: merge
+    iterations: 3

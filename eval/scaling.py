@@ -71,10 +71,11 @@ def _(pl, r, region, runs):
 def _(alt, mo, region, times):
     # hover for details; click points (shift-click for more) to list their runs below
     _select = alt.selection_point(fields=["graph", "config", "cores", "threads"])
+    _legend = alt.selection_point(fields=["config"], bind="legend")  # click a legend entry to highlight it
     chart = mo.ui.altair_chart(
         alt.Chart(times)
         .mark_line(point=True)
-        .add_params(_select)
+        .add_params(_select, _legend)
         .encode(
             x=alt.X("cores:Q", scale=alt.Scale(type="log", base=2),
                     axis=alt.Axis(values=sorted(times["cores"].unique()))),  # ticks at the measured core counts
@@ -82,7 +83,7 @@ def _(alt, mo, region, times):
             color=alt.Color("config:N", legend=alt.Legend(orient="bottom", direction="vertical", labelLimit=0)),
             shape=alt.Shape("threads:N", title="threads/rank"),
             detail="line:N",
-            opacity=alt.condition(_select, alt.value(1.0), alt.value(0.3)),
+            opacity=alt.condition(_select & _legend, alt.value(1.0), alt.value(0.15)),
             tooltip=["config", "threads", "cores", alt.Tooltip("time:Q", format=".4g")],
         )
         .properties(width=250, height=200)
