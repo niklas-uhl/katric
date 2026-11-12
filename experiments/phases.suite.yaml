@@ -14,7 +14,7 @@ threads_option_name: num-threads
 ncores: node-size-pow2
 max_cores: 3072
 threads_per_rank: [1]
-time_limit: 15
+time_limit: 5
 graphs:
   - import: phases
 config:
