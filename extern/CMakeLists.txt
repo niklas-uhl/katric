@@ -166,6 +166,12 @@ block()
   FetchContent_MakeAvailable(kassert)
 endblock()
 
+# All dependencies are static libraries. Caliper declares option(BUILD_SHARED_LIBS ... TRUE), which would turn every
+# dependency made available after it into a shared library: on Linux, KaGen as a shared library then fails to link
+# its static, non-PIC xxHash. Caliper uses policy CMP0077, so this normal variable takes precedence over its option,
+# and it also hides a stale BUILD_SHARED_LIBS=ON cache entry in existing build directories.
+set(BUILD_SHARED_LIBS OFF)
+
 # Caliper builds its own tests (and googletest) if BUILD_TESTING is on
 block()
   set(BUILD_TESTING OFF)
