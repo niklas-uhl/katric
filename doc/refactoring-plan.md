@@ -43,6 +43,8 @@ Step 1 validation (2026-11-12): 70 reference runs (RGG/RHG, each also permuted, 
 with direct and grid communication and DiTriC with DPD, on 2 and 4 ranks) give identical triangle counts and counters
 after every step-1 commit (grid message counters excluded). The counters are deterministic between two runs of the same
 binary.
+Scripts: `scripts/counters_run.sh build-release/apps/katric <dir>` (about 20 s on the laptop), then
+`scripts/counters_compare.py <ref dir> <new dir>`; take the reference from the commit before a step.
 
 ### TU split (before step 1)
 
