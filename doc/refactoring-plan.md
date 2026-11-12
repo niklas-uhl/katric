@@ -65,9 +65,10 @@ Options that are dead or only used in old exploration suites (`experiments/legac
   √(2m) bound on out-degrees does not hold for vertices with many cut edges. Old real-world data: same
   local/global split as cetric-x, as fast or faster single-threaded. Decide between `cetric` and `cetric-x` from
   `phases` (step 0)
-- [ ] Decide (proposed: remove): `--skip-local-neighborhood`, `--pseudo2core`, `--compact-degree-exchange` (step 3
-      replaces the degree exchange anyway), `--intersection-method binary|hybrid` (tried in old suites, all off in
-      the paper configs)
+- [ ] Decide (proposed: remove): `--skip-local-neighborhood`, `--compact-degree-exchange` (step 3 replaces the
+      degree exchange anyway)
+- Keep for now: `--intersection-method binary|hybrid` (galloping for very different sizes, as at the hubs on RHG;
+  measure before removing, idea 8) and `--pseudo2core` (real-world graphs have many degree-1 vertices, idea 10)
 - [ ] Decide (proposed: remove): `--id-node-ordering false` (pure degree ordering): 1.6–2.5× slower on the
       clusters, sorting up to 13×; compact-forward ordering (idea 3) gets the skip with a cheaper key
 - [ ] Decide (proposed: keep N, DPD, IDPD): cost functions N/D/DH/DDH/DH2/DPD/IDPD/D* and primary load balancing.
@@ -129,7 +130,8 @@ Open: which order the compact IDs follow.
 
 - [ ] Adopt KaCCv2's `VertexPartition` and `DenseIndexer` / `SparseIndexer` (`KaCCv2/src/kacc/graph/`, without the
       split-vertex `ReplicaIndexer`) for the partition table and the local indexers, on plain `uint64` global IDs.
-      Copy or share them (a small common library) — decide when starting
+      Copy or share them (a small common library) — decide when starting. Alternative for the partition table:
+      `dstl::distribution` (kamping-v2: owner of an index in O(1) for equal sizes, else O(log p); global <-> local)
 - [ ] Compact IDs in the adjacency, built once after `find_ghosts`; per-ghost arrays for global ID, rank and degree.
       In KaCCv2's concepts this is a neighbor handle (`neighbor_t` != `vertex_id_t`, projected by
       `neighbor_target`), so the indexers never see compact IDs
@@ -179,6 +181,43 @@ The algorithm ideas (models in [model/](model/)):
    switchable), polling granularity, peak memory (no contraction before messages are buffered). A first
    approximation needs no code: `global-synchronization` off removes the barriers. After step 2 (a driver of
    swappable phases)
+
+6. Owner-side relevance filtering of messages. An entry w of N+(v) sent to rank r can only close a triangle there if
+   r holds an in-neighbor u -> w; call these ranks P(w). w's owner knows P(w) (it knows w's neighbors, their ranks
+   and, after the degree exchange, the orientation), so it sends P(w) to the ranks in P(w), and senders drop
+   entries w with r not in P(w). Exchange cost Σ_w |P(w)|², independent of p; sets above a cap are not sent (hub
+   entries are always kept). Model on a random graph without locality ([model/owner_filter.py](model/owner_filter.py),
+   exact rank lists, 16 bits per rank ID): entries kept 74% / 34% / 16% / 8% at p = 16 / 64 / 192 / 768, exchange
+   ~0.3 of the message volume, total volume 0.88× / 0.58× / 0.45× / 0.39×; the receivers' merge work shrinks with
+   the kept entries. Order: degree exchange -> orientation -> P(w) exchange -> global phase. Refinements: a small
+   Bloom filter over rank IDs instead of exact lists (exchange ~0.08 at 4 bits per ID, some false positives); not
+   keeping entries just because w lies on the receiver. Variants ruled out:
+   - R(w) (all ranks with a neighbor of w) piggybacked on the degree exchange: no extra round, but too coarse,
+     total volume 0.91–1.17×
+   - receiver-side Bloom filters of W_r = ∪ N+(u), u on r ([model/bloom.py](model/bloom.py),
+     [model/bloom_adaptive.py](model/bloom_adaptive.py)): every sender needs every receiver's filter; with a fixed
+     number of bits per element the volume grows to 2.2× at 768 cores, with sizes adapted per pair it stays ≤ 1×
+     but gains little beyond a few hundred cores (traffic per pair shrinks as 1/p, the filter content does not).
+     Filtering at grid relays scales better but costs unpacking and repacking every message there, and needs grid
+   - one global Bloom filter of all edges: the sender could send only candidate wedges, but it needs O(m) memory
+     per rank or node (6.4 GB per rank at 3072 cores with the `phases` size and 4 bits per edge), and building it
+     is an all-reduce over that array
+   Still to model: RHG (hubs) and inputs with locality; [model/relevance.py](model/relevance.py) gives the upper
+   bound (share of entries usable at all)
+7. Reuse a received message for several receivers: N+(v) arrives once per rank (`last_proc_`), but
+   `process_neighborhood` merges the whole message against N+(u) for every local receiver u. Marking the message
+   once and scanning each N+(u) (idea 4 applied to the global phase) saves |message| per additional receiver; a
+   counter for receivers per message shows how much
+8. Faster intersection kernels: the local phase is about 60% of the time with locality. SIMD merge (AVX-512 on
+   SuperMUC-NG, AVX2) and galloping for very different sizes (hubs; `--intersection-method binary|hybrid` exists)
+9. Cost-based load balancing: measure the existing `--primary-cost-function` D / DPD / IDPD on `phases` before
+   implementing idea 1 (how much one repartitioning fixes the RHG imbalance, and at what redistribution cost). The
+   redistribution itself fits `dstl::redistribute` (kamping-v2): a cost prefix sum split into contiguous vertex
+   ranges gives each rank a send and a receive window, one call for the per-vertex data and one for the edges
+10. Degree-1 / 2-core pruning: vertices of degree < 2 are in no triangle. `--pseudo2core` only skips their sending
+    today; removing them (iteratively, for the 2-core) matters for real-world graphs, not for the synthetic inputs
+11. Message compression (delta + varint over sorted lists): low priority, the global phase is computation-bound on
+    the clusters; possibly worth it at large p with grid indirection, where every message travels twice
 
 Plus: without locality, CETRIC should not pay for ghost expansion (fall back to patric's path, or pre-CETRIC).
 
