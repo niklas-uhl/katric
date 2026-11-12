@@ -81,16 +81,42 @@ The deferred kamping-v2 plan from modernization-plan.md, plus the degree exchang
       deduplicate with a last-rank marker as in the global phase
 - [ ] Buffers per rank as a flat vector with displacements instead of `absl::flat_hash_map<PEID, vector>`
 
-### 4. Ghost data in arrays
+### 4. Order-preserving compact IDs instead of rank encoding
 
-- [ ] Give ghosts dense indices once (after `find_ghosts`) and keep ghost degrees and other per-ghost data in arrays
-      indexed by them, instead of `AuxiliaryNodeData`'s hash map. Adjacency stays in global IDs (messages carry
-      global IDs anyway); the degree comparator reads an array
-- [ ] Decide whether to adopt KaCCv2's `VertexPartition` / `DenseIndexer` / `SparseIndexer` (`src/kacc/graph/`)
-      for the local indexers. Same model as katric (global IDs in the adjacency, local index by subtraction or hash
-      map); the difference is that katric encodes the owner rank in the top 16 bits of the ID (`RankEncodedNodeId`:
-      at most 65,536 ranks, 2^48 vertices) where KaCCv2 looks it up in the partition
-- [ ] Check what replaces `std::set<RankEncodedNodeId> ghosts` in `run_distributed` (a `std::set`, unused when empty)
+Today every adjacency entry is a `RankEncodedNodeId`: the global ID in the low 48 bits, the owner rank in the top
+16. The rank is a pure function of the ID, because the vertex ranges are contiguous (KaGen's distribution, and
+the primary load balancing splits a cost prefix sum into contiguous ranges). So the encoding only caches
+`get_rank(v)`, and its uses split into:
+
+- local tests (`u.rank() == rank_`, `id_outward`, `local_prefix_end`): a range test on the ID is as cheap
+- order: sorting by (rank, id) is the same as sorting by id
+- routing in the global phase (owner of each cut out-edge): the only real use; without the cache it is a binary
+  search over the partition table (about 12 steps at 3k ranks)
+
+Its costs: at most 65,536 ranks and 2^48 vertices, the `find_ghost_ranks` pass (repeated after load balancing),
+`id()` masking and two notions of equality throughout. Ghost data (degrees for the orientation comparator) sits
+in `AuxiliaryNodeData`'s `absl::flat_hash_map`, which is the orientation cost the laptop run showed.
+
+Replacement: number the sorted union of local vertices and ghosts 0..n+g-1. Local vertices are one contiguous
+block (local index = offset + `v - first`, still arithmetic); per-ghost arrays hold global ID, rank and degree.
+
+- [ ] Adopt KaCCv2's `VertexPartition` and `DenseIndexer` / `SparseIndexer` (`KaCCv2/src/kacc/graph/`, without the
+      split-vertex `ReplicaIndexer`) for the partition table and the local indexers, on plain `uint64` global IDs.
+      Copy or share them (a small common library) — decide when starting
+- [ ] Compact IDs in the adjacency, built once after `find_ghosts`; per-ghost arrays for global ID, rank and degree.
+      In KaCCv2's concepts this is a neighbor handle (`neighbor_t` != `vertex_id_t`, projected by
+      `neighbor_target`), so the indexers never see compact IDs
+- [ ] Routing, local tests, `id_outward` and `local_prefix_end` on compact IDs (array lookup / range test);
+      `RankEncodedNodeId`, `find_ghost_ranks`, `--binary-rank-search` and `AuxiliaryNodeData` removed
+- [ ] Messages carry global IDs. The numbering preserves the global order, so a receiver merges the received list
+      against `N+(u)` mapped through `to_global` (monotone) without translating the received IDs
+- [ ] Contraction (`compact()`, today a `SparseNodeIndexer`) and the cetric-x ghost CSR on the new IDs
+- [ ] Replace the `std::set<RankEncodedNodeId> ghosts` filter in `run_distributed` (unused when empty)
+- [ ] Compare against `pre-refactor` in `phases`: preprocessing (orientation, degree exchange) and `send_ns`
+
+KaCCv2's graph class itself (`SplitDistributedCSRGraph`, CSR plus split-vertex replicas) is not adopted: katric
+needs the out/in split per vertex after orientation, the ghost CSR and contraction, so it keeps its own oriented
+graph on top of the shared partition/indexer layer.
 
 ### 5. Afterwards (not part of this plan)
 
