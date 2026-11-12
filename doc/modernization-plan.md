@@ -64,7 +64,9 @@ The Caliper/Adiak measurement (step 3) was developed on `explore/caliper-adiak` 
       ranks, checking exit code and triangle count (`tests/check_triangle_count.cmake`)
 - [x] Replace Boost ranges/iterators with `std::ranges` and drop Boost (concat of local nodes + ghosts is an index
       loop now; `AuxiliaryNodeData::range()` is materialized, debug output only)
-- [ ] When TBB is fetched, it is built as a static library (oneTBB warns against that); decide whether to build it shared
+- [x] TBB comes from the system (`find_package`, error if missing); building it from source is opt-in via
+      `CETRIC_FETCH_TBB` and then shared (static builds are unsupported upstream). All other dependencies are static
+      (Caliper's `BUILD_SHARED_LIBS` default had made them shared, which broke KaGen's xxHash on Linux, `0ba8f07`)
 - [x] Decide on the cetric → katric rename: keep cetric for now
 
 ### 2. Hash tables: Abseil

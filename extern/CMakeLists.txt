@@ -88,19 +88,21 @@ FetchContent_Declare(
   SYSTEM EXCLUDE_FROM_ALL)
 
 
-# oneTBB is usually provided by the system (module, package manager): find_package is tried first, and it is only
-# fetched if that fails. Force fetching with -DFETCHCONTENT_TRY_FIND_PACKAGE_MODE=NEVER.
-set(TBB_TEST OFF)
-set(TBB_EXAMPLES OFF)
-set(TBB_STRICT OFF) # do not build TBB itself with -Werror
-set(TBB_DISABLE_HWLOC_AUTOMATIC_SEARCH ON) # tbbbind (NUMA support) is not needed
-FetchContent_Declare(
-  TBB
-  GIT_REPOSITORY https://github.com/uxlfoundation/oneTBB
-  GIT_TAG v2023.2.0
-  GIT_SHALLOW ON
-  SYSTEM EXCLUDE_FROM_ALL
-  FIND_PACKAGE_ARGS 2021.5 CONFIG)
+# oneTBB comes from the system (module, package manager); on a cluster, load the TBB module before configuring.
+# CETRIC_FETCH_TBB builds the pinned version from source instead, as a shared library (static builds are unsupported
+# upstream). Declared here, made available below.
+if(CETRIC_FETCH_TBB)
+  set(TBB_TEST OFF)
+  set(TBB_EXAMPLES OFF)
+  set(TBB_STRICT OFF) # do not build TBB itself with -Werror
+  set(TBB_DISABLE_HWLOC_AUTOMATIC_SEARCH ON) # tbbbind (NUMA support) is not needed
+  FetchContent_Declare(
+    TBB
+    GIT_REPOSITORY https://github.com/uxlfoundation/oneTBB
+    GIT_TAG v2023.2.0
+    GIT_SHALLOW ON
+    SYSTEM EXCLUDE_FROM_ALL)
+endif()
 
 # GoogleTest + MPI test helpers (only downloaded if tests are built, see the end of this file). Declared before
 # kamping-v2, which declares its own (older) KaTestrophe: the first declaration wins.
@@ -193,7 +195,21 @@ endblock()
 # the build-tree target does not export its include directories
 target_include_directories(caliper SYSTEM INTERFACE $<BUILD_INTERFACE:${caliper_SOURCE_DIR}/include> $<BUILD_INTERFACE:${caliper_BINARY_DIR}/include>)
 
-FetchContent_MakeAvailable(cli11 fmt spdlog TBB absl magic_enum tlx kamping kamping-spdlog-adapter kamping-v2 kagen message-queue)
+FetchContent_MakeAvailable(cli11 fmt spdlog)
+if(CETRIC_FETCH_TBB)
+  block()
+    set(BUILD_SHARED_LIBS ON) # see the declaration of TBB
+    FetchContent_MakeAvailable(TBB)
+  endblock()
+else()
+  find_package(TBB 2021.5 CONFIG GLOBAL)
+  if(NOT TBB_FOUND)
+    message(FATAL_ERROR "oneTBB (>= 2021.5) not found: load the TBB module or install it (or point TBB_DIR at its CMake "
+                        "config), or configure with -DCETRIC_FETCH_TBB=ON to build it from source")
+  endif()
+  message(STATUS "TBB: ${TBB_VERSION} (${TBB_DIR})")
+endif()
+FetchContent_MakeAvailable(absl magic_enum tlx kamping kamping-spdlog-adapter kamping-v2 kagen message-queue)
 
 # GCC on AArch64 emits a -Wpsabi note for every function passing std::pair<double, double> (ABI change in GCC 10.1).
 # It is irrelevant as long as nothing is mixed with objects from GCC < 10.1, and it floods the KaGen build.
