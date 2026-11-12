@@ -67,6 +67,7 @@
 #include "cetric/config.h"
 #include "cetric/counters/intersection.h"
 #include "cetric/datastructures/auxiliary_node_data.h"
+#include "cetric/communication_policy.h"
 #include "cetric/datastructures/distributed/distributed_graph.h"
 #include "cetric/datastructures/distributed/helpers.h"
 #include "cetric/datastructures/graph_definitions.h"
@@ -79,9 +80,6 @@
 
 namespace cetric {
 using namespace graph;
-
-struct MessageQueuePolicy {};
-struct GridPolicy {};
 
 TLX_MAKE_HAS_METHOD(grow_by);
 

@@ -41,11 +41,11 @@ PEID datatype_to_PEID(T const& rank) {
 }
 
 template <>
-graph::RankEncodedNodeId PEID_to_datatype<graph::RankEncodedNodeId>(PEID rank) {
+inline graph::RankEncodedNodeId PEID_to_datatype<graph::RankEncodedNodeId>(PEID rank) {
     return graph::RankEncodedNodeId(0, rank);
 }
 template <>
-PEID datatype_to_PEID<graph::RankEncodedNodeId>(graph::RankEncodedNodeId const& val) {
+inline PEID datatype_to_PEID<graph::RankEncodedNodeId>(graph::RankEncodedNodeId const& val) {
     return val.rank();
 }
 

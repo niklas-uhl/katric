@@ -39,13 +39,30 @@ anyway:
 
 ## Steps
 
+### TU split (before step 1)
+
+`apps/katric.cpp` is one translation unit with every algorithm × communication policy × node ordering × local-phase
+variant (38 s Debug, 49 s Release on the laptop for any edit). Split as in KaCCv2 (`src/kacc/components`: one `.cpp`
+per algorithm in a static library, a header with only non-template overloads, the templates in headers included only
+by those `.cpp` files):
+
+- [x] Static library `cetric-algorithms` in `src/`: `run_patric` / `run_cetric` / `run_cetric_x` as non-template
+      overloads per communication policy (`cetric/algorithms.h`), one `.cpp` per algorithm × policy. The driver is
+      split as well: `apps/parse_config.cpp` (CLI11), `apps/algorithm.cpp` (KatricAlgorithm, factory),
+      `apps/verify.cpp`; `katric.cpp` no longer sees the graph or the edge iterator. Laptop (10 cores, g++-16):
+      editing `katric.cpp` 18 s -> 3 s (Debug); editing one algorithm 12 s (Release); everything 35 s (Release,
+      `-j10`; the `experiments` preset uses Makefiles, so build with `-j`). Three header functions were not `inline`
+      (ODR, only visible with several TUs)
+- [ ] Later steps: per-phase TUs once step 2 has phase functions. `-g1` (KaCCv2 uses it for multistep) saves only
+      ~20% on an algorithm TU (10.2 s -> 8.3 s), not adopted
+
 ### 0. Baseline
 
 - [ ] `phases` on SuperMUC-NG and HoreKa2 at `1962d4e` (first results in, the remaining core counts and permuted RHG
       pending); tag `pre-refactor` on `1962d4e` (the algorithm code is unchanged since)
 - [ ] `cetric` (pre-CETRIC) appended to `phases` as a fourth configuration, so a rerun only adds its runs (the
       indices of the running configurations stay the same)
-- [ ] Decide whether `phases` should also run `communication-policy: grid` (the paper's choice at large p)
+- [ ] `communication-policy: grid` appended to `phases` as further configurations (decided 2026-11-12: yes)
 
 ### 1. Prune
 
@@ -53,7 +70,8 @@ Options that are dead or only used in old exploration suites (`experiments/legac
 
 - [ ] Remove options read nowhere: `--orient-locally`, `--omp-schedule`, `--omp-chunksize`, and the config fields
       `synchronized`, `buffer_threshold`, `max_degree_threshold_alpha`, `empty_pending_buffers_on_overflow`
-- [ ] Check and remove the barely used ones: `--degree-filtering`, `--dense-load-balancing`,
+- [ ] Remove the barely used ones (decided 2026-11-12, OpenMP variants including `CETRIC_USE_OPENMP` and the
+      OpenMP dependency): `--degree-filtering`, `--dense-load-balancing`,
       `--edge-partitioning-static`, `--high-degree-threshold-scale`, `--parallelization-method` (OpenMP variants),
       `--tbb-partitioner`
 - [ ] `--flag-intersection`: dead today. `pre_intersection` / `post_intersection` / `intersect` are never called,
@@ -65,13 +83,13 @@ Options that are dead or only used in old exploration suites (`experiments/legac
   √(2m) bound on out-degrees does not hold for vertices with many cut edges. Old real-world data: same
   local/global split as cetric-x, as fast or faster single-threaded. Decide between `cetric` and `cetric-x` from
   `phases` (step 0)
-- [ ] Decide (proposed: remove): `--skip-local-neighborhood`, `--compact-degree-exchange` (step 3 replaces the
+- [ ] Remove (decided 2026-11-12): `--skip-local-neighborhood`, `--compact-degree-exchange` (step 3 replaces the
       degree exchange anyway)
 - Keep for now: `--intersection-method binary|hybrid` (galloping for very different sizes, as at the hubs on RHG;
   measure before removing, idea 8) and `--pseudo2core` (real-world graphs have many degree-1 vertices, idea 10)
-- [ ] Decide (proposed: remove): `--id-node-ordering false` (pure degree ordering): 1.6–2.5× slower on the
+- [ ] Remove (decided 2026-11-12): `--id-node-ordering false` (pure degree ordering): 1.6–2.5× slower on the
       clusters, sorting up to 13×; compact-forward ordering (idea 3) gets the skip with a cheaper key
-- [ ] Decide (proposed: keep N, DPD, IDPD): cost functions N/D/DH/DDH/DH2/DPD/IDPD/D* and primary load balancing.
+- [ ] Keep only N, DPD, IDPD (decided 2026-11-12) of the cost functions N/D/DH/DDH/DH2/DPD/IDPD/D* and primary load balancing.
       Unused in the paper, but DPD/IDPD are the starting point of idea 1
 - [ ] Remove commented-out code blocks in the touched files (`preprocessing`, `cetric_edge_iterator.h`)
 
@@ -136,7 +154,8 @@ Open: which order the compact IDs follow.
       In KaCCv2's concepts this is a neighbor handle (`neighbor_t` != `vertex_id_t`, projected by
       `neighbor_target`), so the indexers never see compact IDs
 - [ ] Routing, local tests, `id_outward` and `local_prefix_end` on compact IDs (array lookup / range test);
-      `RankEncodedNodeId`, `find_ghost_ranks`, `--binary-rank-search` and `AuxiliaryNodeData` removed
+      `RankEncodedNodeId`, `find_ghost_ranks` (with `gather_PE_ranges` / `get_PE_from_node_ranges`),
+      `--binary-rank-search` and `AuxiliaryNodeData` removed
 - [ ] Messages carry global IDs. The numbering preserves the global order, so a receiver merges the received list
       against `N+(u)` mapped through `to_global` (monotone) without translating the received IDs
 - [ ] Contraction (`compact()`, today a `SparseNodeIndexer`) and the cetric-x ghost CSR on the new IDs
@@ -223,7 +242,8 @@ Plus: without locality, CETRIC should not pay for ghost expansion (fall back to 
 
 ## Open decisions
 
-- [ ] Keep the hybrid (MPI + TBB) path during the refactoring, or freeze it and port it after step 2?
+- [x] Hybrid (MPI + TBB) path: frozen during the refactoring (decided 2026-11-12). Step 2 writes the kernels
+      sequential first, the hybrid ctests are disabled meanwhile, and the threads are ported afterwards
 - [ ] BriefKAsten instead of the legacy message queue: still deferred (needs C++23, flow control off, a redesign of
       `ConcurrentBufferedMessageQueue`); revisit after step 3
-- [ ] Which of the step-1 "decide" items stay as options for the dissertation's ablations
+- [x] Step-1 "decide" items: all removed except `--intersection-method` and `--pseudo2core` (decided 2026-11-12)

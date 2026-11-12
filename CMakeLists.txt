@@ -70,6 +70,8 @@ if(CETRIC_BINARY_INTERSECTION_RECURSIVE)
   target_compile_definitions(cetric-lib INTERFACE CETRIC_BINARY_INTERSECTION_RECURSIVE)
 endif()
 
+add_subdirectory(src)
+
 if(CETRIC_BUILD_APPS)
   add_subdirectory(apps)
 endif()

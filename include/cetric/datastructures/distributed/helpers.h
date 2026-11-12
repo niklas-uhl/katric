@@ -32,7 +32,7 @@
 namespace cetric {
 using NodeId = graph::NodeId;
 
-void gather_PE_ranges(
+inline void gather_PE_ranges(
     NodeId                                  local_from,
     NodeId                                  local_to,
     std::vector<std::pair<NodeId, NodeId>>& ranges,
