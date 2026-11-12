@@ -57,7 +57,7 @@ public:
         const Config&                       conf) {
         CALI_CXX_MARK_SCOPE("redistribution");
         auto to_send = reassign_nodes(G, cost_function, conf);
-        return GraphCommunicator::relocate(std::move(G), to_send, conf.rank, conf.PEs, !conf.dense_load_balancing);
+        return GraphCommunicator::relocate(std::move(G), to_send, conf.rank, conf.PEs);
     }
 
 private:

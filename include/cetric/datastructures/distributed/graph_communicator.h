@@ -284,122 +284,12 @@ public:
         LocalGraphView&&                      G,
         const Map&                            nodes_to_send,
         [[maybe_unused]] PEID                 rank,
-        PEID                                  size,
-        bool                                  sparse = true
+        PEID                                  size
     ) {
-        if (sparse) {
-            return relocate_sparse_impl(std::forward<LocalGraphView>(G), nodes_to_send, rank, size);
-        } else {
-            return relocate_full_impl(std::forward<LocalGraphView>(G), nodes_to_send, rank, size);
-        }
+        return relocate_sparse_impl(std::forward<LocalGraphView>(G), nodes_to_send, rank, size);
     }
 
 private:
-    template <class Map>
-    static LocalGraphView relocate_full_impl(
-        LocalGraphView&&                      G,
-        const Map&                            nodes_to_send,
-        [[maybe_unused]] PEID                 rank,
-        PEID                                  size
-    ) {
-        std::vector<std::pair<NodeId, EdgeId>> to_send(size);
-        for (const auto& kv: nodes_to_send) {
-            PEID             pe    = kv.first;
-            const NodeRange& range = kv.second;
-            to_send[pe].first      = range.to - range.from + 1;
-            for (NodeId node = range.from; node <= range.to; ++node) {
-                to_send[pe].second += G.node_info[node].degree;
-            }
-        }
-        std::vector<std::pair<NodeId, NodeId>> to_receive(size);
-        cetric::profiling::MessageStatistics   stats;
-        stats.send_volume += 2;
-        stats.receive_volume += 2;
-        int errcode = MPI_Alltoall(
-            to_send.data(),
-            2,
-            kamping::types::mpi_type_traits<NodeId>::data_type(),
-            to_receive.data(),
-            2,
-            kamping::types::mpi_type_traits<NodeId>::data_type(),
-            MPI_COMM_WORLD
-        );
-        check_mpi_error(errcode, __FILE__, __LINE__);
-
-        std::vector<int> send_counts(size);
-        std::vector<int> send_displs(size);
-        std::vector<int> recv_counts(size);
-        std::vector<int> recv_displs(size);
-
-        int send_running_sum = 0;
-        int recv_running_sum = 0;
-        for (size_t i = 0; i < send_counts.size(); ++i) {
-            send_counts[i] = to_send[i].first;
-            send_displs[i] = send_running_sum;
-            send_running_sum += send_counts[i];
-
-            recv_counts[i] = to_receive[i].first;
-            recv_displs[i] = recv_running_sum;
-            recv_running_sum += recv_counts[i];
-        }
-
-        kamping::types::ScopedDatatype mpi_node_info = node_info_type();
-
-        std::vector<LocalGraphView::NodeInfo> node_info_recv(recv_displs[size - 1] + recv_counts[size - 1]);
-
-        stats.send_volume += G.node_info.size() * 2;
-        stats.receive_volume += node_info_recv.size() * 2;
-        errcode = MPI_Alltoallv(
-            G.node_info.data(),
-            send_counts.data(),
-            send_displs.data(),
-            mpi_node_info.data_type(),
-            node_info_recv.data(),
-            recv_counts.data(),
-            recv_displs.data(),
-            mpi_node_info.data_type(),
-            MPI_COMM_WORLD
-        );
-        check_mpi_error(errcode, __FILE__, __LINE__);
-        G.node_info.resize(0);
-        G.node_info.shrink_to_fit();
-
-        send_running_sum = 0;
-        recv_running_sum = 0;
-        for (size_t i = 0; i < send_counts.size(); ++i) {
-            send_counts[i] = to_send[i].second;
-            send_displs[i] = send_running_sum;
-            send_running_sum += send_counts[i];
-
-            recv_counts[i] = to_receive[i].second;
-            recv_displs[i] = recv_running_sum;
-            recv_running_sum += recv_counts[i];
-        }
-        std::vector<NodeId> head(recv_displs[size - 1] + recv_counts[size - 1]);
-        stats.send_volume += G.edge_heads.size();
-        stats.receive_volume += head.size();
-        errcode = MPI_Alltoallv(
-            G.edge_heads.data(),
-            send_counts.data(),
-            send_displs.data(),
-            kamping::types::mpi_type_traits<NodeId>::data_type(),
-            head.data(),
-            recv_counts.data(),
-            recv_displs.data(),
-            kamping::types::mpi_type_traits<NodeId>::data_type(),
-            MPI_COMM_WORLD
-        );
-        check_mpi_error(errcode, __FILE__, __LINE__);
-        G.edge_heads.shrink_to_fit();
-
-        stats.report();
-
-        LocalGraphView G_balanced;
-        G_balanced.node_info  = std::move(node_info_recv);
-        G_balanced.edge_heads = std::move(head);
-
-        return G_balanced;
-    }
 
     template <class Map>
     static LocalGraphView relocate_sparse_impl(

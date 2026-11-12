@@ -70,8 +70,6 @@ cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::P
     app.add_option("--secondary-cost-function", conf.secondary_cost_function)
         ->transform(CLI::IsMember({"none", "N", "D", "DH", "DDH", "DH2", "DPD", "IDPD", "D*"}));
 
-    app.add_flag("-v", conf.verbosity_level, "verbosity level");
-
     app.add_option(
         "--caliper-config",
         conf.caliper_config,
@@ -86,10 +84,6 @@ cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::P
         "spot,katric-timers,katric-counters unless --caliper-config is given."
     );
 
-    app.add_flag("--degree-filtering", conf.degree_filtering);
-
-    app.add_flag("--orient-locally", conf.orient_locally);
-
     app.add_option("--num-threads", conf.num_threads);
     app.add_option("--grainsize", conf.grainsize);
     app.add_option("--global-degree-of-parallelism", conf.global_degree_of_parallelism);
@@ -97,7 +91,6 @@ cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::P
 
     app.add_flag("--pseudo2core", conf.pseudo2core);
 
-    app.add_flag("--dense-load-balancing", conf.dense_load_balancing);
     app.add_flag("--dense-degree-exchange", conf.dense_degree_exchange);
     app.add_flag("--compact-degree-exchange", conf.compact_degree_exchange);
     app.add_flag("--global-synchronization", conf.global_synchronization);
@@ -116,38 +109,19 @@ cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::P
     app.add_flag("--global-parallel", conf.global_parallel);
     app.add_flag("--parallel-compact", conf.parallel_compact);
 
-    add_enum_option(app, "--parallelization-method", conf.parallelization_method);
     app.add_flag("--edge-partitioning", conf.edge_partitioning);
-    app.add_flag("--edge-partitioning-static", conf.edge_partitioning_static);
-    add_enum_option(app, "--omp-schedule", conf.omp_schedule);
-    app.add_option("--omp-chunksize", conf.omp_chunksize);
 
-    add_enum_option(app, "--tbb-partitioner", conf.tbb_partitioner);
     add_enum_option(app, "--task-pool-type", conf.task_pool_type);
     app.add_flag("--task-priorities", conf.task_priorities);
 
     add_enum_option(app, "--threshold", conf.threshold);
     app.add_option("--threshold-scale", conf.threshold_scale);
-    app.add_option("--high-degree-threshold-scale", conf.high_degree_threshold_scale);
 
     add_enum_option(app, "--intersection-method", conf.intersection_method);
     app.add_option("--binary-intersection-cutoff", conf.binary_intersection_cutoff);
     app.add_option("--hybrid-cutoff-scale", conf.hybrid_cutoff_scale);
 
     CLI11_PARSE_MPI(app, argc, argv, rank, size);
-#ifndef CETRIC_HAS_OPENMP
-    if (conf.parallelization_method == cetric::ParallelizationMethod::omp_for) {
-        int retval;
-        if (rank == 0) {
-            CLI::ValidationError e("--parallelization-method", "omp_for requires building with CETRIC_USE_OPENMP=ON");
-            retval = app.exit(e);
-        } else {
-            retval = 1;
-        }
-        MPI_Finalize();
-        exit(retval);
-    }
-#endif
     if (conf.num_threads == 0) {
         conf.num_threads = tbb::this_task_arena::max_concurrency();
     }

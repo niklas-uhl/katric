@@ -5,7 +5,6 @@ binary-rank-search = true
 threshold = "local-nodes"
 threshold-scale = 1.0
 edge-partitioning = false
-edge-partitioning-static = false
 id-node-ordering = true
 local-parallel = false
 global-parallel = false

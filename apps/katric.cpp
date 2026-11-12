@@ -41,9 +41,6 @@
 #include <spdlog/cfg/env.h>
 #include <spdlog/spdlog.h>
 
-#ifdef CETRIC_HAS_OPENMP
-    #include <omp.h>
-#endif
 #include <tbb/global_control.h>
 #include <tbb/task_arena.h>
 #include <unistd.h>
@@ -75,31 +72,6 @@ int main(int argc, char* argv[]) {
         cetric::Config      conf = parse_config(argc, argv, rank, size);
         size_t              expected_triangles = 0;
         tbb::global_control global_limit(tbb::global_control::max_allowed_parallelism, conf.num_threads);
-
-#ifdef CETRIC_HAS_OPENMP
-        omp_set_num_threads(conf.num_threads);
-        if (conf.omp_chunksize == 0) {
-            omp_sched_t type;
-            int         chunksize;
-            omp_get_schedule(&type, &chunksize);
-            conf.omp_chunksize = chunksize;
-        }
-        switch (conf.omp_schedule) {
-            using cetric::OMPSchedule;
-            case OMPSchedule::stat:
-                omp_set_schedule(omp_sched_static, conf.omp_chunksize);
-                break;
-            case OMPSchedule::dynamic:
-                omp_set_schedule(omp_sched_dynamic, conf.omp_chunksize);
-                break;
-            case OMPSchedule::guided:
-                omp_set_schedule(omp_sched_guided, conf.omp_chunksize);
-                break;
-            case OMPSchedule::standard:
-                omp_set_schedule(omp_sched_auto, conf.omp_chunksize);
-                break;
-        }
-#endif
 
         // Caliper: region times and counters aggregated across ranks, iterations annotated as a loop; Adiak holds the
         // run metadata

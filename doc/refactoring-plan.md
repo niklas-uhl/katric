@@ -70,9 +70,9 @@ by those `.cpp` files):
 
 Options that are dead or only used in old exploration suites (`experiments/legacy`), never in the paper suites.
 
-- [ ] Remove options read nowhere: `--orient-locally`, `--omp-schedule`, `--omp-chunksize`, and the config fields
+- [x] Remove options read nowhere (and `-v`): `--orient-locally`, `--omp-schedule`, `--omp-chunksize`, and the config fields
       `synchronized`, `buffer_threshold`, `max_degree_threshold_alpha`, `empty_pending_buffers_on_overflow`
-- [ ] Remove the barely used ones (decided 2026-11-12, OpenMP variants including `CETRIC_USE_OPENMP` and the
+- [x] Remove the barely used ones (decided 2026-11-12, OpenMP variants including `CETRIC_USE_OPENMP` and the
       OpenMP dependency): `--degree-filtering`, `--dense-load-balancing`,
       `--edge-partitioning-static`, `--high-degree-threshold-scale`, `--parallelization-method` (OpenMP variants),
       `--tbb-partitioner`

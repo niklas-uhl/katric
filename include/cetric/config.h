@@ -46,17 +46,11 @@ namespace cetric {
 enum class Algorithm { patric, cetric, cetric_x };
 enum class Threshold { local_nodes, local_edges, none };
 enum class IntersectionMethod { merge, binary_search, binary, hybrid };
-enum class ParallelizationMethod { tbb, omp_for, omp_task };
-enum class OMPSchedule { stat, dynamic, guided, standard };
-enum class TBBPartitioner { stat, simple, standard, affinity };
 enum class TaskPoolType { std_thread, task_group };
 
 struct Config {
     Config() = default;
     std::string           kagen_option_string;
-    size_t                buffer_threshold                  = std::numeric_limits<size_t>::max();
-    double                max_degree_threshold_alpha        = 1.0;
-    bool                  empty_pending_buffers_on_overflow = false;
     size_t                iterations                        = 1;
     bool                  verify                            = false;
     std::string           primary_cost_function             = "N";
@@ -64,19 +58,13 @@ struct Config {
     Algorithm             algorithm                         = Algorithm::cetric;
     Threshold             threshold                         = Threshold::local_nodes;
     double                threshold_scale                   = 1.0;
-    double                high_degree_threshold_scale       = 1.0;
     std::string           communication_policy              = "new";
     bool                  local_parallel                    = false;
     bool                  global_parallel                   = false;
     bool                  parallel_compact                  = false;
-    ParallelizationMethod parallelization_method            = ParallelizationMethod::tbb;
     TaskPoolType          task_pool_type                    = TaskPoolType::std_thread;
     bool                  task_priorities                   = false;
     bool                  edge_partitioning                 = false;
-    bool                  edge_partitioning_static          = false;
-    TBBPartitioner        tbb_partitioner                   = TBBPartitioner::standard;
-    OMPSchedule           omp_schedule                      = OMPSchedule::standard;
-    size_t                omp_chunksize                     = 0;
     size_t                local_degree_of_parallelism       = 1;
     size_t                global_degree_of_parallelism      = 1;
     IntersectionMethod    intersection_method               = IntersectionMethod::merge;
@@ -89,15 +77,10 @@ struct Config {
     bool binary_rank_search      = false;
     bool id_node_ordering        = false;
 
-    bool degree_filtering        = false;
-    bool orient_locally          = false;
     bool pseudo2core             = false;
-    bool dense_load_balancing    = false;
     bool flag_intersection       = false;
     bool skip_local_neighborhood = false;
-    bool synchronized            = false;
 
-    int verbosity_level = 0;
     // Caliper ConfigManager configuration (e.g. "spot"); empty disables Caliper. Output file via caliper_output.
     std::string caliper_config = "";
     std::string caliper_output = "";

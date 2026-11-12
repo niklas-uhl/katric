@@ -3,7 +3,6 @@ project(cetric LANGUAGES C CXX)
 
 option(CETRIC_BUILD_APPS "Build the katric executable" ON)
 option(CETRIC_BUILD_TESTS "Build the tests" ${PROJECT_IS_TOP_LEVEL})
-option(CETRIC_USE_OPENMP "Enable OpenMP-based parallelization (--parallelization-method omp_for)" ON)
 option(CETRIC_BINARY_INTERSECTION_RECURSIVE "Use recursion in binary search intersection" OFF)
 option(CETRIC_ENABLE_CLANG_TIDY "Run clang-tidy (.clang-tidy) on katric's own sources while building" OFF)
 option(CETRIC_FETCH_TBB "Build the pinned oneTBB from source (shared) instead of using the system's" OFF)
@@ -14,11 +13,8 @@ set(CETRIC_ACTIVE_LOG_LEVEL "INFO" CACHE STRING
 set_property(CACHE CETRIC_ACTIVE_LOG_LEVEL PROPERTY STRINGS TRACE DEBUG INFO WARN ERROR CRITICAL OFF)
 set(KASSERT_ASSERTION_LEVEL $<IF:$<CONFIG:Debug>,30,0> CACHE STRING "KASSERT assertion level")
 
-# MPI, OpenMP and TBB come from the system (TBB from source with CETRIC_FETCH_TBB), everything else is fetched.
+# MPI and TBB come from the system (TBB from source with CETRIC_FETCH_TBB), everything else is fetched.
 find_package(MPI REQUIRED)
-if(CETRIC_USE_OPENMP)
-  find_package(OpenMP REQUIRED COMPONENTS CXX)
-endif()
 
 add_subdirectory(extern)
 
@@ -62,10 +58,6 @@ target_link_libraries(
             TBB::tbb)
 # KASSERT_ASSERTION_LEVEL is applied by kassert itself (it is the default level of the instance, see extern/).
 target_compile_definitions(cetric-lib INTERFACE SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_${CETRIC_ACTIVE_LOG_LEVEL})
-if(CETRIC_USE_OPENMP)
-  target_link_libraries(cetric-lib INTERFACE OpenMP::OpenMP_CXX)
-  target_compile_definitions(cetric-lib INTERFACE CETRIC_HAS_OPENMP)
-endif()
 if(CETRIC_BINARY_INTERSECTION_RECURSIVE)
   target_compile_definitions(cetric-lib INTERFACE CETRIC_BINARY_INTERSECTION_RECURSIVE)
 endif()
