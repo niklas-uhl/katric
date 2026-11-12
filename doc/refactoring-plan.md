@@ -6,15 +6,21 @@ add the commit hash. The build/tooling modernization is done and tracked in [mod
 
 ## Why now
 
-The laptop run of the `phases` suite (`experiments/local/phases.suite.yaml`, 1–8 cores, weak scaling) shows where
-the time goes, and the main costs are in code that the algorithm ideas would touch anyway:
+The first cluster runs of the `phases` suite (`1962d4e`; HoreKa2 at 192/384 cores, SuperMUC-NG at 768 cores; weak
+scaling, 2^22 edges per core) show where the time goes, and the main costs are in code the algorithm ideas would touch
+anyway:
 
-- Without locality (permuted RGG/RHG), preprocessing dominates next to the global phase. Orientation and the degree
-  exchange take about 0.2 s at 8 cores, against 0.01 s on 1 core with the same per-core size. The degree
-  comparator looks up every ghost's degree in an `absl::flat_hash_map` (`AuxiliaryNodeData`).
-- The global phase spends about 30% in `termination`, even on Poisson graphs: most received messages are only
-  handled when the buffers are flushed at the end.
-- On RMAT, barrier waits and `termination` dominate: imbalance, not work.
+- With locality (RGG/RHG, 0.2–0.7% cut edges) an iteration takes under a second and stays flat from 192 to 384
+  cores; the local phase is about 60% of it, sorting 12–14%.
+- Without locality (permuted RGG, 99.5% cut edges) it is 8–13× slower, and preprocessing costs as much as the global
+  phase: the degree exchange alone takes 2.6–5.1 s, orientation 0.9–1.4 s (the degree comparator looks up every
+  ghost's degree in `AuxiliaryNodeData`'s `absl::flat_hash_map`). The global phase is intersection work, not
+  waiting: `termination` is 5–10% (the 30% of a laptop run came from oversubscription).
+- cetric-x's ghost expansion is pure overhead without locality: +50–60% over patric.
+- On RHG the imbalance grows with p (barrier share 17% at 192 cores, 37% at 768), from the local phase and from
+  preprocessing around the hubs.
+- Sorting neighborhoods by degree (`--id-node-ordering false`) is 1.6–2.5× slower than `id_outward` and very
+  imbalanced on RHG.
 - `cetric_edge_iterator.h` has 1960 lines with about six near-copies of the intersection loop
   (sequential/parallel × with/without ghosts × edge-partitioned). The counter fix in `7b483cd` had to be applied
   three times.
@@ -35,7 +41,10 @@ the time goes, and the main costs are in code that the algorithm ideas would tou
 
 ### 0. Baseline
 
-- [ ] SuperMUC-NG run of `phases` (`just run-supermuc-experiment phases ...`), tag `pre-refactor`
+- [ ] `phases` on SuperMUC-NG and HoreKa2 at `1962d4e` (first results in, the remaining core counts and permuted RHG
+      pending); tag `pre-refactor` on `1962d4e` (the algorithm code is unchanged since)
+- [ ] `cetric` (pre-CETRIC) appended to `phases` as a fourth configuration, so a rerun only adds its runs (the
+      indices of the running configurations stay the same)
 - [ ] Decide whether `phases` should also run `communication-policy: grid` (the paper's choice at large p)
 
 ### 1. Prune
@@ -46,15 +55,23 @@ Options that are dead or only used in old exploration suites (`experiments/legac
       `synchronized`, `buffer_threshold`, `max_degree_threshold_alpha`, `empty_pending_buffers_on_overflow`
 - [ ] Check and remove the barely used ones: `--degree-filtering`, `--dense-load-balancing`,
       `--edge-partitioning-static`, `--high-degree-threshold-scale`, `--parallelization-method` (OpenMP variants),
-      `--tbb-partitioner`, `--flag-intersection` (and `is_v_neighbor_`)
-- [ ] `--algorithm cetric` (the pre-CETRIC variant without ghost expansion, `run_cetric`): used in 25 legacy suites,
-      in none of the paper ones. Removing it also removes the only (stub) secondary load balancing path
-- [ ] Decide: `--skip-local-neighborhood`, `--pseudo2core`, `--compact-degree-exchange`,
-      `--intersection-method binary|hybrid` (tried in old suites, all off in the paper configs)
-- [ ] Decide: `--id-node-ordering false` (pure degree ordering). It is 1.4–3.5× slower on the laptop (sorting up to
-      12×), and compact-forward ordering (idea 3) would replace it with a cheaper key
-- [ ] Decide: cost functions N/D/DH/DDH/DH2/DPD/IDPD/D* and primary load balancing. Unused in the paper, but
-      DPD/IDPD are the starting point of idea 1, so probably keep the framework and drop the variants nobody needs
+      `--tbb-partitioner`
+- [ ] `--flag-intersection`: dead today. `pre_intersection` / `post_intersection` / `intersect` are never called,
+      `is_v_neighbor_` is never sized and would be indexed by global ID. Remove it; it comes back on compact IDs
+      (idea 4, after step 4)
+- Keep `--algorithm cetric` (pre-CETRIC, `run_cetric`). Not in the paper suites, but it orients cut edges outward
+  in the local phase: no degree exchange before it (only on the contracted graph) and no ghost expansion, while
+  triangles with two local vertices are still found locally and the contraction stays correct. The price: the
+  √(2m) bound on out-degrees does not hold for vertices with many cut edges. Old real-world data: same
+  local/global split as cetric-x, as fast or faster single-threaded. Decide between `cetric` and `cetric-x` from
+  `phases` (step 0)
+- [ ] Decide (proposed: remove): `--skip-local-neighborhood`, `--pseudo2core`, `--compact-degree-exchange` (step 3
+      replaces the degree exchange anyway), `--intersection-method binary|hybrid` (tried in old suites, all off in
+      the paper configs)
+- [ ] Decide (proposed: remove): `--id-node-ordering false` (pure degree ordering): 1.6–2.5× slower on the
+      clusters, sorting up to 13×; compact-forward ordering (idea 3) gets the skip with a cheaper key
+- [ ] Decide (proposed: keep N, DPD, IDPD): cost functions N/D/DH/DDH/DH2/DPD/IDPD/D* and primary load balancing.
+      Unused in the paper, but DPD/IDPD are the starting point of idea 1
 - [ ] Remove commented-out code blocks in the touched files (`preprocessing`, `cetric_edge_iterator.h`)
 
 ### 2. One kernel per phase
@@ -63,7 +80,7 @@ Options that are dead or only used in old exploration suites (`experiments/legac
       of `run_local_sequential`, `run_local_sequential_with_ghosts`, `run_local_parallel`,
       `run_local_parallel_with_ghosts`, `run_local_parallel_edge_partitioned(_with_ghosts)`
 - [ ] Counters (`wedge_checks`, `intersection_size_*`, triangles) collected in one place per kernel
-- [ ] `run_patric` / `run_cetric_new` as a sequence of phase functions with the same signature (graph, config,
+- [ ] `run_patric` / `run_cetric` / `run_cetric_new` as a sequence of phase functions with the same signature (graph, config,
       state), so a phase can be swapped (e.g. the tail-compute global phase of idea 1) without copying the driver
 - [ ] The `if (num_threads > 1) ... else ...` duplication around `tbb::task_arena` in a single helper
 
@@ -120,9 +137,18 @@ graph on top of the shared partition/indexer layer.
 
 ### 5. Afterwards (not part of this plan)
 
-The algorithm ideas (models in [model/](model/)): compact-forward ordering in the local phase (idea 3),
-forward-style message trimming (idea 2), compute at the tail + one rebalancing step (idea 1). Also the
-`termination` share of the global phase (flush threshold), which the baseline shows as a target of its own.
+The algorithm ideas (models in [model/](model/)):
+
+1. Compute at the tail + one rebalancing step (cost-based, DPD/IDPD): the growing imbalance on skewed inputs
+2. Forward-style message trimming: send volume of the global phase
+3. Compact-forward ordering in the local phase: neighborhoods local-first, then in orientation order with a cheap
+   key, so intersections start after u in N+(v)
+4. Flag intersection in the local phase on compact IDs: mark N+(v) in an array of n+g flags, then scan each N+(u).
+   Saves the d+(v) term per edge (the hubs' quadratic share) and the sorting of local neighborhoods. The global
+   phase keeps merging (received lists hold global IDs) and needs only the contracted graph sorted. Compare with
+   idea 3, both target the local phase
+
+Plus: without locality, CETRIC should not pay for ghost expansion (fall back to patric's path, or pre-CETRIC).
 
 ## Open decisions
 

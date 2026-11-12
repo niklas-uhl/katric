@@ -1,5 +1,5 @@
-# Where the time goes: DiTriC (patric) and CETRIC (cetric-x), one thread per rank, on locality x skew inputs
-# (phases.instances.yaml). Power-of-two multiples of a node up to 3072 cores (SuperMUC-NG: 48, 96, ..., 1536, 3072);
+# Where the time goes: DiTriC (patric), CETRIC (cetric-x) and pre-CETRIC (cetric), one thread per rank, on
+# locality x skew inputs (phases.instances.yaml). Power-of-two multiples of a node up to 3072 cores (SuperMUC-NG: 48, 96, ..., 1536, 3072);
 # `--cores` overrides them.
 # Phases are separated by barriers (global-synchronization), which run in nested `barrier` regions, so a phase's
 # exclusive time is the rank's own work and `barrier` is the imbalance. The global phase additionally has
@@ -32,6 +32,18 @@ config:
     binary-rank-search: true
     threshold: local-nodes
     id-node-ordering: false
+    dense-degree-exchange: true
+    global-synchronization: true
+    communication-policy: new
+    primary-cost-function: none
+    intersection-method: merge
+    iterations: 3
+  # appended (so the indices of the configurations above stay the same): pre-CETRIC, cut edges oriented outward in
+  # the local phase, no ghost expansion
+  - algorithm: cetric
+    binary-rank-search: true
+    threshold: local-nodes
+    id-node-ordering: true
     dense-degree-exchange: true
     global-synchronization: true
     communication-policy: new
