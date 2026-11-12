@@ -6,7 +6,7 @@
 # `termination` and the counters send_ns / handle_ns; the input's shape (cut edges, interface nodes) is in `ingest`.
 # The cetric-x variant without id-node-ordering sorts all neighborhoods purely by degree (the old ordering; not
 # compact-forward ordering, which needs a cheaper key, see doc/refactoring-plan.md).
-# Evaluate with `just notebook phases`. A laptop version is local/phases.suite.yaml.
+# Evaluate with `just notebook`. A laptop version is local/phases.suite.yaml.
 name: phases
 executable: apps/katric
 output_path_option_name: caliper-output

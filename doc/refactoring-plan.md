@@ -26,7 +26,7 @@ the time goes, and the main costs are in code that the algorithm ideas would tou
   When a step changes a counter on purpose (e.g. a smaller degree-exchange format changes `send_volume`), the commit
   says so.
 - **Baseline first.** Run `phases` on SuperMUC-NG (48 / 1536 / 3072 cores) at the commit before step 1 and tag it
-  `pre-refactor`, so every later step can be compared through the same suite and `eval/phases.py`.
+  `pre-refactor`, so every later step can be compared through the same suite and `eval/explore.py`.
 - **What stays.** The paper configurations (`configs/ditric.toml`, `configs/cetric.toml`, the hybrid suite) must
   keep running and produce the same counts. Everything else is up for removal.
 - No algorithmic change in this plan. The ideas come afterwards, on the cleaned-up code.

@@ -2,12 +2,13 @@
 
 Every run writes <run>.cali (spot profile with the region times and the Adiak run metadata) and <run>.counters.json
 (counters per region, which spot cannot hold) into the output/ directory of a kaval experiment directory. Thicket
-reads the profiles; this module flattens them into three tables, joined on `run` (the run's file name without
-extension, which is unique within an experiment directory):
+reads the profiles; this module flattens them into three tables, joined on `run` (<experiment directory>/<the run's
+file name without extension>, so the same suite run on several machines can be loaded together):
 
   runs      one row per run: every CLI option (Adiak's `config.<option>`, under its option name), `triangles`,
             `ranks`, `threads`, `cores`, `graph` and the KaGen options split into `kagen.<key>` columns, `git_commit`,
-            `launchdate`, `cluster`, and `dir` (the experiment directory)
+            `launchdate`, `cluster` (Adiak's cluster name, e.g. hkn = HoreKa, ircs = SuperMUC-NG), and `dir` (the
+            experiment directory)
   timers    one row per run, iteration and region: `iteration` (null outside the iterations, e.g. `input`),
             `region` (path below the iteration, e.g. "total/local_phase"), and spot's metrics in seconds:
             `min`, `max`, `avg` (across ranks), `total` (sum over ranks), `*_exc` (exclusive), `calls_max`
@@ -19,7 +20,7 @@ The run time of an iteration is the maximum across ranks of the region "total", 
     t = r.timers.filter(region="total").join(r.runs, on="run")
     t.group_by("graph", "algorithm", "communication-policy", "cores").agg(pl.col("max").mean())
 
-altair takes these DataFrames directly (see the marimo notebook eval/scaling.py). `load_thicket` gives the Thicket
+altair takes these DataFrames directly (see the marimo notebook eval/explore.py). `load_thicket` gives the Thicket
 itself, e.g. for its tree view.
 """
 
@@ -162,6 +163,16 @@ def _timers(tk, run_of_profile):
     return timers
 
 
+def _experiment_dir(f):
+    """The kaval experiment directory of a profile (output/ files live one level below it)."""
+    f = Path(f)
+    return f.parent.parent if f.parent.name == "output" else f.parent
+
+
+def _run_id(f):
+    return f"{_experiment_dir(f)}/{Path(f).stem}"
+
+
 def _counters(files):
     rows = []
     for f in files:
@@ -172,7 +183,7 @@ def _counters(files):
             records = json.load(file)["records"]
         for r in records:
             iteration, region = split_path(r.get("path") or "")
-            rows.append({"run": f.stem, "iteration": iteration, "region": region, "counter": r["counter.name"],
+            rows.append({"run": _run_id(f), "iteration": iteration, "region": region, "counter": r["counter.name"],
                          "min": r["min"], "max": r["max"], "sum": r["sum"]})
     schema = {"run": pl.String, "iteration": pl.Int64, "region": pl.String, "counter": pl.String,
               "min": pl.Int64, "max": pl.Int64, "sum": pl.Int64}
@@ -186,11 +197,10 @@ def load(*dirs):
         raise ValueError(f"no profiles in {dirs}")
     tk = load_thicket(dirs)
     file_of_profile = {p: Path(f) for p, f in tk.profile_mapping.items()}
-    run_of_profile = {p: f.stem for p, f in file_of_profile.items()}
-    dir_of_profile = {p: str(f.parent.parent if f.parent.name == "output" else f.parent)
-                      for p, f in file_of_profile.items()}
+    run_of_profile = {p: _run_id(f) for p, f in file_of_profile.items()}
+    dir_of_profile = {p: str(_experiment_dir(f)) for p, f in file_of_profile.items()}
     if len(set(run_of_profile.values())) != len(run_of_profile):
-        raise ValueError("run names are not unique; load experiment directories with the same suite separately")
+        raise ValueError("a profile was loaded twice; pass each experiment directory once")
     return Results(_runs(tk, run_of_profile, dir_of_profile), _timers(tk, run_of_profile), _counters(files))
 
 
@@ -208,7 +218,8 @@ def main():
     ap.add_argument("dirs", nargs="+", help="kaval experiment directories (<suite>_<date>)")
     args = ap.parse_args()
     r = load(*args.dirs)
-    keys = ["graph", *config_options(r.runs), "ranks", "threads"]
+    machine = ["cluster"] if r.runs["cluster"].n_unique() > 1 else []
+    keys = [*machine, "graph", *config_options(r.runs), "ranks", "threads"]
     summary = (
         r.timers.filter(region="total")
         .join(r.runs, on="run")

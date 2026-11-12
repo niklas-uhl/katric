@@ -19,9 +19,10 @@ the run metadata from Adiak), `<run>.timers.json` and `<run>.counters.json` into
 JSON files are for looking at single runs (`scripts/caliper_to_json.py <run>`). For evaluation,
 [`eval/katric_eval.py`](../eval/katric_eval.py) loads experiment directories with
 [Thicket](https://github.com/LLNL/thicket) into polars tables (runs with all options as columns, timers, counters);
-explore them in marimo notebooks with altair plots: `just notebook` opens the example
-[`eval/scaling.py`](../eval/scaling.py), which imports the module and plots time over cores; put further notebooks next
-to it. `uv sync --group eval` installs these.
+explore them in the marimo notebook [`eval/explore.py`](../eval/explore.py) (`just notebook`): select one or more
+experiment directories (or a directory holding several, e.g. `eval/data/supermuc`) to see time over cores and where the
+time goes per phase, across machines; details (imbalance per phase, input shape) are in collapsed sections below. Put
+further notebooks next to it (`just notebook <name>`). `uv sync --group eval` installs these.
 
 ## Suites
 
@@ -30,7 +31,7 @@ to it. `uv sync --group eval` installs these.
 | `paper-real-world` | Strong scaling of DiTriC (`patric`) and CETRIC (`cetric-x`), 512 to 32768 cores |
 | `paper-weak-scaling` | Weak scaling on RGG 2D, RHG and GNM, 512 to 32768 cores |
 | `paper-hybrid-real-world` | Hybrid CETRIC (MPI + TBB), 1 to 48 threads per rank |
-| `phases` | Phase breakdown of DiTriC and CETRIC (one thread per rank) on RGG 2D / RHG with and without vertex permutation (locality x skew), node multiples up to 3072 cores; `just notebook phases` |
+| `phases` | Phase breakdown of DiTriC and CETRIC (one thread per rank) on RGG 2D / RHG with and without vertex permutation (locality x skew), node multiples up to 3072 cores |
 | `local/smoke` | The paper configurations on small inputs, every count verified |
 | `local/phases` | `phases` on a laptop (1 to 8 cores, smaller graphs) |
 

@@ -45,10 +45,13 @@ fetch-from-supermuc:
 fetch-from-horeka:
     rsync -aP --exclude 'bin/' horeka:katric/experiment_data/ eval/data/horeka
 
+fetch-from-horeka2:
+    rsync -aP --exclude 'bin/' horeka2:cetric/experiment_data/ eval/data/horeka2
+
 # Summarize experiment directories (kaval's <suite>_<date>): mean of the maximum "total" time per configuration
 summary +dirs:
     uv run --group eval eval/katric_eval.py {{ dirs }}
 
-# Open a marimo notebook from eval/ in the browser (eval/scaling.py: scaling plot per graph and configuration)
-notebook name="scaling":
+# Open a marimo notebook from eval/ (default explore.py: scaling and phase breakdown of chosen experiment directories)
+notebook name="explore":
     uv run --group eval marimo edit eval/{{ name }}.py
