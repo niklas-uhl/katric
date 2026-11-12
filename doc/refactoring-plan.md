@@ -247,6 +247,14 @@ The algorithm ideas (models in [model/](model/)):
 11. Message compression (delta + varint over sorted lists): low priority, the global phase is computation-bound on
     the clusters; possibly worth it at large p with grid indirection, where every message travels twice
 
+12. Skip entries the receiver already knows (the removed `--skip-local-neighborhood`, which segfaulted for all
+    three algorithms at removal): the sender drops the entries w of N+(v) that live on the receiving rank r; r
+    rebuilds them from its own cut edges (v, w) and orients them with the exchanged degrees. Saves the share of
+    entries owned by the receiver: about 1/p without locality, more with partial locality (real-world graphs with
+    a good partition). Complements idea 6 (which drops entries useless on r). Needs the ghost's local neighbors on
+    r (an in-edge index per ghost), cheap with compact IDs. Measure first: a counter for message entries owned by
+    the receiver
+
 Plus: without locality, CETRIC should not pay for ghost expansion (fall back to patric's path, or pre-CETRIC).
 
 ## Open decisions
