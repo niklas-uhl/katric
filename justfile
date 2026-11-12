@@ -54,4 +54,4 @@ summary +dirs:
 
 # Open a marimo notebook from eval/ (default explore.py: scaling and phase breakdown of chosen experiment directories)
 notebook name="explore":
-    uv run --group eval marimo edit eval/{{ name }}.py
+    uv run --group eval marimo edit --watch eval/{{ name }}.py
