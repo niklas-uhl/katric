@@ -67,7 +67,6 @@ inline void preprocessing(
     const Config&                               conf,
     bool                                        fetch_ghost_degree
 ) {
-    // if (phase == Phase::Global || conf.algorithm == Algorithm::patric) {
     if (fetch_ghost_degree) {
         CALI_CXX_MARK_SCOPE("degree_exchange");
         find_ghosts(G, ghosts);
@@ -97,13 +96,6 @@ inline void preprocessing(
                 [&G, &conf, &ghost_degree](auto const& r) {
                     for (auto node: r) {
                         G.sort_neighborhoods(node, NodeOrdering(G, ghost_degree));
-                        // if (conf.algorithm == Algorithm::patric) {
-                        //     G.sort_neighborhoods(node, node_ordering::id());
-                        // } else if (conf.algorithm == Algorithm::cetric_x) {
-                        //     G.sort_neighborhoods(node, node_ordering::id_outward(G.rank()));
-                        // } else {
-                        //     G.sort_neighborhoods(node, node_ordering::id_outward(G.rank()));
-                        // }
                     }
                 }
             );
@@ -118,43 +110,8 @@ inline void preprocessing(
         CALI_CXX_MARK_SCOPE("sorting");
         for (auto node: nodes) {
             G.sort_neighborhoods(node, NodeOrdering(G, ghost_degree));
-            // if (conf.algorithm == Algorithm::patric) {
-            //   G.sort_neighborhoods(node, node_ordering::id());
-            // } else if (conf.algorithm == Algorithm::cetric_x) {
-            //   G.sort_neighborhoods(node, node_ordering::id_outward(G.rank()));
-            // } else {
-            //   G.sort_neighborhoods(node, node_ordering::id_outward(G.rank()));
-            // }
         }
     }
-    // } else {
-    //     phase_timer.start("orientation");
-    //     auto nodes = G.local_nodes();
-    //     if (conf.num_threads > 1) {
-    //         tbb::task_arena arena(conf.num_threads, 0);
-    //         arena.execute([&] {
-    //             tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G](auto const& r) {
-    //                 for (auto node: r) {
-    //                     G.orient(node, node_ordering::degree_outward(G));
-    //                 }
-    //             });
-    //             phase_timer.start("sorting");
-    //             tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G](auto const& r) {
-    //                 for (auto node: r) {
-    //                     G.sort_neighborhoods(node, node_ordering::degree_outward(G));
-    //                 }
-    //             });
-    //         });
-    //     } else {
-    //         for (auto node: nodes) {
-    //             G.orient(node, node_ordering::degree_outward(G));
-    //         }
-    //         phase_timer.start("sorting");
-    //         for (auto node: nodes) {
-    //             G.sort_neighborhoods(node, node_ordering::degree_outward(G));
-    //         }
-    //     }
-    // }
 }
 
 template <typename Graph>

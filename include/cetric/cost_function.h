@@ -52,44 +52,6 @@
 #include "cetric/timer.h"
 #include "cetric/util.h"
 
-// using namespace cetric::graph;
-
-// class OutDegreeCache {
-// public:
-//     OutDegreeCache() : data_() {}
-//     OutDegreeCache(const DistributedGraph<>& G) : data_() {
-//         auto ghosts = find_ghosts(G);
-//         assert(G.get_graph_payload().ghost_degree_available);
-//         for (RankEncodedNodeId node : G.local_nodes()) {
-//             Degree out_deg = 0;
-//             for (auto edge : G.edges(node)) {
-//                 if (edge.head.rank() != G.rank()) {
-//                 }
-//             }
-//         }
-
-//         G.for_each_local_node([&](NodeId local_node_id) {
-//             Degree out_deg = 0;
-//             G.for_each_edge(local_node_id, [&](auto e) {
-//                 if (G.is_outgoing(e)) {
-//                     out_deg++;
-//                 }
-//             });
-//             data_[local_node_id] = out_deg;
-//         });
-//     }
-
-//     inline void set(NodeId local_node_id, Degree degree) {
-//         data_[local_node_id] = degree;
-//     }
-
-//     inline Degree get(NodeId local_node_id) {
-//         return data_[local_node_id];
-//     }
-
-// private:
-//     std::vector<Degree> data_;
-// };
 namespace cetric {
 
 template <typename Graph>
@@ -135,7 +97,6 @@ public:
         AuxiliaryNodeData<Degree>&,
         bool                                  dense_degree_exchange
     ) {
-        // (void)cache;
         DegreeCommunicator comm(G, G.rank(), G.size(), as_int(MessageTag::CostFunction));
         if (ghosts.size() == 0) {
             find_ghosts(G, ghosts);
@@ -175,21 +136,7 @@ public:
                 },
                 !dense_degree_exchange
             );
-            // comm.get_ghost_degree([&](RankEncodedNodeId node, Degree deg) { degree[node] = deg; }, stats);
         }
-        //     DegreeCommunicator<Graph> comm(G, G.rank(), G.size(), as_int(MessageTag::CostFunction));
-        //     if (!G.get_graph_payload().ghost_degree_available) {
-        //         comm.get_ghost_degree(
-        //             [&](NodeId global_id, Degree degree) {
-        //                 G.get_ghost_payload(G.to_local_id(global_id)).degree = degree;
-        //             },
-        //             stats);
-        //         G.get_graph_payload().ghost_degree_available = true;
-        //     }
-        //     cache = OutDegreeCache(G);
-        // comm.get_ghost_outdegree(
-        //     [&](auto e) { return G.is_outgoing(e); },
-        //     [&](NodeId global_id, Degree outdegree) { cache.set(G.to_local_id(global_id), outdegree); }, stats);
     }
 
     template <typename CostFunctionType, typename ExecutionPolicy = execution_policy::sequential>
@@ -239,9 +186,6 @@ public:
     }
 
     inline Degree degree(RankEncodedNodeId node) {
-        // DEBUG_ASSERT(G.is_local_from_local(local_node_id) || G.get_graph_payload().ghost_degree_available,
-        //              debug_module{}, name.c_str());
-        // return G.degree(local_node_id);
         if (node.rank() == G.rank()) {
             return G.degree(node);
         } else {
@@ -250,7 +194,6 @@ public:
     }
 
     inline Degree out_degree(RankEncodedNodeId node) {
-        // return degree_cache.outdegree(local_node_id);
         return out_degree_[node];
     }
     inline PEID rank(NodeId local_node_id) {

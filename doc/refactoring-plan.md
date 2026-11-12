@@ -39,6 +39,11 @@ anyway:
 
 ## Steps
 
+Step 1 validation (2026-11-12): 70 reference runs (RGG/RHG, each also permuted, com-amazon x DiTriC/CETRIC/pre-CETRIC
+with direct and grid communication and DiTriC with DPD, on 2 and 4 ranks) give identical triangle counts and counters
+after every step-1 commit (grid message counters excluded). The counters are deterministic between two runs of the same
+binary.
+
 ### TU split (before step 1)
 
 `apps/katric.cpp` is one translation unit with every algorithm × communication policy × node ordering × local-phase
@@ -93,7 +98,7 @@ Options that are dead or only used in old exploration suites (`experiments/legac
       clusters, sorting up to 13×; compact-forward ordering (idea 3) gets the skip with a cheaper key
 - [x] Keep only N, DPD, IDPD (decided 2026-11-12) of the cost functions N/D/DH/DDH/DH2/DPD/IDPD/D* and primary load balancing.
       Unused in the paper, but DPD/IDPD are the starting point of idea 1
-- [ ] Remove commented-out code blocks in the touched files (`preprocessing`, `cetric_edge_iterator.h`)
+- [x] Remove commented-out code blocks in the touched files (`preprocessing`, `cetric_edge_iterator.h`)
 
 ### 2. One kernel per phase
 

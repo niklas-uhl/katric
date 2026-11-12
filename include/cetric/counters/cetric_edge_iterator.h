@@ -244,10 +244,6 @@ public:
                         neighbor_index++;
                         continue;
                     }
-                    // if (conf_.algorithm == Algorithm::patric || conf_.algorithm == Algorithm::cetric_x) {
-                    //     neighbor_index++;
-                    //     continue;
-                    // }
                     SPDLOG_DEBUG(
                         "Remaining neighbors {}",
                         std::ranges::subrange(
@@ -377,8 +373,6 @@ public:
                 KASSERT(*(G.ghost_adj(v).neighbors().begin() + neighbor_index) == u);
                 auto v_neighbors = G.ghost_adj(v).neighbors();
                 auto u_neighbors = G.out_adj(u).neighbors();
-                // for each edge (v, u) we check the open wedge (v, u, w) for
-                // w in N(u)+; v is a ghost, so only the local part of N(u)+ can match
                 auto u_first = u_neighbors.begin();
                 auto u_last  = local_prefix_end<NodeOrdering>(u_first, u_neighbors.end());
                 wedge_checks += u_last - u_first;
@@ -491,17 +485,13 @@ public:
                         }
                     }
                 }
-                // processed_edges[tail_idx].push_back(RankEncodedEdge{u, v});
                 auto   v_neighbors = v.rank() == rank_ ? G.out_adj(v).neighbors() : G.ghost_adj(v).neighbors();
                 auto   u_neighbors = u.rank() == rank_ ? G.out_adj(u).neighbors() : G.ghost_adj(u).neighbors();
                 size_t offset = 0;
                 if constexpr (std::is_same_v<NodeOrdering, EdgeOrientationOrdering>) {
                     offset = edge_id - tail_first_edge;
                 }
-                // auto offset      = edge_id - tail_first_edge;
                 SPDLOG_DEBUG("[t{}] intersecting {} {}", tbb::this_task_arena::current_thread_index(), v, u);
-                // for each edge (v, u) we check the open wedge (v, u, w)
-                // for w in N(u)+; if either endpoint is a ghost, only local vertices can close it
                 auto v_first = v_neighbors.begin() + offset;
                 auto v_last  = v_neighbors.end();
                 auto u_first = u_neighbors.begin();
@@ -531,10 +521,6 @@ public:
         };
 
         arena.execute([&] { tbb::parallel_for(edge_ids, body, tbb::auto_partitioner{}); });
-        // for (size_t i = 0; i < edges.size(); ++i) {
-        //     KASSERT(edges[i].size() == processed_edges[i].size(), "Failed for "
-        //     << i);
-        // }
 
         profiling::counter_add("skipped_nodes", thread_local_skipped_nodes.combine(std::plus<>{}));
         profiling::counter_add("wedge_checks", thread_local_wedge_checks.combine(std::plus<>{}));
@@ -619,8 +605,6 @@ public:
                         }
                     }
                 }
-                // processed_edges[tail_idx].push_back(RankEncodedEdge{u,
-                // v});
                 if (u.rank() != rank_) {
                     continue;
                 }
@@ -630,7 +614,6 @@ public:
                 if constexpr (std::is_same_v<NodeOrdering, EdgeOrientationOrdering>) {
                     offset = edge_id - tail_first_edge;
                 }
-                // auto offset      = edge_id - tail_first_edge;
                 SPDLOG_DEBUG("[t{}] intersecting {} {}", tbb::this_task_arena::current_thread_index(), v, u);
                 // for each edge (v, u) we check the open wedge (v, u, w)
                 // for w in N(u)+
@@ -659,9 +642,6 @@ public:
         profiling::counter_add("wedge_checks", thread_local_wedge_checks.combine(std::plus<>{}));
         profiling::counter_add("intersection_size_local", thread_local_intersection_size_local.combine(std::plus<>{}));
         profiling::counter_add("local_triangles", thread_local_local_triangles.combine(std::plus<>{}));
-        // for (size_t i = 0; i < edges.size(); ++i) {
-        //     KASSERT(edges[i].size() == processed_edges[i].size(), "Failed for " << i);
-        // }
 
     }
 
@@ -702,9 +682,6 @@ public:
                     if constexpr (!std::is_same_v<NodeOrdering, node_ordering::id_outward> && !std::is_same_v<NodeOrdering, node_ordering::degree_outward<GraphType>>) {
                         continue;
                     }
-                    // if (conf_.algorithm == Algorithm::patric) {
-                    //     // neighbor_index++;
-                    // }
                     SPDLOG_DEBUG(
                         "Remaining neighbors {}",
                         std::ranges::subrange(
@@ -721,7 +698,6 @@ public:
                     ));
                     break;
                 }
-                // #pragma omp task if (spawn)
                 {
                     auto   v_neighbors = G.out_adj(v).neighbors();
                     auto   u_neighbors = G.out_adj(u).neighbors();
@@ -741,7 +717,6 @@ public:
                         u_neighbors.end(),
                         [&](RankEncodedNodeId w) {
                             local_triangles++;
-                            // local_triangles++;
                             emit(Triangle<RankEncodedNodeId>{v, u, w});
                         },
                         node_ordering,
@@ -772,14 +747,12 @@ public:
             auto& local_interface_nodes = interface_nodes.local();
             if (conf_.pseudo2core && G.outdegree(v) < 2) {
                 skipped_nodes++;
-                // continue;
             } else {
                 if (G.template is_interface_node_if_sorted_by_rank<AdjacencyType::out>(v)) {
                     local_interface_nodes.emplace_back(v);
                 }
                 auto v_neighbors_size = std::distance(G.out_adj(v).neighbors().begin(), G.out_adj(v).neighbors().end());
                 if (partition_neighborhood_2d(v)) {
-                    // stats.local.nodes_parallel2d++;
                     tbb::parallel_for(
                         tbb::blocked_range(size_t{0}, static_cast<size_t>(v_neighbors_size)),
                         [&handle_neighbor_range, v = v](auto const& neighbor_range) {
@@ -787,9 +760,6 @@ public:
                         }
                     );
                 } else {
-                    if (partition_neighborhood_2d(v)) {
-                        // stats.local.nodes_parallel2d++;
-                    }
                     handle_neighbor_range(
                         v,
                         tbb::blocked_range(size_t{0}, static_cast<size_t>(v_neighbors_size)),
@@ -882,8 +852,6 @@ public:
                 if constexpr (std::is_same_v<NodeOrdering, EdgeOrientationOrdering>) {
                     offset = neighbor_index;
                 }
-                // for each edge (v, u) we check the open wedge (v, u, w)
-                // for w in N(u)+; if either endpoint is a ghost, only local vertices can close it
                 auto v_first = v_neighbors.begin() + offset;
                 auto v_last  = v_neighbors.end();
                 auto u_first = u_neighbors.begin();
@@ -919,7 +887,6 @@ public:
             }
             if (conf_.pseudo2core && v_degree < 2) {
                 skipped_nodes++;
-                // continue;
             } else {
                 if constexpr (fast_is_interface) {
                     if (v.rank() == rank_ && G.template is_interface_node_if_sorted_by_rank<AdjacencyType::out>(v)) {
@@ -928,7 +895,6 @@ public:
                 }
                 size_t v_neighbors_size = v_degree;
                 if (partition_neighborhood_2d(v)) {
-                    // stats.local.nodes_parallel2d++;
                     tbb::parallel_for(
                         tbb::blocked_range(size_t{0}, static_cast<size_t>(v_neighbors_size)),
                         [&handle_neighbor_range, v = v](auto const& neighbor_range) {
@@ -936,9 +902,6 @@ public:
                         }
                     );
                 } else {
-                    if (partition_neighborhood_2d(v)) {
-                        // stats.local.nodes_parallel2d++;
-                    }
                     handle_neighbor_range(
                         v,
                         tbb::blocked_range(size_t{0}, static_cast<size_t>(v_neighbors_size)),
@@ -1146,11 +1109,8 @@ public:
         std::atomic<size_t>      nodes_queued = 0;
         std::atomic<size_t>      write_jobs   = 0;
         tbb::task_arena          arena(conf_.num_threads);
-        // TbbTaskPool              pool(conf_.num_threads);
-        //  ThreadPool               pool(conf_.num_threads - 1);
         tbb::concurrent_queue<std::function<void()>> high_priority_tasks;
 
-        // ConcurrencyTracker  tracker(conf_.num_threads);
         tbb::combinable<size_t> skipped_nodes {0};
         auto                task          = [&](const RankEncodedNodeId& v) {
             if (conf_.pseudo2core && G.outdegree(v) < 2) {
@@ -1161,10 +1121,6 @@ public:
             for (RankEncodedEdge edge: G.out_adj(v).edges()) {
                 RankEncodedNodeId u = edge.head;
                 if (/*conf_.algorithm == Algorithm::cetric || */ u.rank() != rank_) {
-                    // assert(G.is_local_from_local(v));
-                    // assert(G.is_local(G.to_global_id(v)));
-                    // assert(!G.is_local(G.to_global_id(u)));
-                    // assert(!G.is_local_from_local(u));
                     PEID u_rank = u.rank();
                     assert(u_rank != rank_);
                     if (last_proc_[G.to_local_idx(v)] != u_rank) {
@@ -1173,31 +1129,11 @@ public:
                     }
                 }
             }
-            // tracker.track("enqueue");
             nodes_queued--;
         };
-        // pool.submit_work([&] {
-        //     std::for_each(
-        //         interface_nodes_begin,
-        //         interface_nodes_end,
-        //         [&](RankEncodedNodeId v /*, tbb::feeder<RankEncodedNodeId> &
-        //         feeder*/) {
-        //             nodes_queued++;
-        //             if (conf_.global_degree_of_parallelism > 1) {
-        //                 pool.submit_work([v = v, task] { task(v); });
-        //                 // task_group.run(task);
-        //                 //  pool.enqueue(task);
-        //             } else {
-        //                 task(v);
-        //             }
-        //         }
-        //     );
-        // });
         nodes_queued = std::distance(interface_nodes_begin, interface_nodes_end);
         tbb::enumerable_thread_specific<size_t> priorized_nodes = 0;
         pool.submit_work([&] {
-            // tbb::parallel_for_each(interface_nodes_begin, interface_nodes_end,
-            // [&](const RankEncodedNodeId& v) {
             if constexpr (Pool::has_tbb) {
                 tbb::parallel_for_each(
                     interface_nodes_begin,
@@ -1212,12 +1148,7 @@ public:
                                 return;
                             }
                         }
-                        //if (conf_.global_degree_of_parallelism > 1) {
                         pool.submit_work([v = v, task] { task(v); });
-                            // task_group.run(task);
-                            //  pool.enqueue(task);
-                        //} else {
-                         //   task(v);
                     }
                 );
             } else {
@@ -1225,11 +1156,6 @@ public:
                     pool.submit_work([v = v, task] { task(v); });
                 });
             }
-            // for (auto current = interface_nodes_begin;
-            //      current != interface_nodes_end; current++) {
-            //   RankEncodedNodeId v = *current;
-            //   // nodes_queued++;
-            // }
         });
         auto master_task = [&] {
             while (true) {
@@ -1252,7 +1178,6 @@ public:
                     std::function<void()> intersect_task;
                     while (high_priority_tasks.try_pop(intersect_task)) {
                         intersect_task();
-                        //pool.submit_work(std::move(intersect_task));
                     }
                 }
             }
@@ -1278,11 +1203,8 @@ public:
             while (high_priority_tasks.try_pop(intersect_task)) {
                 pool.submit_work(std::move(intersect_task));
             }
-            // tracker.track("master");
         };
         pool.run_and_wait(master_task);
-        // pool.loop_until_empty();
-        // pool.terminate();
         SPDLOG_DEBUG("Finished pool");
         report_distributed_counters(queue.stats());
         profiling::counter_add("skipped_nodes", skipped_nodes.combine(std::plus<>{}));
@@ -1312,18 +1234,8 @@ private:
     ) {
         std::vector<RankEncodedNodeId> buffer;
         buffer.emplace_back(v);
-        // size_t send_count = 0;
         for (RankEncodedEdge e: G.out_adj(v).edges()) {
             assert(conf_.algorithm == Algorithm::patric || e.head.rank() != rank_);
-            // using payload_type = typename GraphType::payload_type;
-            // if constexpr (std::is_convertible_v<decltype(payload_type{}.degree), Degree>) {
-            //     if (conf_.degree_filtering) {
-            //         const auto& ghost_data = G.get_ghost_data(e.head.id());
-            //         if (ghost_data.payload.degree < pe_min_degree[u_rank]) {
-            //             return;
-            //         }
-            //     }
-            // }
             buffer.emplace_back(e.head);
         }
         SPDLOG_DEBUG("Sending {} to {}", buffer, u_rank);
@@ -1343,11 +1255,9 @@ private:
         SPDLOG_DEBUG("rank {}", u_rank);
         SPDLOG_DEBUG("{}", u_rank);
         write_jobs++;
-        // thread_pool.enqueue([&queue, &write_jobs, this, v, u_rank] {
         pool.submit_work([&queue, &write_jobs, this, v, u_rank]() {
             std::vector<RankEncodedNodeId> buffer;
             buffer.emplace_back(v);
-            // size_t send_count = 0;
             SPDLOG_DEBUG("{}", u_rank);
             for (RankEncodedNodeId node: G.out_adj(v).neighbors()) {
                 assert(conf_.algorithm == Algorithm::patric || node.rank() != rank_);
@@ -1420,41 +1330,6 @@ private:
         //     TaskPriority::high
         // );
     }
-    // template <typename NodeBufferIter>
-    // void distributed_pre_intersect(RankEncodedNodeId v, NodeBufferIter begin, NodeBufferIter end) {
-    //     if (conf_.flag_intersection) {
-    //         for (auto it = begin; it != end; it++) {
-    //             RankEncodedNodeId node = *it;
-    //             if (G.is_local(node) || G.is_ghost_from_global(node)) {
-    //                 is_v_neighbor_[G.to_local_id(node)] = true;
-    //             }
-    //         }
-    //         // for CETRIC we don't have to consider the local neighbors of v, because these are no ghost
-    //         // vertices
-    //         if (conf_.algorithm == Algorithm::patric && conf_.skip_local_neighborhood) {
-    //             G.for_each_local_out_edge(G.to_local_id(v),
-    //                                       [&](RankEncodedEdge edge) { is_v_neighbor_[edge.head.id()] = true; });
-    //         }
-    //     }
-    // }
-
-    // template <typename NodeBufferIter>
-    // void distributed_post_intersect(RankEncodedNodeId v, NodeBufferIter begin, NodeBufferIter end) {
-    //     if (conf_.flag_intersection) {
-    //         for (auto it = begin; it != end; it++) {
-    //             RankEncodedNodeId node = *it;
-    //             if (G.is_local(node) || G.is_ghost_from_global(node)) {
-    //                 is_v_neighbor_[G.to_local_id(node)] = false;
-    //             }
-    //         }
-    //         // for CETRIC we don't have to consider the local neighbors of v, because these are no ghost
-    //         // vertices
-    //         if (conf_.algorithm == Algorithm::patric && conf_.skip_local_neighborhood) {
-    //             G.for_each_local_out_edge(G.to_local_id(v),
-    //                                       [&](RankEncodedEdge edge) { is_v_neighbor_[edge.head.id()] = false; });
-    //         }
-    //     }
-    // }
 
     template <typename IntersectFunc, typename NodeBufferIter, typename NodeOrdering, typename GhostSet>
     void intersect_from_message(
@@ -1466,14 +1341,6 @@ private:
         NodeOrdering&&                 node_ordering,
         GhostSet const&                ghosts
     ) {
-        // if (conf_.flag_intersection) {
-        //     G.for_each_local_out_edge(u_local, [&](RankEncodedEdge uw) {
-        //         RankEncodedNodeId w = uw.head.id();
-        //         if (is_v_neighbor_[w]) {
-        //             on_intersection(w);
-        //         }
-        //     });
-        // } else {
         if (conf_.algorithm == Algorithm::cetric_x) {
             // this node may have no out edges and was therefore removed
             if (!G.is_local(u)) {
@@ -1527,7 +1394,6 @@ private:
                 conf_
             );
         }
-        // }
     }
 
     template <typename TriangleFunc, typename NodeBufferIter, typename NodeOrdering, typename GhostSet>
@@ -1541,7 +1407,6 @@ private:
     ) {
         SPDLOG_DEBUG("Handling message {}", std::ranges::subrange(begin, end));
         assert(v.rank() != rank_);
-        // distributed_pre_intersect(v, begin, end);
         auto for_each_local_receiver = [&](auto on_node) {
             if (conf_.global_degree_of_parallelism > 2) {
                 tbb::parallel_for(tbb::blocked_range(begin, end), [&on_node, this](auto const& r) {
@@ -1575,7 +1440,6 @@ private:
                 ghosts
             );
         });
-        // distributed_post_intersect(v, begin, end);
     }
     GraphType&                                                      G;
     const Config&                                                   conf_;
