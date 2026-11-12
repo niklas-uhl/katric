@@ -28,6 +28,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -1359,20 +1360,30 @@ public:
             }
         }();
         queue.set_threshold(threshold_);
-        size_t skipped_nodes = 0;
+        size_t skipped_nodes   = 0;
+        size_t interface_nodes = 0;
+        // Time spent building and posting messages and handling received ones (the intersections), accumulated per
+        // call because a Caliper region per message would cost more than the work it measures. The rest of the
+        // phase's exclusive time is polling; the region `termination` is the wait for the other ranks.
+        using clock = std::chrono::steady_clock;
+        clock::duration send_time{};
+        clock::duration handle_time{};
+        auto            on_message = [&](SharedVectorSpan<RankEncodedNodeId> span, PEID sender [[maybe_unused]]) {
+            auto const start = clock::now();
+            handle_buffer(span.begin(), span.end(), emit, node_ordering, ghosts);
+            handle_time += clock::now() - start;
+        };
         for (auto current = interface_nodes_begin; current != interface_nodes_end; current++) {
             RankEncodedNodeId v = *current;
+            interface_nodes++;
             // iterate over neighborhood and delegate to other PEs if necessary
             if (conf_.pseudo2core && G.outdegree(v) < 2) {
                 skipped_nodes++;
             } else {
+                auto const start = clock::now();
                 for (RankEncodedEdge edge: G.out_adj(v).edges()) {
                     RankEncodedNodeId u = edge.head;
                     if (/*conf_.algorithm == Algorithm::cetric || */ u.rank() != rank_) {
-                        // assert(G.is_local_from_local(v));
-                        // assert(G.is_local(G.to_global_id(v)));
-                        // assert(!G.is_local(G.to_global_id(u)));
-                        // assert(!G.is_local_from_local(u));
                         PEID u_rank = u.rank();
                         assert(u_rank != rank_);
                         if (last_proc_[G.to_local_idx(v)] != u_rank) {
@@ -1380,17 +1391,19 @@ public:
                         }
                     }
                 }
+                send_time += clock::now() - start;
             }
-            // timer.start("Communication");
-            queue.poll([&](SharedVectorSpan<RankEncodedNodeId> span, PEID sender [[maybe_unused]]) {
-                handle_buffer(span.begin(), span.end(), emit, node_ordering, ghosts);
-            });
+            queue.poll(on_message);
         }
-        queue.terminate([&](SharedVectorSpan<RankEncodedNodeId> span, PEID sender [[maybe_unused]]) {
-            handle_buffer(span.begin(), span.end(), emit, node_ordering, ghosts);
-        });
+        {
+            CALI_CXX_MARK_SCOPE("termination");
+            queue.terminate(on_message);
+        }
         report_distributed_counters(queue.stats());
         profiling::counter_add("skipped_nodes", skipped_nodes);
+        profiling::counter_add("interface_nodes", interface_nodes);
+        profiling::counter_add("send_ns", std::chrono::duration_cast<std::chrono::nanoseconds>(send_time).count());
+        profiling::counter_add("handle_ns", std::chrono::duration_cast<std::chrono::nanoseconds>(handle_time).count());
         queue.reset();
     }
 

@@ -52,17 +52,7 @@ public:
     void ingest(kagen::Graph&& graph) override {
         auto input = to_local_input(std::move(graph));
         pristine_  = graph::DistributedGraph<>(std::move(input.G), input.node_range, conf_.rank, conf_.PEs);
-        tbb::enumerable_thread_specific<std::size_t> wedges = 0;
-        tbb::parallel_for(
-            tbb::blocked_range(pristine_.local_nodes().begin(), pristine_.local_nodes().end()),
-            [&](auto const& r) {
-                for (auto node: r) {
-                    auto degree = pristine_.degree(node);
-                    wedges.local() += (degree * (degree - 1)) / 2;
-                }
-            }
-        );
-        profiling::counter_add("wedges", static_cast<std::int64_t>(wedges.combine(std::plus<>{})));
+        report_input_shape();
     }
 
     void reset() override {
@@ -79,6 +69,50 @@ public:
     }
 
 private:
+    /// Per-rank shape of the input partition, reported once into the region `ingest` (min/max/sum across ranks).
+    /// Relates phase costs to locality: cut edges are the edges whose head is on another rank.
+    void report_input_shape() const {
+        auto [first, last] = pristine_.node_range();
+        struct Shape {
+            std::size_t wedges = 0, edges = 0, cut_edges = 0, interface_nodes = 0, max_degree = 0;
+        };
+        tbb::enumerable_thread_specific<Shape> shapes;
+        tbb::parallel_for(
+            tbb::blocked_range(pristine_.local_nodes().begin(), pristine_.local_nodes().end()),
+            [&](auto const& r) {
+                auto& shape = shapes.local();
+                for (auto node: r) {
+                    std::size_t degree = pristine_.degree(node);
+                    std::size_t cut    = std::ranges::count_if(pristine_.adj(node).neighbors(), [&](auto w) {
+                        return w.id() < first || w.id() >= last;
+                    });
+                    shape.wedges += degree * (degree - 1) / 2;
+                    shape.edges += degree;
+                    shape.cut_edges += cut;
+                    shape.interface_nodes += cut > 0;
+                    shape.max_degree = std::max(shape.max_degree, degree);
+                }
+            }
+        );
+        auto total = shapes.combine([](Shape a, Shape const& b) {
+            a.wedges += b.wedges;
+            a.edges += b.edges;
+            a.cut_edges += b.cut_edges;
+            a.interface_nodes += b.interface_nodes;
+            a.max_degree = std::max(a.max_degree, b.max_degree);
+            return a;
+        });
+        auto add = [](char const* name, std::size_t value) {
+            profiling::counter_add(name, static_cast<std::int64_t>(value));
+        };
+        add("wedges", total.wedges);
+        add("local_nodes", last - first);
+        add("local_edges", total.edges);
+        add("cut_edges", total.cut_edges);
+        add("interface_nodes", total.interface_nodes);
+        add("max_degree", total.max_degree);
+    }
+
     Config const&             conf_;
     RunFunction               run_;
     graph::DistributedGraph<> pristine_;

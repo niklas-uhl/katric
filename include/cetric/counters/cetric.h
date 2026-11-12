@@ -407,6 +407,9 @@ inline size_t run_cetric(
         }
         auto G_compact = conf.parallel_compact ? G.compact(execution_policy::parallel{conf.num_threads})
                                                : G.compact(execution_policy::sequential{});
+        // what is left for the global phase: vertices with cut edges and their (oriented) cut edges
+        profiling::counter_add("compact_nodes", static_cast<std::int64_t>(std::ranges::size(G_compact.local_nodes())));
+        profiling::counter_add("compact_edges", static_cast<std::int64_t>(G_compact.local_edge_count_with_ghost_edges()));
         SPDLOG_DEBUG("Contraction finished");
         ghosts = decltype(ghosts){};
         SPDLOG_DEBUG("Found {} triangles in local phase", triangle_count_local_phase.combine(std::plus<>{}));
@@ -685,6 +688,9 @@ inline size_t run_cetric_new(DistributedGraph<>& G, const Config& conf, PEID ran
         }
         auto G_compact = conf.parallel_compact ? G.compact(execution_policy::parallel{conf.num_threads})
                                                : G.compact(execution_policy::sequential{});
+        // what is left for the global phase: vertices with cut edges and their (oriented) cut edges
+        profiling::counter_add("compact_nodes", static_cast<std::int64_t>(std::ranges::size(G_compact.local_nodes())));
+        profiling::counter_add("compact_edges", static_cast<std::int64_t>(G_compact.local_edge_count_with_ghost_edges()));
         ConditionalBarrier(conf.global_synchronization);
         return G_compact;
     }();

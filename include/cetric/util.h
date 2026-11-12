@@ -39,6 +39,7 @@
 #include <sstream>
 #include <vector>
 
+#include <caliper/cali.h>
 #include <fmt/core.h>
 #include <fmt/ostream.h>
 #include <fmt/ranges.h>
@@ -111,8 +112,11 @@ inline void check_mpi_error(int errcode, const std::string& file, int line) {
     }
 }
 
+/// Barrier in its own Caliper region `barrier`, nested in the phase that calls it. The phase's exclusive time is then
+/// the rank's own work, and the barrier's time is the wait for the slowest rank (load imbalance).
 inline void ConditionalBarrier(bool active, MPI_Comm comm = MPI_COMM_WORLD) {
     if (active) {
+        CALI_CXX_MARK_SCOPE("barrier");
         MPI_Barrier(comm);
     }
 }
