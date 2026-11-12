@@ -66,9 +66,9 @@ cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::P
     );
 
     app.add_option("--primary-cost-function", conf.primary_cost_function)
-        ->transform(CLI::IsMember({"none", "N", "D", "DH", "DDH", "DH2", "DPD", "IDPD", "D*"}));
+        ->transform(CLI::IsMember({"none", "N", "DPD", "IDPD"}));
     app.add_option("--secondary-cost-function", conf.secondary_cost_function)
-        ->transform(CLI::IsMember({"none", "N", "D", "DH", "DDH", "DH2", "DPD", "IDPD", "D*"}));
+        ->transform(CLI::IsMember({"none", "N", "DPD", "IDPD"}));
 
     app.add_option(
         "--caliper-config",

@@ -91,7 +91,7 @@ Options that are dead or only used in old exploration suites (`experiments/legac
   measure before removing, idea 8) and `--pseudo2core` (real-world graphs have many degree-1 vertices, idea 10)
 - [x] Remove (decided 2026-11-12): `--id-node-ordering false` (pure degree ordering): 1.6–2.5× slower on the
       clusters, sorting up to 13×; compact-forward ordering (idea 3) gets the skip with a cheaper key
-- [ ] Keep only N, DPD, IDPD (decided 2026-11-12) of the cost functions N/D/DH/DDH/DH2/DPD/IDPD/D* and primary load balancing.
+- [x] Keep only N, DPD, IDPD (decided 2026-11-12) of the cost functions N/D/DH/DDH/DH2/DPD/IDPD/D* and primary load balancing.
       Unused in the paper, but DPD/IDPD are the starting point of idea 1
 - [ ] Remove commented-out code blocks in the touched files (`preprocessing`, `cetric_edge_iterator.h`)
 

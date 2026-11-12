@@ -295,27 +295,6 @@ struct CostFunctionRegistry {
                   [](RefType, GraphType, RankEncodedNodeId) {
                       return 1;
                   }}},
-                {"D",
-                 {CostFunction<Graph>::init_nop,
-                  [](RefType ctx, GraphType, RankEncodedNodeId node) {
-                      return ctx.degree(node);
-                  }}},
-                {"DH",
-                 {CostFunction<Graph>::init_local_outdegree,
-                  [](RefType ctx, GraphType, RankEncodedNodeId node) {
-                      return ctx.out_degree(node);
-                  }}},
-                {"DDH",
-                 {CostFunction<Graph>::init_local_outdegree,
-                  [](RefType ctx, GraphType, RankEncodedNodeId node) {
-                      return ctx.degree(node) * ctx.out_degree(node);
-                  }}},
-                {"DH2",
-                 {CostFunction<Graph>::init_local_outdegree,
-                  [](RefType ctx, GraphType, RankEncodedNodeId node) {
-                      Degree out_deg = ctx.out_degree(node);
-                      return out_deg * out_deg;
-                  }}},
                 {"DPD",
                  {CostFunction<Graph>::init_all,
                   [](RefType ctx, GraphType G, RankEncodedNodeId v) {
