@@ -9,7 +9,7 @@ cmake --preset experiments && cmake --build --preset experiments   # binary: bui
 just kaval                                  # clone kaval into ./kaval at the commit pinned in the justfile
 just list                                   # suites in experiments/
 just run-local                              # the smoke suite on the example graphs, 2 and 4 cores, with --verify
-just run-supermuc-experiment paper-real-world --module-config <modules> --account <project>
+just run-supermuc-experiment paper-real-world   # module config `katric`, SLURM account from PROJECT (.env)
 just fetch-from-supermuc                    # rsync experiment_data/ into eval/data/supermuc
 just summary eval/data/supermuc/<suite>_<date>   # mean run time per input, configuration and core count
 ```

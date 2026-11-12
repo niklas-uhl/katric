@@ -26,13 +26,13 @@ list: kaval
 run-local suite="smoke" +args="": kaval
     uv run kaval/run-experiments.py --search-dirs ./experiments/local --machine shared {{ suite }} {{ args }}
 
-# Generate (and submit) SLURM jobs for SuperMUC-NG
+# Generate (and submit) SLURM jobs for SuperMUC-NG (as KaCCv2; at least one node, the suite's max_cores applies)
 run-supermuc-experiment experiment +args="": kaval
-    {{ kaval }} --machine supermuc --command-template ./kaval/command-templates/supermuc-IntelMPI-OpenMP.txt {{ experiment }} {{ args }}
+    {{ kaval }} --machine supermuc --module-config katric --command-template ./kaval/command-templates/supermuc-IntelMPI-OpenMP.txt --min-cores 48 {{ experiment }} {{ args }}
 
-# Generate (and submit) SLURM jobs for HoreKa
+# Generate (and submit) SLURM jobs for HoreKa (as KaCCv2: power-of-two multiples of a node)
 run-horeka-experiment experiment +args="": kaval
-    {{ kaval }} --machine horeka --command-template ./kaval/command-templates/horeka-IntelMPI.txt {{ experiment }} {{ args }}
+    {{ kaval }} --machine horeka --module-config katric --command-template ./kaval/command-templates/horeka-IntelMPI.txt --cores node-size-pow2 --min-cores 64 {{ experiment }} {{ args }}
 
 # Copy experiment output from a cluster into eval/data/<cluster> (job binaries excluded)
 fetch-from-supermuc:
