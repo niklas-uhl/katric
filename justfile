@@ -5,8 +5,8 @@ set dotenv-load := true
 
 export KATRIC_DIR := justfile_directory()
 
-# kaval main (merge of #32, feat/horeka2)
-kaval_rev := "9bc527c0f94a5bb3167a3b3a37735d4b1ba61e68"
+# kaval main (merge of #33, suites with unset env vars are skipped until used)
+kaval_rev := "616cb4c1a4a6f8badc1f198539747bb76685480f"
 
 kaval := "uv run kaval/run-experiments.py --search-dirs ./experiments"
 
@@ -36,7 +36,7 @@ run-horeka-experiment experiment +args="": kaval
 
 # Copy experiment output from a cluster into eval/data/<cluster> (job binaries excluded)
 fetch-from-supermuc:
-    rsync -aP --exclude 'bin/' supermuc:katric/experiment_data/ eval/data/supermuc
+    rsync -aP --exclude 'bin/' supermuc:cetric/experiment_data/ eval/data/supermuc
 
 fetch-from-horeka:
     rsync -aP --exclude 'bin/' horeka:katric/experiment_data/ eval/data/horeka
