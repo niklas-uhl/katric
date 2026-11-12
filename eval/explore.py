@@ -35,8 +35,12 @@ def _(mo):
 def _(mo, r):
     regions = sorted(r.timers.filter(iteration=0)["region"].unique())
     region = mo.ui.dropdown(regions, value="total", label="region for the scaling plot")
-    region
-    return (region,)
+    merge = mo.ui.checkbox(
+        value=True,
+        label="merge configurations across directories (ignore options that only differ between them, e.g. iterations)",
+    )
+    mo.hstack([region, merge], justify="start", gap=2)
+    return merge, region
 
 
 @app.cell(hide_code=True)
@@ -54,9 +58,9 @@ def _(browser, katric_eval, mo):
 
 
 @app.cell(hide_code=True)
-def _(katric_eval, pl, r):
-    # configuration label from the options that differ between runs: the value, or the option name for a set flag;
-    # `series` adds the machine when runs of several clusters are loaded
+def _(katric_eval, merge, pl, r):
+    # configuration label from the options that differ between runs (with `merge`: within a directory): the value, or
+    # the option name for a set flag; `series` adds the machine when runs of several clusters are loaded
     def _label(o):
         if set(r.runs[o].unique()) <= {"true", "false"}:
             return pl.when(pl.col(o) == "true").then(pl.lit(o))
@@ -64,8 +68,8 @@ def _(katric_eval, pl, r):
 
     _machines = {"hkn": "HoreKa", "ircs": "SuperMUC-NG"}
     runs = r.runs.with_columns(
-        config=pl.concat_str([_label(o) for o in katric_eval.config_options(r.runs)], separator=" ",
-                             ignore_nulls=True),
+        config=pl.concat_str([_label(o) for o in katric_eval.config_options(r.runs, within_dirs=merge.value)],
+                             separator=" ", ignore_nulls=True),
         machine=pl.col("cluster").replace(_machines),
     )
     runs = runs.with_columns(

@@ -204,12 +204,18 @@ def load(*dirs):
     return Results(_runs(tk, run_of_profile, dir_of_profile), _timers(tk, run_of_profile), _counters(files))
 
 
-def config_options(runs):
+def config_options(runs, within_dirs=False):
     """The CLI options that differ between the runs, i.e. what distinguishes the configurations (not the input or the
-    number of ranks and threads)."""
+    number of ranks and threads). With `within_dirs`, only options that differ within at least one experiment
+    directory: options that are constant per directory but differ between them (e.g. `iterations` of two suites) are
+    ignored, so the same configuration run by several suites gets the same label."""
     other = {"run", "dir", "graph", "launchdate", "caliper-output", "triangles", "ranks", "threads", "num-threads",
              "cores", "git_commit", "cluster", "kagen_option_string"}
-    return [c for c in runs.columns if c not in other and not c.startswith("kagen.") and runs[c].n_unique() > 1]
+    options = [c for c in runs.columns if c not in other and not c.startswith("kagen.")]
+    if within_dirs:
+        varying = runs.group_by("dir").agg(pl.col(options).n_unique()).select(pl.col(options).max())
+        return [c for c in options if varying[c][0] > 1]
+    return [c for c in options if runs[c].n_unique() > 1]
 
 
 def main():
