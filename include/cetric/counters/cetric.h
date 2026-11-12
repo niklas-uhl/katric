@@ -323,8 +323,7 @@ inline size_t run_cetric(
     const Config&       conf,
     PEID                rank,
     PEID                size,
-    CommunicationPolicy&&,
-    bool id_node_ordering = false
+    CommunicationPolicy&&
 ) {
     size_t   threshold = 0;
     node_set ghosts;
@@ -343,23 +342,13 @@ inline size_t run_cetric(
     }
     {
         CALI_CXX_MARK_SCOPE("preprocessing");
-        if (!id_node_ordering) {
-            preprocessing<node_ordering::degree_outward<decltype(G)>, node_ordering::degree_outward<decltype(G)>>(
-                G,
-                ghost_degrees,
-                ghosts,
-                conf,
-                false
-            );
-        } else {
-            preprocessing<node_ordering::id_outward, node_ordering::degree_outward<decltype(G)>>(
-                G,
-                ghost_degrees,
-                ghosts,
-                conf,
-                false
-            );
-        }
+        preprocessing<node_ordering::id_outward, node_ordering::degree_outward<decltype(G)>>(
+            G,
+            ghost_degrees,
+            ghosts,
+            conf,
+            false
+        );
         SPDLOG_DEBUG("Preprocessing finished");
         ConditionalBarrier(conf.global_synchronization);
     }
@@ -370,19 +359,11 @@ inline size_t run_cetric(
         CALI_CXX_MARK_SCOPE("local_phase");
         auto ctr = cetric::CetricEdgeIterator(G, conf, rank, size, CommunicationPolicy{});
         ctr.set_threshold(threshold);
-        if (!id_node_ordering) {
-            ctr.run_local(
-                make_emit(triangles, triangle_count_local_phase),
-                node_ordering::degree_outward(G),
-                node_ordering::degree_outward(G)
-            );
-        } else {
-            ctr.run_local(
-                make_emit(triangles, triangle_count_local_phase),
-                node_ordering::id_outward(rank),
-                node_ordering::degree_outward(G)
-            );
-        }
+        ctr.run_local(
+            make_emit(triangles, triangle_count_local_phase),
+            node_ordering::id_outward(rank),
+            node_ordering::degree_outward(G)
+        );
         triangle_count += triangle_count_local_phase.combine(std::plus<>{});
         SPDLOG_DEBUG("Local phase finished");
         ConditionalBarrier(conf.global_synchronization);
@@ -556,71 +537,26 @@ inline size_t run_cetric_new(DistributedGraph<>& G, const Config& conf, PEID ran
     AuxiliaryNodeData<Degree> original_degrees;
     auto                      nodes = [&] {
         CALI_CXX_MARK_SCOPE("preprocessing");
-        if (!conf.id_node_ordering) {
-            preprocessing<node_ordering::degree<decltype(G)>, node_ordering::degree<decltype(G)>>(
-                G,
-                ghost_degrees,
-                ghosts,
-                conf,
-                true
-            );
-        } else {
-            preprocessing<node_ordering::id_outward, node_ordering::degree<decltype(G)>>(
-                G,
-                ghost_degrees,
-                ghosts,
-                conf,
-                true
-            );
-        }
-        if (!conf.id_node_ordering) {
-            original_degrees = AuxiliaryNodeData<Degree>{
-                RankEncodedNodeId{G.node_range().first, static_cast<uint16_t>(rank)},
-                RankEncodedNodeId{G.node_range().second, static_cast<uint16_t>(rank)}};
-        }
+        preprocessing<node_ordering::id_outward, node_ordering::degree<decltype(G)>>(
+            G,
+            ghost_degrees,
+            ghosts,
+            conf,
+            true
+        );
         auto nodes = G.local_nodes();
-        if (!conf.id_node_ordering) {
-            if (conf.num_threads > 1) {
-                tbb::task_arena arena(conf.num_threads);
-                arena.execute([&] {
-                    tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&](auto const& r) {
-                        for (auto node: r) {
-                            original_degrees[node] = G.degree(node);
-                        }
-                    });
-                });
-            } else {
-                for (auto node: nodes) {
-                    original_degrees[node] = G.degree(node);
-                }
-            }
-        }
         {
             CALI_CXX_MARK_SCOPE("ghost_expansion");
-            if (!conf.id_node_ordering) {
-                if (conf.parallel_compact) {
-                    G.remove_in_edges_and_expand_ghosts(
-                        node_ordering::degree(G, ghost_degrees, original_degrees),
-                        execution_policy::parallel{conf.num_threads}
-                    );
-                } else {
-                    G.remove_in_edges_and_expand_ghosts(
-                        node_ordering::degree(G, ghost_degrees, original_degrees),
-                        execution_policy::sequential{}
-                    );
-                }
+            if (conf.parallel_compact) {
+                G.remove_in_edges_and_expand_ghosts(
+                    node_ordering::id_outward(rank),
+                    execution_policy::parallel{conf.num_threads}
+                );
             } else {
-                if (conf.parallel_compact) {
-                    G.remove_in_edges_and_expand_ghosts(
-                        node_ordering::id_outward(rank),
-                        execution_policy::parallel{conf.num_threads}
-                    );
-                } else {
-                    G.remove_in_edges_and_expand_ghosts(
-                        node_ordering::id_outward(rank),
-                        execution_policy::sequential{}
-                    );
-                }
+                G.remove_in_edges_and_expand_ghosts(
+                    node_ordering::id_outward(rank),
+                    execution_policy::sequential{}
+                );
             }
         }
         SPDLOG_DEBUG("Preprocessing finished");
@@ -634,19 +570,11 @@ inline size_t run_cetric_new(DistributedGraph<>& G, const Config& conf, PEID ran
         CALI_CXX_MARK_SCOPE("local_phase");
         auto ctr = cetric::CetricEdgeIterator(G, conf, rank, size, CommunicationPolicy{});
         ctr.set_threshold(threshold);
-        if (!conf.id_node_ordering) {
-            ctr.run_local(
-                make_emit(triangles, triangle_count_local_phase),
-                node_ordering::degree(G, ghost_degrees, original_degrees),
-                node_ordering::degree(G, ghost_degrees, original_degrees)
-            );
-        } else {
-            ctr.run_local(
-                make_emit(triangles, triangle_count_local_phase),
-                node_ordering::id_outward(rank),
-                node_ordering::degree(G, ghost_degrees, original_degrees)
-            );
-        }
+        ctr.run_local(
+            make_emit(triangles, triangle_count_local_phase),
+            node_ordering::id_outward(rank),
+            node_ordering::degree(G, ghost_degrees, original_degrees)
+        );
         triangle_count += triangle_count_local_phase.combine(std::plus<>{});
         SPDLOG_DEBUG("Local phase finished");
         ConditionalBarrier(conf.global_synchronization);
@@ -654,35 +582,18 @@ inline size_t run_cetric_new(DistributedGraph<>& G, const Config& conf, PEID ran
     }
     auto G_compact = [&] {
         CALI_CXX_MARK_SCOPE("contraction");
-        if (!conf.id_node_ordering) {
-            if (conf.local_parallel) {
-                tbb::task_arena arena(conf.num_threads);
-                arena.execute([&] {
-                    tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&](auto const& r) {
-                        for (auto node: r) {
-                            G.remove_internal_edges(node, node_ordering::degree(G, ghost_degrees, original_degrees));
-                        }
-                    });
+        if (conf.local_parallel) {
+            tbb::task_arena arena(conf.num_threads);
+            arena.execute([&] {
+                tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&](auto const& r) {
+                    for (auto node: r) {
+                        G.remove_internal_edges(node, node_ordering::id_outward(rank));
+                    }
                 });
-            } else {
-                for (auto node: nodes) {
-                    G.remove_internal_edges(node, node_ordering::degree(G, ghost_degrees, original_degrees));
-                }
-            }
+            });
         } else {
-            if (conf.local_parallel) {
-                tbb::task_arena arena(conf.num_threads);
-                arena.execute([&] {
-                    tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&](auto const& r) {
-                        for (auto node: r) {
-                            G.remove_internal_edges(node, node_ordering::id_outward(rank));
-                        }
-                    });
-                });
-            } else {
-                for (auto node: nodes) {
-                    G.remove_internal_edges(node, node_ordering::id_outward(rank));
-                }
+            for (auto node: nodes) {
+                G.remove_internal_edges(node, node_ordering::id_outward(rank));
             }
         }
         auto G_compact = conf.parallel_compact ? G.compact(execution_policy::parallel{conf.num_threads})
@@ -696,25 +607,6 @@ inline size_t run_cetric_new(DistributedGraph<>& G, const Config& conf, PEID ran
     {
         CALI_CXX_MARK_SCOPE("preprocessing_global");
         auto compact_nodes = G_compact.local_nodes();
-        if (!conf.id_node_ordering) {
-            if (conf.local_parallel) {
-                tbb::task_arena arena(conf.num_threads);
-                arena.execute([&] {
-                    tbb::parallel_for(
-                        tbb::blocked_range(compact_nodes.begin(), compact_nodes.end()),
-                        [&](auto const& r) {
-                            for (auto node: r) {
-                                G_compact.sort_neighborhoods(node, node_ordering::id());
-                            }
-                        }
-                    );
-                });
-            } else {
-                for (auto node: compact_nodes) {
-                    G_compact.sort_neighborhoods(node, node_ordering::id());
-                }
-            }
-        }
         SPDLOG_DEBUG("Contraction finished");
         ghosts = decltype(ghosts){};
         SPDLOG_DEBUG("Found {} triangles in local phase", triangle_count_local_phase.combine(std::plus<>{}));

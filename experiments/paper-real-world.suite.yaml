@@ -15,7 +15,6 @@ config:
     binary-rank-search: true
     threshold: local-nodes
     threshold-scale: 1.0
-    id-node-ordering: true
     local-degree-of-parallelism: 2
     global-degree-of-parallelism: 2
     dense-degree-exchange: true

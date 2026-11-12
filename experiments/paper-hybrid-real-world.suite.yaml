@@ -15,7 +15,6 @@ config:
     threshold: local-nodes
     threshold-scale: 1.0
     edge-partitioning: true
-    id-node-ordering: true
     local-parallel: true
     global-parallel: true
     local-degree-of-parallelism: 2

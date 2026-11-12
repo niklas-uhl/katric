@@ -74,7 +74,6 @@ struct Config {
     bool dense_degree_exchange   = false;
     bool global_synchronization  = false;
     bool binary_rank_search      = false;
-    bool id_node_ordering        = false;
 
     bool pseudo2core             = false;
     bool flag_intersection       = false;

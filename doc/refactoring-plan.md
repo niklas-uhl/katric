@@ -89,7 +89,7 @@ Options that are dead or only used in old exploration suites (`experiments/legac
       degree exchange anyway)
 - Keep for now: `--intersection-method binary|hybrid` (galloping for very different sizes, as at the hubs on RHG;
   measure before removing, idea 8) and `--pseudo2core` (real-world graphs have many degree-1 vertices, idea 10)
-- [ ] Remove (decided 2026-11-12): `--id-node-ordering false` (pure degree ordering): 1.6–2.5× slower on the
+- [x] Remove (decided 2026-11-12): `--id-node-ordering false` (pure degree ordering): 1.6–2.5× slower on the
       clusters, sorting up to 13×; compact-forward ordering (idea 3) gets the skip with a cheaper key
 - [ ] Keep only N, DPD, IDPD (decided 2026-11-12) of the cost functions N/D/DH/DDH/DH2/DPD/IDPD/D* and primary load balancing.
       Unused in the paper, but DPD/IDPD are the starting point of idea 1

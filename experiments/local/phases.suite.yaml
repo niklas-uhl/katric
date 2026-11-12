@@ -12,17 +12,6 @@ config:
   - algorithm: [patric, cetric-x]
     binary-rank-search: true
     threshold: local-nodes
-    id-node-ordering: true
-    dense-degree-exchange: true
-    global-synchronization: true
-    communication-policy: new
-    primary-cost-function: none
-    intersection-method: merge
-    iterations: 3
-  - algorithm: cetric-x
-    binary-rank-search: true
-    threshold: local-nodes
-    id-node-ordering: false
     dense-degree-exchange: true
     global-synchronization: true
     communication-policy: new
@@ -34,7 +23,6 @@ config:
   - algorithm: cetric
     binary-rank-search: true
     threshold: local-nodes
-    id-node-ordering: true
     dense-degree-exchange: true
     global-synchronization: true
     communication-policy: new
@@ -45,7 +33,6 @@ config:
   - algorithm: [patric, cetric-x, cetric]
     binary-rank-search: true
     threshold: local-nodes
-    id-node-ordering: true
     dense-degree-exchange: true
     global-synchronization: true
     communication-policy: grid

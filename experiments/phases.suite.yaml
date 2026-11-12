@@ -4,8 +4,8 @@
 # Phases are separated by barriers (global-synchronization), which run in nested `barrier` regions, so a phase's
 # exclusive time is the rank's own work and `barrier` is the imbalance. The global phase additionally has
 # `termination` and the counters send_ns / handle_ns; the input's shape (cut edges, interface nodes) is in `ingest`.
-# The cetric-x variant without id-node-ordering sorts all neighborhoods purely by degree (the old ordering; not
-# compact-forward ordering, which needs a cheaper key, see doc/refactoring-plan.md).
+# Up to 7cf91b7 the second configuration was cetric-x with neighborhoods sorted purely by degree
+# (`id-node-ordering: false`, removed in step 1 of doc/refactoring-plan.md); later configurations moved up by one.
 # Evaluate with `just notebook`. A laptop version is local/phases.suite.yaml.
 name: phases
 executable: apps/katric
@@ -21,17 +21,6 @@ config:
   - algorithm: [patric, cetric-x]
     binary-rank-search: true
     threshold: local-nodes
-    id-node-ordering: true
-    dense-degree-exchange: true
-    global-synchronization: true
-    communication-policy: new
-    primary-cost-function: none
-    intersection-method: merge
-    iterations: 3
-  - algorithm: cetric-x
-    binary-rank-search: true
-    threshold: local-nodes
-    id-node-ordering: false
     dense-degree-exchange: true
     global-synchronization: true
     communication-policy: new
@@ -43,7 +32,6 @@ config:
   - algorithm: cetric
     binary-rank-search: true
     threshold: local-nodes
-    id-node-ordering: true
     dense-degree-exchange: true
     global-synchronization: true
     communication-policy: new
@@ -54,7 +42,6 @@ config:
   - algorithm: [patric, cetric-x, cetric]
     binary-rank-search: true
     threshold: local-nodes
-    id-node-ordering: true
     dense-degree-exchange: true
     global-synchronization: true
     communication-policy: grid

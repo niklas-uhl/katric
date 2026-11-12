@@ -12,7 +12,6 @@ config:
   - algorithm: [patric, cetric-x]
     binary-rank-search: true
     threshold: local-nodes
-    id-node-ordering: true
     dense-degree-exchange: true
     global-synchronization: true
     communication-policy: [new, grid]
@@ -23,7 +22,6 @@ config:
     binary-rank-search: true
     threshold: local-nodes
     edge-partitioning: true
-    id-node-ordering: true
     local-parallel: true
     global-parallel: true
     dense-degree-exchange: true

@@ -4,6 +4,6 @@
 
 namespace cetric {
 std::size_t run_cetric(graph::DistributedGraph<>& G, Config const& conf, MessageQueuePolicy /*policy*/) {
-    return run_cetric(G, conf, conf.rank, conf.PEs, MessageQueuePolicy{}, conf.id_node_ordering);
+    return run_cetric(G, conf, conf.rank, conf.PEs, MessageQueuePolicy{});
 }
 } // namespace cetric

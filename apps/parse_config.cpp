@@ -94,7 +94,6 @@ cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::P
     app.add_flag("--dense-degree-exchange", conf.dense_degree_exchange);
     app.add_flag("--global-synchronization", conf.global_synchronization);
     app.add_flag("--binary-rank-search", conf.binary_rank_search);
-    app.add_flag("--id-node-ordering", conf.id_node_ordering);
 
     add_enum_option(app, "--algorithm", conf.algorithm);
 
