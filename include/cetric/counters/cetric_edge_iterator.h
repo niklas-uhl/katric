@@ -299,6 +299,20 @@ public:
         profiling::counter_add("local_triangles", local_triangles);
     }
 
+    /// End of the local prefix of a neighborhood in the ghost-expanded graph (cetric-x). A ghost's adjacency holds only
+    /// local vertices, so when one side of an intersection is a ghost, only the local part of the other side can
+    /// match. With `id_outward` the local vertices come first, so the other side is clipped there. This bounds the
+    /// merge and keeps the work counters exact. Other orderings do not sort local vertices first, so the range stays
+    /// as it is.
+    template <typename NodeOrdering, typename It>
+    [[nodiscard]] It local_prefix_end(It first, It last) const {
+        if constexpr (std::is_same_v<std::remove_cvref_t<NodeOrdering>, node_ordering::id_outward>) {
+            return std::partition_point(first, last, [this](RankEncodedNodeId w) { return w.rank() == rank_; });
+        } else {
+            return last;
+        }
+    }
+
     template <typename EdgeOrientationOrdering, typename TriangleFunc, typename NodeOrdering>
     inline void run_local_sequential_with_ghosts(
         TriangleFunc                    emit,
@@ -336,12 +350,16 @@ public:
                 if constexpr (std::is_same_v<NodeOrdering, EdgeOrientationOrdering>) {
                     offset = neighbor_index;
                 }
+                auto v_first = v_neighbors.begin() + offset;
+                auto v_last  = v_neighbors.end();
+                if (u.rank() != rank_) {
+                    v_last = local_prefix_end<NodeOrdering>(v_first, v_last);
+                }
                 wedge_checks += u_neighbors.end() - u_neighbors.begin();
-                intersection_size_local +=
-                    v_neighbors.end() - v_neighbors.begin() + u_neighbors.end() - u_neighbors.begin();
+                intersection_size_local += (v_last - v_first) + (u_neighbors.end() - u_neighbors.begin());
                 cetric::intersection(
-                    v_neighbors.begin() + offset,
-                    v_neighbors.end(),
+                    v_first,
+                    v_last,
                     u_neighbors.begin(),
                     u_neighbors.end(),
                     [&](RankEncodedNodeId w) {
@@ -365,19 +383,20 @@ public:
                 auto v_neighbors = G.ghost_adj(v).neighbors();
                 auto u_neighbors = G.out_adj(u).neighbors();
                 // for each edge (v, u) we check the open wedge (v, u, w) for
-                // w in N(u)+
-                wedge_checks += u_neighbors.end() - u_neighbors.begin();
+                // w in N(u)+; v is a ghost, so only the local part of N(u)+ can match
+                auto u_first = u_neighbors.begin();
+                auto u_last  = local_prefix_end<NodeOrdering>(u_first, u_neighbors.end());
+                wedge_checks += u_last - u_first;
                 size_t offset = 0;
                 if constexpr (std::is_same_v<NodeOrdering, EdgeOrientationOrdering>) {
                     offset = neighbor_index;
                 }
-                intersection_size_local +=
-                    v_neighbors.end() - v_neighbors.begin() + u_neighbors.end() - u_neighbors.begin();
+                intersection_size_local += (v_neighbors.end() - (v_neighbors.begin() + offset)) + (u_last - u_first);
                 cetric::intersection(
                     v_neighbors.begin() + offset,
                     v_neighbors.end(),
-                    u_neighbors.begin(),
-                    u_neighbors.end(),
+                    u_first,
+                    u_last,
                     [&](RankEncodedNodeId w) {
                         local_triangles++;
                         emit(Triangle<RankEncodedNodeId>{v, u, w});
@@ -487,15 +506,23 @@ public:
                 // auto offset      = edge_id - tail_first_edge;
                 SPDLOG_DEBUG("[t{}] intersecting {} {}", tbb::this_task_arena::current_thread_index(), v, u);
                 // for each edge (v, u) we check the open wedge (v, u, w)
-                // for w in N(u)+
-                wedge_checks += u_neighbors.end() - u_neighbors.begin();
-                intersection_size_local +=
-                    v_neighbors.end() - v_neighbors.begin() + u_neighbors.end() - u_neighbors.begin();
+                // for w in N(u)+; if either endpoint is a ghost, only local vertices can close it
+                auto v_first = v_neighbors.begin() + offset;
+                auto v_last  = v_neighbors.end();
+                auto u_first = u_neighbors.begin();
+                auto u_last  = u_neighbors.end();
+                if (u.rank() != rank_) {
+                    v_last = local_prefix_end<NodeOrdering>(v_first, v_last);
+                } else if (v.rank() != rank_) {
+                    u_last = local_prefix_end<NodeOrdering>(u_first, u_last);
+                }
+                wedge_checks += u_last - u_first;
+                intersection_size_local += (v_last - v_first) + (u_last - u_first);
                 cetric::intersection(
-                    v_neighbors.begin() + offset,
-                    v_neighbors.end(),
-                    u_neighbors.begin(),
-                    u_neighbors.end(),
+                    v_first,
+                    v_last,
+                    u_first,
+                    u_last,
                     [&](RankEncodedNodeId w) {
                         local_triangles++;
                         emit(Triangle<RankEncodedNodeId>{v, u, w});
@@ -1125,17 +1152,24 @@ public:
                     offset = neighbor_index;
                 }
                 // for each edge (v, u) we check the open wedge (v, u, w)
-                // for w in N(u)+
-                wedge_checks += u_neighbors.end() - u_neighbors.begin();
-                intersection_size_local +=
-                    v_neighbors.end() - v_neighbors.begin() + u_neighbors.end() - u_neighbors.begin();
+                // for w in N(u)+; if either endpoint is a ghost, only local vertices can close it
+                auto v_first = v_neighbors.begin() + offset;
+                auto v_last  = v_neighbors.end();
+                auto u_first = u_neighbors.begin();
+                auto u_last  = u_neighbors.end();
+                if (u.rank() != rank_) {
+                    v_last = local_prefix_end<NodeOrdering>(v_first, v_last);
+                } else if (v.rank() != rank_) {
+                    u_last = local_prefix_end<NodeOrdering>(u_first, u_last);
+                }
+                wedge_checks += u_last - u_first;
+                intersection_size_local += (v_last - v_first) + (u_last - u_first);
                 cetric::intersection(
-                    v_neighbors.begin() + offset,
-                    v_neighbors.end(),
-                    u_neighbors.begin(),
-                    u_neighbors.end(),
+                    v_first,
+                    v_last,
+                    u_first,
+                    u_last,
                     [&](RankEncodedNodeId w) {
-                        // local_triangles++;
                         local_triangles++;
                         emit(Triangle<RankEncodedNodeId>{v, u, w});
                     },

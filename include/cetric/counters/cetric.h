@@ -593,26 +593,32 @@ inline size_t run_cetric_new(DistributedGraph<>& G, const Config& conf, PEID ran
                 }
             }
         }
-        if (!conf.id_node_ordering) {
-            if (conf.parallel_compact) {
-                G.remove_in_edges_and_expand_ghosts(
-                    node_ordering::degree(G, ghost_degrees, original_degrees),
-                    execution_policy::parallel{conf.num_threads}
-                );
+        {
+            CALI_CXX_MARK_SCOPE("ghost_expansion");
+            if (!conf.id_node_ordering) {
+                if (conf.parallel_compact) {
+                    G.remove_in_edges_and_expand_ghosts(
+                        node_ordering::degree(G, ghost_degrees, original_degrees),
+                        execution_policy::parallel{conf.num_threads}
+                    );
+                } else {
+                    G.remove_in_edges_and_expand_ghosts(
+                        node_ordering::degree(G, ghost_degrees, original_degrees),
+                        execution_policy::sequential{}
+                    );
+                }
             } else {
-                G.remove_in_edges_and_expand_ghosts(
-                    node_ordering::degree(G, ghost_degrees, original_degrees),
-                    execution_policy::sequential{}
-                );
-            }
-        } else {
-            if (conf.parallel_compact) {
-                G.remove_in_edges_and_expand_ghosts(
-                    node_ordering::id_outward(rank),
-                    execution_policy::parallel{conf.num_threads}
-                );
-            } else {
-                G.remove_in_edges_and_expand_ghosts(node_ordering::id_outward(rank), execution_policy::sequential{});
+                if (conf.parallel_compact) {
+                    G.remove_in_edges_and_expand_ghosts(
+                        node_ordering::id_outward(rank),
+                        execution_policy::parallel{conf.num_threads}
+                    );
+                } else {
+                    G.remove_in_edges_and_expand_ghosts(
+                        node_ordering::id_outward(rank),
+                        execution_policy::sequential{}
+                    );
+                }
             }
         }
         SPDLOG_DEBUG("Preprocessing finished");
