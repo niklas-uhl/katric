@@ -17,6 +17,7 @@
 // IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+#include <map>
 #include <cstddef>
 #include <unordered_map>
 
@@ -70,12 +71,23 @@ TEST_P(Orientation, GlobalDegree) {
     G.find_ghost_ranks<true>();
     std::unordered_set<cetric::graph::RankEncodedNodeId> ghosts;
     find_ghosts(G, ghosts);
-    auto                       ghost_degree = cetric::AuxiliaryNodeData<cetric::Degree>{ghosts.begin(), ghosts.end()};
     cetric::DegreeCommunicator comm(G, cetric::as_int(cetric::MessageTag::Orientation));
-    comm.get_ghost_degree(
-        [&](cetric::RankEncodedNodeId node, cetric::Degree degree) { ghost_degree[node] = degree; },
-        true
-    );
+    // every transport of the degree exchange delivers the same ghost degrees
+    std::map<cetric::GhostExchangeMode, std::map<cetric::NodeId, cetric::Degree>> received;
+    auto ghost_degree = cetric::AuxiliaryNodeData<cetric::Degree>{ghosts.begin(), ghosts.end()};
+    for (auto mode: {cetric::GhostExchangeMode::sparse, cetric::GhostExchangeMode::dense, cetric::GhostExchangeMode::grid}) {
+        comm.get_ghost_degree(
+            [&](cetric::RankEncodedNodeId node, cetric::Degree degree) {
+                EXPECT_TRUE(ghosts.contains(node));
+                EXPECT_TRUE(received[mode].emplace(node.id(), degree).second) << "ghost received twice";
+                ghost_degree[node] = degree;
+            },
+            mode
+        );
+        EXPECT_EQ(received[mode].size(), ghosts.size());
+    }
+    EXPECT_EQ(received[cetric::GhostExchangeMode::dense], received[cetric::GhostExchangeMode::sparse]);
+    EXPECT_EQ(received[cetric::GhostExchangeMode::grid], received[cetric::GhostExchangeMode::sparse]);
     cetric::node_ordering::degree ord(G, ghost_degree);
     for (auto node: G.local_nodes()) {
         G.orient(node, ord);

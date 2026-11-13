@@ -113,7 +113,7 @@ inline void preprocessing(
         DegreeCommunicator comm(G, as_int(MessageTag::Orientation));
         comm.get_ghost_degree(
             [&](RankEncodedNodeId node, Degree degree) { ghost_degree[node] = degree; },
-            !conf.dense_degree_exchange
+            conf.degree_exchange
         );
     }
     bool const parallel = conf.num_threads > 1;

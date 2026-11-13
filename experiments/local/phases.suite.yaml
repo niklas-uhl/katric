@@ -12,7 +12,7 @@ config:
   - algorithm: [patric, cetric-x]
     binary-rank-search: true
     threshold: local-nodes
-    dense-degree-exchange: true
+    degree-exchange: dense
     global-synchronization: true
     communication-policy: new
     primary-cost-function: none
@@ -23,7 +23,7 @@ config:
   - algorithm: cetric
     binary-rank-search: true
     threshold: local-nodes
-    dense-degree-exchange: true
+    degree-exchange: dense
     global-synchronization: true
     communication-policy: new
     primary-cost-function: none
@@ -33,7 +33,7 @@ config:
   - algorithm: [patric, cetric-x, cetric]
     binary-rank-search: true
     threshold: local-nodes
-    dense-degree-exchange: true
+    degree-exchange: dense
     global-synchronization: true
     communication-policy: grid
     primary-cost-function: none

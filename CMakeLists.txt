@@ -49,6 +49,8 @@ target_link_libraries(
             spdlog::spdlog
             kassert::kassert
             kamping::types
+            kamping::v2
+            dstl::dstl
             KaGen::KaGen
             message-queue
             caliper

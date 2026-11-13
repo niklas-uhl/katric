@@ -47,6 +47,12 @@ enum class Algorithm { patric, cetric, cetric_x };
 enum class Threshold { local_nodes, local_edges, none };
 enum class IntersectionMethod { merge, binary_search, binary, hybrid };
 enum class TaskPoolType { std_thread, task_group };
+/// How push_to_ghosts() (cetric/ghost_exchange.h) moves its messages, `--degree-exchange`.
+enum class GhostExchangeMode {
+    sparse, ///< dSTL's sparse all-to-all (NBX): point-to-point messages to the ranks with data only
+    dense,  ///< one MPI_Alltoallv (after an MPI_Alltoall of the counts)
+    grid,   ///< dSTL's two-dimensional grid all-to-all: O(sqrt p) messages per rank instead of O(p)
+};
 
 struct Config {
     Config() = default;
@@ -71,7 +77,7 @@ struct Config {
     size_t                binary_intersection_cutoff        = 1000;
     double                hybrid_cutoff_scale               = 1.0;
 
-    bool dense_degree_exchange   = false;
+    GhostExchangeMode degree_exchange = GhostExchangeMode::sparse;
     bool global_synchronization  = false;
     bool binary_rank_search      = false;
 

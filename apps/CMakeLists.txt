@@ -4,8 +4,13 @@
 string(TOUPPER "${CMAKE_BUILD_TYPE}" _build_type)
 string(STRIP "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_${_build_type}}" CETRIC_BUILD_CXX_FLAGS)
 configure_file(build_info.cpp.in ${CMAKE_CURRENT_BINARY_DIR}/build_info.cpp.gen @ONLY)
-file(GENERATE OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/build_info.cpp INPUT ${CMAKE_CURRENT_BINARY_DIR}/build_info.cpp.gen
-     TARGET katric)
+# Evaluated once per enabled language; flags differ per language (e.g. MPI::MPI_CXX via kamping-v2), so only C++ writes.
+file(
+  GENERATE
+  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/build_info.cpp
+  INPUT ${CMAKE_CURRENT_BINARY_DIR}/build_info.cpp.gen
+  CONDITION $<COMPILE_LANGUAGE:CXX>
+  TARGET katric)
 
 add_executable(katric katric.cpp parse_config.cpp algorithm.cpp verify.cpp git_hash.cpp
                       ${CMAKE_CURRENT_BINARY_DIR}/build_info.cpp)

@@ -91,7 +91,7 @@ cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::P
 
     app.add_flag("--pseudo2core", conf.pseudo2core);
 
-    app.add_flag("--dense-degree-exchange", conf.dense_degree_exchange);
+    add_enum_option(app, "--degree-exchange", conf.degree_exchange);
     app.add_flag("--global-synchronization", conf.global_synchronization);
     app.add_flag("--binary-rank-search", conf.binary_rank_search);
 

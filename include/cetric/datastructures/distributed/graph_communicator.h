@@ -29,6 +29,7 @@
 #include <cstddef>
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/flat_hash_set.h>
+#include <array>
 #include <optional>
 #include <tuple>
 #include <vector>
@@ -41,6 +42,7 @@
 #include "cetric/communicator.h"
 #include "cetric/datastructures/distributed/distributed_graph.h"
 #include "cetric/datastructures/graph_definitions.h"
+#include "cetric/ghost_exchange.h"
 #include "cetric/message_statistics.h"
 #include "cetric/util.h"
 
@@ -53,97 +55,51 @@ inline kamping::types::ScopedDatatype node_info_type() {
     return kamping::types::ScopedDatatype{kamping::types::mpi_type_traits<std::array<NodeId, 2>>::data_type()};
 }
 
+/// The degree (or other per-vertex data) of every ghost, from its owner.
 template <class Graph>
 class DegreeCommunicator {
 public:
-    DegreeCommunicator(const Graph& G, int message_tag)
-        : G(G),
-          comm_(G.comm()),
-          rank_(G.rank()),
-          size_(G.size()),
-          send_buffers(size_),
-          receive_buffers(size_),
-          neighboring_PEs(size_),
-          message_tag_(message_tag) {
-    }
+    DegreeCommunicator(const Graph& G, int message_tag) : G(G), message_tag_(message_tag) {}
 
     template <typename DegreeFunc>
-    void get_ghost_degree(
-        DegreeFunc&& on_degree_receive, bool sparse
-    ) {
+    void get_ghost_degree(DegreeFunc&& on_degree_receive, GhostExchangeMode mode) {
         get_ghost_data(
             [this](auto node) { return RankEncodedNodeId{G.degree(node)}; },
             [&on_degree_receive](auto node, auto data) { on_degree_receive(node, data.id()); },
-            sparse
+            mode
         );
     }
 
+    /// Sends `get_data(v)` (a RankEncodedNodeId) of every local vertex with a remote neighbor to that neighbor's rank,
+    /// and calls `on_receive(ghost, data)` for every ghost of this rank. Message counters as RankEncodedNodeIds sent
+    /// (two per ghost: vertex and data).
     template <typename DataFunc, typename ReceiveFunc>
-    void get_ghost_data(
-        DataFunc&&                            get_data,
-        ReceiveFunc&&                         on_receive,
-        bool                                  sparse
-    ) {
-        send_buffers.clear();
-        receive_buffers.clear();
-        for (auto node: G.local_nodes()) {
-            neighboring_PEs.clear();
-            if (G.template is_interface_node<AdjacencyType::full>(node)) {
-                auto data = get_data(node);
-                for (auto neighbor: G.adj(node).neighbors()) {
-                    if (neighbor.rank() != rank_) {
-                        PEID rank = neighbor.rank();
-                        KASSERT(rank < size_);
-                        if (neighboring_PEs.find(rank) == neighboring_PEs.end()) {
-                            SPDLOG_DEBUG("Sending degree of {} to rank {}", node, rank);
-                            send_buffers[rank].emplace_back(node);
-                            send_buffers[rank].emplace_back(data);
-                            neighboring_PEs.insert(rank);
-                        }
-                    }
-                }
-            }
-        }
-        if (sparse) {
-            CommunicationUtility::sparse_all_to_all(
-                send_buffers,
-                receive_buffers,
-                kamping::types::mpi_type_traits<RankEncodedNodeId>::data_type(),
-                comm_,
-                rank_,
-                size_,
-                message_tag_
-            );
-        } else {
-            CommunicationUtility::all_to_all(
-                send_buffers,
-                receive_buffers,
-                kamping::types::mpi_type_traits<RankEncodedNodeId>::data_type(),
-                comm_,
-                rank_,
-                size_,
-                message_tag_
-            );
-        }
-        for (const auto& elem: receive_buffers) {
-            const std::vector<RankEncodedNodeId>& buffer = elem.second;
-            assert(buffer.size() % 2 == 0);
-            for (size_t i = 0; i < buffer.size(); i += 2) {
-                RankEncodedNodeId node = buffer[i];
-                on_receive(node, buffer[i + 1]);
-            }
+    void get_ghost_data(DataFunc&& get_data, ReceiveFunc&& on_receive, GhostExchangeMode mode) {
+        struct Entry {
+            // initializers: the default constructor is explicit, but the grid exchange needs Entry{}
+            RankEncodedNodeId node = RankEncodedNodeId{};
+            RankEncodedNodeId data = RankEncodedNodeId{};
+        };
+        static_assert(sizeof(Entry) == 2 * sizeof(NodeId));
+        kamping::types::ScopedDatatype const entry_type{
+            kamping::types::mpi_type_traits<std::array<NodeId, 2>>::data_type()};
+        auto const received = push_to_ghosts(
+            G,
+            G.local_nodes(),
+            [&](RankEncodedNodeId node) { return Entry{node, RankEncodedNodeId{get_data(node)}}; },
+            mode,
+            entry_type.data_type(),
+            message_tag_,
+            2
+        );
+        for (auto const& [node, data]: received) {
+            on_receive(node, data);
         }
     }
 
 private:
-    const Graph&                                                 G;
-    MPI_Comm                                                     comm_;
-    PEID                                                         rank_;
-    PEID                                                         size_;
-    absl::flat_hash_map<PEID, std::vector<RankEncodedNodeId>> send_buffers;
-    absl::flat_hash_map<PEID, std::vector<RankEncodedNodeId>> receive_buffers;
-    absl::flat_hash_set<PEID>                                 neighboring_PEs;
-    int                                                          message_tag_;
+    const Graph& G;
+    int          message_tag_;
 };
 
 class GraphCommunicator {

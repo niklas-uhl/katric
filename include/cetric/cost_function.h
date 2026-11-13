@@ -58,7 +58,7 @@ template <typename Graph>
 class CostFunction {
 public:
     static inline void
-    init_nop(Graph&, node_set&, AuxiliaryNodeData<Degree>&, AuxiliaryNodeData<Degree>&, bool) {
+    init_nop(Graph&, node_set&, AuxiliaryNodeData<Degree>&, AuxiliaryNodeData<Degree>&, GhostExchangeMode) {
     }
 
     static inline void init_local_outdegree(
@@ -66,9 +66,9 @@ public:
         node_set&                             ghosts,
         AuxiliaryNodeData<Degree>&            degree,
         AuxiliaryNodeData<Degree>&            out_degree,
-        bool                                  dense_degree_exchange
+        GhostExchangeMode                     exchange_mode
     ) {
-        init_degree(G, ghosts, degree, out_degree, dense_degree_exchange);
+        init_degree(G, ghosts, degree, out_degree, exchange_mode);
         if (out_degree.size() == 0) {
             out_degree = AuxiliaryNodeData<Degree>(
                 RankEncodedNodeId{G.node_range().first, static_cast<uint16_t>(G.rank())},
@@ -95,7 +95,7 @@ public:
         node_set&                  ghosts,
         AuxiliaryNodeData<Degree>& degree,
         AuxiliaryNodeData<Degree>&,
-        bool                                  dense_degree_exchange
+        GhostExchangeMode                     exchange_mode
     ) {
         DegreeCommunicator comm(G, as_int(MessageTag::CostFunction));
         if (ghosts.size() == 0) {
@@ -108,7 +108,7 @@ public:
                     KASSERT(ghosts.find(node) != ghosts.end());
                     degree[node] = deg;
                 },
-                !dense_degree_exchange
+                exchange_mode
             );
         }
     }
@@ -118,10 +118,10 @@ public:
         node_set&                             ghosts,
         AuxiliaryNodeData<Degree>&            degree,
         AuxiliaryNodeData<Degree>&            out_degree,
-        bool                                  dense_degree_exchange
+        GhostExchangeMode                     exchange_mode
     ) {
-        init_degree(G, ghosts, degree, out_degree, dense_degree_exchange);
-        init_local_outdegree(G, ghosts, degree, out_degree, dense_degree_exchange);
+        init_degree(G, ghosts, degree, out_degree, exchange_mode);
+        init_local_outdegree(G, ghosts, degree, out_degree, exchange_mode);
         if (ghosts.size() == 0) {
             find_ghosts(G, ghosts);
         }
@@ -134,7 +134,7 @@ public:
                     KASSERT(ghosts.find(node) != ghosts.end());
                     out_degree[node] = data.id();
                 },
-                !dense_degree_exchange
+                exchange_mode
             );
         }
     }
@@ -230,7 +230,7 @@ struct CostFunctionRegistry {
             std::string,
             std::pair<
                 std::function<
-                    void(GraphType, node_set&, AuxiliaryNodeData<Degree>&, AuxiliaryNodeData<Degree>&, bool)>,
+                    void(GraphType, node_set&, AuxiliaryNodeData<Degree>&, AuxiliaryNodeData<Degree>&, GhostExchangeMode)>,
                 std::function<size_t(RefType, GraphType, RankEncodedNodeId)>>>
             cost_functions = {
                 {"N",
@@ -268,7 +268,7 @@ struct CostFunctionRegistry {
         node_set                  ghosts;
         {
             CALI_CXX_MARK_SCOPE("cost_function_communication");
-            init(G, ghosts, degree, outdegree, conf.dense_degree_exchange);
+            init(G, ghosts, degree, outdegree, conf.degree_exchange);
         }
         return CostFunction<Graph>(G, name, degree, outdegree, cost, policy);
     }
