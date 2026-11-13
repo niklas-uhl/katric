@@ -143,6 +143,30 @@ size_t get_threshold(const GraphType& G, Config const& conf) {
     }
     return 0;
 }
+/// Work counters of the local phase, one instance per thread in the parallel variants.
+struct LocalPhaseCounters {
+    size_t skipped_nodes           = 0;
+    size_t wedge_checks            = 0;
+    size_t intersection_size_local = 0;
+    size_t local_triangles         = 0;
+
+    friend LocalPhaseCounters operator+(LocalPhaseCounters lhs, LocalPhaseCounters const& rhs) {
+        lhs.skipped_nodes += rhs.skipped_nodes;
+        lhs.wedge_checks += rhs.wedge_checks;
+        lhs.intersection_size_local += rhs.intersection_size_local;
+        lhs.local_triangles += rhs.local_triangles;
+        return lhs;
+    }
+
+    /// Adds the counts to the open Caliper region.
+    void report() const {
+        profiling::counter_add("skipped_nodes", skipped_nodes);
+        profiling::counter_add("wedge_checks", wedge_checks);
+        profiling::counter_add("intersection_size_local", intersection_size_local);
+        profiling::counter_add("local_triangles", local_triangles);
+    }
+};
+
 template <class GraphType, class CommunicationPolicy>
 class CetricEdgeIterator {
 public:
@@ -165,130 +189,79 @@ public:
         threshold_ = threshold;
     }
 
-    template <typename TriangleFunc, typename NodeOrdering, typename EdgeOrientationOrdering>
-    inline void
-    run_local(TriangleFunc emit, NodeOrdering&& node_ordering, EdgeOrientationOrdering&&) {
+    template <typename TriangleFunc, typename NodeOrdering>
+    inline void run_local(TriangleFunc emit, NodeOrdering&& node_ordering) {
+        bool const with_ghosts = conf_.algorithm == Algorithm::cetric_x;
         if (conf_.local_parallel && conf_.num_threads > 1) {
-            if (conf_.algorithm == Algorithm::cetric_x) {
+            // hybrid path, frozen during the refactoring (doc/refactoring-plan.md)
+            if (with_ghosts) {
                 if (conf_.edge_partitioning) {
-                    run_local_parallel_edge_partitioned_with_ghosts<EdgeOrientationOrdering>(
-                        emit,
-                        interface_nodes_,
-                        std::forward<NodeOrdering>(node_ordering)
-                    );
+                    run_local_parallel_edge_partitioned_with_ghosts(emit, interface_nodes_, node_ordering);
                 } else {
-                    run_local_parallel_with_ghosts<EdgeOrientationOrdering>(
-                        emit,
-                        interface_nodes_,
-                        std::forward<NodeOrdering>(node_ordering)
-                    );
+                    run_local_parallel_with_ghosts(emit, interface_nodes_, node_ordering);
                 }
-                return;
-            }
-            if (conf_.edge_partitioning) {
-                run_local_parallel_edge_partitioned<EdgeOrientationOrdering>(
-                    emit,
-                    interface_nodes_,
-                    std::forward<NodeOrdering>(node_ordering)
-                );
-                return;
-            }
-            run_local_parallel<EdgeOrientationOrdering>(
-                emit,
-                interface_nodes_,
-                std::forward<NodeOrdering>(node_ordering)
-            );
-        } else {
-            if (conf_.algorithm == Algorithm::cetric_x) {
-                run_local_sequential_with_ghosts<EdgeOrientationOrdering>(
-                    emit,
-                    interface_nodes_.local(),
-                    std::forward<NodeOrdering>(node_ordering)
-                );
+            } else if (conf_.edge_partitioning) {
+                run_local_parallel_edge_partitioned(emit, interface_nodes_, node_ordering);
             } else {
-                run_local_sequential<EdgeOrientationOrdering>(
-                    emit,
-                    interface_nodes_.local(),
-                    std::forward<NodeOrdering>(node_ordering)
-                );
+                run_local_parallel(emit, interface_nodes_, node_ordering);
             }
+            return;
+        }
+        if (with_ghosts) {
+            run_local_sequential<true>(emit, interface_nodes_.local(), node_ordering);
+        } else {
+            run_local_sequential<false>(emit, interface_nodes_.local(), node_ordering);
         }
     }
 
-    template <typename EdgeOrientationOrdering, typename TriangleFunc, typename NodeOrdering>
+    /// The local phase on one thread: the intersection for every edge v -> u with both ends local and, `with_ghosts`
+    /// (cetric-x), also for the edges with a ghost end, through the ghosts' adjacencies. Collects the interface
+    /// vertices (local vertices with a cut out-edge) for the global phase.
+    template <bool with_ghosts, typename TriangleFunc, typename NodeOrdering>
     inline void run_local_sequential(
-        TriangleFunc                    emit,
-        std::vector<RankEncodedNodeId>& interface_nodes,
-        NodeOrdering&&                  node_ordering
+        TriangleFunc emit, std::vector<RankEncodedNodeId>& interface_nodes, NodeOrdering const& node_ordering
     ) {
         interface_nodes.clear();
-        size_t skipped_nodes           = 0;
-        size_t wedge_checks            = 0;
-        size_t intersection_size_local = 0;
-        size_t local_triangles         = 0;
-        for (auto v: G.local_nodes()) {
-            if (conf_.pseudo2core && G.outdegree(v) < 2) {
-                skipped_nodes++;
-                continue;
+        LocalPhaseCounters counters;
+        auto               for_each_out_edge = [&](RankEncodedNodeId v, Degree degree) {
+            if (conf_.pseudo2core && degree < 2) {
+                counters.skipped_nodes++;
+                return;
             }
-            bool   interface_node_pushed = false;
-            size_t neighbor_index        = 0;
-            for (RankEncodedNodeId u: G.out_adj(v).neighbors()) {
-                KASSERT(*(G.out_adj(v).neighbors().begin() + neighbor_index) == u);
+            bool is_interface = false;
+            for (RankEncodedNodeId u: neighbors_with_ghosts(v)) {
                 if (u.rank() != rank_) {
-                    if (!interface_node_pushed) {
+                    if (v.rank() == rank_ && !is_interface) {
                         interface_nodes.emplace_back(v);
-                        interface_node_pushed = true;
+                        is_interface = true;
                     }
-                    if constexpr (!std::is_same_v<NodeOrdering, node_ordering::id_outward> && !std::is_same_v<NodeOrdering, node_ordering::degree_outward<GraphType>>) {
-                        neighbor_index++;
-                        continue;
+                    if constexpr (!with_ghosts) {
+                        // without ghost adjacencies only local heads are intersected; with the local vertices
+                        // first, the first cut edge ends them
+                        if constexpr (local_first<NodeOrdering>) {
+                            break;
+                        } else {
+                            continue;
+                        }
                     }
-                    SPDLOG_DEBUG(
-                        "Remaining neighbors {}",
-                        std::ranges::subrange(
-                            G.out_adj(v).neighbors().begin() + neighbor_index,
-                            G.out_adj(v).neighbors().end()
-                        )
-                    );
-                    // TODO: we should be able to break here when the edges are properly sorted
-                    KASSERT(std::all_of(
-                        G.out_adj(v).neighbors().begin() + neighbor_index,
-                        G.out_adj(v).neighbors().end(),
-                        [rank = this->rank_](RankEncodedNodeId node) { return node.rank() != rank; }
-                    ));
-                    break;
                 }
-                auto   v_neighbors = G.out_adj(v).neighbors();
-                auto   u_neighbors = G.out_adj(u).neighbors();
-                size_t offset      = 0;
-                if constexpr (std::is_same_v<NodeOrdering, EdgeOrientationOrdering>) {
-                    offset = neighbor_index;
-                }
-                // for each edge (v, u) we check the open wedge (v, u, w) for w in N(u)+
-                wedge_checks += u_neighbors.end() - u_neighbors.begin();
-                intersection_size_local +=
-                    v_neighbors.end() - v_neighbors.begin() + u_neighbors.end() - u_neighbors.begin();
-                cetric::intersection(
-                    v_neighbors.begin() + offset,
-                    v_neighbors.end(),
-                    u_neighbors.begin(),
-                    u_neighbors.end(),
-                    [&](RankEncodedNodeId w) {
-                        local_triangles++;
-                        emit(Triangle<RankEncodedNodeId>{v, u, w});
-                    },
-                    node_ordering,
-                    conf_
-                );
-                neighbor_index++;
+                intersect_local_edge(v, u, counters, emit, node_ordering);
+            }
+        };
+        for (auto v: G.local_nodes()) {
+            for_each_out_edge(v, G.outdegree(v));
+        }
+        if constexpr (with_ghosts) {
+            for (auto v: G.ghosts()) {
+                for_each_out_edge(v, G.ghost_degree(v));
             }
         }
-        profiling::counter_add("skipped_nodes", skipped_nodes);
-        profiling::counter_add("wedge_checks", wedge_checks);
-        profiling::counter_add("intersection_size_local", intersection_size_local);
-        profiling::counter_add("local_triangles", local_triangles);
+        counters.report();
     }
+
+    /// Whether neighborhoods sorted by `NodeOrdering` have the local vertices first.
+    template <typename NodeOrdering>
+    static constexpr bool local_first = std::is_same_v<std::remove_cvref_t<NodeOrdering>, node_ordering::id_outward>;
 
     /// End of the local prefix of a neighborhood in the ghost-expanded graph (cetric-x). A ghost's adjacency holds only
     /// local vertices, so when one side of an intersection is a ghost, only the local part of the other side can
@@ -297,116 +270,71 @@ public:
     /// as it is.
     template <typename NodeOrdering, typename It>
     [[nodiscard]] It local_prefix_end(It first, It last) const {
-        if constexpr (std::is_same_v<std::remove_cvref_t<NodeOrdering>, node_ordering::id_outward>) {
+        if constexpr (local_first<NodeOrdering>) {
             return std::partition_point(first, last, [this](RankEncodedNodeId w) { return w.rank() == rank_; });
         } else {
             return last;
         }
     }
 
-    template <typename EdgeOrientationOrdering, typename TriangleFunc, typename NodeOrdering>
-    inline void run_local_sequential_with_ghosts(
-        TriangleFunc                    emit,
-        std::vector<RankEncodedNodeId>& interface_nodes,
-        NodeOrdering&&                  node_ordering
-    ) {
-        interface_nodes.clear();
-        size_t skipped_nodes           = 0;
-        size_t wedge_checks            = 0;
-        size_t intersection_size_local = 0;
-        size_t local_triangles         = 0;
-        for (auto v: G.local_nodes()) {
-            if (conf_.pseudo2core && G.outdegree(v) < 2) {
-                skipped_nodes++;
-                continue;
-            }
-            bool   interface_node_pushed = false;
-            size_t neighbor_index        = 0;
-            for (RankEncodedNodeId u: G.out_adj(v).neighbors()) {
-                KASSERT(*(G.out_adj(v).neighbors().begin() + neighbor_index) == u);
-                auto v_neighbors = G.out_adj(v).neighbors();
-                EdgeRange<RankEncodedNodeId, RangeModifiability::non_modifiable>::neighbor_range_type u_neighbors;
-                if (u.rank() != rank_) {
-                    if (!interface_node_pushed) {
-                        interface_nodes.emplace_back(v);
-                        interface_node_pushed = true;
-                    }
-                    u_neighbors = G.ghost_adj(u).neighbors();
-                } else {
-                    u_neighbors = G.out_adj(u).neighbors();
-                }
-                // for each edge (v, u) we check the open wedge (v, u, w) for
-                // w in N(u)+
-                size_t offset = 0;
-                if constexpr (std::is_same_v<NodeOrdering, EdgeOrientationOrdering>) {
-                    offset = neighbor_index;
-                }
-                auto v_first = v_neighbors.begin() + offset;
-                auto v_last  = v_neighbors.end();
-                if (u.rank() != rank_) {
-                    v_last = local_prefix_end<NodeOrdering>(v_first, v_last);
-                }
-                wedge_checks += u_neighbors.end() - u_neighbors.begin();
-                intersection_size_local += (v_last - v_first) + (u_neighbors.end() - u_neighbors.begin());
-                cetric::intersection(
-                    v_first,
-                    v_last,
-                    u_neighbors.begin(),
-                    u_neighbors.end(),
-                    [&](RankEncodedNodeId w) {
-                        local_triangles++;
-                        emit(Triangle<RankEncodedNodeId>{v, u, w});
-                    },
-                    node_ordering,
-                    conf_
-                );
-                neighbor_index++;
-            }
-        }
-        for (auto v: G.ghosts()) {
-            if (conf_.pseudo2core && G.ghost_degree(v) < 2) {
-                skipped_nodes++;
-                continue;
-            }
-            size_t neighbor_index = 0;
-            for (RankEncodedNodeId u: G.ghost_adj(v).neighbors()) {
-                KASSERT(*(G.ghost_adj(v).neighbors().begin() + neighbor_index) == u);
-                auto v_neighbors = G.ghost_adj(v).neighbors();
-                auto u_neighbors = G.out_adj(u).neighbors();
-                auto u_first = u_neighbors.begin();
-                auto u_last  = local_prefix_end<NodeOrdering>(u_first, u_neighbors.end());
-                wedge_checks += u_last - u_first;
-                size_t offset = 0;
-                if constexpr (std::is_same_v<NodeOrdering, EdgeOrientationOrdering>) {
-                    offset = neighbor_index;
-                }
-                intersection_size_local += (v_neighbors.end() - (v_neighbors.begin() + offset)) + (u_last - u_first);
-                cetric::intersection(
-                    v_neighbors.begin() + offset,
-                    v_neighbors.end(),
-                    u_first,
-                    u_last,
-                    [&](RankEncodedNodeId w) {
-                        local_triangles++;
-                        emit(Triangle<RankEncodedNodeId>{v, u, w});
-                    },
-                    node_ordering,
-                    conf_
-                );
-                neighbor_index++;
-            }
-        }
-        profiling::counter_add("skipped_nodes", skipped_nodes);
-        profiling::counter_add("wedge_checks", wedge_checks);
-        profiling::counter_add("intersection_size_local", intersection_size_local);
-        profiling::counter_add("local_triangles", local_triangles);
+    /// N+(v) for a local vertex, the ghost adjacency (cetric-x: its out-edges to local vertices) for a ghost.
+    [[nodiscard]] auto neighbors_with_ghosts(RankEncodedNodeId v) const {
+        return v.rank() == rank_ ? G.out_adj(v).neighbors() : G.ghost_adj(v).neighbors();
     }
 
-    template <typename EdgeOrientationOrdering, typename TriangleFunc, typename NodeOrdering>
+    /// The local phase's work for one edge v -> u: emits the triangles (v, u, w) for w in N+(v) ∩ N+(u), where a
+    /// ghost's neighborhood is its ghost adjacency. Every variant of the local phase calls this.
+    template <typename TriangleFunc, typename NodeOrdering>
+    inline void intersect_local_edge(
+        RankEncodedNodeId   v,
+        RankEncodedNodeId   u,
+        LocalPhaseCounters& counters,
+        TriangleFunc&       emit,
+        NodeOrdering const& node_ordering
+    ) {
+        auto const v_neighbors = neighbors_with_ghosts(v);
+        auto const u_neighbors = neighbors_with_ghosts(u);
+        auto       v_first     = v_neighbors.begin();
+        auto       v_last      = v_neighbors.end();
+        auto       u_first     = u_neighbors.begin();
+        auto       u_last      = u_neighbors.end();
+        if (u.rank() != rank_) {
+            v_last = local_prefix_end<NodeOrdering>(v_first, v_last);
+        } else if (v.rank() != rank_) {
+            u_last = local_prefix_end<NodeOrdering>(u_first, u_last);
+        }
+        // for the edge (v, u) we check the open wedges (v, u, w) for w in N+(u)
+        counters.wedge_checks += u_last - u_first;
+        counters.intersection_size_local += (v_last - v_first) + (u_last - u_first);
+        cetric::intersection(
+            v_first,
+            v_last,
+            u_first,
+            u_last,
+            [&](RankEncodedNodeId w) {
+                counters.local_triangles++;
+                emit(Triangle<RankEncodedNodeId>{v, u, w});
+            },
+            node_ordering,
+            conf_
+        );
+    }
+
+    // The hybrid (MPI + TBB) variants of the local phase, frozen during the refactoring: node- or edge-partitioned,
+    // with or without ghosts. Ported onto run_local_sequential's structure afterwards.
+
+    /// Whether a vertex's interface status follows from its neighborhood order alone.
+    template <typename NodeOrdering>
+    static constexpr bool fast_is_interface =
+        std::is_same_v<std::remove_cvref_t<NodeOrdering>, node_ordering::degree_outward<GraphType>>
+        || std::is_same_v<std::remove_cvref_t<NodeOrdering>, node_ordering::id>
+        || std::is_same_v<std::remove_cvref_t<NodeOrdering>, node_ordering::id_outward>;
+
+    template <typename TriangleFunc, typename NodeOrdering>
     inline void run_local_parallel_edge_partitioned_with_ghosts(
         TriangleFunc                                                     emit,
         tbb::enumerable_thread_specific<std::vector<RankEncodedNodeId>>& interface_nodes,
-        NodeOrdering&&                                                   node_ordering
+        NodeOrdering const&                                              node_ordering
     ) {
         interface_nodes.clear();
 
@@ -416,34 +344,19 @@ public:
         tbb::blocked_range<EdgeId> edge_ids(EdgeId{0}, G.local_edge_count_with_ghost_edges(), conf_.grainsize);
 
         std::vector<std::atomic<bool>> is_interface;
-        constexpr bool fast_is_interface = std::is_same_v<NodeOrdering, node_ordering::degree_outward<GraphType>>
-                                           || std::is_same_v<NodeOrdering, node_ordering::id>
-                                           || std::is_same_v<NodeOrdering, node_ordering::id_outward>;
-        if constexpr (!fast_is_interface) {
+        if constexpr (!fast_is_interface<NodeOrdering>) {
             is_interface = std::vector<std::atomic<bool>>(G.local_node_count());
         }
-        tbb::combinable<size_t> thread_local_skipped_nodes{0};
-        tbb::combinable<size_t> thread_local_wedge_checks{0};
-        tbb::combinable<size_t> thread_local_intersection_size_local{0};
-        tbb::combinable<size_t> thread_local_local_triangles{0};
-        auto                    body = [&](auto const& edge_id_range) {
-            auto& skipped_nodes           = thread_local_skipped_nodes.local();
-            auto& wedge_checks            = thread_local_wedge_checks.local();
-            auto& intersection_size_local = thread_local_intersection_size_local.local();
-            auto& local_triangles         = thread_local_local_triangles.local();
-            auto& local_interface_nodes   = interface_nodes.local();
+        tbb::combinable<LocalPhaseCounters> thread_counters;
+        auto                                body = [&](auto const& edge_id_range) {
+            auto& counters              = thread_counters.local();
+            auto& local_interface_nodes = interface_nodes.local();
 
             auto tail_idx        = edge_locator.edge_tail_idx(edge_id_range.begin());
             auto tail            = edge_locator.get_node(tail_idx);
             auto tail_first_edge = edge_locator.first_edge_id_for_idx(tail_idx);
             auto tail_last_edge  = edge_locator.last_edge_id_for_idx(tail_idx);
-            SPDLOG_DEBUG(
-                "[t{}] processing edges {} to {}",
-                tbb::this_task_arena::current_thread_index(),
-                std::max(edge_id_range.begin(), tail_first_edge),
-                edge_id_range.end()
-            );
-            auto degree = [this](RankEncodedNodeId node) {
+            auto degree          = [this](RankEncodedNodeId node) {
                 if (node.rank() == rank_) {
                     return G.outdegree(node);
                 } else {
@@ -454,13 +367,13 @@ public:
                  edge_id++) {
                 while (edge_id >= tail_last_edge || (conf_.pseudo2core && degree(tail) < 2)) {
                     if (conf_.pseudo2core && G.degree(tail) < 2) {
-                        skipped_nodes++;
+                        counters.skipped_nodes++;
                     }
                     tail_idx++;
                     tail_first_edge = edge_locator.first_edge_id_for_idx(tail_idx);
                     edge_id         = tail_first_edge;
                     if (edge_id >= edge_id_range.end()) {
-                        goto finish;
+                        return;
                     }
                     tail           = edge_locator.get_node(tail_idx);
                     tail_last_edge = edge_locator.last_edge_id_for_idx(tail_idx);
@@ -469,70 +382,28 @@ public:
                 KASSERT(edge_id < tail_last_edge);
                 auto v = tail;
                 auto u = edge_locator.get_edge_head(edge_id);
-                if constexpr (fast_is_interface) {
-                    if (tail.rank() == rank_ && edge_id == tail_first_edge) {
-                        // we are the first thread to examine this node
-                        // we check if it an interface node
-                        if (G.template is_interface_node_if_sorted_by_rank<AdjacencyType::out>(tail)) {
-                            local_interface_nodes.emplace_back(tail);
-                        }
+                if constexpr (fast_is_interface<NodeOrdering>) {
+                    // the first thread to examine this node checks whether it is an interface node
+                    if (tail.rank() == rank_ && edge_id == tail_first_edge
+                        && G.template is_interface_node_if_sorted_by_rank<AdjacencyType::out>(tail)) {
+                        local_interface_nodes.emplace_back(tail);
                     }
-                } else {
-                    if (u.rank() != rank_) {
-                        bool was_set = is_interface[tail_idx].exchange(true);
-                        if (!was_set) {
-                            local_interface_nodes.emplace_back(tail);
-                        }
-                    }
+                } else if (u.rank() != rank_ && !is_interface[tail_idx].exchange(true)) {
+                    local_interface_nodes.emplace_back(tail);
                 }
-                auto   v_neighbors = v.rank() == rank_ ? G.out_adj(v).neighbors() : G.ghost_adj(v).neighbors();
-                auto   u_neighbors = u.rank() == rank_ ? G.out_adj(u).neighbors() : G.ghost_adj(u).neighbors();
-                size_t offset = 0;
-                if constexpr (std::is_same_v<NodeOrdering, EdgeOrientationOrdering>) {
-                    offset = edge_id - tail_first_edge;
-                }
-                SPDLOG_DEBUG("[t{}] intersecting {} {}", tbb::this_task_arena::current_thread_index(), v, u);
-                auto v_first = v_neighbors.begin() + offset;
-                auto v_last  = v_neighbors.end();
-                auto u_first = u_neighbors.begin();
-                auto u_last  = u_neighbors.end();
-                if (u.rank() != rank_) {
-                    v_last = local_prefix_end<NodeOrdering>(v_first, v_last);
-                } else if (v.rank() != rank_) {
-                    u_last = local_prefix_end<NodeOrdering>(u_first, u_last);
-                }
-                wedge_checks += u_last - u_first;
-                intersection_size_local += (v_last - v_first) + (u_last - u_first);
-                cetric::intersection(
-                    v_first,
-                    v_last,
-                    u_first,
-                    u_last,
-                    [&](RankEncodedNodeId w) {
-                        local_triangles++;
-                        emit(Triangle<RankEncodedNodeId>{v, u, w});
-                    },
-                    node_ordering,
-                    conf_
-                );
+                intersect_local_edge(v, u, counters, emit, node_ordering);
             }
-        finish:
-            return;
         };
 
         arena.execute([&] { tbb::parallel_for(edge_ids, body, tbb::auto_partitioner{}); });
-
-        profiling::counter_add("skipped_nodes", thread_local_skipped_nodes.combine(std::plus<>{}));
-        profiling::counter_add("wedge_checks", thread_local_wedge_checks.combine(std::plus<>{}));
-        profiling::counter_add("intersection_size_local", thread_local_intersection_size_local.combine(std::plus<>{}));
-        profiling::counter_add("local_triangles", thread_local_local_triangles.combine(std::plus<>{}));
+        thread_counters.combine(std::plus<>{}).report();
     }
 
-    template <typename EdgeOrientationOrdering, typename TriangleFunc, typename NodeOrdering>
+    template <typename TriangleFunc, typename NodeOrdering>
     inline void run_local_parallel_edge_partitioned(
         TriangleFunc                                                     emit,
         tbb::enumerable_thread_specific<std::vector<RankEncodedNodeId>>& interface_nodes,
-        NodeOrdering&&                                                   node_ordering
+        NodeOrdering const&                                              node_ordering
     ) {
         interface_nodes.clear();
 
@@ -543,122 +414,68 @@ public:
         tbb::blocked_range<EdgeId> edge_ids(EdgeId{0}, G.local_edge_count(), conf_.grainsize);
 
         std::vector<std::atomic<bool>> is_interface;
-        constexpr bool fast_is_interface = std::is_same_v<NodeOrdering, node_ordering::degree_outward<GraphType>>
-                                           || std::is_same_v<NodeOrdering, node_ordering::id>
-                                           || std::is_same_v<NodeOrdering, node_ordering::id_outward>;
-        if constexpr (!fast_is_interface) {
+        if constexpr (!fast_is_interface<NodeOrdering>) {
             is_interface = std::vector<std::atomic<bool>>(G.local_node_count());
         }
-        tbb::combinable<size_t> thread_local_skipped_nodes{0};
-        tbb::combinable<size_t> thread_local_wedge_checks{0};
-        tbb::combinable<size_t> thread_local_intersection_size_local{0};
-        tbb::combinable<size_t> thread_local_local_triangles{0};
-        auto                    body = [&](auto const& edge_id_range) {
-            auto& skipped_nodes           = thread_local_skipped_nodes.local();
-            auto& wedge_checks            = thread_local_wedge_checks.local();
-            auto& intersection_size_local = thread_local_intersection_size_local.local();
-            auto& local_triangles         = thread_local_local_triangles.local();
-            auto& local_interface_nodes   = interface_nodes.local();
+        tbb::combinable<LocalPhaseCounters> thread_counters;
+        auto                                body = [&](auto const& edge_id_range) {
+            auto& counters              = thread_counters.local();
+            auto& local_interface_nodes = interface_nodes.local();
 
-            auto tail_idx = edge_locator.edge_tail_idx(edge_id_range.begin());
-            auto tail     = node_indexer.get_node(tail_idx);
+            auto tail_idx        = edge_locator.edge_tail_idx(edge_id_range.begin());
+            auto tail            = node_indexer.get_node(tail_idx);
             auto tail_first_edge = edge_locator.template first_edge_id_for_idx<AdjacencyType::out>(tail_idx);
-            auto tail_last_edge = edge_locator.template last_edge_id_for_idx<AdjacencyType::out>(tail_idx);
-            SPDLOG_DEBUG(
-                "[t{}] processing edges {} to {}",
-                tbb::this_task_arena::current_thread_index(),
-                std::max(edge_id_range.begin(), tail_first_edge),
-                edge_id_range.end()
-            );
+            auto tail_last_edge  = edge_locator.template last_edge_id_for_idx<AdjacencyType::out>(tail_idx);
             for (auto edge_id = std::max(edge_id_range.begin(), tail_first_edge); edge_id < edge_id_range.end();
                  edge_id++) {
                 while (edge_id >= tail_last_edge || (conf_.pseudo2core && G.outdegree(tail) < 2)) {
                     if (conf_.pseudo2core && G.outdegree(tail) < 2) {
-                        skipped_nodes++;
+                        counters.skipped_nodes++;
                     }
                     tail_idx++;
                     tail_first_edge = edge_locator.template first_edge_id_for_idx<AdjacencyType::out>(tail_idx);
-                    edge_id = tail_first_edge;
+                    edge_id         = tail_first_edge;
                     if (edge_id >= edge_id_range.end()) {
-                        goto finish;
+                        return;
                     }
-                    tail = node_indexer.get_node(tail_idx);
+                    tail           = node_indexer.get_node(tail_idx);
                     tail_last_edge = edge_locator.template last_edge_id_for_idx<AdjacencyType::out>(tail_idx);
                 }
                 KASSERT(tail_first_edge <= edge_id);
                 KASSERT(edge_id < tail_last_edge);
                 auto v = tail;
                 auto u = edge_locator.get_edge_head(edge_id);
-                if constexpr (fast_is_interface) {
-                    if (tail.rank() == rank_ && edge_id == tail_first_edge) {
-                        // we are the first thread to examine this node
-                        // we check if it an interface node
-                        if (G.template is_interface_node_if_sorted_by_rank<AdjacencyType::out>(tail)) {
-                            local_interface_nodes.emplace_back(tail);
-                        }
+                if constexpr (fast_is_interface<NodeOrdering>) {
+                    // the first thread to examine this node checks whether it is an interface node
+                    if (tail.rank() == rank_ && edge_id == tail_first_edge
+                        && G.template is_interface_node_if_sorted_by_rank<AdjacencyType::out>(tail)) {
+                        local_interface_nodes.emplace_back(tail);
                     }
-                } else {
-                    if (u.rank() != rank_) {
-                        bool was_set = is_interface[tail_idx].exchange(true);
-                        if (!was_set) {
-                            local_interface_nodes.emplace_back(tail);
-                        }
-                    }
+                } else if (u.rank() != rank_ && !is_interface[tail_idx].exchange(true)) {
+                    local_interface_nodes.emplace_back(tail);
                 }
                 if (u.rank() != rank_) {
                     continue;
                 }
-                auto   v_neighbors = G.out_adj(v).neighbors();
-                auto   u_neighbors = G.out_adj(u).neighbors();
-                size_t offset      = 0;
-                if constexpr (std::is_same_v<NodeOrdering, EdgeOrientationOrdering>) {
-                    offset = edge_id - tail_first_edge;
-                }
-                SPDLOG_DEBUG("[t{}] intersecting {} {}", tbb::this_task_arena::current_thread_index(), v, u);
-                // for each edge (v, u) we check the open wedge (v, u, w)
-                // for w in N(u)+
-                wedge_checks += u_neighbors.end() - u_neighbors.begin();
-                intersection_size_local +=
-                    v_neighbors.end() - v_neighbors.begin() + u_neighbors.end() - u_neighbors.begin();
-                cetric::intersection(
-                    v_neighbors.begin() + offset,
-                    v_neighbors.end(),
-                    u_neighbors.begin(),
-                    u_neighbors.end(),
-                    [&](RankEncodedNodeId w) {
-                        local_triangles++;
-                        emit(Triangle<RankEncodedNodeId>{v, u, w});
-                    },
-                    node_ordering,
-                    conf_
-                );
+                intersect_local_edge(v, u, counters, emit, node_ordering);
             }
-        finish:
-            return;
         };
 
         arena.execute([&] { tbb::parallel_for(edge_ids, body, tbb::auto_partitioner{}); });
-        profiling::counter_add("skipped_nodes", thread_local_skipped_nodes.combine(std::plus<>{}));
-        profiling::counter_add("wedge_checks", thread_local_wedge_checks.combine(std::plus<>{}));
-        profiling::counter_add("intersection_size_local", thread_local_intersection_size_local.combine(std::plus<>{}));
-        profiling::counter_add("local_triangles", thread_local_local_triangles.combine(std::plus<>{}));
-
+        thread_counters.combine(std::plus<>{}).report();
     }
 
-    template <typename EdgeOrientationOrdering, typename TriangleFunc, typename NodeOrdering>
+    template <typename TriangleFunc, typename NodeOrdering>
     inline void run_local_parallel(
         TriangleFunc                                                     emit,
         tbb::enumerable_thread_specific<std::vector<RankEncodedNodeId>>& interface_nodes,
-        NodeOrdering&&                                                   node_ordering
+        NodeOrdering const&                                              node_ordering
     ) {
         interface_nodes.clear();
-        auto                    nodes = G.local_nodes();
-        tbb::combinable<size_t> thread_local_skipped_nodes{0};
-        tbb::combinable<size_t> thread_local_wedge_checks{0};
-        tbb::combinable<size_t> thread_local_intersection_size_local{0};
-        tbb::combinable<size_t> thread_local_local_triangles{0};
+        auto                                nodes = G.local_nodes();
+        tbb::combinable<LocalPhaseCounters> thread_counters;
 
-        auto partition_neighborhood_2d = [this](RankEncodedNodeId node [[maybe_unused]]) {
+        auto partition_neighborhood_2d = [this](RankEncodedNodeId node) {
             if (conf_.local_degree_of_parallelism > 2) {
                 return true;
             } else if (conf_.local_degree_of_parallelism > 1) {
@@ -668,246 +485,106 @@ public:
             }
         };
 
-        auto handle_neighbor_range = [&](RankEncodedNodeId                 v,
-                                         tbb::blocked_range<size_t> const& neighbor_range,
-                                         bool                              spawn [[maybe_unused]] = false) {
-            auto& wedge_checks            = thread_local_wedge_checks.local();
-            auto& intersection_size_local = thread_local_intersection_size_local.local();
-            auto& local_triangles         = thread_local_local_triangles.local();
+        auto handle_neighbor_range = [&](RankEncodedNodeId v, tbb::blocked_range<size_t> const& neighbor_range) {
+            auto& counters = thread_counters.local();
             for (size_t neighbor_index = neighbor_range.begin(); neighbor_index != neighbor_range.end();
                  neighbor_index++) {
                 auto u = *(G.out_adj(v).neighbors().begin() + neighbor_index);
-                KASSERT(*(G.out_adj(v).neighbors().begin() + neighbor_index) == u);
                 if (u.rank() != rank_) {
-                    if constexpr (!std::is_same_v<NodeOrdering, node_ordering::id_outward> && !std::is_same_v<NodeOrdering, node_ordering::degree_outward<GraphType>>) {
+                    if constexpr (local_first<NodeOrdering>) {
+                        break;
+                    } else {
                         continue;
                     }
-                    SPDLOG_DEBUG(
-                        "Remaining neighbors {}",
-                        std::ranges::subrange(
-                            G.out_adj(v).neighbors().begin() + neighbor_index,
-                            G.out_adj(v).neighbors().end()
-                        )
-                    );
-                    // TODO: we should be able to break here when the edges are
-                    // properly sorted
-                    KASSERT(std::all_of(
-                        G.out_adj(v).neighbors().begin() + neighbor_index,
-                        G.out_adj(v).neighbors().end(),
-                        [rank = this->rank_](RankEncodedNodeId node) { return node.rank() != rank; }
-                    ));
-                    break;
                 }
-                {
-                    auto   v_neighbors = G.out_adj(v).neighbors();
-                    auto   u_neighbors = G.out_adj(u).neighbors();
-                    size_t offset      = 0;
-                    if constexpr (std::is_same_v<NodeOrdering, EdgeOrientationOrdering>) {
-                        offset = neighbor_index;
-                    }
-                    // for each edge (v, u) we check the open wedge (v, u, w)
-                    // for w in N(u)+
-                    wedge_checks += u_neighbors.end() - u_neighbors.begin();
-                    intersection_size_local +=
-                        v_neighbors.end() - v_neighbors.begin() + u_neighbors.end() - u_neighbors.begin();
-                    cetric::intersection(
-                        v_neighbors.begin() + offset,
-                        v_neighbors.end(),
-                        u_neighbors.begin(),
-                        u_neighbors.end(),
-                        [&](RankEncodedNodeId w) {
-                            local_triangles++;
-                            emit(Triangle<RankEncodedNodeId>{v, u, w});
-                        },
-                        node_ordering,
-                        conf_
-                    );
-                }
+                intersect_local_edge(v, u, counters, emit, node_ordering);
             }
         };
-        // tbb::parallel_for(
-        //     tbb::blocked_range(nodes.begin(), nodes.end()),
-        //     [this,
-        //      &interface_nodes,
-        //      &node_ordering,
-        //      &emit,
-        //      &stats,
-        //      handle_neighbor_range,
-        //      partition_neighborhood_2d,
-        //      &skipped_nodes](auto const& nodes_r) {
-        // #define CETRIC_OMP_TASK_PARALLEL 1
-        // #if !defined(CETRIC_OMP_TASK_PARALLEL)
-        //     #pragma omp for schedule(runtime) i
-        // #else
-        //     #pragma omp          single
-        //     #pragma omp taskloop grainsize(conf_.grainsize)
-        // #endif
         auto node_loop_body = [&](RankEncodedNodeId const& v) {
-            auto& skipped_nodes         = thread_local_skipped_nodes.local();
-            auto& local_interface_nodes = interface_nodes.local();
             if (conf_.pseudo2core && G.outdegree(v) < 2) {
-                skipped_nodes++;
+                thread_counters.local().skipped_nodes++;
+                return;
+            }
+            if (G.template is_interface_node_if_sorted_by_rank<AdjacencyType::out>(v)) {
+                interface_nodes.local().emplace_back(v);
+            }
+            auto const all_neighbors = tbb::blocked_range(size_t{0}, static_cast<size_t>(G.outdegree(v)));
+            if (partition_neighborhood_2d(v)) {
+                tbb::parallel_for(all_neighbors, [&handle_neighbor_range, v](auto const& neighbor_range) {
+                    handle_neighbor_range(v, neighbor_range);
+                });
             } else {
-                if (G.template is_interface_node_if_sorted_by_rank<AdjacencyType::out>(v)) {
-                    local_interface_nodes.emplace_back(v);
-                }
-                auto v_neighbors_size = std::distance(G.out_adj(v).neighbors().begin(), G.out_adj(v).neighbors().end());
-                if (partition_neighborhood_2d(v)) {
-                    tbb::parallel_for(
-                        tbb::blocked_range(size_t{0}, static_cast<size_t>(v_neighbors_size)),
-                        [&handle_neighbor_range, v = v](auto const& neighbor_range) {
-                            handle_neighbor_range(v, neighbor_range);
-                        }
-                    );
-                } else {
-                    handle_neighbor_range(
-                        v,
-                        tbb::blocked_range(size_t{0}, static_cast<size_t>(v_neighbors_size)),
-                        partition_neighborhood_2d(v)
-                    );
-                }
+                handle_neighbor_range(v, all_neighbors);
             }
         };
-        {
-            tbb::task_arena arena(conf_.num_threads);
-            arena.execute([&] {
-                tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&](auto const& r) {
-                    for (auto v: r) {
-                        node_loop_body(v);
-                    }
-                });
+        tbb::task_arena arena(conf_.num_threads);
+        arena.execute([&] {
+            tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&](auto const& r) {
+                for (auto v: r) {
+                    node_loop_body(v);
+                }
             });
-        }
-        profiling::counter_add("skipped_nodes", thread_local_skipped_nodes.combine(std::plus<>{}));
-        profiling::counter_add("wedge_checks", thread_local_wedge_checks.combine(std::plus<>{}));
-        profiling::counter_add("intersection_size_local", thread_local_intersection_size_local.combine(std::plus<>{}));
-        profiling::counter_add("local_triangles", thread_local_local_triangles.combine(std::plus<>{}));
+        });
+        thread_counters.combine(std::plus<>{}).report();
     }
 
-    template <typename EdgeOrientationOrdering, typename TriangleFunc, typename NodeOrdering>
+    template <typename TriangleFunc, typename NodeOrdering>
     inline void run_local_parallel_with_ghosts(
         TriangleFunc                                                     emit,
         tbb::enumerable_thread_specific<std::vector<RankEncodedNodeId>>& interface_nodes,
-        NodeOrdering&&                                                   node_ordering
+        NodeOrdering const&                                              node_ordering
     ) {
         interface_nodes.clear();
+        tbb::combinable<LocalPhaseCounters> thread_counters;
 
-        tbb::combinable<size_t> thread_local_skipped_nodes{0};
-        tbb::combinable<size_t> thread_local_wedge_checks{0};
-        tbb::combinable<size_t> thread_local_intersection_size_local{0};
-        tbb::combinable<size_t> thread_local_local_triangles{0};
-
-        auto partition_neighborhood_2d = [this](RankEncodedNodeId node [[maybe_unused]]) {
+        auto degree = [this](RankEncodedNodeId node) {
+            return node.rank() == rank_ ? G.outdegree(node) : G.ghost_degree(node);
+        };
+        auto partition_neighborhood_2d = [&](RankEncodedNodeId node) {
             if (conf_.local_degree_of_parallelism > 2) {
                 return true;
             } else if (conf_.local_degree_of_parallelism > 1) {
-                if (node.rank() == rank_) {
-                    return G.outdegree(node) > high_degree_threshold_;
-                } else {
-                    return G.ghost_degree(node) > high_degree_threshold_;
-                }
+                return degree(node) > high_degree_threshold_;
             } else {
                 return false;
             }
         };
         std::vector<std::atomic<bool>> is_interface;
-        constexpr bool fast_is_interface = std::is_same_v<NodeOrdering, node_ordering::degree_outward<GraphType>>
-                                           || std::is_same_v<NodeOrdering, node_ordering::id>
-                                           || std::is_same_v<NodeOrdering, node_ordering::id_outward>;
-        if constexpr (!fast_is_interface) {
+        if constexpr (!fast_is_interface<NodeOrdering>) {
             is_interface = std::vector<std::atomic<bool>>(G.local_node_count());
         }
 
-        auto handle_neighbor_range = [&](RankEncodedNodeId                 v,
-                                         tbb::blocked_range<size_t> const& neighbor_range,
-                                         bool                              spawn [[maybe_unused]] = false) {
-            auto& wedge_checks            = thread_local_wedge_checks.local();
-            auto& intersection_size_local = thread_local_intersection_size_local.local();
-            auto& local_triangles         = thread_local_local_triangles.local();
-            auto& local_interface_nodes   = interface_nodes.local();
-
+        auto handle_neighbor_range = [&](RankEncodedNodeId v, tbb::blocked_range<size_t> const& neighbor_range) {
+            auto& counters = thread_counters.local();
             for (size_t neighbor_index = neighbor_range.begin(); neighbor_index != neighbor_range.end();
                  neighbor_index++) {
-                EdgeRange<RankEncodedNodeId, RangeModifiability::non_modifiable>::neighbor_range_type v_neighbors;
-                if (v.rank() != rank_) {
-                    v_neighbors = G.ghost_adj(v).neighbors();
-                } else {
-                    v_neighbors = G.out_adj(v).neighbors();
-                }
-                auto u = *(v_neighbors.begin() + neighbor_index);
-                KASSERT(*(v_neighbors.begin() + neighbor_index) == u);
-                EdgeRange<RankEncodedNodeId, RangeModifiability::non_modifiable>::neighbor_range_type u_neighbors;
-                if (u.rank() != rank_) {
-                    if constexpr (!fast_is_interface) {
-                        bool was_set = is_interface[G.to_local_idx(v)].exchange(true);
-                        if (!was_set) {
-                            local_interface_nodes.emplace_back(v);
-                        }
-                    }
-                    u_neighbors = G.ghost_adj(u).neighbors();
-                } else {
-                    u_neighbors = G.out_adj(u).neighbors();
-                }
-                size_t offset = 0;
-                if constexpr (std::is_same_v<NodeOrdering, EdgeOrientationOrdering>) {
-                    offset = neighbor_index;
-                }
-                auto v_first = v_neighbors.begin() + offset;
-                auto v_last  = v_neighbors.end();
-                auto u_first = u_neighbors.begin();
-                auto u_last  = u_neighbors.end();
-                if (u.rank() != rank_) {
-                    v_last = local_prefix_end<NodeOrdering>(v_first, v_last);
-                } else if (v.rank() != rank_) {
-                    u_last = local_prefix_end<NodeOrdering>(u_first, u_last);
-                }
-                wedge_checks += u_last - u_first;
-                intersection_size_local += (v_last - v_first) + (u_last - u_first);
-                cetric::intersection(
-                    v_first,
-                    v_last,
-                    u_first,
-                    u_last,
-                    [&](RankEncodedNodeId w) {
-                        local_triangles++;
-                        emit(Triangle<RankEncodedNodeId>{v, u, w});
-                    },
-                    node_ordering,
-                    conf_
-                );
-            }
-        };
-        auto node_loop_body = [&](RankEncodedNodeId const& v) {
-            auto&  skipped_nodes = thread_local_skipped_nodes.local();
-            Degree v_degree;
-            if (v.rank() == rank_) {
-                v_degree = G.outdegree(v);
-            } else {
-                v_degree = G.ghost_degree(v);
-            }
-            if (conf_.pseudo2core && v_degree < 2) {
-                skipped_nodes++;
-            } else {
-                if constexpr (fast_is_interface) {
-                    if (v.rank() == rank_ && G.template is_interface_node_if_sorted_by_rank<AdjacencyType::out>(v)) {
+                auto u = *(neighbors_with_ghosts(v).begin() + neighbor_index);
+                if constexpr (!fast_is_interface<NodeOrdering>) {
+                    if (u.rank() != rank_ && !is_interface[G.to_local_idx(v)].exchange(true)) {
                         interface_nodes.local().emplace_back(v);
                     }
                 }
-                size_t v_neighbors_size = v_degree;
-                if (partition_neighborhood_2d(v)) {
-                    tbb::parallel_for(
-                        tbb::blocked_range(size_t{0}, static_cast<size_t>(v_neighbors_size)),
-                        [&handle_neighbor_range, v = v](auto const& neighbor_range) {
-                            handle_neighbor_range(v, neighbor_range);
-                        }
-                    );
-                } else {
-                    handle_neighbor_range(
-                        v,
-                        tbb::blocked_range(size_t{0}, static_cast<size_t>(v_neighbors_size)),
-                        partition_neighborhood_2d(v)
-                    );
+                intersect_local_edge(v, u, counters, emit, node_ordering);
+            }
+        };
+        auto node_loop_body = [&](RankEncodedNodeId const& v) {
+            Degree const v_degree = degree(v);
+            if (conf_.pseudo2core && v_degree < 2) {
+                thread_counters.local().skipped_nodes++;
+                return;
+            }
+            if constexpr (fast_is_interface<NodeOrdering>) {
+                if (v.rank() == rank_ && G.template is_interface_node_if_sorted_by_rank<AdjacencyType::out>(v)) {
+                    interface_nodes.local().emplace_back(v);
                 }
+            }
+            auto const all_neighbors = tbb::blocked_range(size_t{0}, static_cast<size_t>(v_degree));
+            if (partition_neighborhood_2d(v)) {
+                tbb::parallel_for(all_neighbors, [&handle_neighbor_range, v](auto const& neighbor_range) {
+                    handle_neighbor_range(v, neighbor_range);
+                });
+            } else {
+                handle_neighbor_range(v, all_neighbors);
             }
         };
         // Local nodes followed by ghosts, addressed by index (C++20 has no random-access concat view).
@@ -916,20 +593,15 @@ public:
         auto const local_count = static_cast<size_t>(std::ranges::size(local_nodes));
         auto const total_count = local_count + static_cast<size_t>(std::ranges::size(ghosts));
         auto       node_at     = [&](size_t i) { return i < local_count ? local_nodes[i] : ghosts[i - local_count]; };
-        {
-            tbb::task_arena arena(conf_.num_threads);
-            arena.execute([&] {
-                tbb::parallel_for(tbb::blocked_range<size_t>(0, total_count), [&](auto const& r) {
-                    for (size_t i = r.begin(); i < r.end(); ++i) {
-                        node_loop_body(node_at(i));
-                    }
-                });
+        tbb::task_arena arena(conf_.num_threads);
+        arena.execute([&] {
+            tbb::parallel_for(tbb::blocked_range<size_t>(0, total_count), [&](auto const& r) {
+                for (size_t i = r.begin(); i < r.end(); ++i) {
+                    node_loop_body(node_at(i));
+                }
             });
-        }
-        profiling::counter_add("skipped_nodes", thread_local_skipped_nodes.combine(std::plus<>{}));
-        profiling::counter_add("wedge_checks", thread_local_wedge_checks.combine(std::plus<>{}));
-        profiling::counter_add("intersection_size_local", thread_local_intersection_size_local.combine(std::plus<>{}));
-        profiling::counter_add("local_triangles", thread_local_local_triangles.combine(std::plus<>{}));
+        });
+        thread_counters.combine(std::plus<>{}).report();
     }
 
     template <typename TriangleFunc, typename NodeOrdering>

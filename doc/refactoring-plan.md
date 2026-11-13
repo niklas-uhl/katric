@@ -137,10 +137,14 @@ Options that are dead or only used in old exploration suites (`experiments/legac
 
 ### 2. One kernel per phase
 
-- [ ] One intersection kernel for the local phase, parameterized by "with ghosts" and the execution policy, instead
-      of `run_local_sequential`, `run_local_sequential_with_ghosts`, `run_local_parallel`,
-      `run_local_parallel_with_ghosts`, `run_local_parallel_edge_partitioned(_with_ghosts)`
-- [ ] Counters (`wedge_checks`, `intersection_size_*`, triangles) collected in one place per kernel
+- [x] One intersection kernel for the local phase: `intersect_local_edge` (one edge v -> u, ghost adjacencies and
+      the local-prefix clipping included) is the only intersection call of the local phase, and
+      `run_local_sequential<with_ghosts>` replaces the two sequential copies. The four hybrid variants stay (frozen)
+      but call `intersect_local_edge`. The `NodeOrdering == EdgeOrientationOrdering` offset was dead since
+      `--id-node-ordering false` went, so `run_local` no longer takes the orientation ordering. Identical counters on
+      the 70 reference runs, ctest (with hybrid) passes
+- [ ] Counters (`wedge_checks`, `intersection_size_*`, triangles) collected in one place per kernel. Local phase done
+      (`LocalPhaseCounters`, one per thread in the hybrid variants); global phase still atomics in the iterator
 - [ ] `run_patric` / `run_cetric` / `run_cetric_new` as a sequence of phase functions with the same signature (graph, config,
       state), so a phase can be swapped (e.g. the tail-compute global phase of idea 1) without copying the driver
 - [ ] The `if (num_threads > 1) ... else ...` duplication around `tbb::task_arena` in a single helper

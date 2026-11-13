@@ -243,8 +243,7 @@ inline size_t run_patric(DistributedGraph<>& G, const Config& conf, PEID rank, P
         tbb::combinable<size_t> triangle_count_local_phase{0};
         ctr->run_local(
             make_emit(triangles, triangle_count_local_phase),
-            node_ordering::id(),
-            node_ordering::degree(G, ghost_degrees)
+            node_ordering::id()
         );
         triangle_count += triangle_count_local_phase.combine(std::plus<>{});
         SPDLOG_DEBUG("Local phase finished");
@@ -318,8 +317,7 @@ inline size_t run_cetric(
         ctr.set_threshold(threshold);
         ctr.run_local(
             make_emit(triangles, triangle_count_local_phase),
-            node_ordering::id_outward(rank),
-            node_ordering::degree_outward(G)
+            node_ordering::id_outward(rank)
         );
         triangle_count += triangle_count_local_phase.combine(std::plus<>{});
         SPDLOG_DEBUG("Local phase finished");
@@ -401,8 +399,7 @@ inline size_t run_cetric(
         ctr_global.set_threshold(threshold);
         ctr_global.run_local(
             make_emit(triangles, triangle_count_global_phase),
-            node_ordering::id_outward(rank),
-            node_ordering::degree_outward(G_global_phase, ghost_degrees)
+            node_ordering::id_outward(rank)
         );
         SPDLOG_DEBUG("Found {} triangles in global phase 1", triangle_count_global_phase.combine(std::plus<>{}));
         auto nodes = G_global_phase.local_nodes();
@@ -490,8 +487,6 @@ inline size_t run_cetric_new(DistributedGraph<>& G, const Config& conf, PEID ran
         SPDLOG_DEBUG("Primary load balancing finished");
         ConditionalBarrier(conf.global_synchronization);
     }
-    // TODO: work with degree ID sorting
-    AuxiliaryNodeData<Degree> original_degrees;
     auto                      nodes = [&] {
         CALI_CXX_MARK_SCOPE("preprocessing");
         preprocessing<node_ordering::id_outward, node_ordering::degree<decltype(G)>>(
@@ -529,13 +524,11 @@ inline size_t run_cetric_new(DistributedGraph<>& G, const Config& conf, PEID ran
         ctr.set_threshold(threshold);
         ctr.run_local(
             make_emit(triangles, triangle_count_local_phase),
-            node_ordering::id_outward(rank),
-            node_ordering::degree(G, ghost_degrees, original_degrees)
+            node_ordering::id_outward(rank)
         );
         triangle_count += triangle_count_local_phase.combine(std::plus<>{});
         SPDLOG_DEBUG("Local phase finished");
         ConditionalBarrier(conf.global_synchronization);
-        original_degrees = AuxiliaryNodeData<Degree>{};
     }
     auto G_compact = [&] {
         CALI_CXX_MARK_SCOPE("contraction");
