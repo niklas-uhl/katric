@@ -173,13 +173,22 @@ The deferred kamping-v2 plan from modernization-plan.md, plus the degree exchang
       parameter, the phases' barriers and reduction use `G.comm()`. Left on `MPI_COMM_WORLD`: the legacy message
       queue (hard-coded in the library) and the grid adaptor laid over its ranks, until BriefKAsten; rank lookups for
       log messages. The unused `MPITimer` is gone. Identical counters on the 78 reference runs (`b11a9d1`)
-- [ ] Degree exchange (`graph_communicator.h`, `get_ghost_data`): `kamping::v2::alltoallv` for `--dense`,
-      `dstl::grid_alltoallv` as the 2D variant (O(√p) messages instead of O(p) at 3k ranks), `dstl::sparse_alltoall`
-      instead of the NBX in `CommunicationUtility`
-- [ ] Degree-exchange format: today each entry is two `RankEncodedNodeId`s (16 bytes, the degree in an id slot) and
-      per-vertex deduplication uses an `absl::flat_hash_set<PEID>`; send vertex + degree in a packed struct and
-      deduplicate with a last-rank marker as in the global phase
-- [ ] Buffers per rank as a flat vector with displacements instead of `absl::flat_hash_map<PEID, vector>`
+- [x] Degree exchange on `cetric::push_to_ghosts` (`cetric/ghost_exchange.h`), adapted from KaCCv2's
+      `kacc::push_to_ghosts` (copied, decided 2026-11-13; a candidate for a dSTL function later). Transport
+      `--degree-exchange sparse|dense|grid` (replaces `--dense-degree-exchange`; configs and suites say `dense`):
+      `dstl::sparse_alltoall` (NBX), `kamping::v2::alltoallv` after an alltoall of the counts, `dstl::grid_alltoallv`.
+      Used by the orientation's degree exchange and the cost functions' ghost data. Caliper sub-regions `prepare` and
+      `exchange`. The grid mode reports no `received_messages` (its unordered receive does not tell sources apart) and
+      builds its `grid_comm` (a communicator split) on every call; build it once per run if `exchange` shows it.
+      CommunicationUtility's three exchanges that only the old degree exchange used are gone. Identical counters on the
+      78 reference runs (dense, as in the configs); the orientation test checks that all three transports deliver the
+      same ghost degrees; ctests for DiTriC with `dense` and CETRIC with `grid` (`aec0ab1`)
+- [x] Deduplication: per-rank last-source stamp (from KaCCv2) instead of the per-vertex `absl::flat_hash_set<PEID>`.
+      Format: still two `RankEncodedNodeId`s per entry. Packing (vertex, degree) into one word ruled out (decided
+      2026-11-13): KaCCv2 found it does not help much, the exchange is limited by irregularity and latency, not volume
+- [x] Buffers: `(message, destination)` pairs appended in one pass over the adjacency, then a counting sort into one
+      flat buffer with counts and displacements (option 2 of three, decided 2026-11-13). The alternative without the
+      copy (count, then fill: two passes over the adjacency) is worth measuring only if `prepare` matters in `phases`
 
 KaCCv2's communication primitives (read 2026-11-13, branch `feat/kout-symmetric`; katric already fetches kamping-v2
 with dstl but links neither):
