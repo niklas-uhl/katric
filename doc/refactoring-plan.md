@@ -259,15 +259,20 @@ in `AuxiliaryNodeData`'s `absl::flat_hash_map`, which is the orientation cost th
 Replacement: number the sorted union of local vertices and ghosts 0..n+g-1. Local vertices are one contiguous
 block (local index = offset + `v - first`, still arithmetic); per-ghost arrays hold global ID, rank and degree.
 
-Open: which order the compact IDs follow.
-
-- Global ID order (as above): the global phase merges received global-ID lists against `to_global(N+(u))`
-  directly. The local phase gets no skip (see idea 3).
-- Orientation order (degree, id), computed once after the degree exchange: sorting by ID is then sorting in
-  orientation order, so the local phase gets the compact-forward skip (idea 3) and the sender can trim messages
-  (idea 2) with plain integer comparisons. Local vertices are then no longer one contiguous block (local index via
-  an array), and the global phase sorts the contracted graph by global ID (small with locality) or merges by key.
-- Decide together with ideas 2–4: with flag intersection (idea 4) the local phase needs no order at all.
+Order of the compact IDs (decided 2026-11-13): **local vertices first, then ghosts, each sorted by global ID** (option B
+of three). It is today's `id_outward` made numeric: local test `c < n`, local index `c`, ghost-array index `c - n`; the
+local phase stops at the first ghost (DiTriC too, which today skips interleaved ghosts) and CETRIC's clipping stays one
+partition point. Global phase: messages carry global IDs in global order; the receiver finds the entries local to it
+(its contiguous ID range) with one binary search per message and intersects locals with locals and ghosts with ghosts;
+the sender emits `[ghosts below its range][locals][ghosts above]`, linear, without sorting (after CETRIC's contraction
+N+(v) holds only ghosts and is already in global order). No counter changes (same edges, same neighborhood sizes).
+Rejected for now:
+- global-ID order (local block at an offset; simplest global phase, but CETRIC's local part becomes a middle run)
+- orientation order (degree, id): the compact-forward skip (idea 3) and integer comparisons for trimming (idea 2),
+  but the global phase could not merge a global-order message against N+(u) without a second sorted copy or keys on
+  the wire. Flag intersection (idea 4) makes the local phase order-free, and trimming needs only (degree, id) of the
+  sender's own vertices, two array lookups with per-ghost degrees. A later renumbering, if needed
+Compact IDs fit 32 bits per rank (n + g < 2^32), which would halve the adjacency; measure separately.
 
 - [x] Partition table: `cetric::graph::VertexPartition` (`datastructures/distributed/vertex_partition.h`), copied
       from KaCCv2 (decided 2026-11-13: copy what we need) without the split-vertex parts, and with empty ranks placed at
