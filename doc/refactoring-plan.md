@@ -100,6 +100,23 @@ by those `.cpp` files):
     vs 0.5–0.6 s). Degree ordering: 1.6–2.6× slower everywhere (already removed in step 1).
   - The `triangles` Adiak value wrapped at 2^31 (Caliper imports `adiak_long` as `int`); the counts in these profiles
     are wrong above 2^31, the logs have the right ones. Fixed by recording `long long` (same commit as this note)
+- Findings from the rerun from `3466ccf` (SuperMUC-NG, `phases_26_11_13`, 48 and 1536 cores so far, all six
+  configurations; time per iteration, max over ranks, mean of 3 iterations; script in the session scratchpad):
+  - KaMPIng assertions (level 10 before) cost nothing measurable: patric / cetric-x within ±2% of `phases_26_11_12`
+    on the permuted inputs, ±12% on the locality inputs at 3 iterations (noise of the max over ranks)
+  - Without locality, preprocessing is as large as the global phase: patric 18.2 s at 1536 (10.6 at 48), of which
+    degree exchange 5.7 s (3.0), orientation 2.0 s (1.5), global phase 9.4 s (5.3). cetric-x adds ghost expansion
+    3.5 s and a 2.9 s local phase: 24.8 s. pre-CETRIC's degree exchange on the contracted graph costs the same as
+    patric's (5.8 s at 1536: without locality nothing is contracted away): 19.7 s
+  - Grid indirection in the global phase does not pay without locality: +5–20% over direct, `termination` 1.6 ->
+    5–6 s at 1536. With locality it is neutral to slightly better (patric RGG 2.13 vs 2.58 s at 1536, but the
+    local phase differs as much, so partly node noise)
+  - With locality, the barrier share grows from ~5% (48) to 25–29% (1536) on RGG for every configuration; on RHG
+    pre-CETRIC's local phase is 4.6 s at 1536 (cetric-x 1.8, patric 1.5) with a 67% barrier share: outward
+    orientation loses the out-degree bound at the hubs, as expected. cetric vs cetric-x: cetric is better on RGG
+    (2.56 vs 2.93 s) and without locality (19.7 vs 24.8 s), much worse on RHG (5.6 vs 3.4 s)
+  - The dense degree exchange (alltoallv) is the single largest preprocessing item without locality; measure
+    `--degree-exchange sparse|grid` (step 3) against it in the next run
 - [x] `cetric` (pre-CETRIC) appended to `phases` as a fourth configuration, so a rerun only adds its runs (the
       indices of the running configurations stay the same)
 - [x] `communication-policy: grid` appended to `phases` (patric, cetric-x, cetric; decided 2026-11-12). Run the
