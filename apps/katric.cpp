@@ -66,10 +66,8 @@ int main(int argc, char* argv[]) {
     cetric::PEID rank;
     cetric::PEID size;
     int          exit_code = 0;
-    // katric's own communicator, so its collectives cannot match messages of libraries on MPI_COMM_WORLD. The global
-    // phase's message queue (legacy message-queue) still uses MPI_COMM_WORLD; BriefKAsten will take a communicator.
-    MPI_Comm comm;
-    MPI_Comm_dup(MPI_COMM_WORLD, &comm);
+    // the communicator katric runs on (the global phase's legacy message queue is fixed to MPI_COMM_WORLD)
+    MPI_Comm const comm = MPI_COMM_WORLD;
     {
         MPI_Comm_rank(comm, &rank);
         MPI_Comm_size(comm, &size);
@@ -178,7 +176,6 @@ int main(int argc, char* argv[]) {
         MPI_Bcast(&mismatch, 1, MPI_CXX_BOOL, 0, comm);
         exit_code = mismatch ? 1 : 0;
     }
-    MPI_Comm_free(&comm);
     MPI_Finalize();
     return exit_code;
 }

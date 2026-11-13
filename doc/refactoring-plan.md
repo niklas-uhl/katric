@@ -166,8 +166,8 @@ Options that are dead or only used in old exploration suites (`experiments/legac
 
 The deferred kamping-v2 plan from modernization-plan.md, plus the degree exchange.
 
-- [x] Pass a communicator instead of the hard-coded `MPI_COMM_WORLD`: `katric.cpp` duplicates it at startup
-      (input, verification, Adiak, iteration barriers and the algorithm use the duplicate), `DistributedGraph` keeps
+- [x] Pass a communicator instead of the hard-coded `MPI_COMM_WORLD`: `katric.cpp` passes `MPI_COMM_WORLD` (not
+      duplicated, decided 2026-11-13: nothing can collide) to input, verification and the algorithm, `DistributedGraph` keeps
       it (`G.comm()`, constructor takes it instead of rank and size), `DegreeCommunicator` takes it from the graph,
       `CommunicationUtility`'s exchanges, `GraphCommunicator::relocate` and `LoadBalancer::run` take it as a
       parameter, the phases' barriers and reduction use `G.comm()`. Left on `MPI_COMM_WORLD`: the legacy message
