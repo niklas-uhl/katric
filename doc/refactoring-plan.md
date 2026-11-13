@@ -143,8 +143,12 @@ Options that are dead or only used in old exploration suites (`experiments/legac
       but call `intersect_local_edge`. The `NodeOrdering == EdgeOrientationOrdering` offset was dead since
       `--id-node-ordering false` went, so `run_local` no longer takes the orientation ordering. Identical counters on
       the 70 reference runs, ctest (with hybrid) passes (`70aeb31`)
-- [ ] Counters (`wedge_checks`, `intersection_size_*`, triangles) collected in one place per kernel. Local phase done
-      (`LocalPhaseCounters`, one per thread in the hybrid variants); global phase still atomics in the iterator
+- [x] Counters (`wedge_checks`, `intersection_size_*`, triangles) collected in one place per kernel:
+      `LocalPhaseCounters` and `GlobalPhaseCounters` (plain counts on the sequential path, one instance per thread
+      on the hybrid path instead of the iterator's three atomics). The global phase has one message handler
+      (`process_message` -> `intersect_with_message`) for both paths; the receiver-parallel loop
+      (`--global-degree-of-parallelism` > 2, set by no config) only runs on the hybrid path now. The hybrid path also
+      reports `interface_nodes`. Identical counters on the 70 reference runs (`5f5a54d`)
 - [ ] `run_patric` / `run_cetric` / `run_cetric_new` as a sequence of phase functions with the same signature (graph, config,
       state), so a phase can be swapped (e.g. the tail-compute global phase of idea 1) without copying the driver
 - [ ] The `if (num_threads > 1) ... else ...` duplication around `tbb::task_arena` in a single helper
@@ -205,7 +209,8 @@ Open: which order the compact IDs follow.
 - [ ] Messages carry global IDs. The numbering preserves the global order, so a receiver merges the received list
       against `N+(u)` mapped through `to_global` (monotone) without translating the received IDs
 - [ ] Contraction (`compact()`, today a `SparseNodeIndexer`) and the cetric-x ghost CSR on the new IDs
-- [ ] Replace the `std::set<RankEncodedNodeId> ghosts` filter in `run_distributed` (unused when empty)
+- [x] Remove the `std::set<RankEncodedNodeId> ghosts` filter in `run_distributed`: every caller passed an empty set
+      (removed in step 2, `5f5a54d`)
 - [ ] Compare against `pre-refactor` in `phases`: preprocessing (orientation, degree exchange) and `send_ns`
 
 KaCCv2's graph class itself (`SplitDistributedCSRGraph`, CSR plus split-vertex replicas) is not adopted: katric
