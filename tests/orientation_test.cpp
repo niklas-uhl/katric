@@ -68,7 +68,7 @@ protected:
 };
 
 TEST_P(Orientation, GlobalDegree) {
-    G.find_ghost_ranks<true>();
+    G.find_ghost_ranks();
     std::unordered_set<cetric::graph::RankEncodedNodeId> ghosts;
     find_ghosts(G, ghosts);
     cetric::DegreeCommunicator comm(G, cetric::as_int(cetric::MessageTag::Orientation));
@@ -108,7 +108,7 @@ TEST_P(Orientation, GlobalDegree) {
 }
 
 TEST_P(Orientation, LocalDegree) {
-    G.find_ghost_ranks<true>();
+    G.find_ghost_ranks();
     cetric::node_ordering::degree_outward ord(G);
     for (auto node: G.local_nodes()) {
         G.orient(node, ord);

@@ -10,7 +10,6 @@ graphs:
   - import: examples
 config:
   - algorithm: [patric, cetric-x]
-    binary-rank-search: true
     threshold: local-nodes
     degree-exchange: dense
     global-synchronization: true
@@ -19,7 +18,6 @@ config:
     iterations: 2
     verify: true
   - algorithm: cetric-x
-    binary-rank-search: true
     threshold: local-nodes
     edge-partitioning: true
     local-parallel: true

@@ -81,7 +81,6 @@ struct Config {
     GhostExchangeMode degree_exchange = GhostExchangeMode::sparse;
     grid_comm_cache*  grid_comms      = nullptr; // not owned, set by the driver (katric.cpp)
     bool global_synchronization  = false;
-    bool binary_rank_search      = false;
 
     bool pseudo2core             = false;
 

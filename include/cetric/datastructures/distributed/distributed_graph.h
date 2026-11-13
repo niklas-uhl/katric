@@ -65,6 +65,7 @@
 #include "cetric/communicator.h"
 #include "cetric/datastructures/auxiliary_node_data.h"
 #include "cetric/datastructures/distributed/helpers.h"
+#include "cetric/datastructures/distributed/vertex_partition.h"
 #include "cetric/datastructures/graph_definitions.h"
 #include "cetric/datastructures/span.h"
 #include "cetric/util.h"
@@ -784,6 +785,7 @@ public:
           comm_(comm),
           rank_(comm_rank(comm)),
           size_(comm_size(comm)),
+          partition_(node_range, comm),
           node_indexer_() {
         // global_to_local_.set_empty_key(-1);
         auto degree_sum = 0;
@@ -857,34 +859,29 @@ public:
         tlx::vector_free(G.edge_heads);
     }
 
-    template <bool binary_search, typename ExecutionPolicy = execution_policy::sequential>
+    template <typename ExecutionPolicy = execution_policy::sequential>
     void find_ghost_ranks(ExecutionPolicy&& policy = {}) {
         if (ghost_ranks_available()) {
             return;
         }
-        // if (consecutive_vertices_) {
-        // atomic_debug("consecutive vertices");
-        std::vector<std::pair<NodeId, NodeId>> ranges(size_);
-        gather_PE_ranges(node_range_.first, node_range_.second, ranges, comm_, rank_, size_);
         auto nodes = local_nodes();
-        if constexpr (std::is_same_v<ExecutionPolicy, execution_policy::parallel>) {
+        auto set_ranks = [this](RankEncodedNodeId node) {
+            for (auto& neighbor: this->adj(node).neighbors()) {
+                neighbor.set_rank(partition_.get_rank(neighbor.id()));
+            }
+        };
+        if constexpr (std::is_same_v<std::remove_cvref_t<ExecutionPolicy>, execution_policy::parallel>) {
             tbb::task_arena arena(policy.num_threads);
             arena.execute([&] {
-                tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&ranges, this](auto const& r) {
+                tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&](auto const& r) {
                     for (auto node: r) {
-                        for (auto& neighbor: this->adj(node).neighbors()) {
-                            PEID rank = get_PE_from_node_ranges<binary_search>(neighbor.id(), ranges);
-                            neighbor.set_rank(rank);
-                        }
+                        set_ranks(node);
                     }
                 });
             });
         } else {
             for (auto node: nodes) {
-                for (auto& neighbor: this->adj(node).neighbors()) {
-                    PEID rank = get_PE_from_node_ranges<binary_search>(neighbor.id(), ranges);
-                    neighbor.set_rank(rank);
-                }
+                set_ranks(node);
             }
         }
         // } else {
@@ -1004,6 +1001,7 @@ public:
         G_compact.local_edge_count_      = G_compact.head_.size();
         G_compact.node_range_            = node_range_;
         G_compact.comm_                  = comm_;
+        G_compact.partition_             = partition_;
         G_compact.rank_                  = rank_;
         G_compact.size_                  = size_;
         G_compact.node_indexer_          = std::move(sparse_indexer);
@@ -1180,9 +1178,7 @@ public:
 #endif
     }
     void check_edge_consistency() {
-        std::vector<std::pair<NodeId, NodeId>> ranges(size_);
-        gather_PE_ranges(node_range_.first, node_range_.second, ranges, comm_, rank_, size_);
-        NodeId max_node_id = ranges.back().second - 1;
+        NodeId max_node_id = partition_.partition_range(size_ - 1).second - 1;
         for (auto node: this->local_nodes()) {
             for (auto neighbor: this->adj(node).neighbors()) {
                 KASSERT(neighbor.id() <= max_node_id, "neighbor " << neighbor << " of node " << node << " is invalid!");
@@ -1219,6 +1215,7 @@ private:
     MPI_Comm                       comm_ = MPI_COMM_NULL;
     PEID                           rank_;
     PEID                           size_;
+    VertexPartition<NodeId>        partition_; // the vertex range of every rank
     NodeIndexer                    node_indexer_;
     SparseNodeIndexer              ghost_indexer_;
 };

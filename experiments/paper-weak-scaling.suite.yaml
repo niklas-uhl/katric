@@ -12,7 +12,6 @@ graphs:
   - import: paper-weak-scaling
 config:
   - algorithm: [patric, cetric-x]
-    binary-rank-search: true
     threshold: local-nodes
     threshold-scale: 1.0
     local-degree-of-parallelism: 2

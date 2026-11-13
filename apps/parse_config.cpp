@@ -93,7 +93,6 @@ cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::P
 
     add_enum_option(app, "--degree-exchange", conf.degree_exchange);
     app.add_flag("--global-synchronization", conf.global_synchronization);
-    app.add_flag("--binary-rank-search", conf.binary_rank_search);
 
     add_enum_option(app, "--algorithm", conf.algorithm);
 

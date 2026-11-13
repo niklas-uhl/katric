@@ -19,7 +19,6 @@ graphs:
   - import: phases
 config:
   - algorithm: [patric, cetric-x]
-    binary-rank-search: true
     threshold: local-nodes
     degree-exchange: dense
     global-synchronization: true
@@ -30,7 +29,6 @@ config:
   # appended (so the indices of the configurations above stay the same): pre-CETRIC, cut edges oriented outward in
   # the local phase, no ghost expansion
   - algorithm: cetric
-    binary-rank-search: true
     threshold: local-nodes
     degree-exchange: dense
     global-synchronization: true
@@ -40,7 +38,6 @@ config:
     iterations: 3
   # appended: the three algorithms with the 2D grid indirection in the global phase (the paper's choice at large p)
   - algorithm: [patric, cetric-x, cetric]
-    binary-rank-search: true
     threshold: local-nodes
     degree-exchange: dense
     global-synchronization: true

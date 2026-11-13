@@ -128,11 +128,7 @@ inline void preprocessing(
 template <typename Graph>
 inline void compute_ghost_ranks(Graph& G, const Config& conf) {
     with_execution_policy(conf, [&](auto policy) {
-        if (conf.binary_rank_search) {
-            G.template find_ghost_ranks<true>(std::move(policy));
-        } else {
-            G.template find_ghost_ranks<false>(std::move(policy));
-        }
+        G.find_ghost_ranks(std::move(policy));
     });
 }
 

@@ -1,7 +1,6 @@
 # Ditric
 algorithm = "patric"
 pseudo2core = false
-binary-rank-search = true
 threshold = "local-nodes"
 threshold-scale = 1.0
 edge-partitioning = false
