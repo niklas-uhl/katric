@@ -167,6 +167,38 @@ struct LocalPhaseCounters {
     }
 };
 
+/// Work counters of the global phase, one instance per thread on the hybrid path.
+struct GlobalPhaseCounters {
+    size_t skipped_nodes            = 0;
+    size_t interface_nodes          = 0;
+    size_t wedge_checks             = 0;
+    size_t intersection_size_global = 0;
+    size_t type3_triangles          = 0;
+
+    friend GlobalPhaseCounters operator+(GlobalPhaseCounters lhs, GlobalPhaseCounters const& rhs) {
+        lhs.skipped_nodes += rhs.skipped_nodes;
+        lhs.interface_nodes += rhs.interface_nodes;
+        lhs.wedge_checks += rhs.wedge_checks;
+        lhs.intersection_size_global += rhs.intersection_size_global;
+        lhs.type3_triangles += rhs.type3_triangles;
+        return lhs;
+    }
+
+    /// Adds the counts and the message statistics of the phase's queue to the open Caliper region.
+    template <typename MessageStatistics>
+    void report(MessageStatistics const& messages) const {
+        profiling::counter_add("skipped_nodes", skipped_nodes);
+        profiling::counter_add("interface_nodes", interface_nodes);
+        profiling::counter_add("wedge_checks", wedge_checks);
+        profiling::counter_add("intersection_size_global", intersection_size_global);
+        profiling::counter_add("type3_triangles", type3_triangles);
+        profiling::counter_add("sent_messages", messages.sent_messages);
+        profiling::counter_add("send_volume", messages.send_volume);
+        profiling::counter_add("received_messages", messages.received_messages);
+        profiling::counter_add("receive_volume", messages.receive_volume);
+    }
+};
+
 template <class GraphType, class CommunicationPolicy>
 class CetricEdgeIterator {
 public:
@@ -179,7 +211,6 @@ public:
           size_(size),
           last_proc_(G.local_node_count(), -1),
           interface_nodes_(),
-          pe_min_degree(),
           threshold_(std::numeric_limits<size_t>::max()) {
         EdgeId total_edge_count = G.total_edge_count();
         high_degree_threshold_  = sqrt(total_edge_count / 2.0);
@@ -604,98 +635,55 @@ public:
         thread_counters.combine(std::plus<>{}).report();
     }
 
+    /// The global phase on the interface vertices collected by run_local().
     template <typename TriangleFunc, typename NodeOrdering>
-    inline void run_distributed(TriangleFunc emit, NodeOrdering&& node_ordering) {
-        std::set<RankEncodedNodeId> ghosts;
-        run_distributed(emit, std::forward<NodeOrdering>(node_ordering), ghosts);
+    inline void run_distributed(TriangleFunc emit, NodeOrdering const& node_ordering) {
+        auto all_interface_nodes = tbb::flatten2d(interface_nodes_);
+        run_distributed(emit, all_interface_nodes.begin(), all_interface_nodes.end(), node_ordering);
     }
 
+    /// The global phase: sends N+(v) for every given vertex v to the ranks of its cut out-edges, and intersects each
+    /// received N+(v) with N+(u) for the local vertices u in it.
     template <typename TriangleFunc, typename NodeIterator, typename NodeOrdering>
     inline void run_distributed(
-        TriangleFunc                   emit,
-        NodeIterator                   interface_nodes_begin,
-        NodeIterator                   interface_ndoes_end,
-        NodeOrdering&&                 node_ordering
+        TriangleFunc        emit,
+        NodeIterator        interface_nodes_begin,
+        NodeIterator        interface_nodes_end,
+        NodeOrdering const& node_ordering
     ) {
-        std::set<RankEncodedNodeId> ghosts;
-        run_distributed(
-            emit,
-            interface_nodes_begin,
-            interface_ndoes_end,
-            std::forward<NodeOrdering>(node_ordering),
-            ghosts
-        );
-    }
-
-    template <typename TriangleFunc, typename NodeOrdering, typename GhostSet>
-    inline void run_distributed(
-        TriangleFunc emit, NodeOrdering&& node_ordering, GhostSet const& ghosts
-    ) {
-        auto all_interface_nodes = tbb::flatten2d(interface_nodes_);
-        run_distributed(
-            emit,
-            all_interface_nodes.begin(),
-            all_interface_nodes.end(),
-            std::forward<NodeOrdering>(node_ordering),
-            ghosts
-        );
-    }
-
-    template <typename TriangleFunc, typename NodeIterator, typename NodeOrdering, typename GhostSet>
-    inline void run_distributed(
-        TriangleFunc                   emit,
-        NodeIterator                   interface_nodes_begin,
-        NodeIterator                   interface_nodes_end,
-        NodeOrdering&&                 node_ordering,
-        GhostSet const&                ghosts
-    ) {
-        if (conf_.global_parallel && conf_.num_threads > 1) {
-            auto do_run = [&](auto& pool) {
-                run_distributed_parallel(
-                    emit,
-                    interface_nodes_begin,
-                    interface_nodes_end,
-                    std::forward<NodeOrdering>(node_ordering),
-                    ghosts,
-                    pool
-                );
-            };
-            switch (conf_.task_pool_type) {
-                case TaskPoolType::std_thread: {
-                    ThreadTaskPool pool(conf_.num_threads);
-                    do_run(pool);
-                    break;
-                }
-                case TaskPoolType::task_group: {
-                   if (conf_.task_priorities) {
-                       TbbTaskPool<true> pool(conf_.num_threads);
-                       do_run(pool);
-                   } else {
-                       TbbTaskPool<false> pool(conf_.num_threads);
-                       do_run(pool);
-                   }
-                   break;
-               }
+        if (!(conf_.global_parallel && conf_.num_threads > 1)) {
+            run_distributed_sequential(emit, interface_nodes_begin, interface_nodes_end, node_ordering);
+            return;
+        }
+        // hybrid path, frozen during the refactoring (doc/refactoring-plan.md)
+        auto do_run = [&](auto& pool) {
+            run_distributed_parallel(emit, interface_nodes_begin, interface_nodes_end, node_ordering, pool);
+        };
+        switch (conf_.task_pool_type) {
+            case TaskPoolType::std_thread: {
+                ThreadTaskPool pool(conf_.num_threads);
+                do_run(pool);
+                break;
             }
-
-        } else {
-            run_distributed_sequential(
-                emit,
-                interface_nodes_begin,
-                interface_nodes_end,
-                std::forward<NodeOrdering>(node_ordering),
-                ghosts
-            );
+            case TaskPoolType::task_group: {
+                if (conf_.task_priorities) {
+                    TbbTaskPool<true> pool(conf_.num_threads);
+                    do_run(pool);
+                } else {
+                    TbbTaskPool<false> pool(conf_.num_threads);
+                    do_run(pool);
+                }
+                break;
+            }
         }
     }
 
-    template <typename TriangleFunc, typename NodeIterator, typename NodeOrdering, typename GhostSet>
+    template <typename TriangleFunc, typename NodeIterator, typename NodeOrdering>
     inline void run_distributed_sequential(
-        TriangleFunc                   emit,
-        NodeIterator                   interface_nodes_begin,
-        NodeIterator                   interface_nodes_end,
-        NodeOrdering&&                 node_ordering,
-        GhostSet const&                ghosts
+        TriangleFunc        emit,
+        NodeIterator        interface_nodes_begin,
+        NodeIterator        interface_nodes_end,
+        NodeOrdering const& node_ordering
     ) {
         auto base_queue = message_queue::make_buffered_queue<RankEncodedNodeId>(Merger{}, Splitter{});
         auto queue      = [&]() {
@@ -706,8 +694,7 @@ public:
             }
         }();
         queue.set_threshold(threshold_);
-        size_t skipped_nodes   = 0;
-        size_t interface_nodes = 0;
+        GlobalPhaseCounters counters;
         // Time spent building and posting messages and handling received ones (the intersections), accumulated per
         // call because a Caliper region per message would cost more than the work it measures. The rest of the
         // phase's exclusive time is polling; the region `termination` is the wait for the other ranks.
@@ -716,25 +703,19 @@ public:
         clock::duration handle_time{};
         auto            on_message = [&](SharedVectorSpan<RankEncodedNodeId> span, PEID sender [[maybe_unused]]) {
             auto const start = clock::now();
-            handle_buffer(span.begin(), span.end(), emit, node_ordering, ghosts);
+            process_message(span.begin(), span.end(), counters, emit, node_ordering);
             handle_time += clock::now() - start;
         };
         for (auto current = interface_nodes_begin; current != interface_nodes_end; current++) {
             RankEncodedNodeId v = *current;
-            interface_nodes++;
-            // iterate over neighborhood and delegate to other PEs if necessary
+            counters.interface_nodes++;
             if (conf_.pseudo2core && G.outdegree(v) < 2) {
-                skipped_nodes++;
+                counters.skipped_nodes++;
             } else {
                 auto const start = clock::now();
-                for (RankEncodedEdge edge: G.out_adj(v).edges()) {
-                    RankEncodedNodeId u = edge.head;
-                    if (/*conf_.algorithm == Algorithm::cetric || */ u.rank() != rank_) {
-                        PEID u_rank = u.rank();
-                        assert(u_rank != rank_);
-                        if (last_proc_[G.to_local_idx(v)] != u_rank) {
-                            enqueue_for_sending(queue, v, u_rank, emit);
-                        }
+                for (RankEncodedNodeId u: G.out_adj(v).neighbors()) {
+                    if (u.rank() != rank_ && last_proc_[G.to_local_idx(v)] != u.rank()) {
+                        enqueue_for_sending(queue, v, u.rank());
                     }
                 }
                 send_time += clock::now() - start;
@@ -745,22 +726,19 @@ public:
             CALI_CXX_MARK_SCOPE("termination");
             queue.terminate(on_message);
         }
-        report_distributed_counters(queue.stats());
-        profiling::counter_add("skipped_nodes", skipped_nodes);
-        profiling::counter_add("interface_nodes", interface_nodes);
+        counters.report(queue.stats());
         profiling::counter_add("send_ns", std::chrono::duration_cast<std::chrono::nanoseconds>(send_time).count());
         profiling::counter_add("handle_ns", std::chrono::duration_cast<std::chrono::nanoseconds>(handle_time).count());
         queue.reset();
     }
 
-    template <typename TriangleFunc, typename NodeIterator, typename NodeOrdering, typename GhostSet, typename Pool>
+    template <typename TriangleFunc, typename NodeIterator, typename NodeOrdering, typename Pool>
     inline void run_distributed_parallel(
-        TriangleFunc                   emit,
-        NodeIterator                   interface_nodes_begin,
-        NodeIterator                   interface_nodes_end,
-        NodeOrdering&&                 node_ordering,
-        GhostSet const&                ghosts,
-        Pool&                          pool
+        TriangleFunc        emit,
+        NodeIterator        interface_nodes_begin,
+        NodeIterator        interface_nodes_end,
+        NodeOrdering const& node_ordering,
+        Pool&               pool
     ) {
         KASSERT(conf_.num_threads > 1ul);
         std::thread::id master_thread_id = std::this_thread::get_id();
@@ -778,43 +756,48 @@ public:
             }
         }();
         queue.set_threshold(threshold_);
-        std::atomic<size_t>      nodes_queued = 0;
-        std::atomic<size_t>      write_jobs   = 0;
-        tbb::task_arena          arena(conf_.num_threads);
+        std::atomic<size_t>                          nodes_queued = 0;
+        std::atomic<size_t>                          write_jobs   = 0;
         tbb::concurrent_queue<std::function<void()>> high_priority_tasks;
+        // counted on the pool threads
+        tbb::combinable<GlobalPhaseCounters> thread_counters;
 
-        tbb::combinable<size_t> skipped_nodes {0};
-        auto                task          = [&](const RankEncodedNodeId& v) {
+        auto task = [&](const RankEncodedNodeId& v) {
             if (conf_.pseudo2core && G.outdegree(v) < 2) {
-                skipped_nodes.local()++;
+                thread_counters.local().skipped_nodes++;
                 nodes_queued--;
                 return;
             }
-            for (RankEncodedEdge edge: G.out_adj(v).edges()) {
-                RankEncodedNodeId u = edge.head;
-                if (/*conf_.algorithm == Algorithm::cetric || */ u.rank() != rank_) {
-                    PEID u_rank = u.rank();
-                    assert(u_rank != rank_);
-                    if (last_proc_[G.to_local_idx(v)] != u_rank) {
-                        SPDLOG_DEBUG("Send N({}) to {}", v, u_rank);
-                        enqueue_for_sending_async(queue, v, u_rank, pool, write_jobs, emit);
-                    }
+            for (RankEncodedNodeId u: G.out_adj(v).neighbors()) {
+                if (u.rank() != rank_ && last_proc_[G.to_local_idx(v)] != u.rank()) {
+                    enqueue_for_sending_async(queue, v, u.rank(), pool, write_jobs);
                 }
             }
             nodes_queued--;
         };
         nodes_queued = std::distance(interface_nodes_begin, interface_nodes_end);
-        tbb::enumerable_thread_specific<size_t> priorized_nodes = 0;
+        thread_counters.local().interface_nodes += nodes_queued;
+        // A received message becomes a task: high priority (run by the master thread and the node loop) or a
+        // regular pool task.
+        auto on_message = [&](SharedVectorSpan<RankEncodedNodeId> span, PEID sender [[maybe_unused]]) {
+            auto message_task = [this, &thread_counters, &emit, &node_ordering, span = std::move(span)] {
+                process_message(span.begin(), span.end(), thread_counters, emit, node_ordering);
+            };
+            if constexpr (Pool::use_priorities) {
+                high_priority_tasks.emplace(std::move(message_task));
+            } else {
+                pool.submit_work(std::move(message_task));
+            }
+        };
         pool.submit_work([&] {
             if constexpr (Pool::has_tbb) {
                 tbb::parallel_for_each(
                     interface_nodes_begin,
                     interface_nodes_end,
                     [&](const RankEncodedNodeId& v, tbb::feeder<RankEncodedNodeId>& feeder) {
-                        std::function<void()> high_priority_task;
                         if constexpr (Pool::use_priorities) {
+                            std::function<void()> high_priority_task;
                             if (high_priority_tasks.try_pop(high_priority_task)) {
-                                priorized_nodes.local()++;
                                 feeder.add(v);
                                 high_priority_task();
                                 return;
@@ -830,22 +813,9 @@ public:
             }
         });
         auto master_task = [&] {
-            while (true) {
-                if (write_jobs == 0 && nodes_queued == 0) {
-                    SPDLOG_DEBUG("No more polling");
-                    break;
-                }
+            while (write_jobs != 0 || nodes_queued != 0) {
                 queue.check_for_overflow_and_flush();
-                queue.poll([&](SharedVectorSpan<RankEncodedNodeId> span, PEID sender [[maybe_unused]]) {
-                    handle_buffer_hybrid(
-                        std::move(span),
-                        pool,
-                        high_priority_tasks,
-                        emit,
-                        std::forward<NodeOrdering>(node_ordering),
-                        ghosts
-                    );
-                });
+                queue.poll(on_message);
                 if constexpr (Pool::use_priorities) {
                     std::function<void()> intersect_task;
                     while (high_priority_tasks.try_pop(intersect_task)) {
@@ -853,280 +823,126 @@ public:
                     }
                 }
             }
-            SPDLOG_DEBUG("remaining high priority tasks: {}", high_priority_tasks.unsafe_size());
-            queue.terminate([&](SharedVectorSpan<RankEncodedNodeId> span, PEID sender [[maybe_unused]]) {
-                handle_buffer_hybrid(
-                    std::move(span),
-                    pool,
-                    high_priority_tasks,
-                    emit,
-                    std::forward<NodeOrdering>(node_ordering),
-                    ghosts
-                );
-            });
-            SPDLOG_DEBUG("priorized nodes: {}", priorized_nodes.combine(std::plus<>{}));
+            queue.terminate(on_message);
             std::function<void()> intersect_task;
-            if constexpr (Pool::use_priorities) {
-                std::function<void()> intersect_task;
-                while (high_priority_tasks.try_pop(intersect_task)) {
-                    pool.submit_work(std::move(intersect_task));
-                }
-            }
             while (high_priority_tasks.try_pop(intersect_task)) {
                 pool.submit_work(std::move(intersect_task));
             }
         };
         pool.run_and_wait(master_task);
-        SPDLOG_DEBUG("Finished pool");
-        report_distributed_counters(queue.stats());
-        profiling::counter_add("skipped_nodes", skipped_nodes.combine(std::plus<>{}));
+        thread_counters.combine(std::plus<>{}).report(queue.stats());
         queue.reset();
     }
 
 private:
-    /// Reports the counts of a distributed run (made on the pool threads) and the message statistics of its queue
-    /// to the open Caliper region, and resets them for the next run.
-    template <typename MessageStatistics>
-    void report_distributed_counters(MessageStatistics const& messages) {
-        profiling::counter_add("wedge_checks", distributed_wedge_checks_.exchange(0));
-        profiling::counter_add("intersection_size_global", distributed_intersection_size_.exchange(0));
-        profiling::counter_add("type3_triangles", distributed_triangles_.exchange(0));
-        profiling::counter_add("sent_messages", messages.sent_messages);
-        profiling::counter_add("send_volume", messages.send_volume);
-        profiling::counter_add("received_messages", messages.received_messages);
-        profiling::counter_add("receive_volume", messages.receive_volume);
-    }
-
-    template <typename MessageQueue, typename TriangleFunc>
-    void enqueue_for_sending(
-        MessageQueue&                  queue,
-        RankEncodedNodeId              v,
-        PEID                           u_rank,
-        TriangleFunc                   emit [[maybe_unused]]
-    ) {
+    template <typename MessageQueue>
+    void enqueue_for_sending(MessageQueue& queue, RankEncodedNodeId v, PEID u_rank) {
         std::vector<RankEncodedNodeId> buffer;
         buffer.emplace_back(v);
-        for (RankEncodedEdge e: G.out_adj(v).edges()) {
-            assert(conf_.algorithm == Algorithm::patric || e.head.rank() != rank_);
-            buffer.emplace_back(e.head);
+        for (RankEncodedNodeId w: G.out_adj(v).neighbors()) {
+            buffer.emplace_back(w);
         }
-        SPDLOG_DEBUG("Sending {} to {}", buffer, u_rank);
         queue.post_message(std::move(buffer), u_rank);
         last_proc_[G.to_local_idx(v)] = u_rank;
     }
 
-    template <typename MessageQueue, typename TriangleFunc, typename Pool>
+    template <typename MessageQueue, typename Pool>
     void enqueue_for_sending_async(
-        MessageQueue&                  queue,
-        RankEncodedNodeId              v,
-        PEID                           u_rank,
-        Pool&                          pool,
-        std::atomic<size_t>&           write_jobs,
-        TriangleFunc                   emit [[maybe_unused]]
+        MessageQueue& queue, RankEncodedNodeId v, PEID u_rank, Pool& pool, std::atomic<size_t>& write_jobs
     ) {
-        SPDLOG_DEBUG("rank {}", u_rank);
-        SPDLOG_DEBUG("{}", u_rank);
         write_jobs++;
         pool.submit_work([&queue, &write_jobs, this, v, u_rank]() {
             std::vector<RankEncodedNodeId> buffer;
             buffer.emplace_back(v);
-            SPDLOG_DEBUG("{}", u_rank);
-            for (RankEncodedNodeId node: G.out_adj(v).neighbors()) {
-                assert(conf_.algorithm == Algorithm::patric || node.rank() != rank_);
-                buffer.emplace_back(node);
+            for (RankEncodedNodeId w: G.out_adj(v).neighbors()) {
+                buffer.emplace_back(w);
             }
-            SPDLOG_DEBUG("{}", u_rank);
             queue.post_message(std::move(buffer), u_rank);
             write_jobs--;
         });
         last_proc_[G.to_local_idx(v)] = u_rank;
     }
 
-    template <typename IterType, typename TriangleFunc, typename NodeOrdering, typename GhostSet>
-    void handle_buffer(
-        IterType                       begin,
-        IterType                       end,
-        TriangleFunc                   emit,
-        NodeOrdering&&                 node_ordering,
-        GhostSet const&                ghosts
-    ) {
-        RankEncodedNodeId v = *begin;
-        process_neighborhood(v, begin + 1, end, emit, std::forward<NodeOrdering>(node_ordering), ghosts);
+    static GlobalPhaseCounters& local_counters(GlobalPhaseCounters& counters) {
+        return counters;
+    }
+    static GlobalPhaseCounters& local_counters(tbb::combinable<GlobalPhaseCounters>& counters) {
+        return counters.local();
     }
 
-    template <typename TriangleFunc, typename NodeOrdering, typename GhostSet, typename Pool>
-    void handle_buffer_hybrid(
-        SharedVectorSpan<RankEncodedNodeId>           span,
-        Pool&                                         pool [[maybe_unused]],
-        tbb::concurrent_queue<std::function<void()>>& high_priority_tasks,
-        TriangleFunc                                  emit,
-        NodeOrdering&&                                node_ordering,
-        GhostSet const&                               ghosts
+    /// Handles a received message [v, N+(v)...]: emits the triangles (v, u, w) for every local vertex u in the
+    /// message and w in N+(v) ∩ N+(u). `counters` is a GlobalPhaseCounters or, on the hybrid path, a combinable of
+    /// them; there the receivers can be processed in parallel (`--global-degree-of-parallelism` > 2).
+    template <typename IterType, typename Counters, typename TriangleFunc, typename NodeOrdering>
+    void process_message(
+        IterType begin, IterType end, Counters& counters, TriangleFunc& emit, NodeOrdering const& node_ordering
     ) {
-        auto task = [this, emit, span = std::move(span), &node_ordering, &ghosts] {
-            RankEncodedNodeId v = *span.begin();
-            SPDLOG_DEBUG("Spawn task for {} on thread {}", v, tbb::this_task_arena::current_thread_index());
-            process_neighborhood(
-                v,
-                span.begin() + 1,
-                span.end(),
-                emit,
-                std::forward<NodeOrdering>(node_ordering),
-                ghosts
-            );
+        RankEncodedNodeId const v = *begin;
+        KASSERT(v.rank() != rank_);
+        auto const neighbors_first = begin + 1;
+        auto       on_receiver     = [&](RankEncodedNodeId u) {
+            if (u.rank() == rank_) {
+                intersect_with_message(v, u, neighbors_first, end, local_counters(counters), emit, node_ordering);
+            }
         };
-        if constexpr (Pool::use_priorities) {
-            high_priority_tasks.emplace(std::move(task));
-        } else {
-            pool.submit_work(std::move(task));
-        }
-
-        // pool.submit_work(task);
-        // pool.submit_work();
-        // thread_pool.enqueue(
-        //     [this, emit, span = std::move(span), &node_ordering,
-        //     &ghosts] {
-        //         RankEncodedNodeId v = *span.begin();
-        //         // atomic_debug(
-        //         //     fmt::format("Spawn task for {} on thread {}", v,
-        //         //     tbb::this_task_arena::current_thread_index()));
-        //         process_neighborhood(
-        //             v,
-        //             span.begin() + 1,
-        //             span.end(),
-        //             emit,
-        //             std::forward<NodeOrdering>(node_ordering),
-        //             ghosts
-        //         );
-        //     },
-        //     TaskPriority::high
-        // );
-    }
-
-    template <typename IntersectFunc, typename NodeBufferIter, typename NodeOrdering, typename GhostSet>
-    void intersect_from_message(
-        RankEncodedNodeId              u,
-        RankEncodedNodeId              v,
-        NodeBufferIter                 begin,
-        NodeBufferIter                 end,
-        IntersectFunc                  on_intersection,
-        NodeOrdering&&                 node_ordering,
-        GhostSet const&                ghosts
-    ) {
-        if (conf_.algorithm == Algorithm::cetric_x) {
-            // this node may have no out edges and was therefore removed
-            if (!G.is_local(u)) {
+        if constexpr (std::is_same_v<Counters, tbb::combinable<GlobalPhaseCounters>>) {
+            if (conf_.global_degree_of_parallelism > 2) {
+                tbb::parallel_for(tbb::blocked_range(neighbors_first, end), [&](auto const& r) {
+                    for (auto u: r) {
+                        on_receiver(u);
+                    }
+                });
                 return;
             }
         }
-        auto u_neighbors = G.out_adj(u).neighbors();
-        if (!ghosts.empty()) {
-            auto filtered_neighbors_it =
-                std::views::filter(std::ranges::subrange(begin, end), [&ghosts](RankEncodedNodeId node) {
-                    return ghosts.find(node) != ghosts.end();
-                });
-            std::vector<RankEncodedNodeId> filtered_neighbors(
-                filtered_neighbors_it.begin(),
-                filtered_neighbors_it.end()
-            );
-            SPDLOG_DEBUG("intersecting N({})={} and N({}){}", u, u_neighbors, v, filtered_neighbors);
-
-            // for each edge (v, u) we check the open wedge
-            //  (v, u, w) for w in N(u)+
-            distributed_wedge_checks_.fetch_add(u_neighbors.end() - u_neighbors.begin(), std::memory_order_relaxed);
-            distributed_intersection_size_.fetch_add(
-                filtered_neighbors.end() - filtered_neighbors.begin() + u_neighbors.end() - u_neighbors.begin(),
-                std::memory_order_relaxed
-            );
-            cetric::intersection(
-                u_neighbors.begin(),
-                u_neighbors.end(),
-                filtered_neighbors.begin(),
-                filtered_neighbors.end(),
-                on_intersection,
-                node_ordering,
-                conf_
-            );
-        } else {
-            // for each edge (v, u) we check the open wedge (v, u, w) for w in
-            // N(u)+
-            distributed_wedge_checks_.fetch_add(u_neighbors.end() - u_neighbors.begin(), std::memory_order_relaxed);
-
-            distributed_intersection_size_.fetch_add(
-                end - begin + u_neighbors.end() - u_neighbors.begin(),
-                std::memory_order_relaxed
-            );
-            cetric::intersection(
-                u_neighbors.begin(),
-                u_neighbors.end(),
-                begin,
-                end,
-                on_intersection,
-                node_ordering,
-                conf_
-            );
+        for (auto it = neighbors_first; it != end; ++it) {
+            on_receiver(*it);
         }
     }
 
-    template <typename TriangleFunc, typename NodeBufferIter, typename NodeOrdering, typename GhostSet>
-    void process_neighborhood(
-        RankEncodedNodeId              v,
-        NodeBufferIter                 begin,
-        NodeBufferIter                 end,
-        TriangleFunc                   emit,
-        NodeOrdering&&                 node_ordering,
-        GhostSet const&                ghosts
+    /// The global phase's work for one local receiver u of N+(v): emits the triangles (v, u, w) for w in
+    /// N+(v) ∩ N+(u).
+    template <typename NodeBufferIter, typename TriangleFunc, typename NodeOrdering>
+    void intersect_with_message(
+        RankEncodedNodeId    v,
+        RankEncodedNodeId    u,
+        NodeBufferIter       v_first,
+        NodeBufferIter       v_last,
+        GlobalPhaseCounters& counters,
+        TriangleFunc&        emit,
+        NodeOrdering const&  node_ordering
     ) {
-        SPDLOG_DEBUG("Handling message {}", std::ranges::subrange(begin, end));
-        assert(v.rank() != rank_);
-        auto for_each_local_receiver = [&](auto on_node) {
-            if (conf_.global_degree_of_parallelism > 2) {
-                tbb::parallel_for(tbb::blocked_range(begin, end), [&on_node, this](auto const& r) {
-                    for (auto u: r) {
-                        if (u.rank() == rank_) {
-                            on_node(u);
-                        }
-                    }
-                });
-            } else {
-                for (auto current = begin; current != end; current++) {
-                    RankEncodedNodeId u = *current;
-                    if (u.rank() == rank_) {
-                        on_node(u);
-                    }
-                }
-            }
-        };
-        for_each_local_receiver([&](RankEncodedNodeId u) {
-            assert(u.rank() == rank_);
-            intersect_from_message(
-                u,
-                v,
-                begin,
-                end,
-                [&](RankEncodedNodeId local_intersection) {
-                    emit(Triangle<RankEncodedNodeId>{v, u, local_intersection});
-                    distributed_triangles_.fetch_add(1, std::memory_order_relaxed);
-                },
-                node_ordering,
-                ghosts
-            );
-        });
+        // cetric-x: u may have had no out-edges and was removed by the contraction
+        if (conf_.algorithm == Algorithm::cetric_x && !G.is_local(u)) {
+            return;
+        }
+        auto const u_neighbors = G.out_adj(u).neighbors();
+        // for the edge (v, u) we check the open wedges (v, u, w) for w in N+(u)
+        counters.wedge_checks += u_neighbors.end() - u_neighbors.begin();
+        counters.intersection_size_global += (v_last - v_first) + (u_neighbors.end() - u_neighbors.begin());
+        cetric::intersection(
+            u_neighbors.begin(),
+            u_neighbors.end(),
+            v_first,
+            v_last,
+            [&](RankEncodedNodeId w) {
+                counters.type3_triangles++;
+                emit(Triangle<RankEncodedNodeId>{v, u, w});
+            },
+            node_ordering,
+            conf_
+        );
     }
+
     GraphType&                                                      G;
     const Config&                                                   conf_;
     PEID                                                            rank_;
     PEID                                                            size_;
     std::vector<PEID>                                               last_proc_;
     tbb::enumerable_thread_specific<std::vector<RankEncodedNodeId>> interface_nodes_;
-    std::vector<Degree>                                             pe_min_degree;
     size_t                                                          threshold_;
     size_t                                                          high_degree_threshold_;
-    // counted concurrently by the tasks of run_distributed_*(), see report_distributed_counters()
-    std::atomic<size_t> distributed_wedge_checks_{0};
-    std::atomic<size_t> distributed_intersection_size_{0};
-    std::atomic<size_t> distributed_triangles_{0};
-}; // namespace cetric
+};
 
 } // namespace cetric
 #endif // PARALLEL_TRIANGLE_COUNTER_PARALLEL_NODE_ITERATOR_H
