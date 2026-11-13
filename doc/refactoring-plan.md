@@ -286,11 +286,37 @@ Compact IDs fit 32 bits per rank (n + g < 2^32), which would halve the adjacency
       inside the graph (`e8adcf8`). Also removed `CostFunction::rank()`, which called a graph method that does not
       exist (never instantiated). Noticed: the parallel cost evaluation increments a shared `node_index` from all
       threads (a race; hybrid path, frozen)
-- [ ] Stage 2, the swap: adjacency entries become compact IDs (local vertices first, then ghosts by global ID), per-ghost
-      arrays for global ID, owner rank and degree; orientation and cost functions read the degree array; messages
-      carry global IDs with the split at sender and receiver (above); contraction and ghost expansion renumber. Removes
-      `RankEncodedNodeId`, `find_ghost_ranks`, `AuxiliaryNodeData` and the old node indexers. Validated by identical
-      counters
+- [ ] Before stage 2 (decided 2026-11-13): restructure `cetric_edge_iterator.h` (948 lines) into `local_phase.h`
+      (`intersect_local_edge` + the sequential loop, free functions over the graph, returning the interface vertices
+      as a vector) and `global_phase.h` (sending N+(v), the message handler, queue setup), without a class holding
+      state across phases. Remove the frozen hybrid code (four parallel local variants, the parallel global phase with
+      its task pools, the async send path) instead of carrying it through both refactors; it stays in git history and
+      is re-ported later onto the new kernels (thread-local counters in `TriangleCounter`). Hybrid ctests and
+      `configs/hybrid.toml` disabled until then; the paper's hybrid suite runs from the paper commit. Pure
+      restructuring, identical counters
+- [ ] Stage 2, the swap, as a pipeline of immutable graphs built from KaCCv2's building blocks (decided 2026-11-13;
+      adopt KaCCv2's interface and layering, not `SplitDistributedCSRGraph` or `FilteredGraph`):
+      - input graph: what KaGen and the load balancer produce (`LocalGraphView`, global IDs), unchanged
+      - oriented graph: `VertexPartition` + `DenseIndexer` for the local vertices; a ghost table (sorted ghost global
+        IDs + owner per ghost, from `get_rank` once per ghost; global ID -> slot by binary search, no hash map: only
+        needed while building and when depositing exchanged data); an out-CSR over compact IDs (katric's own builder:
+        each undirected edge kept at its smaller endpoint in (degree, global ID)); per-ghost degrees from
+        `push_to_ghosts` deposited into a `std::vector` indexed by `c - n`; for CETRIC the ghost rows (each ghost's
+        out-edges into local vertices) from KaCCv2's `build_ghost_reverse_index`, adjusted to index by `c - n`
+        instead of its hash slot map and to take an edge filter (the ghost -> local orientation); its targets come out
+        sorted by local index, the order the clipping needs. No in-edges kept (only the ghost rows needed them)
+      - contracted graph: `SparseIndexer` over the vertices with cut edges (inserted in global-ID order) + their out-CSR,
+        sharing the oriented graph's ghost table and compact IDs
+      - the compact ID is KaCCv2's neighbor handle: overload `neighbor_is_local` (`c < n`), `neighbor_owner`,
+        `neighbor_local_index` for it, and the stage-1 accessors become these; plain CSR with `std::span` neighbors
+        replaces `EdgeRange` / `RankEncodedEdge` / `EdgeLocator`. KaCCv2's generic code (`push_to_ghosts`,
+        `measure_locality`, `build_ghost_reverse_index` for idea 12) then copies almost unchanged
+      - adjustments to KaCCv2's blocks: the ghost table takes `SparseIndexer`'s storage idea without its
+        `VertexPartition` base (whose `is_local` means "in my range", the opposite of a ghost); the reverse index as
+        above. Katric's own: the oriented CSR build and the message split in the global phase
+      Removes `RankEncodedNodeId`, `find_ghost_ranks`, `AuxiliaryNodeData`, the mutating `DistributedGraph`
+      (`first_out_offset_`, `remove_internal_edges`, `remove_in_edges_and_expand_ghosts`) and the old node indexers.
+      Validated by identical counters
 - [ ] Stage 3: 32-bit compact IDs (n + g < 2^32 per rank) — measure the local phase
 - Known issue (pre-existing, also in the binary from before step 1): DPD load balancing on a graph with fewer vertices
   than ranks (`examples/triangle.metis` on 4 ranks) hangs
