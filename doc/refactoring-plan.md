@@ -73,12 +73,16 @@ by those `.cpp` files):
       Root error (in the -log.txt, not the -err.txt): UCX `ibv_reg_mr(..., length=2480..7488) failed: Cannot allocate
       memory` on mlx5_0, ~100 times per run, i.e. memory registration for many concurrent small zero-copy sends runs
       out; the `MPI_ERR_INTERN` in a blocking `MPI_Recv`, the IB remote access errors and the CMA `process_vm_readv: No
-      such process` are follow-ups of ranks aborting. The `MPI_Recv` is either the message queue (`queue.h:112`) or
-      the NBX `sparse_all_to_all` (`communicator.h`); both have p-1 sends in flight per rank on permuted inputs.
-      `addr2line -f -C -e build/apps/katric 0x66da68 0x671013` on HoreKa2 tells which (if the binary is unchanged).
+      such process` are follow-ups of ranks aborting. The `MPI_Recv` is the message queue's (`queue.h:112`) in the global
+      phase: `addr2line` on the HoreKa2 binary resolves the caller to `CetricEdgeIterator<..., MessageQueuePolicy>::
+      run_distributed_sequential`, called from `run_patric<MessageQueuePolicy>`.
       Expected to go away with BriefKAsten, so HoreKa2 waits until then (see open decisions); a cheap test before
       that: `UCX_RNDV_THRESH=inf` (small messages eager, no registration). 1536/3072 not run.
-      Not run yet: configurations 3+ (`cetric`, grid)
+      Not run yet: configurations 3+ (`cetric`, grid).
+- [ ] Rerun the whole `phases` suite (patric, cetric-x, cetric, each direct and grid) on SuperMUC-NG from `3466ccf`
+      (decided 2026-11-13), 48–1536 cores: KaMPIng assertions off (the runs above had level 10), triangle count and
+      build metadata fixed. Algorithm code as `1962d4e`. This is the baseline for the refactoring steps; tag it
+      instead of `pre-refactor` on `1962d4e`. 3072 left out (RHG's 19M-degree hub, see below)
 - Findings from the 2026-11-13 data (time per iteration, max over ranks, SuperMUC-NG unless noted):
   - Locality inputs weak-scale flat from 48 to 1536 cores (RGG 2.2–2.6 s, RHG 1.8–2.7 s); the local phase is 60–70%.
     HoreKa2 is 2.5× faster per core on the same runs (local phase 0.62 vs 1.6 s on RGG). The SuperMUC build is fine
