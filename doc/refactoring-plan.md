@@ -70,7 +70,9 @@ by those `.cpp` files):
       Status 2026-11-13: SuperMUC-NG 48–3072 complete except permuted RGG at 192 (cetric-x and degree ordering killed,
       out of memory) and RHG/permuted RHG at 3072 with degree ordering (300 s `I_MPI_JOB_TIMEOUT`). HoreKa2 only 192
       for the permuted inputs and 192–768 for the others: the permuted runs at 384 die in UCX (`MPI_ERR_INTERN` in
-      `MPI_Recv`, IB remote access error) and hit the job time limit; 1536/3072 not run.
+      `MPI_Recv`, IB remote access error) and hit the job time limit; 1536/3072 not run. Probably too many
+      outstanding nonblocking requests from the message queue; expected to go away with BriefKAsten, so HoreKa2 waits
+      until then (see open decisions).
       Not run yet: configurations 3+ (`cetric`, grid)
 - Findings from the 2026-11-13 data (time per iteration, max over ranks, SuperMUC-NG unless noted):
   - Locality inputs weak-scale flat from 48 to 1536 cores (RGG 2.2–2.6 s, RHG 1.8–2.7 s); the local phase is 60–70%.
@@ -284,5 +286,8 @@ Plus: without locality, CETRIC should not pay for ghost expansion (fall back to 
 - [x] Hybrid (MPI + TBB) path: frozen during the refactoring (decided 2026-11-12). Step 2 writes the kernels
       sequential first, the hybrid ctests are disabled meanwhile, and the threads are ported afterwards
 - [ ] BriefKAsten instead of the legacy message queue: still deferred (needs C++23, flow control off, a redesign of
-      `ConcurrentBufferedMessageQueue`); revisit after step 3
+      `ConcurrentBufferedMessageQueue`); revisit after step 3. Priority (2026-11-13): the algorithm and the
+      synchronous communication first, tuning the asynchronous communication comes last
+- [x] KaMPIng assertions off in the `experiments` preset (`KAMPING_ASSERTION_LEVEL=none`, decided 2026-11-13; the
+      `phases` baseline ran with level 10 = exceptions)
 - [x] Step-1 "decide" items: all removed except `--intersection-method` and `--pseudo2core` (decided 2026-11-12)

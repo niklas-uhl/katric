@@ -25,6 +25,7 @@
         "CMAKE_BUILD_TYPE": "Release",
         "CETRIC_CXX_FLAGS": "-march=native",
         "KASSERT_ASSERTION_LEVEL": "0",
+        "KAMPING_ASSERTION_LEVEL": "none",
         "CETRIC_ACTIVE_LOG_LEVEL": "INFO",
         "CETRIC_BUILD_TESTS": "OFF"
       }
