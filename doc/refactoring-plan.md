@@ -281,6 +281,17 @@ Compact IDs fit 32 bits per rank (n + g < 2^32), which would halve the adjacency
       `get_PE_from_node_ranges` and `--binary-rank-search` are gone (configs and suites updated). Identical counters on
       the 78 reference runs (`dc74612`)
 - [ ] Local indexers: KaCCv2's `DenseIndexer` / `SparseIndexer` on plain `uint64` global IDs, with the compact IDs below
+- [x] Stage 1: the edge iterator, the ghost exchange and the cost functions ask the graph (`is_owned(v)`, `owner(v)`,
+      `global_id(v)`) instead of reading `RankEncodedNodeId`'s rank and ID, so the representation swap below stays
+      inside the graph (`e8adcf8`). Also removed `CostFunction::rank()`, which called a graph method that does not
+      exist (never instantiated). Noticed: the parallel cost evaluation increments a shared `node_index` from all
+      threads (a race; hybrid path, frozen)
+- [ ] Stage 2, the swap: adjacency entries become compact IDs (local vertices first, then ghosts by global ID), per-ghost
+      arrays for global ID, owner rank and degree; orientation and cost functions read the degree array; messages
+      carry global IDs with the split at sender and receiver (above); contraction and ghost expansion renumber. Removes
+      `RankEncodedNodeId`, `find_ghost_ranks`, `AuxiliaryNodeData` and the old node indexers. Validated by identical
+      counters
+- [ ] Stage 3: 32-bit compact IDs (n + g < 2^32 per rank) — measure the local phase
 - Known issue (pre-existing, also in the binary from before step 1): DPD load balancing on a graph with fewer vertices
   than ranks (`examples/triangle.metis` on 4 ranks) hangs
 - [ ] Compact IDs in the adjacency, built once after `find_ghosts`; per-ghost arrays for global ID, rank and degree.
