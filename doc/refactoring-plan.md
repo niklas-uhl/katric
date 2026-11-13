@@ -166,8 +166,13 @@ Options that are dead or only used in old exploration suites (`experiments/legac
 
 The deferred kamping-v2 plan from modernization-plan.md, plus the degree exchange.
 
-- [ ] Pass a communicator through `CommunicationUtility`, the graph communicators and the edge iterator instead of
-      the ~40 hard-coded `MPI_COMM_WORLD`; duplicate it at startup
+- [x] Pass a communicator instead of the hard-coded `MPI_COMM_WORLD`: `katric.cpp` duplicates it at startup
+      (input, verification, Adiak, iteration barriers and the algorithm use the duplicate), `DistributedGraph` keeps
+      it (`G.comm()`, constructor takes it instead of rank and size), `DegreeCommunicator` takes it from the graph,
+      `CommunicationUtility`'s exchanges, `GraphCommunicator::relocate` and `LoadBalancer::run` take it as a
+      parameter, the phases' barriers and reduction use `G.comm()`. Left on `MPI_COMM_WORLD`: the legacy message
+      queue (hard-coded in the library) and the grid adaptor laid over its ranks, until BriefKAsten; rank lookups for
+      log messages. The unused `MPITimer` is gone. Identical counters on the 78 reference runs (`b11a9d1`)
 - [ ] Degree exchange (`graph_communicator.h`, `get_ghost_data`): `kamping::v2::alltoallv` for `--dense`,
       `dstl::grid_alltoallv` as the 2D variant (O(√p) messages instead of O(p) at 3k ranks), `dstl::sparse_alltoall`
       instead of the NBX in `CommunicationUtility`
