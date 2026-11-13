@@ -179,7 +179,7 @@ Options that are dead or only used in old exploration suites (`experiments/legac
       the region `ghost_ranks` and its `reduction` is `reduce`; cetric-x has no empty `preprocessing_global` /
       `secondary_load_balancing` regions; the ghost degrees are freed at the end of preprocessing (were: end of the
       run, outside any region, or in `global_phase`). `--secondary-cost-function` (pre-CETRIC only, set by no
-      config) kept, a starting point for idea 1. Identical counters on the 78 reference runs (DRIVERHASH)
+      config) kept, a starting point for idea 1. Identical counters on the 78 reference runs (`df09647`)
 - [x] `with_execution_policy(conf, [parallel,] f)` and `for_each_local_node(G, conf, parallel, f)` replace the
       `if (num_threads > 1) ... else ...` / `tbb::task_arena` duplication in the drivers (`2a6348d`). The secondary
       load balancing's edge removal had a `parallel_for` without an arena; it now runs in one
