@@ -41,6 +41,7 @@
 #include "cetric/util.h"
 
 namespace cetric {
+struct grid_comm_cache; // cetric/ghost_exchange.h
 
 // Enum values are named after their command line spelling: `_` is written as `-` (both are accepted).
 enum class Algorithm { patric, cetric, cetric_x };
@@ -78,6 +79,7 @@ struct Config {
     double                hybrid_cutoff_scale               = 1.0;
 
     GhostExchangeMode degree_exchange = GhostExchangeMode::sparse;
+    grid_comm_cache*  grid_comms      = nullptr; // not owned, set by the driver (katric.cpp)
     bool global_synchronization  = false;
     bool binary_rank_search      = false;
 

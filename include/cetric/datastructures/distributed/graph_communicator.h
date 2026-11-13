@@ -62,11 +62,11 @@ public:
     DegreeCommunicator(const Graph& G, int message_tag) : G(G), message_tag_(message_tag) {}
 
     template <typename DegreeFunc>
-    void get_ghost_degree(DegreeFunc&& on_degree_receive, GhostExchangeMode mode) {
+    void get_ghost_degree(DegreeFunc&& on_degree_receive, GhostExchange exchange) {
         get_ghost_data(
             [this](auto node) { return RankEncodedNodeId{G.degree(node)}; },
             [&on_degree_receive](auto node, auto data) { on_degree_receive(node, data.id()); },
-            mode
+            exchange
         );
     }
 
@@ -74,7 +74,7 @@ public:
     /// and calls `on_receive(ghost, data)` for every ghost of this rank. Message counters as RankEncodedNodeIds sent
     /// (two per ghost: vertex and data).
     template <typename DataFunc, typename ReceiveFunc>
-    void get_ghost_data(DataFunc&& get_data, ReceiveFunc&& on_receive, GhostExchangeMode mode) {
+    void get_ghost_data(DataFunc&& get_data, ReceiveFunc&& on_receive, GhostExchange exchange) {
         struct Entry {
             // initializers: the default constructor is explicit, but the grid exchange needs Entry{}
             RankEncodedNodeId node = RankEncodedNodeId{};
@@ -87,7 +87,7 @@ public:
             G,
             G.local_nodes(),
             [&](RankEncodedNodeId node) { return Entry{node, RankEncodedNodeId{get_data(node)}}; },
-            mode,
+            exchange,
             entry_type.data_type(),
             message_tag_,
             2

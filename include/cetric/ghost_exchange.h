@@ -34,17 +34,22 @@
 
 namespace cetric {
 
-/// The grid communicator of `comm` for the grid exchange. Building one splits `comm` (collective, O(p)), so it is built
-/// on the first grid exchange and cached on `comm` as an MPI attribute. A static keyval, as kamping-v2 recommends for
-/// state without an owner (docs/attribute_caching.md): the value lives as long as `comm`; on MPI_COMM_WORLD that is
-/// the whole program, and the static keyval skips freeing its key after MPI_Finalize. Collective on first use for a
-/// given `comm`.
-inline dstl::grid_comm<dstl::execution_policy::seq> const& cached_grid_comm(MPI_Comm comm) {
-    static kamping::v2::keyval<kamping::v2::attribute::comm, dstl::grid_comm<dstl::execution_policy::seq>> grids;
-    return grids.get_or_create(comm, [comm] {
-        CALI_CXX_MARK_SCOPE("grid_comm");
-        return dstl::grid_comm<dstl::execution_policy::seq>{kamping::v2::comm_view{comm}};
-    });
+/// Grid communicators for the grid exchange, one per communicator, built on the first grid exchange on it (a
+/// collective split). The same pattern as dSTL's `rsx_window_cache`: the caller owns the cache, which must be destroyed
+/// before MPI_Finalize (collectively, it frees the communicators).
+struct grid_comm_cache : kamping::v2::cache<kamping::v2::attribute::comm, dstl::grid_comm<dstl::execution_policy::seq>> {};
+
+/// How push_to_ghosts() exchanges: the transport and, for the grid, where its grid communicator is cached (none: built
+/// for the call).
+struct GhostExchange {
+    GhostExchange(GhostExchangeMode mode, grid_comm_cache* grid_comms = nullptr) : mode(mode), grid_comms(grid_comms) {}
+    GhostExchangeMode mode;
+    grid_comm_cache*  grid_comms;
+};
+
+/// The degree exchanges' GhostExchange: `--degree-exchange`, and the grid communicators cached in `conf`.
+inline GhostExchange degree_exchange(Config const& conf) {
+    return {conf.degree_exchange, conf.grid_comms};
 }
 
 /// Sends `vertex_to_message(u)` once to every rank that owns a neighbor of `u`, for each `u` in `sources` (local
@@ -61,7 +66,7 @@ template <typename Graph, typename Sources, typename VertexToMessage>
     Graph const&      G,
     Sources&&         sources,
     VertexToMessage&& vertex_to_message,
-    GhostExchangeMode mode,
+    GhostExchange     exchange,
     MPI_Datatype      message_type,
     int               tag,
     std::size_t       volume_per_message = 1
@@ -119,7 +124,7 @@ template <typename Graph, typename Sources, typename VertexToMessage>
     {
         CALI_CXX_MARK_SCOPE("exchange");
         namespace views = kamping::v2::views;
-        switch (mode) {
+        switch (exchange.mode) {
             case GhostExchangeMode::sparse: {
                 std::vector<std::pair<int, std::span<Message const>>> messages;
                 for (std::size_t r = 0; r < size; ++r) {
@@ -168,7 +173,13 @@ template <typename Graph, typename Sources, typename VertexToMessage>
                 break;
             }
             case GhostExchangeMode::grid: {
-                auto const& grid = cached_grid_comm(comm);
+                auto make_grid = [comm] {
+                    CALI_CXX_MARK_SCOPE("grid_comm");
+                    return dstl::grid_comm<dstl::execution_policy::seq>{kamping::v2::comm_view{comm}};
+                };
+                grid_comm_cache  call_cache;
+                grid_comm_cache& grid_comms = exchange.grid_comms != nullptr ? *exchange.grid_comms : call_cache;
+                auto const&      grid       = grid_comms.get_or_create(comm, make_grid);
                 dstl::grid_alltoallv(
                     send_buf | views::with_type(message_type) | views::with_counts(send_counts)
                         | views::with_displs(send_displs),
@@ -181,7 +192,7 @@ template <typename Graph, typename Sources, typename VertexToMessage>
         }
     }
     stats.receive_volume = recv_buf.size() * volume_per_message;
-    if (mode == GhostExchangeMode::grid) {
+    if (exchange.mode == GhostExchangeMode::grid) {
         profiling::counter_add("sent_messages", stats.sent_messages);
         profiling::counter_add("send_volume", stats.send_volume);
         profiling::counter_add("receive_volume", stats.receive_volume);
