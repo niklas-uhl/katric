@@ -263,6 +263,11 @@ Open: which order the compact IDs follow.
 - [x] Remove the `std::set<RankEncodedNodeId> ghosts` filter in `run_distributed`: every caller passed an empty set
       (removed in step 2, `5f5a54d`)
 - [ ] Compare against `pre-refactor` in `phases`: preprocessing (orientation, degree exchange) and `send_ns`
+- [ ] A communication context next to the graph's communicator (`G.comm()`) for per-communicator state, e.g. the
+      degree exchange's `grid_comm_cache`, which today reaches the callers through a non-owning pointer in `Config`
+      (`Config::grid_comms`; a `Config` without it silently splits the communicator on every grid exchange). Decided
+      2026-11-13 to keep the caller-owned cache over a static keyval and move it here when the graph's ID and
+      partition layer is reworked
 
 KaCCv2's graph class itself (`SplitDistributedCSRGraph`, CSR plus split-vertex replicas) is not adopted: katric
 needs the out/in split per vertex after orientation, the ghost CSR and contraction, so it keeps its own oriented
