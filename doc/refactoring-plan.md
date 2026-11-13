@@ -181,6 +181,32 @@ The deferred kamping-v2 plan from modernization-plan.md, plus the degree exchang
       deduplicate with a last-rank marker as in the global phase
 - [ ] Buffers per rank as a flat vector with displacements instead of `absl::flat_hash_map<PEID, vector>`
 
+KaCCv2's communication primitives (read 2026-11-13, branch `feat/kout-symmetric`; katric already fetches kamping-v2
+with dstl but links neither):
+
+- `kacc::push_to_ghosts` (`src/kacc/graph/ghost_exchange.hpp`) is the degree exchange: for every source vertex with
+  a remote neighbor it sends `vertex_to_message(u)` once per owner rank (dedup by a per-rank last-source stamp, the
+  "last-rank marker" above), through `kamping::v2::alltoallv` or `dstl::grid_alltoallv` chosen by the type of the
+  communicator argument (`comm_view` vs `dstl::grid_comm`), and returns the received messages. Covers the first three
+  items above in one call. Needs a graph modelling KaCCv2's `graph::DistributedGraph` concept (`vertices()`,
+  `neighbors(v)`, `to_local`, `neighbor_is_local` / `neighbor_owner`). Differences from what we want: per-rank buffers
+  are still an `absl::flat_hash_map<int, vector>` (item 4), it times with `kamping::measurements::timer()` instead
+  of Caliper, and the grid communicator should be built once per run (a collective split), not per exchange.
+  Also fits the cost functions' ghost exchange (`cost_function.h`, `get_ghost_data`)
+- `PackedWireEncoding` (`wire_encoding.hpp`): vertex and payload in one word. (global id, degree) fits 64 bits at
+  the `phases` sizes (2^36 ids at 3072 cores, the 19M-degree hub needs 25 bits): 8 instead of 16 bytes per entry
+- `build_ghost_reverse_index` (`components/ghost_reverse_index.hpp`): CSR from each ghost to the local vertices
+  adjacent to it, built in two passes. Idea 12 needs exactly this (a ghost's local neighbors on r); on compact IDs
+  (step 4) the hash-map slot becomes an array index
+- `measure_locality` (`graph/locality.hpp`) and `resolve_auto_reachability_mode` (`components/auto_comm_mode.hpp`):
+  PE fan-out, internal-edge ratio, average degree in one pass, and a collective vote (thresholded per rank, summed
+  with one allreduce) that picks a communication mode identically on every rank. Candidate mechanism for "without
+  locality CETRIC should not pay for ghost expansion" and for choosing direct vs grid automatically
+- `dedup_alltoallv` / `scatter_reduce_{flat,grid}`: route values (or key/value pairs with a fold) to their owners,
+  deduplicating / folding between grid hops. The first half of idea 6 (each rank tells owner(w) that it holds an
+  in-neighbor of w) has this shape
+- dstl itself: `sparse_alltoall` (NBX/PCX/RSX), `request_reply`, `redistribute` (idea 9), `distribution` (step 4)
+
 ### 4. Order-preserving compact IDs instead of rank encoding
 
 Today every adjacency entry is a `RankEncodedNodeId`: the global ID in the low 48 bits, the owner rank in the top
