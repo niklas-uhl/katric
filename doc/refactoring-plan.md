@@ -149,9 +149,18 @@ Options that are dead or only used in old exploration suites (`experiments/legac
       (`process_message` -> `intersect_with_message`) for both paths; the receiver-parallel loop
       (`--global-degree-of-parallelism` > 2, set by no config) only runs on the hybrid path now. The hybrid path also
       reports `interface_nodes`. Identical counters on the 70 reference runs (`5f5a54d`)
-- [ ] `run_patric` / `run_cetric` / `run_cetric_new` as a sequence of phase functions with the same signature (graph, config,
-      state), so a phase can be swapped (e.g. the tail-compute global phase of idea 1) without copying the driver
-- [ ] The `if (num_threads > 1) ... else ...` duplication around `tbb::task_arena` in a single helper
+- [x] `run_patric` / `run_cetric` / `run_cetric_x` (was `run_cetric_new`) as a list of phase functions
+      `void(DistributedGraph<>&, Config const&, PhaseState<Policy>&)` run by `run_phases` (`cetric/counters/cetric.h`,
+      namespace `phases`); `PhaseState` carries the threshold, ghost degrees, the local phase's iterator, the
+      contracted graph and the triangle count. Each phase is one Caliper region ending in its barrier. Region changes:
+      patric's ghost-rank pass is now the region `ghost_ranks` (was outside any region) and its `reduction` is `reduce`
+      as in the others; cetric-x lost its empty `preprocessing_global` and `secondary_load_balancing` regions (only a
+      barrier right after contraction's). `--secondary-cost-function` (pre-CETRIC only, set by no config) kept as a
+      phase, a starting point for idea 1. Identical counters on the 70 reference runs plus 8 with secondary load
+      balancing (N, DPD) (`2a6348d`)
+- [x] `with_execution_policy(conf, [parallel,] f)` and `for_each_local_node(G, conf, parallel, f)` replace the
+      `if (num_threads > 1) ... else ...` / `tbb::task_arena` duplication in the drivers (`2a6348d`). The secondary
+      load balancing's edge removal had a `parallel_for` without an arena; it now runs in one
 
 ### 3. Communication layer
 
