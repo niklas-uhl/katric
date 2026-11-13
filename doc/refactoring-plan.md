@@ -65,8 +65,29 @@ by those `.cpp` files):
 
 ### 0. Baseline
 
-- [ ] `phases` on SuperMUC-NG and HoreKa2 at `1962d4e` (first results in, the remaining core counts and permuted RHG
-      pending); tag `pre-refactor` on `1962d4e` (the algorithm code is unchanged since)
+- [ ] `phases` on SuperMUC-NG and HoreKa2 at `1962d4e` (configurations 0–2: patric, cetric-x, cetric-x with
+      `--id-node-ordering false`); tag `pre-refactor` on `1962d4e` (the algorithm code is unchanged since).
+      Status 2026-11-13: SuperMUC-NG 48–3072 complete except permuted RGG at 192 (cetric-x and degree ordering killed,
+      out of memory) and RHG/permuted RHG at 3072 with degree ordering (300 s `I_MPI_JOB_TIMEOUT`). HoreKa2 only 192
+      for the permuted inputs and 192–768 for the others: the permuted runs at 384 die in UCX (`MPI_ERR_INTERN` in
+      `MPI_Recv`, IB remote access error) and hit the job time limit; 1536/3072 not run.
+      Not run yet: configurations 3+ (`cetric`, grid)
+- Findings from the 2026-11-13 data (time per iteration, max over ranks, SuperMUC-NG unless noted):
+  - Locality inputs weak-scale flat from 48 to 1536 cores (RGG 2.2–2.6 s, RHG 1.8–2.7 s); the local phase is 60–70%.
+    HoreKa2 is 2.5× faster per core on the same runs (local phase 0.62 vs 1.6 s on RGG); check the SuperMUC build
+    flags before reading too much into absolute times. The 192-core job is 25% slower than 96 and 384 in every
+    configuration (one job, probably a slow node).
+  - RHG at 3072 cores breaks: one vertex of degree 19M, its rank has 27M local edges (3.2× the mean). patric 2.7 s ->
+    24 s, the degree exchange alone 10.7 s, preprocessing barrier 8.4 s; permuted RHG 18 -> 36 s. An input effect
+    (KaGen RHG, γ = 2.8, 2^30 vertices), not the algorithm: keep it out of weak-scaling series (or cap the degree) and
+    use it as the hub test case for idea 1.
+  - Permuted inputs do not weak-scale: patric 10.7 s (48) -> 21 s (3072), global phase 5.4 -> 11.7 s, degree exchange
+    and orientation grow with p. cetric-x is +35–60% over patric (ghost expansion in preprocessing, a 3 s local phase
+    that finds almost nothing).
+  - With locality cetric-x is within ±5% of patric on RGG and 15–25% slower on RHG from 384 on (preprocessing 1.0–1.4
+    vs 0.5–0.6 s). Degree ordering: 1.6–2.6× slower everywhere (already removed in step 1).
+  - The `triangles` Adiak value wrapped at 2^31 (Caliper imports `adiak_long` as `int`); the counts in these profiles
+    are wrong above 2^31, the logs have the right ones. Fixed by recording `long long` (same commit as this note)
 - [x] `cetric` (pre-CETRIC) appended to `phases` as a fourth configuration, so a rerun only adds its runs (the
       indices of the running configurations stay the same)
 - [x] `communication-policy: grid` appended to `phases` (patric, cetric-x, cetric; decided 2026-11-12). Run the

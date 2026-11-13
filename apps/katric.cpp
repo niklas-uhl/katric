@@ -157,7 +157,8 @@ int main(int argc, char* argv[]) {
             }
         }
         if (!conf.caliper_config.empty()) {
-            adiak::value("triangles", static_cast<long>(triangles));
+            // long long: Caliper imports adiak_long as int (AdiakImport.cpp), which wraps at 2^31
+            adiak::value("triangles", static_cast<long long>(triangles));
             caliper.flush(); // collective, has to happen before MPI_Finalize
             adiak::fini();
         }
