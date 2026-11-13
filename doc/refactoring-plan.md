@@ -142,7 +142,7 @@ Options that are dead or only used in old exploration suites (`experiments/legac
       `run_local_sequential<with_ghosts>` replaces the two sequential copies. The four hybrid variants stay (frozen)
       but call `intersect_local_edge`. The `NodeOrdering == EdgeOrientationOrdering` offset was dead since
       `--id-node-ordering false` went, so `run_local` no longer takes the orientation ordering. Identical counters on
-      the 70 reference runs, ctest (with hybrid) passes
+      the 70 reference runs, ctest (with hybrid) passes (`70aeb31`)
 - [ ] Counters (`wedge_checks`, `intersection_size_*`, triangles) collected in one place per kernel. Local phase done
       (`LocalPhaseCounters`, one per thread in the hybrid variants); global phase still atomics in the iterator
 - [ ] `run_patric` / `run_cetric` / `run_cetric_new` as a sequence of phase functions with the same signature (graph, config,
