@@ -46,6 +46,7 @@
 #include <unistd.h>
 
 #include "./algorithm.h"
+#include "./build_info.h"
 #include "./parse_config.h"
 #include "./verify.h"
 #include "cetric/caliper.h"
@@ -89,6 +90,11 @@ int main(int argc, char* argv[]) {
                 adiak::value("config." + name, value);
             }
             adiak::value("git_commit", conf.git_commit);
+            // How the binary was built (apps/build_info.cpp.in)
+            adiak::value("build.type", std::string(cetric::build_info::build_type));
+            adiak::value("build.compiler", std::string(cetric::build_info::cxx_compiler));
+            adiak::value("build.cxx_flags", std::string(cetric::build_info::cxx_flags));
+            adiak::value("build.cxx_definitions", std::string(cetric::build_info::cxx_definitions));
             adiak::collect_all(); // user, launch date, command line, hosts, job size, MPI version, ...
             caliper.start();
         }

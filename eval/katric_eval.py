@@ -7,8 +7,9 @@ file name without extension>, so the same suite run on several machines can be l
 
   runs      one row per run: every CLI option (Adiak's `config.<option>`, under its option name), `triangles`,
             `ranks`, `threads`, `cores`, `graph` and the KaGen options split into `kagen.<key>` columns, `git_commit`,
-            `launchdate`, `cluster` (Adiak's cluster name, e.g. hkn = HoreKa, ircs = SuperMUC-NG), and `dir` (the
-            experiment directory)
+            `launchdate`, `cluster` (Adiak's cluster name, e.g. hkn = HoreKa, ircs = SuperMUC-NG), `dir` (the
+            experiment directory), and how the binary was built (`build.type`, `build.compiler`, `build.cxx_flags`,
+            `build.cxx_definitions`, e.g. KASSERT_ASSERTION_LEVEL; missing before 2026-11-13)
   timers    one row per run, iteration and region: `iteration` (null outside the iterations, e.g. `input`),
             `region` (path below the iteration, e.g. "total/local_phase"), and spot's metrics in seconds:
             `min`, `max`, `avg` (across ranks), `total` (sum over ranks), `*_exc` (exclusive), `calls_max`
@@ -130,6 +131,8 @@ def _runs(tk, run_of_profile, dir_of_profile):
             columns[name.removeprefix("config.")] = meta[name].astype(str)
         elif name in METADATA:
             columns[METADATA[name]] = meta[name]
+        elif name.startswith("build."):  # build type, compiler, flags and definitions
+            columns[name] = meta[name].astype(str)
     runs = pl.DataFrame(columns).with_columns(
         pl.col("profile").replace_strict(run_of_profile).alias("run"),
         pl.col("profile").replace_strict(dir_of_profile).alias("dir"),
@@ -211,7 +214,7 @@ def config_options(runs, within_dirs=False):
     ignored, so the same configuration run by several suites gets the same label."""
     other = {"run", "dir", "graph", "launchdate", "caliper-output", "triangles", "ranks", "threads", "num-threads",
              "cores", "git_commit", "cluster", "kagen_option_string"}
-    options = [c for c in runs.columns if c not in other and not c.startswith("kagen.")]
+    options = [c for c in runs.columns if c not in other and not c.startswith(("kagen.", "build."))]
     if within_dirs:
         varying = runs.group_by("dir").agg(pl.col(options).n_unique()).select(pl.col(options).max())
         return [c for c in options if varying[c][0] > 1]
