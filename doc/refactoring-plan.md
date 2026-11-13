@@ -69,17 +69,22 @@ by those `.cpp` files):
       `--id-node-ordering false`); tag `pre-refactor` on `1962d4e` (the algorithm code is unchanged since).
       Status 2026-11-13: SuperMUC-NG 48–3072 complete except permuted RGG at 192 (cetric-x and degree ordering killed,
       out of memory) and RHG/permuted RHG at 3072 with degree ordering (300 s `I_MPI_JOB_TIMEOUT`). HoreKa2 only 192
-      for the permuted inputs and 192–768 for the others: the permuted runs at 384 die in UCX (`MPI_ERR_INTERN` in
-      `MPI_Recv`, IB remote access error) and hit the job time limit; 1536/3072 not run. Probably too many
-      outstanding nonblocking requests from the message queue; expected to go away with BriefKAsten, so HoreKa2 waits
-      until then (see open decisions).
+      for the permuted inputs and 192–768 for the others: every permuted run at 384/768 dies in its first iteration.
+      Root error (in the -log.txt, not the -err.txt): UCX `ibv_reg_mr(..., length=2480..7488) failed: Cannot allocate
+      memory` on mlx5_0, ~100 times per run, i.e. memory registration for many concurrent small zero-copy sends runs
+      out; the `MPI_ERR_INTERN` in a blocking `MPI_Recv`, the IB remote access errors and the CMA `process_vm_readv: No
+      such process` are follow-ups of ranks aborting. The `MPI_Recv` is either the message queue (`queue.h:112`) or
+      the NBX `sparse_all_to_all` (`communicator.h`); both have p-1 sends in flight per rank on permuted inputs.
+      `addr2line -f -C -e build/apps/katric 0x66da68 0x671013` on HoreKa2 tells which (if the binary is unchanged).
+      Expected to go away with BriefKAsten, so HoreKa2 waits until then (see open decisions); a cheap test before
+      that: `UCX_RNDV_THRESH=inf` (small messages eager, no registration). 1536/3072 not run.
       Not run yet: configurations 3+ (`cetric`, grid)
 - Findings from the 2026-11-13 data (time per iteration, max over ranks, SuperMUC-NG unless noted):
   - Locality inputs weak-scale flat from 48 to 1536 cores (RGG 2.2–2.6 s, RHG 1.8–2.7 s); the local phase is 60–70%.
     HoreKa2 is 2.5× faster per core on the same runs (local phase 0.62 vs 1.6 s on RGG). The SuperMUC build is fine
-    (checked 2026-11-13: Release, -O3 -march=native = skylake-avx512, assertions off, gcc 15.1), so this is the
-    hardware (Skylake-SP from 2018 vs HoreKa2's newer CPU); absolute times are not comparable across the clusters. The 192-core job is 25% slower than 96 and 384 in every
-    configuration (one job, probably a slow node).
+    (checked 2026-11-13: Release, -O3 -march=native = skylake-avx512, KASSERT off, gcc 15.1), so this is the
+    hardware (Skylake-SP from 2018 vs HoreKa2's newer CPU); absolute times are not comparable across the clusters.
+    The 192-core job is 25% slower than 96 and 384 in every configuration (one job, probably a slow node).
   - RHG at 3072 cores breaks: one vertex of degree 19M, its rank has 27M local edges (3.2× the mean). patric 2.7 s ->
     24 s, the degree exchange alone 10.7 s, preprocessing barrier 8.4 s; permuted RHG 18 -> 36 s. An input effect
     (KaGen RHG, γ = 2.8, 2^30 vertices), not the algorithm: keep it out of weak-scaling series (or cap the degree) and
