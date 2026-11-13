@@ -108,7 +108,8 @@ by those `.cpp` files):
     degree exchange 5.7 s (3.0), orientation 2.0 s (1.5), global phase 9.4 s (5.3). cetric-x adds ghost expansion
     3.5 s and a 2.9 s local phase: 24.8 s. pre-CETRIC's degree exchange on the contracted graph costs the same as
     patric's (5.8 s at 1536: without locality nothing is contracted away): 19.7 s
-  - Grid indirection in the global phase does not pay without locality: +5–20% over direct, `termination` 1.6 ->
+  - Grid indirection in the global phase (legacy message queue; BriefKAsten's messaging differs enough that this
+    may change completely) does not pay without locality: +5–20% over direct, `termination` 1.6 ->
     5–6 s at 1536. With locality it is neutral to slightly better (patric RGG 2.13 vs 2.58 s at 1536, but the
     local phase differs as much, so partly node noise)
   - With locality, the barrier share grows from ~5% (48) to 25–29% (1536) on RGG for every configuration; on RHG
@@ -166,15 +167,19 @@ Options that are dead or only used in old exploration suites (`experiments/legac
       (`process_message` -> `intersect_with_message`) for both paths; the receiver-parallel loop
       (`--global-degree-of-parallelism` > 2, set by no config) only runs on the hybrid path now. The hybrid path also
       reports `interface_nodes`. Identical counters on the 70 reference runs (`5f5a54d`)
-- [x] `run_patric` / `run_cetric` / `run_cetric_x` (was `run_cetric_new`) as a list of phase functions
-      `void(DistributedGraph<>&, Config const&, PhaseState<Policy>&)` run by `run_phases` (`cetric/counters/cetric.h`,
-      namespace `phases`); `PhaseState` carries the threshold, ghost degrees, the local phase's iterator, the
-      contracted graph and the triangle count. Each phase is one Caliper region ending in its barrier. Region changes:
-      patric's ghost-rank pass is now the region `ghost_ranks` (was outside any region) and its `reduction` is `reduce`
-      as in the others; cetric-x lost its empty `preprocessing_global` and `secondary_load_balancing` regions (only a
-      barrier right after contraction's). `--secondary-cost-function` (pre-CETRIC only, set by no config) kept as a
-      phase, a starting point for idea 1. Identical counters on the 70 reference runs plus 8 with secondary load
-      balancing (N, DPD) (`2a6348d`)
+- [x] `run_patric` / `run_cetric` / `run_cetric_x` (was `run_cetric_new`) call their phases directly: each phase is a
+      function (one Caliper region, ending in its barrier) with ordinary parameters and return values (the threshold,
+      the contracted graph, whether it was rebalanced; `TriangleCounter` collects the count). A phase is swapped by
+      calling another function (e.g. the tail-compute global phase of idea 1). Headers: `cetric/preprocessing.h`
+      (ghost ranks, primary load balancing, the three orientations), `cetric/contraction.h` (contraction, secondary
+      load balancing, the contracted graph's orientation), `cetric/execution.h`, `cetric/triangle_counter.h`;
+      `counters/cetric.h` keeps the local and global phases and the drivers. A first version ran a list of function
+      pointers over a shared `PhaseState` (`2a6348d`); replaced as overengineered (decided 2026-11-13): the ghost
+      degrees and ghost set never left preprocessing. Region changes against the baseline: patric's ghost-rank pass is
+      the region `ghost_ranks` and its `reduction` is `reduce`; cetric-x has no empty `preprocessing_global` /
+      `secondary_load_balancing` regions; the ghost degrees are freed at the end of preprocessing (were: end of the
+      run, outside any region, or in `global_phase`). `--secondary-cost-function` (pre-CETRIC only, set by no
+      config) kept, a starting point for idea 1. Identical counters on the 78 reference runs (DRIVERHASH)
 - [x] `with_execution_policy(conf, [parallel,] f)` and `for_each_local_node(G, conf, parallel, f)` replace the
       `if (num_threads > 1) ... else ...` / `tbb::task_arena` duplication in the drivers (`2a6348d`). The secondary
       load balancing's edge removal had a `parallel_for` without an arena; it now runs in one
