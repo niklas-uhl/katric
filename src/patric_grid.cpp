@@ -4,6 +4,6 @@
 
 namespace cetric {
 std::size_t run_patric(graph::DistributedGraph<>& G, Config const& conf, GridPolicy /*policy*/) {
-    return run_patric(G, conf, conf.rank, conf.PEs, GridPolicy{});
+    return run_patric<GridPolicy>(G, conf);
 }
 } // namespace cetric

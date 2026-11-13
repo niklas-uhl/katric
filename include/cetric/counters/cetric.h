@@ -24,6 +24,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <initializer_list>
 #include <limits>
 #include <numeric>
 #include <optional>
@@ -57,15 +58,53 @@
 #include "cetric/util.h"
 
 namespace cetric {
-enum class Phase { Local, Global };
 
+/// Calls `f` with the execution policy: parallel on `conf.num_threads` threads if `parallel`, else sequential. `f`
+/// gets the policy by value and should pass it on as an rvalue (`std::move`): the graph's methods compare the policy
+/// type exactly.
+template <typename F>
+decltype(auto) with_execution_policy(Config const& conf, bool parallel, F&& f) {
+    if (parallel) {
+        return f(execution_policy::parallel{conf.num_threads});
+    }
+    return f(execution_policy::sequential{});
+}
+
+/// with_execution_policy(), parallel if there is more than one thread.
+template <typename F>
+decltype(auto) with_execution_policy(Config const& conf, F&& f) {
+    return with_execution_policy(conf, conf.num_threads > 1, std::forward<F>(f));
+}
+
+/// Calls `f(node)` for every local vertex of `G`, in a task arena of `conf.num_threads` threads if `parallel`.
+template <typename Graph, typename F>
+void for_each_local_node(Graph& G, Config const& conf, bool parallel, F&& f) {
+    auto nodes = G.local_nodes();
+    if (!parallel) {
+        for (auto node: nodes) {
+            f(node);
+        }
+        return;
+    }
+    tbb::task_arena arena(conf.num_threads);
+    arena.execute([&] {
+        tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&](auto const& r) {
+            for (auto node: r) {
+                f(node);
+            }
+        });
+    });
+}
+
+/// Optionally fetches the ghosts' degrees, then orients every edge by `OrientationOrdering` and sorts the
+/// neighborhoods by `NodeOrdering`.
 template <typename NodeOrdering, typename OrientationOrdering, typename NodeIndexer, typename GhostSet>
 inline void preprocessing(
-    DistributedGraph<NodeIndexer>&              G,
-    AuxiliaryNodeData<Degree>&                  ghost_degree,
-    GhostSet&                                   ghosts,
-    const Config&                               conf,
-    bool                                        fetch_ghost_degree
+    DistributedGraph<NodeIndexer>& G,
+    AuxiliaryNodeData<Degree>&     ghost_degree,
+    GhostSet&                      ghosts,
+    const Config&                  conf,
+    bool                           fetch_ghost_degree
 ) {
     if (fetch_ghost_degree) {
         CALI_CXX_MARK_SCOPE("degree_exchange");
@@ -77,92 +116,40 @@ inline void preprocessing(
             !conf.dense_degree_exchange
         );
     }
-
-    auto nodes = G.local_nodes();
-    if (conf.num_threads > 1) {
-        tbb::task_arena arena(conf.num_threads);
-        arena.execute([&] {
-            {
-                CALI_CXX_MARK_SCOPE("orientation");
-                tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G, &ghost_degree](auto const& r) {
-                    for (auto node: r) {
-                        G.orient(node, OrientationOrdering(G, ghost_degree));
-                    }
-                });
-            }
-            CALI_CXX_MARK_SCOPE("sorting");
-            tbb::parallel_for(
-                tbb::blocked_range(nodes.begin(), nodes.end()),
-                [&G, &conf, &ghost_degree](auto const& r) {
-                    for (auto node: r) {
-                        G.sort_neighborhoods(node, NodeOrdering(G, ghost_degree));
-                    }
-                }
-            );
-        });
-    } else {
-        {
-            CALI_CXX_MARK_SCOPE("orientation");
-            for (auto node: nodes) {
-                G.orient(node, OrientationOrdering(G, ghost_degree));
-            }
-        }
-        CALI_CXX_MARK_SCOPE("sorting");
-        for (auto node: nodes) {
-            G.sort_neighborhoods(node, NodeOrdering(G, ghost_degree));
-        }
+    bool const parallel = conf.num_threads > 1;
+    {
+        CALI_CXX_MARK_SCOPE("orientation");
+        for_each_local_node(G, conf, parallel, [&](auto node) { G.orient(node, OrientationOrdering(G, ghost_degree)); });
     }
+    CALI_CXX_MARK_SCOPE("sorting");
+    for_each_local_node(G, conf, parallel, [&](auto node) { G.sort_neighborhoods(node, NodeOrdering(G, ghost_degree)); });
 }
 
 template <typename Graph>
 inline void compute_ghost_ranks(Graph& G, const Config& conf) {
-    if (conf.num_threads > 1) {
+    with_execution_policy(conf, [&](auto policy) {
         if (conf.binary_rank_search) {
-            G.template find_ghost_ranks<true>(execution_policy::parallel{conf.num_threads});
+            G.template find_ghost_ranks<true>(std::move(policy));
         } else {
-            G.template find_ghost_ranks<false>(execution_policy::parallel{conf.num_threads});
+            G.template find_ghost_ranks<false>(std::move(policy));
         }
-    } else {
-        if (conf.binary_rank_search) {
-            G.template find_ghost_ranks<true>(execution_policy::sequential{});
-        } else {
-            G.template find_ghost_ranks<false>(execution_policy::sequential{});
-        }
-    }
+    });
 }
 
-inline void primary_load_balancing(
-    DistributedGraph<>&                         G,
-    const Config&                               conf,
-    PEID                                        rank,
-    PEID                                        size
-) {
+/// Repartitions `G` into contiguous vertex ranges of equal cost (`--primary-cost-function`).
+inline void primary_load_balancing(DistributedGraph<>& G, const Config& conf) {
     if (conf.primary_cost_function == "none") {
         return;
     }
-    auto cost_function = [&]() {
-        if (conf.num_threads > 1) {
-            return CostFunctionRegistry<DistributedGraph<>>::get(
-                conf.primary_cost_function,
-                G,
-                conf,
-                execution_policy::parallel{conf.num_threads}
-            );
-        } else {
-            return CostFunctionRegistry<DistributedGraph<>>::get(
-                conf.primary_cost_function,
-                G,
-                conf,
-                execution_policy::sequential{}
-            );
-        }
-    }();
+    auto cost_function = with_execution_policy(conf, [&](auto policy) {
+        return CostFunctionRegistry<DistributedGraph<>>::get(conf.primary_cost_function, G, conf, std::move(policy));
+    });
     LocalGraphView tmp = G.to_local_graph_view();
     tmp                = cetric::load_balancing::LoadBalancer::run(std::move(tmp), cost_function, conf);
     auto node_range    = tmp.local_node_count() == 0
                              ? std::make_pair(std::numeric_limits<NodeId>::max(), std::numeric_limits<NodeId>::max())
                              : std::make_pair(tmp.node_info.front().global_id, tmp.node_info.back().global_id + 1);
-    G                  = DistributedGraph(std::move(tmp), std::move(node_range), rank, size);
+    G                  = DistributedGraph(std::move(tmp), std::move(node_range), conf.rank, conf.PEs);
     compute_ghost_ranks(G, conf);
 }
 
@@ -205,400 +192,264 @@ make_emit(tbb::concurrent_vector<Triangle<RankEncodedNodeId>>& triangles, tbb::c
     };
 }
 
-// The phases are Caliper regions; counters (cetric::profiling::counter_add) are reported by the edge iterator into
-// the region that is open while it runs. The returned triangle count is only valid on rank 0.
-
+/// What the phases of one run hand on to each other.
 template <class CommunicationPolicy>
-inline size_t run_patric(DistributedGraph<>& G, const Config& conf, PEID rank, PEID size, CommunicationPolicy&&) {
-    size_t threshold = get_threshold(G, conf);
+struct PhaseState {
+    using CompactGraph = DistributedGraph<SparseNodeIndexer>;
+
+    size_t                    threshold = 0; // message queue threshold, from the input graph
+    node_set                  ghosts;
+    AuxiliaryNodeData<Degree> ghost_degrees;
+    /// The local phase's iterator; it holds the interface vertices that patric's global phase sends.
+    std::optional<CetricEdgeIterator<DistributedGraph<>, CommunicationPolicy>> local_iterator;
+    /// The contracted graph (vertices with cut edges and their cut out-edges) for the global phase.
+    std::optional<CompactGraph> G_compact;
+    /// Whether the secondary load balancing redistributed G_compact (then it has internal edges again).
+    bool rebalanced = false;
+
+    size_t                                              triangle_count    = 0; // found on this rank
+    size_t                                              counted_triangles = 0; // sum over all ranks, on rank 0
+    tbb::concurrent_vector<Triangle<RankEncodedNodeId>> triangles;             // only with assertions
+
+    /// Calls `find(emit)` and adds the triangles emitted to the rank's count.
+    template <typename Find>
+    void count_triangles(Find&& find) {
+        tbb::combinable<size_t> count{0};
+        find(make_emit(triangles, count));
+        triangle_count += count.combine(std::plus<>{});
+    }
+};
+
+/// A phase of an algorithm. Each is a Caliper region (counters from cetric::profiling::counter_add go to the region
+/// that is open), and all but the last end in a barrier with `--global-synchronization`.
+template <class CommunicationPolicy>
+using PhaseFunction = void (*)(DistributedGraph<>&, Config const&, PhaseState<CommunicationPolicy>&);
+
+namespace phases {
+using Graph        = DistributedGraph<>;
+using CompactGraph = DistributedGraph<SparseNodeIndexer>;
+
+template <class P>
+void ghost_ranks(Graph& G, Config const& conf, PhaseState<P>& s) {
+    CALI_CXX_MARK_SCOPE("ghost_ranks");
+    s.threshold = get_threshold(G, conf);
     compute_ghost_ranks(G, conf);
-    node_set ghosts;
     ConditionalBarrier(true);
-    AuxiliaryNodeData<Degree> ghost_degrees;
-    {
-        CALI_CXX_MARK_SCOPE("primary_load_balancing");
-        primary_load_balancing(G, conf, rank, size);
-        ConditionalBarrier(conf.global_synchronization);
-        SPDLOG_DEBUG("Primary load balancing finished");
-    }
-    {
-        CALI_CXX_MARK_SCOPE("preprocessing");
-        preprocessing<node_ordering ::id, node_ordering::degree<decltype(G)>>(
-            G,
-            ghost_degrees,
-            ghosts,
-            conf,
-            true
-        );
-        SPDLOG_DEBUG("Preprocessing finished");
-        ConditionalBarrier(conf.global_synchronization);
-    }
-    size_t                                                                  triangle_count = 0;
-    tbb::concurrent_vector<Triangle<RankEncodedNodeId>>                     triangles;
-    std::optional<CetricEdgeIterator<DistributedGraph<>, CommunicationPolicy>> ctr; // used by both phases
-    {
-        CALI_CXX_MARK_SCOPE("local_phase");
-        ctr.emplace(G, conf, rank, size, CommunicationPolicy{});
-        ctr->set_threshold(threshold);
-        tbb::combinable<size_t> triangle_count_local_phase{0};
-        ctr->run_local(
-            make_emit(triangles, triangle_count_local_phase),
-            node_ordering::id()
-        );
-        triangle_count += triangle_count_local_phase.combine(std::plus<>{});
-        SPDLOG_DEBUG("Local phase finished");
-        ConditionalBarrier(conf.global_synchronization);
-    }
-    {
-        CALI_CXX_MARK_SCOPE("global_phase");
-        tbb::combinable<size_t> triangle_count_global_phase{0};
-        ctr->run_distributed(make_emit(triangles, triangle_count_global_phase), node_ordering::id());
-        triangle_count += triangle_count_global_phase.combine(std::plus<>{});
-        SPDLOG_DEBUG("Global phase finished");
-    }
-    size_t counted_triangles = 0;
-    {
-        CALI_CXX_MARK_SCOPE("reduction");
-        MPI_Reduce(
-            &triangle_count,
-            &counted_triangles,
-            1,
-            kamping::types::mpi_type_traits<size_t>::data_type(),
-            MPI_SUM,
-            0,
-            MPI_COMM_WORLD
-        );
-    }
-    verify_triangles(triangles, triangle_count);
-    return counted_triangles;
 }
 
-template <typename CommunicationPolicy>
-inline size_t run_cetric(
-    DistributedGraph<>& G,
-    const Config&       conf,
-    PEID                rank,
-    PEID                size,
-    CommunicationPolicy&&
-) {
-    size_t   threshold = 0;
-    node_set ghosts;
+template <class P>
+void primary_load_balancing(Graph& G, Config const& conf, PhaseState<P>&) {
+    CALI_CXX_MARK_SCOPE("primary_load_balancing");
+    cetric::primary_load_balancing(G, conf);
+    ConditionalBarrier(conf.global_synchronization);
+}
+
+/// DiTriC: degree exchange, orientation by degree, neighborhoods by id.
+template <class P>
+void preprocessing_patric(Graph& G, Config const& conf, PhaseState<P>& s) {
+    CALI_CXX_MARK_SCOPE("preprocessing");
+    preprocessing<node_ordering::id, node_ordering::degree<Graph>>(G, s.ghost_degrees, s.ghosts, conf, true);
+    ConditionalBarrier(conf.global_synchronization);
+}
+
+/// pre-CETRIC: no degree exchange; cut edges point outward, the local vertices first in each neighborhood.
+template <class P>
+void preprocessing_cetric(Graph& G, Config const& conf, PhaseState<P>& s) {
+    CALI_CXX_MARK_SCOPE("preprocessing");
+    preprocessing<node_ordering::id_outward, node_ordering::degree_outward<Graph>>(
+        G,
+        s.ghost_degrees,
+        s.ghosts,
+        conf,
+        false
+    );
+    ConditionalBarrier(conf.global_synchronization);
+}
+
+/// CETRIC: degree exchange, orientation by degree, the local vertices first; then the ghost expansion.
+template <class P>
+void preprocessing_cetric_x(Graph& G, Config const& conf, PhaseState<P>& s) {
+    CALI_CXX_MARK_SCOPE("preprocessing");
+    preprocessing<node_ordering::id_outward, node_ordering::degree<Graph>>(G, s.ghost_degrees, s.ghosts, conf, true);
     {
-        CALI_CXX_MARK_SCOPE("ghost_ranks");
-        threshold = get_threshold(G, conf);
-        compute_ghost_ranks(G, conf);
-        ConditionalBarrier(true);
+        CALI_CXX_MARK_SCOPE("ghost_expansion");
+        with_execution_policy(conf, conf.parallel_compact, [&](auto policy) {
+            G.remove_in_edges_and_expand_ghosts(node_ordering::id_outward(conf.rank), std::move(policy));
+        });
     }
-    AuxiliaryNodeData<Degree> ghost_degrees;
-    {
-        CALI_CXX_MARK_SCOPE("primary_load_balancing");
-        primary_load_balancing(G, conf, rank, size);
-        SPDLOG_DEBUG("Primary load balancing finished");
-        ConditionalBarrier(conf.global_synchronization);
-    }
-    {
-        CALI_CXX_MARK_SCOPE("preprocessing");
-        preprocessing<node_ordering::id_outward, node_ordering::degree_outward<decltype(G)>>(
-            G,
-            ghost_degrees,
-            ghosts,
-            conf,
-            false
-        );
-        SPDLOG_DEBUG("Preprocessing finished");
-        ConditionalBarrier(conf.global_synchronization);
-    }
-    size_t                                              triangle_count = 0;
-    tbb::concurrent_vector<Triangle<RankEncodedNodeId>> triangles;
-    tbb::combinable<size_t>                             triangle_count_local_phase{0};
-    {
-        CALI_CXX_MARK_SCOPE("local_phase");
-        auto ctr = cetric::CetricEdgeIterator(G, conf, rank, size, CommunicationPolicy{});
-        ctr.set_threshold(threshold);
-        ctr.run_local(
-            make_emit(triangles, triangle_count_local_phase),
-            node_ordering::id_outward(rank)
-        );
-        triangle_count += triangle_count_local_phase.combine(std::plus<>{});
-        SPDLOG_DEBUG("Local phase finished");
-        ConditionalBarrier(conf.global_synchronization);
-    }
-    auto G_compact = [&] {
-        CALI_CXX_MARK_SCOPE("contraction");
-        auto nodes = G.local_nodes();
-        if (conf.local_parallel) {
-            tbb::task_arena arena(conf.num_threads);
-            arena.execute([&] {
-                tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G](auto const& r) {
-                    for (auto node: r) {
-                        G.remove_internal_edges(node, node_ordering::degree_outward(G));
-                    }
-                });
-            });
-        } else {
-            for (auto node: nodes) {
-                G.remove_internal_edges(node, node_ordering::degree_outward(G));
-            }
-        }
-        auto G_compact = conf.parallel_compact ? G.compact(execution_policy::parallel{conf.num_threads})
-                                               : G.compact(execution_policy::sequential{});
-        // what is left for the global phase: vertices with cut edges and their (oriented) cut edges
-        profiling::counter_add("compact_nodes", static_cast<std::int64_t>(std::ranges::size(G_compact.local_nodes())));
-        profiling::counter_add("compact_edges", static_cast<std::int64_t>(G_compact.local_edge_count_with_ghost_edges()));
-        SPDLOG_DEBUG("Contraction finished");
-        ghosts = decltype(ghosts){};
-        SPDLOG_DEBUG("Found {} triangles in local phase", triangle_count_local_phase.combine(std::plus<>{}));
-        ConditionalBarrier(conf.global_synchronization);
-        return G_compact;
-    }();
-    tbb::combinable<size_t> triangle_count_global_phase{0};
+    ConditionalBarrier(conf.global_synchronization);
+}
+
+/// The intersections that need no communication; `NodeOrdering` is the neighborhoods' order from preprocessing.
+template <class P, typename NodeOrdering>
+void local_phase(Graph& G, Config const& conf, PhaseState<P>& s) {
+    CALI_CXX_MARK_SCOPE("local_phase");
+    s.local_iterator.emplace(G, conf, conf.rank, conf.PEs, P{});
+    s.local_iterator->set_threshold(s.threshold);
+    s.count_triangles([&](auto emit) { s.local_iterator->run_local(emit, NodeOrdering(G, s.ghost_degrees)); });
+    ConditionalBarrier(conf.global_synchronization);
+}
+
+/// DiTriC's global phase: sends the neighborhoods of the local phase's interface vertices.
+template <class P>
+void global_phase_patric(Graph&, Config const&, PhaseState<P>& s) {
+    CALI_CXX_MARK_SCOPE("global_phase");
+    s.count_triangles([&](auto emit) { s.local_iterator->run_distributed(emit, node_ordering::id()); });
+}
+
+/// Removes the edges the local phase has handled and keeps the rest as the contracted graph. `Ordering` only tells
+/// remove_internal_edges how the neighborhoods are sorted.
+template <class P, typename Ordering>
+void contraction(Graph& G, Config const& conf, PhaseState<P>& s) {
+    CALI_CXX_MARK_SCOPE("contraction");
+    s.local_iterator.reset();
+    for_each_local_node(G, conf, conf.local_parallel, [&](auto node) {
+        G.remove_internal_edges(node, Ordering(G, s.ghost_degrees));
+    });
+    s.G_compact.emplace(
+        with_execution_policy(conf, conf.parallel_compact, [&](auto policy) { return G.compact(std::move(policy)); })
+    );
+    // what is left for the global phase: vertices with cut edges and their (oriented) cut edges
+    profiling::counter_add("compact_nodes", static_cast<std::int64_t>(std::ranges::size(s.G_compact->local_nodes())));
+    profiling::counter_add("compact_edges", static_cast<std::int64_t>(s.G_compact->local_edge_count_with_ghost_edges()));
+    s.ghosts = node_set{};
+    ConditionalBarrier(conf.global_synchronization);
+}
+
+/// pre-CETRIC: repartitions the contracted graph (`--secondary-cost-function`, off by default).
+template <class P>
+void secondary_load_balancing(Graph&, Config const& conf, PhaseState<P>& s) {
+    CALI_CXX_MARK_SCOPE("secondary_load_balancing");
     if (conf.secondary_cost_function != "none") {
-        auto G_global_phase = [&] {
-            CALI_CXX_MARK_SCOPE("secondary_load_balancing");
-            auto cost_function [[maybe_unused]] = [&]() {
-                if (conf.num_threads > 1) {
-                    return CostFunctionRegistry<decltype(G_compact)>::get(
-                        conf.secondary_cost_function,
-                        G_compact,
-                        conf,
-                        execution_policy::parallel{conf.num_threads}
-                    );
-                } else {
-                    return CostFunctionRegistry<decltype(G_compact)>::get(
-                        conf.secondary_cost_function,
-                        G_compact,
-                        conf,
-                        execution_policy::sequential{}
-                    );
-                }
-            }();
-            auto tmp        = G_compact.to_local_graph_view();
-            auto node_range = tmp.local_node_count() == 0
-                                  ? std::make_pair(std::numeric_limits<NodeId>::max(), std::numeric_limits<NodeId>::max())
-                                  : std::make_pair(tmp.node_info.front().global_id, tmp.node_info.back().global_id + 1);
-            auto G_global_phase = DistributedGraph<SparseNodeIndexer>(std::move(tmp), std::move(node_range), rank, size);
-            compute_ghost_ranks(G_global_phase, conf);
-            SPDLOG_DEBUG("Secondary load balancing finished");
-            ConditionalBarrier(conf.global_synchronization);
-            return G_global_phase;
-        }();
-        {
-            CALI_CXX_MARK_SCOPE("preprocessing_global");
-            preprocessing<node_ordering::id_outward, node_ordering::degree<decltype(G_global_phase)>>(
-                G_global_phase,
-                ghost_degrees,
-                ghosts,
+        auto cost_function [[maybe_unused]] = with_execution_policy(conf, [&](auto policy) {
+            return CostFunctionRegistry<CompactGraph>::get(
+                conf.secondary_cost_function,
+                *s.G_compact,
                 conf,
-                true
+                std::move(policy)
             );
-            ConditionalBarrier(conf.global_synchronization);
-        }
-        CALI_CXX_MARK_SCOPE("global_phase");
-        ghost_degrees = AuxiliaryNodeData<Degree>();
-        cetric::CetricEdgeIterator ctr_global(G_global_phase, conf, rank, size, CommunicationPolicy{});
-        ctr_global.set_threshold(threshold);
-        ctr_global.run_local(
-            make_emit(triangles, triangle_count_global_phase),
-            node_ordering::id_outward(rank)
-        );
-        SPDLOG_DEBUG("Found {} triangles in global phase 1", triangle_count_global_phase.combine(std::plus<>{}));
-        auto nodes = G_global_phase.local_nodes();
-        if (conf.local_parallel) {
-            tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&G_global_phase, &rank](auto const& r) {
-                for (auto node: r) {
-                    G_global_phase.remove_internal_edges(node, node_ordering::id_outward(rank));
-                }
-            });
-        } else {
-            for (auto node: nodes) {
-                G_global_phase.remove_internal_edges(node, node_ordering::id_outward(rank));
-            }
-        }
-        ctr_global.run_distributed(
-            make_emit(triangles, triangle_count_global_phase),
-            node_ordering::id() // even though the neighborhoods are sorted using id_outward, after removing the
-                                // internal edges, this is the same as id
-        );
-        SPDLOG_DEBUG("Found {} triangles in global phase 2", triangle_count_global_phase.combine(std::plus<>{}));
-        triangle_count += triangle_count_global_phase.combine(std::plus<>{});
-        SPDLOG_DEBUG("Global phase finished");
-    } else {
-        {
-            CALI_CXX_MARK_SCOPE("secondary_load_balancing");
-            ConditionalBarrier(conf.global_synchronization);
-        }
-        {
-            CALI_CXX_MARK_SCOPE("preprocessing_global");
-            preprocessing<node_ordering::id_outward, node_ordering::degree<decltype(G_compact)>>(
-                G_compact,
-                ghost_degrees,
-                ghosts,
-                conf,
-                true
-            );
-            ConditionalBarrier(conf.global_synchronization);
-        }
-        CALI_CXX_MARK_SCOPE("global_phase");
-        ghost_degrees = AuxiliaryNodeData<Degree>();
-        cetric::CetricEdgeIterator ctr_global(G_compact, conf, rank, size, CommunicationPolicy{});
-        ctr_global.set_threshold(threshold);
-        ctr_global.run_distributed(
-            make_emit(triangles, triangle_count_global_phase),
-            G_compact.local_nodes().begin(),
-            G_compact.local_nodes().end(),
-            node_ordering::id() // even though the neighborhoods are sorted
-                                // using id_outward, after removing the
-                                // internal edges, this is the same as id
-        );
-        triangle_count += triangle_count_global_phase.combine(std::plus<>{});
-        SPDLOG_DEBUG("Global phase finished");
+        });
+        auto tmp        = s.G_compact->to_local_graph_view();
+        auto node_range = tmp.local_node_count() == 0
+                              ? std::make_pair(std::numeric_limits<NodeId>::max(), std::numeric_limits<NodeId>::max())
+                              : std::make_pair(tmp.node_info.front().global_id, tmp.node_info.back().global_id + 1);
+        s.G_compact.emplace(std::move(tmp), std::move(node_range), conf.rank, conf.PEs);
+        compute_ghost_ranks(*s.G_compact, conf);
+        s.rebalanced = true;
     }
-    size_t counted_triangles = 0;
-    {
-        CALI_CXX_MARK_SCOPE("reduce");
-        MPI_Reduce(
-            &triangle_count,
-            &counted_triangles,
-            1,
-            kamping::types::mpi_type_traits<size_t>::data_type(),
-            MPI_SUM,
-            0,
-            MPI_COMM_WORLD
-        );
-    }
-    verify_triangles(triangles, triangle_count);
-    return counted_triangles;
+    ConditionalBarrier(conf.global_synchronization);
 }
 
-template <typename CommunicationPolicy>
-inline size_t run_cetric_new(DistributedGraph<>& G, const Config& conf, PEID rank, PEID size, CommunicationPolicy&&) {
-    size_t   threshold = 0;
-    node_set ghosts;
-    {
-        CALI_CXX_MARK_SCOPE("ghost_ranks");
-        threshold = get_threshold(G, conf);
-        compute_ghost_ranks(G, conf);
-        ConditionalBarrier(true);
+/// pre-CETRIC: degree exchange and orientation on the contracted graph.
+template <class P>
+void preprocessing_global(Graph&, Config const& conf, PhaseState<P>& s) {
+    CALI_CXX_MARK_SCOPE("preprocessing_global");
+    preprocessing<node_ordering::id_outward, node_ordering::degree<CompactGraph>>(
+        *s.G_compact,
+        s.ghost_degrees,
+        s.ghosts,
+        conf,
+        true
+    );
+    ConditionalBarrier(conf.global_synchronization);
+}
+
+/// The global phase on the contracted graph (CETRIC, pre-CETRIC). After a secondary load balancing some of its
+/// edges are local again; those go through a local phase first.
+template <class P>
+void global_phase_compact(Graph&, Config const& conf, PhaseState<P>& s) {
+    CALI_CXX_MARK_SCOPE("global_phase");
+    s.ghost_degrees = AuxiliaryNodeData<Degree>();
+    auto&                                 G_compact = *s.G_compact;
+    CetricEdgeIterator<CompactGraph, P> ctr(G_compact, conf, conf.rank, conf.PEs, P{});
+    ctr.set_threshold(s.threshold);
+    // the neighborhoods are sorted by id_outward; without internal edges that is the same as id
+    if (s.rebalanced) {
+        s.count_triangles([&](auto emit) { ctr.run_local(emit, node_ordering::id_outward(conf.rank)); });
+        for_each_local_node(G_compact, conf, conf.local_parallel, [&](auto node) {
+            G_compact.remove_internal_edges(node, node_ordering::id_outward(conf.rank));
+        });
+        s.count_triangles([&](auto emit) { ctr.run_distributed(emit, node_ordering::id()); });
+    } else {
+        auto nodes = G_compact.local_nodes();
+        s.count_triangles([&](auto emit) { ctr.run_distributed(emit, nodes.begin(), nodes.end(), node_ordering::id()); });
     }
-    AuxiliaryNodeData<Degree> ghost_degrees;
-    {
-        CALI_CXX_MARK_SCOPE("primary_load_balancing");
-        primary_load_balancing(G, conf, rank, size);
-        SPDLOG_DEBUG("Primary load balancing finished");
-        ConditionalBarrier(conf.global_synchronization);
+}
+
+template <class P>
+void reduce(Graph&, Config const&, PhaseState<P>& s) {
+    CALI_CXX_MARK_SCOPE("reduce");
+    MPI_Reduce(
+        &s.triangle_count,
+        &s.counted_triangles,
+        1,
+        kamping::types::mpi_type_traits<size_t>::data_type(),
+        MPI_SUM,
+        0,
+        MPI_COMM_WORLD
+    );
+}
+} // namespace phases
+
+/// Runs the phases in order and returns the triangle count (valid on rank 0).
+template <class CommunicationPolicy>
+size_t
+run_phases(DistributedGraph<>& G, Config const& conf, std::initializer_list<PhaseFunction<CommunicationPolicy>> phases) {
+    PhaseState<CommunicationPolicy> state;
+    for (auto phase: phases) {
+        phase(G, conf, state);
     }
-    auto                      nodes = [&] {
-        CALI_CXX_MARK_SCOPE("preprocessing");
-        preprocessing<node_ordering::id_outward, node_ordering::degree<decltype(G)>>(
-            G,
-            ghost_degrees,
-            ghosts,
-            conf,
-            true
-        );
-        auto nodes = G.local_nodes();
-        {
-            CALI_CXX_MARK_SCOPE("ghost_expansion");
-            if (conf.parallel_compact) {
-                G.remove_in_edges_and_expand_ghosts(
-                    node_ordering::id_outward(rank),
-                    execution_policy::parallel{conf.num_threads}
-                );
-            } else {
-                G.remove_in_edges_and_expand_ghosts(
-                    node_ordering::id_outward(rank),
-                    execution_policy::sequential{}
-                );
-            }
-        }
-        SPDLOG_DEBUG("Preprocessing finished");
-        ConditionalBarrier(conf.global_synchronization);
-        return nodes;
-    }();
-    size_t                                              triangle_count = 0;
-    tbb::concurrent_vector<Triangle<RankEncodedNodeId>> triangles;
-    tbb::combinable<size_t>                             triangle_count_local_phase{0};
-    {
-        CALI_CXX_MARK_SCOPE("local_phase");
-        auto ctr = cetric::CetricEdgeIterator(G, conf, rank, size, CommunicationPolicy{});
-        ctr.set_threshold(threshold);
-        ctr.run_local(
-            make_emit(triangles, triangle_count_local_phase),
-            node_ordering::id_outward(rank)
-        );
-        triangle_count += triangle_count_local_phase.combine(std::plus<>{});
-        SPDLOG_DEBUG("Local phase finished");
-        ConditionalBarrier(conf.global_synchronization);
-    }
-    auto G_compact = [&] {
-        CALI_CXX_MARK_SCOPE("contraction");
-        if (conf.local_parallel) {
-            tbb::task_arena arena(conf.num_threads);
-            arena.execute([&] {
-                tbb::parallel_for(tbb::blocked_range(nodes.begin(), nodes.end()), [&](auto const& r) {
-                    for (auto node: r) {
-                        G.remove_internal_edges(node, node_ordering::id_outward(rank));
-                    }
-                });
-            });
-        } else {
-            for (auto node: nodes) {
-                G.remove_internal_edges(node, node_ordering::id_outward(rank));
-            }
-        }
-        auto G_compact = conf.parallel_compact ? G.compact(execution_policy::parallel{conf.num_threads})
-                                               : G.compact(execution_policy::sequential{});
-        // what is left for the global phase: vertices with cut edges and their (oriented) cut edges
-        profiling::counter_add("compact_nodes", static_cast<std::int64_t>(std::ranges::size(G_compact.local_nodes())));
-        profiling::counter_add("compact_edges", static_cast<std::int64_t>(G_compact.local_edge_count_with_ghost_edges()));
-        ConditionalBarrier(conf.global_synchronization);
-        return G_compact;
-    }();
-    {
-        CALI_CXX_MARK_SCOPE("preprocessing_global");
-        auto compact_nodes = G_compact.local_nodes();
-        SPDLOG_DEBUG("Contraction finished");
-        ghosts = decltype(ghosts){};
-        SPDLOG_DEBUG("Found {} triangles in local phase", triangle_count_local_phase.combine(std::plus<>{}));
-        ConditionalBarrier(conf.global_synchronization);
-    }
-    {
-        CALI_CXX_MARK_SCOPE("secondary_load_balancing");
-        ConditionalBarrier(conf.global_synchronization);
-    }
-    {
-        CALI_CXX_MARK_SCOPE("global_phase");
-        tbb::combinable<size_t> triangle_count_global_phase{0};
-        ghost_degrees = AuxiliaryNodeData<Degree>();
-        SPDLOG_DEBUG("ghosts={}", ghosts);
-        SPDLOG_DEBUG("ghost_degrees={}", ghost_degrees.range());
-        cetric::CetricEdgeIterator ctr_global(G_compact, conf, rank, size, CommunicationPolicy{});
-        ctr_global.set_threshold(threshold);
-        ctr_global.run_distributed(
-            make_emit(triangles, triangle_count_global_phase),
-            G_compact.local_nodes().begin(),
-            G_compact.local_nodes().end(),
-            node_ordering::id() // even though the neighborhoods are sorted using id_outward, after removing the
-                                // internal edges, this is the same as id
-        );
-        triangle_count += triangle_count_global_phase.combine(std::plus<>{});
-        SPDLOG_DEBUG("Global phase finished");
-    }
-    size_t counted_triangles = 0;
-    {
-        CALI_CXX_MARK_SCOPE("reduce");
-        MPI_Reduce(
-            &triangle_count,
-            &counted_triangles,
-            1,
-            kamping::types::mpi_type_traits<size_t>::data_type(),
-            MPI_SUM,
-            0,
-            MPI_COMM_WORLD
-        );
-    }
-    verify_triangles(triangles, triangle_count);
-    return counted_triangles;
+    verify_triangles(state.triangles, state.triangle_count);
+    return state.counted_triangles;
+}
+
+/// DiTriC
+template <class P>
+size_t run_patric(DistributedGraph<>& G, Config const& conf) {
+    return run_phases<P>(
+        G,
+        conf,
+        {phases::ghost_ranks<P>,
+         phases::primary_load_balancing<P>,
+         phases::preprocessing_patric<P>,
+         phases::local_phase<P, node_ordering::id>,
+         phases::global_phase_patric<P>,
+         phases::reduce<P>}
+    );
+}
+
+/// pre-CETRIC
+template <class P>
+size_t run_cetric(DistributedGraph<>& G, Config const& conf) {
+    return run_phases<P>(
+        G,
+        conf,
+        {phases::ghost_ranks<P>,
+         phases::primary_load_balancing<P>,
+         phases::preprocessing_cetric<P>,
+         phases::local_phase<P, node_ordering::id_outward>,
+         phases::contraction<P, node_ordering::degree_outward<DistributedGraph<>>>,
+         phases::secondary_load_balancing<P>,
+         phases::preprocessing_global<P>,
+         phases::global_phase_compact<P>,
+         phases::reduce<P>}
+    );
+}
+
+/// CETRIC
+template <class P>
+size_t run_cetric_x(DistributedGraph<>& G, Config const& conf) {
+    return run_phases<P>(
+        G,
+        conf,
+        {phases::ghost_ranks<P>,
+         phases::primary_load_balancing<P>,
+         phases::preprocessing_cetric_x<P>,
+         phases::local_phase<P, node_ordering::id_outward>,
+         phases::contraction<P, node_ordering::id_outward>,
+         phases::global_phase_compact<P>,
+         phases::reduce<P>}
+    );
 }
 } // namespace cetric
 
