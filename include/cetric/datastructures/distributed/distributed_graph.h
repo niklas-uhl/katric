@@ -607,6 +607,21 @@ public:
         return node_indexer_.is_indexed(node);
     }
 
+    /// Whether this rank owns `v` (in the contracted graph, `v` need not be indexed: see is_local()).
+    [[nodiscard]] bool is_owned(RankEncodedNodeId v) const {
+        return v.rank() == rank_;
+    }
+
+    /// The rank owning `v`.
+    [[nodiscard]] PEID owner(RankEncodedNodeId v) const {
+        return v.rank();
+    }
+
+    /// The global ID of `v`.
+    [[nodiscard]] NodeId global_id(RankEncodedNodeId v) const {
+        return v.id();
+    }
+
     template <AdjacencyType adj_type>
     inline bool is_interface_node_if_sorted_by_rank(RankEncodedNodeId node) const {
         KASSERT(node.rank() == rank_);

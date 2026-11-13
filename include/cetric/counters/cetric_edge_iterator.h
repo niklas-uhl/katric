@@ -261,8 +261,8 @@ public:
             }
             bool is_interface = false;
             for (RankEncodedNodeId u: neighbors_with_ghosts(v)) {
-                if (u.rank() != rank_) {
-                    if (v.rank() == rank_ && !is_interface) {
+                if (!G.is_owned(u)) {
+                    if (G.is_owned(v) && !is_interface) {
                         interface_nodes.emplace_back(v);
                         is_interface = true;
                     }
@@ -302,7 +302,7 @@ public:
     template <typename NodeOrdering, typename It>
     [[nodiscard]] It local_prefix_end(It first, It last) const {
         if constexpr (local_first<NodeOrdering>) {
-            return std::partition_point(first, last, [this](RankEncodedNodeId w) { return w.rank() == rank_; });
+            return std::partition_point(first, last, [this](RankEncodedNodeId w) { return G.is_owned(w); });
         } else {
             return last;
         }
@@ -310,7 +310,7 @@ public:
 
     /// N+(v) for a local vertex, the ghost adjacency (cetric-x: its out-edges to local vertices) for a ghost.
     [[nodiscard]] auto neighbors_with_ghosts(RankEncodedNodeId v) const {
-        return v.rank() == rank_ ? G.out_adj(v).neighbors() : G.ghost_adj(v).neighbors();
+        return G.is_owned(v) ? G.out_adj(v).neighbors() : G.ghost_adj(v).neighbors();
     }
 
     /// The local phase's work for one edge v -> u: emits the triangles (v, u, w) for w in N+(v) ∩ N+(u), where a
@@ -329,9 +329,9 @@ public:
         auto       v_last      = v_neighbors.end();
         auto       u_first     = u_neighbors.begin();
         auto       u_last      = u_neighbors.end();
-        if (u.rank() != rank_) {
+        if (!G.is_owned(u)) {
             v_last = local_prefix_end<NodeOrdering>(v_first, v_last);
-        } else if (v.rank() != rank_) {
+        } else if (!G.is_owned(v)) {
             u_last = local_prefix_end<NodeOrdering>(u_first, u_last);
         }
         // for the edge (v, u) we check the open wedges (v, u, w) for w in N+(u)
@@ -388,7 +388,7 @@ public:
             auto tail_first_edge = edge_locator.first_edge_id_for_idx(tail_idx);
             auto tail_last_edge  = edge_locator.last_edge_id_for_idx(tail_idx);
             auto degree          = [this](RankEncodedNodeId node) {
-                if (node.rank() == rank_) {
+                if (G.is_owned(node)) {
                     return G.outdegree(node);
                 } else {
                     return G.ghost_degree(node);
@@ -415,11 +415,11 @@ public:
                 auto u = edge_locator.get_edge_head(edge_id);
                 if constexpr (fast_is_interface<NodeOrdering>) {
                     // the first thread to examine this node checks whether it is an interface node
-                    if (tail.rank() == rank_ && edge_id == tail_first_edge
+                    if (G.is_owned(tail) && edge_id == tail_first_edge
                         && G.template is_interface_node_if_sorted_by_rank<AdjacencyType::out>(tail)) {
                         local_interface_nodes.emplace_back(tail);
                     }
-                } else if (u.rank() != rank_ && !is_interface[tail_idx].exchange(true)) {
+                } else if (!G.is_owned(u) && !is_interface[tail_idx].exchange(true)) {
                     local_interface_nodes.emplace_back(tail);
                 }
                 intersect_local_edge(v, u, counters, emit, node_ordering);
@@ -478,14 +478,14 @@ public:
                 auto u = edge_locator.get_edge_head(edge_id);
                 if constexpr (fast_is_interface<NodeOrdering>) {
                     // the first thread to examine this node checks whether it is an interface node
-                    if (tail.rank() == rank_ && edge_id == tail_first_edge
+                    if (G.is_owned(tail) && edge_id == tail_first_edge
                         && G.template is_interface_node_if_sorted_by_rank<AdjacencyType::out>(tail)) {
                         local_interface_nodes.emplace_back(tail);
                     }
-                } else if (u.rank() != rank_ && !is_interface[tail_idx].exchange(true)) {
+                } else if (!G.is_owned(u) && !is_interface[tail_idx].exchange(true)) {
                     local_interface_nodes.emplace_back(tail);
                 }
-                if (u.rank() != rank_) {
+                if (!G.is_owned(u)) {
                     continue;
                 }
                 intersect_local_edge(v, u, counters, emit, node_ordering);
@@ -521,7 +521,7 @@ public:
             for (size_t neighbor_index = neighbor_range.begin(); neighbor_index != neighbor_range.end();
                  neighbor_index++) {
                 auto u = *(G.out_adj(v).neighbors().begin() + neighbor_index);
-                if (u.rank() != rank_) {
+                if (!G.is_owned(u)) {
                     if constexpr (local_first<NodeOrdering>) {
                         break;
                     } else {
@@ -569,7 +569,7 @@ public:
         tbb::combinable<LocalPhaseCounters> thread_counters;
 
         auto degree = [this](RankEncodedNodeId node) {
-            return node.rank() == rank_ ? G.outdegree(node) : G.ghost_degree(node);
+            return G.is_owned(node) ? G.outdegree(node) : G.ghost_degree(node);
         };
         auto partition_neighborhood_2d = [&](RankEncodedNodeId node) {
             if (conf_.local_degree_of_parallelism > 2) {
@@ -591,7 +591,7 @@ public:
                  neighbor_index++) {
                 auto u = *(neighbors_with_ghosts(v).begin() + neighbor_index);
                 if constexpr (!fast_is_interface<NodeOrdering>) {
-                    if (u.rank() != rank_ && !is_interface[G.to_local_idx(v)].exchange(true)) {
+                    if (!G.is_owned(u) && !is_interface[G.to_local_idx(v)].exchange(true)) {
                         interface_nodes.local().emplace_back(v);
                     }
                 }
@@ -605,7 +605,7 @@ public:
                 return;
             }
             if constexpr (fast_is_interface<NodeOrdering>) {
-                if (v.rank() == rank_ && G.template is_interface_node_if_sorted_by_rank<AdjacencyType::out>(v)) {
+                if (G.is_owned(v) && G.template is_interface_node_if_sorted_by_rank<AdjacencyType::out>(v)) {
                     interface_nodes.local().emplace_back(v);
                 }
             }
@@ -714,8 +714,8 @@ public:
             } else {
                 auto const start = clock::now();
                 for (RankEncodedNodeId u: G.out_adj(v).neighbors()) {
-                    if (u.rank() != rank_ && last_proc_[G.to_local_idx(v)] != u.rank()) {
-                        enqueue_for_sending(queue, v, u.rank());
+                    if (!G.is_owned(u) && last_proc_[G.to_local_idx(v)] != G.owner(u)) {
+                        enqueue_for_sending(queue, v, G.owner(u));
                     }
                 }
                 send_time += clock::now() - start;
@@ -769,8 +769,8 @@ public:
                 return;
             }
             for (RankEncodedNodeId u: G.out_adj(v).neighbors()) {
-                if (u.rank() != rank_ && last_proc_[G.to_local_idx(v)] != u.rank()) {
-                    enqueue_for_sending_async(queue, v, u.rank(), pool, write_jobs);
+                if (!G.is_owned(u) && last_proc_[G.to_local_idx(v)] != G.owner(u)) {
+                    enqueue_for_sending_async(queue, v, G.owner(u), pool, write_jobs);
                 }
             }
             nodes_queued--;
@@ -878,10 +878,10 @@ private:
         IterType begin, IterType end, Counters& counters, TriangleFunc& emit, NodeOrdering const& node_ordering
     ) {
         RankEncodedNodeId const v = *begin;
-        KASSERT(v.rank() != rank_);
+        KASSERT(!G.is_owned(v));
         auto const neighbors_first = begin + 1;
         auto       on_receiver     = [&](RankEncodedNodeId u) {
-            if (u.rank() == rank_) {
+            if (G.is_owned(u)) {
                 intersect_with_message(v, u, neighbors_first, end, local_counters(counters), emit, node_ordering);
             }
         };

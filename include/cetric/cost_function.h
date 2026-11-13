@@ -75,15 +75,15 @@ public:
                 RankEncodedNodeId{G.node_range().second, static_cast<uint16_t>(G.rank())}
             );
             auto deg = [&G, &degree](RankEncodedNodeId node) {
-                if (node.rank() == G.rank()) {
+                if (G.is_owned(node)) {
                     return G.degree(node);
                 }
                 return degree[node];
             };
             for (RankEncodedNodeId v: G.local_nodes()) {
                 auto   neighbors = G.adj(v).neighbors();
-                Degree v_out_deg = std::count_if(neighbors.begin(), neighbors.end(), [&deg, &v](auto u) {
-                    return std::tuple(deg(u), u.id()) > std::tuple(deg(v), v.id());
+                Degree v_out_deg = std::count_if(neighbors.begin(), neighbors.end(), [&G, &deg, &v](auto u) {
+                    return std::tuple(deg(u), G.global_id(u)) > std::tuple(deg(v), G.global_id(v));
                 });
                 out_degree[v]    = v_out_deg;
             }
@@ -164,7 +164,7 @@ public:
                     tbb::blocked_range(nodes.begin(), nodes.end()),
                     [this, &node_index, &cost_function, &G](auto const& r) {
                         for (RankEncodedNodeId node: r) {
-                            node_to_idx_[node.id()] = node_index;
+                            node_to_idx_[G.global_id(node)] = node_index;
                             cost[node_index]        = cost_function(*this, G, node);
                             node_index++;
                         }
@@ -173,7 +173,7 @@ public:
             });
         } else {
             for (RankEncodedNodeId node: nodes) {
-                node_to_idx_[node.id()] = node_index;
+                node_to_idx_[G.global_id(node)] = node_index;
                 cost[node_index]        = cost_function(*this, G, node);
                 node_index++;
             }
@@ -186,7 +186,7 @@ public:
     }
 
     inline Degree degree(RankEncodedNodeId node) {
-        if (node.rank() == G.rank()) {
+        if (G.is_owned(node)) {
             return G.degree(node);
         } else {
             return degree_[node];
@@ -195,15 +195,6 @@ public:
 
     inline Degree out_degree(RankEncodedNodeId node) {
         return out_degree_[node];
-    }
-    inline PEID rank(NodeId local_node_id) {
-        assert(G.ghost_ranks_available());
-        G.find_ghost_ranks();
-        if (G.is_local(local_node_id)) {
-            return G.rank();
-        } else {
-            return G.get_ghost_data(local_node_id).rank;
-        }
     }
 
 private:
@@ -243,7 +234,7 @@ struct CostFunctionRegistry {
                   [](RefType ctx, GraphType G, RankEncodedNodeId v) {
                       size_t cost = 0;
                       for (RankEncodedNodeId u: G.adj(v).neighbors()) {
-                          if (std::tuple(ctx.degree(u), u.id()) > std::tuple(ctx.degree(v), v.id())) {
+                          if (std::tuple(ctx.degree(u), G.global_id(u)) > std::tuple(ctx.degree(v), G.global_id(v))) {
                               cost += ctx.out_degree(v) + ctx.out_degree(u);
                           }
                       }
@@ -252,7 +243,7 @@ struct CostFunctionRegistry {
                 {"IDPD", {CostFunction<Graph>::init_all, [](RefType ctx, GraphType G, RankEncodedNodeId v) {
                               size_t cost = 0;
                               for (RankEncodedNodeId u: G.adj(v).neighbors()) {
-                                  if (std::tuple(ctx.degree(u), u.id()) <= std::tuple(ctx.degree(v), v.id())) {
+                                  if (std::tuple(ctx.degree(u), G.global_id(u)) <= std::tuple(ctx.degree(v), G.global_id(v))) {
                                       cost += ctx.out_degree(v) + ctx.out_degree(u);
                                   }
                               }
