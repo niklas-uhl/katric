@@ -178,8 +178,9 @@ The deferred kamping-v2 plan from modernization-plan.md, plus the degree exchang
       `--degree-exchange sparse|dense|grid` (replaces `--dense-degree-exchange`; configs and suites say `dense`):
       `dstl::sparse_alltoall` (NBX), `kamping::v2::alltoallv` after an alltoall of the counts, `dstl::grid_alltoallv`.
       Used by the orientation's degree exchange and the cost functions' ghost data. Caliper sub-regions `prepare` and
-      `exchange`. The grid mode reports no `received_messages` (its unordered receive does not tell sources apart) and
-      builds its `grid_comm` (a communicator split) on every call; build it once per run if `exchange` shows it.
+      `exchange`. The grid mode reports no `received_messages` (its unordered receive does not tell sources apart). Its
+      `grid_comm` (a communicator split) is built once and cached on the communicator in a static
+      `kamping::v2::keyval` (region `grid_comm`, only in the first exchange).
       CommunicationUtility's three exchanges that only the old degree exchange used are gone. Identical counters on the
       78 reference runs (dense, as in the configs); the orientation test checks that all three transports deliver the
       same ghost degrees; ctests for DiTriC with `dense` and CETRIC with `grid` (`aec0ab1`)

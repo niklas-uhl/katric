@@ -16,6 +16,7 @@
 #include <dstl/grid_alltoallv.hpp>
 #include <dstl/grid_comm.hpp>
 #include <dstl/sparse_alltoall.hpp>
+#include <kamping/v2/cache.hpp>
 #include <kamping/v2/collectives/alltoall.hpp>
 #include <kamping/v2/collectives/alltoallv.hpp>
 #include <kamping/v2/p2p/mrecv.hpp>
@@ -32,6 +33,19 @@
 #include "cetric/util.h"
 
 namespace cetric {
+
+/// The grid communicator of `comm` for the grid exchange. Building one splits `comm` (collective, O(p)), so it is built
+/// on the first grid exchange and cached on `comm` as an MPI attribute. A static keyval, as kamping-v2 recommends for
+/// state without an owner (docs/attribute_caching.md): the value lives as long as `comm`; on MPI_COMM_WORLD that is
+/// the whole program, and the static keyval skips freeing its key after MPI_Finalize. Collective on first use for a
+/// given `comm`.
+inline dstl::grid_comm<dstl::execution_policy::seq> const& cached_grid_comm(MPI_Comm comm) {
+    static kamping::v2::keyval<kamping::v2::attribute::comm, dstl::grid_comm<dstl::execution_policy::seq>> grids;
+    return grids.get_or_create(comm, [comm] {
+        CALI_CXX_MARK_SCOPE("grid_comm");
+        return dstl::grid_comm<dstl::execution_policy::seq>{kamping::v2::comm_view{comm}};
+    });
+}
 
 /// Sends `vertex_to_message(u)` once to every rank that owns a neighbor of `u`, for each `u` in `sources` (local
 /// vertices), and returns the messages this rank received. Since the graph is undirected, the receiver gets the
@@ -154,7 +168,7 @@ template <typename Graph, typename Sources, typename VertexToMessage>
                 break;
             }
             case GhostExchangeMode::grid: {
-                dstl::grid_comm<dstl::execution_policy::seq> const grid{kamping::v2::comm_view{comm}};
+                auto const& grid = cached_grid_comm(comm);
                 dstl::grid_alltoallv(
                     send_buf | views::with_type(message_type) | views::with_counts(send_counts)
                         | views::with_displs(send_displs),
