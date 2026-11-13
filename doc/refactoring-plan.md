@@ -247,10 +247,15 @@ Open: which order the compact IDs follow.
   an array), and the global phase sorts the contracted graph by global ID (small with locality) or merges by key.
 - Decide together with ideas 2–4: with flag intersection (idea 4) the local phase needs no order at all.
 
-- [ ] Adopt KaCCv2's `VertexPartition` and `DenseIndexer` / `SparseIndexer` (`KaCCv2/src/kacc/graph/`, without the
-      split-vertex `ReplicaIndexer`) for the partition table and the local indexers, on plain `uint64` global IDs.
-      Copy or share them (a small common library) — decide when starting. Alternative for the partition table:
-      `dstl::distribution` (kamping-v2: owner of an index in O(1) for equal sizes, else O(log p); global <-> local)
+- [x] Partition table: `cetric::graph::VertexPartition` (`datastructures/distributed/vertex_partition.h`), copied
+      from KaCCv2 (decided 2026-11-13: copy what we need) without the split-vertex parts, and with empty ranks placed at
+      their predecessor's end (katric gives them the range (max, max)). Built collectively in the graph's
+      constructor; `find_ghost_ranks` uses its `get_rank` (local fast path, else binary search). `gather_PE_ranges`,
+      `get_PE_from_node_ranges` and `--binary-rank-search` are gone (configs and suites updated). Identical counters on
+      the 78 reference runs (`dc74612`)
+- [ ] Local indexers: KaCCv2's `DenseIndexer` / `SparseIndexer` on plain `uint64` global IDs, with the compact IDs below
+- Known issue (pre-existing, also in the binary from before step 1): DPD load balancing on a graph with fewer vertices
+  than ranks (`examples/triangle.metis` on 4 ranks) hangs
 - [ ] Compact IDs in the adjacency, built once after `find_ghosts`; per-ghost arrays for global ID, rank and degree.
       In KaCCv2's concepts this is a neighbor handle (`neighbor_t` != `vertex_id_t`, projected by
       `neighbor_target`), so the indexers never see compact IDs
