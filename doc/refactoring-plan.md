@@ -74,8 +74,9 @@ by those `.cpp` files):
       Not run yet: configurations 3+ (`cetric`, grid)
 - Findings from the 2026-11-13 data (time per iteration, max over ranks, SuperMUC-NG unless noted):
   - Locality inputs weak-scale flat from 48 to 1536 cores (RGG 2.2–2.6 s, RHG 1.8–2.7 s); the local phase is 60–70%.
-    HoreKa2 is 2.5× faster per core on the same runs (local phase 0.62 vs 1.6 s on RGG); check the SuperMUC build
-    flags before reading too much into absolute times. The 192-core job is 25% slower than 96 and 384 in every
+    HoreKa2 is 2.5× faster per core on the same runs (local phase 0.62 vs 1.6 s on RGG). The SuperMUC build is fine
+    (checked 2026-11-13: Release, -O3 -march=native = skylake-avx512, assertions off, gcc 15.1), so this is the
+    hardware (Skylake-SP from 2018 vs HoreKa2's newer CPU); absolute times are not comparable across the clusters. The 192-core job is 25% slower than 96 and 384 in every
     configuration (one job, probably a slow node).
   - RHG at 3072 cores breaks: one vertex of degree 19M, its rank has 27M local edges (3.2× the mean). patric 2.7 s ->
     24 s, the degree exchange alone 10.7 s, preprocessing barrier 8.4 s; permuted RHG 18 -> 36 s. An input effect
