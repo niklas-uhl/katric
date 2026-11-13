@@ -56,8 +56,7 @@ protected:
         G           = cetric::graph::DistributedGraph<>(
             std::move(result.G),
             result.node_range,
-            rank,
-            size
+            MPI_COMM_WORLD
         );
     }
 
@@ -72,7 +71,7 @@ TEST_P(Orientation, GlobalDegree) {
     std::unordered_set<cetric::graph::RankEncodedNodeId> ghosts;
     find_ghosts(G, ghosts);
     auto                       ghost_degree = cetric::AuxiliaryNodeData<cetric::Degree>{ghosts.begin(), ghosts.end()};
-    cetric::DegreeCommunicator comm(G, conf.rank, conf.PEs, cetric::as_int(cetric::MessageTag::Orientation));
+    cetric::DegreeCommunicator comm(G, cetric::as_int(cetric::MessageTag::Orientation));
     comm.get_ghost_degree(
         [&](cetric::RankEncodedNodeId node, cetric::Degree degree) { ghost_degree[node] = degree; },
         true

@@ -67,54 +67,6 @@ private:
     std::chrono::time_point<std::chrono::system_clock> start;
 };
 
-class MPITimer {
-public:
-    explicit MPITimer(std::string name, PEID rank, PEID size [[maybe_unused]], bool report = true)
-        : name(std::move(name)),
-          start(MPI_Wtime()),
-          rank(rank) {
-        restart(report);
-    }
-    void restart(bool report = true) {
-        if (report && rank == 0) {
-            SPDLOG_INFO("Starting {} ...", name);
-        }
-        start = MPI_Wtime();
-    }
-
-    void report_total_elapsed_time() {
-        double total_duration = get_total_elapsed_time();
-        if (rank == 0) {
-            SPDLOG_INFO("{} took {} s.", name, total_duration);
-        }
-    }
-
-    double get_total_elapsed_time() {
-        double duration = local_elapsed_time_and_stop();
-        double total_duration;
-        MPI_Reduce(&duration, &total_duration, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
-        return total_duration;
-    }
-
-    double local_elapsed_time_and_stop() {
-        auto end       = MPI_Wtime();
-        execution_time = end - start;
-        return execution_time;
-    }
-
-    double aggregate_total_execution_time() {
-        double total_execution_time;
-        MPI_Reduce(&execution_time, &total_execution_time, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
-        return execution_time;
-    }
-
-private:
-    std::string name;
-    double      start;
-    double      execution_time;
-    PEID        rank;
-};
-
 template <typename Task>
 void report_time(const std::string& name, Task task) {
     Timer t(name);

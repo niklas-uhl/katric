@@ -56,13 +56,14 @@ inline kamping::types::ScopedDatatype node_info_type() {
 template <class Graph>
 class DegreeCommunicator {
 public:
-    DegreeCommunicator(const Graph& G, PEID rank, PEID size, int message_tag)
+    DegreeCommunicator(const Graph& G, int message_tag)
         : G(G),
-          rank_(rank),
-          size_(size),
-          send_buffers(size),
-          receive_buffers(size),
-          neighboring_PEs(size),
+          comm_(G.comm()),
+          rank_(G.rank()),
+          size_(G.size()),
+          send_buffers(size_),
+          receive_buffers(size_),
+          neighboring_PEs(size_),
           message_tag_(message_tag) {
     }
 
@@ -108,6 +109,7 @@ public:
                 send_buffers,
                 receive_buffers,
                 kamping::types::mpi_type_traits<RankEncodedNodeId>::data_type(),
+                comm_,
                 rank_,
                 size_,
                 message_tag_
@@ -117,6 +119,7 @@ public:
                 send_buffers,
                 receive_buffers,
                 kamping::types::mpi_type_traits<RankEncodedNodeId>::data_type(),
+                comm_,
                 rank_,
                 size_,
                 message_tag_
@@ -134,6 +137,7 @@ public:
 
 private:
     const Graph&                                                 G;
+    MPI_Comm                                                     comm_;
     PEID                                                         rank_;
     PEID                                                         size_;
     absl::flat_hash_map<PEID, std::vector<RankEncodedNodeId>> send_buffers;
@@ -153,10 +157,11 @@ public:
     static LocalGraphView relocate(
         LocalGraphView&&                      G,
         const Map&                            nodes_to_send,
+        MPI_Comm                              comm,
         [[maybe_unused]] PEID                 rank,
         PEID                                  size
     ) {
-        return relocate_sparse_impl(std::forward<LocalGraphView>(G), nodes_to_send, rank, size);
+        return relocate_sparse_impl(std::forward<LocalGraphView>(G), nodes_to_send, comm, rank, size);
     }
 
 private:
@@ -165,6 +170,7 @@ private:
     static LocalGraphView relocate_sparse_impl(
         LocalGraphView&&                      G,
         const Map&                            nodes_to_send,
+        MPI_Comm                              comm,
         [[maybe_unused]] PEID                 rank,
         PEID                                  size
     ) {
@@ -187,6 +193,7 @@ private:
             to_send_node_info,
             node_recv_buffer,
             node_info_mpi_type.data_type(),
+            comm,
             rank,
             size,
             as_int(MessageTag::LoadBalancing)
@@ -196,6 +203,7 @@ private:
             to_send_head,
             edge_recv_buffer,
             kamping::types::mpi_type_traits<NodeId>::data_type(),
+            comm,
             rank,
             size,
             as_int(MessageTag::LoadBalancing)

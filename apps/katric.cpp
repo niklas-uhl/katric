@@ -66,9 +66,13 @@ int main(int argc, char* argv[]) {
     cetric::PEID rank;
     cetric::PEID size;
     int          exit_code = 0;
+    // katric's own communicator, so its collectives cannot match messages of libraries on MPI_COMM_WORLD. The global
+    // phase's message queue (legacy message-queue) still uses MPI_COMM_WORLD; BriefKAsten will take a communicator.
+    MPI_Comm comm;
+    MPI_Comm_dup(MPI_COMM_WORLD, &comm);
     {
-        MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-        MPI_Comm_size(MPI_COMM_WORLD, &size);
+        MPI_Comm_rank(comm, &rank);
+        MPI_Comm_size(comm, &size);
         DEBUG_BARRIER(rank);
         cetric::Config      conf = parse_config(argc, argv, rank, size);
         size_t              expected_triangles = 0;
@@ -84,7 +88,7 @@ int main(int argc, char* argv[]) {
                 SPDLOG_CRITICAL("Invalid Caliper config: {}", caliper.error_msg());
                 MPI_Abort(MPI_COMM_WORLD, 1);
             }
-            MPI_Comm adiak_comm = MPI_COMM_WORLD;
+            MPI_Comm adiak_comm = comm;
             adiak::init(&adiak_comm);
             for (auto const& [name, value]: conf.options) {
                 adiak::value("config." + name, value);
@@ -100,12 +104,12 @@ int main(int argc, char* argv[]) {
         }
 
         // The input is generated (or read) once and ingested; every iteration resets the algorithm to that state.
-        auto const   algorithm = cetric::make_algorithm(conf);
+        auto const   algorithm = cetric::make_algorithm(conf, comm);
         kagen::Graph graph;
         {
             CALI_CXX_MARK_SCOPE("input");
             try {
-                graph = cetric::generate_input(conf.kagen_option_string, MPI_COMM_WORLD);
+                graph = cetric::generate_input(conf.kagen_option_string, comm);
             } catch (std::exception const& e) {
                 SPDLOG_CRITICAL("KaGen failed for --kagen_option_string '{}': {}", conf.kagen_option_string, e.what());
                 MPI_Abort(MPI_COMM_WORLD, 1);
@@ -113,7 +117,7 @@ int main(int argc, char* argv[]) {
         }
         if (conf.verify) {
             CALI_CXX_MARK_SCOPE("verify");
-            expected_triangles = cetric::reference_triangle_count(graph, MPI_COMM_WORLD);
+            expected_triangles = cetric::reference_triangle_count(graph, comm);
             if (rank == 0) {
                 SPDLOG_INFO("reference: {} triangles", expected_triangles);
             }
@@ -129,25 +133,25 @@ int main(int argc, char* argv[]) {
         cali::Annotation iteration_annotation("iteration", CALI_ATTR_NESTED);
         for (size_t iter = 0; iter < conf.iterations; ++iter) {
             iteration_annotation.begin(static_cast<int>(iter));
-            MPI_Barrier(MPI_COMM_WORLD);
+            MPI_Barrier(comm);
             {
                 CALI_CXX_MARK_SCOPE("reset");
                 algorithm->reset();
             }
-            MPI_Barrier(MPI_COMM_WORLD);
+            MPI_Barrier(comm);
             double local_time = 0;
             {
                 // the algorithm's run time; its maximum across ranks in the timers output is the iteration's run time
                 CALI_CXX_MARK_SCOPE("total");
                 cetric::profiling::Timer timer;
                 algorithm->run();
-                MPI_Barrier(MPI_COMM_WORLD);
+                MPI_Barrier(comm);
                 local_time = timer.elapsed_time();
             }
             iteration_annotation.end();
             triangles   = algorithm->triangle_count();
             double time = 0; // only for the log, Caliper's results are available after the run
-            MPI_Reduce(&local_time, &time, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+            MPI_Reduce(&local_time, &time, 1, MPI_DOUBLE, MPI_MAX, 0, comm);
             min_time = std::min(min_time, time);
             if (rank == 0) {
                 SPDLOG_INFO("iteration {}/{}: {:.6f} s, {} triangles", iter + 1, conf.iterations, time, triangles);
@@ -171,9 +175,10 @@ int main(int argc, char* argv[]) {
         if (rank == 0 && conf.iterations > 1) {
             SPDLOG_INFO("min time: {:.6f} s", min_time);
         }
-        MPI_Bcast(&mismatch, 1, MPI_CXX_BOOL, 0, MPI_COMM_WORLD);
+        MPI_Bcast(&mismatch, 1, MPI_CXX_BOOL, 0, comm);
         exit_code = mismatch ? 1 : 0;
     }
+    MPI_Comm_free(&comm);
     MPI_Finalize();
     return exit_code;
 }

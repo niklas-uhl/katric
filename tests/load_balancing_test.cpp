@@ -66,7 +66,7 @@ TEST_P(LoadBalancing, BalancingWithConstCost) {
         return 1;
     };
     size_t per_pe_cost = (G_full.size() + size - 1) / size;
-    G_view             = load_balancing::LoadBalancer::run(std::move(G_view), cost, conf);
+    G_view             = load_balancing::LoadBalancer::run(std::move(G_view), cost, conf, MPI_COMM_WORLD);
     for (size_t node = 0; node < G_view.node_info.size(); ++node) {
         auto expected_degree = G_full.at(G_view.node_info.at(node).global_id).size();
         auto actual_degree   = G_view.node_info.at(node).degree;
@@ -92,7 +92,7 @@ TEST_P(LoadBalancing, BalancingWithDegree) {
     auto   cost        = [](const LocalGraphView& G, NodeId node) {
         return G.node_info[node].degree;
     };
-    G_view = load_balancing::LoadBalancer::run(std::move(G_view), cost, conf);
+    G_view = load_balancing::LoadBalancer::run(std::move(G_view), cost, conf, MPI_COMM_WORLD);
     for (size_t node = 0; node < G_view.node_info.size(); ++node) {
         auto expected_degree = G_full.at(G_view.node_info.at(node).global_id).size();
         auto actual_degree   = G_view.node_info.at(node).degree;

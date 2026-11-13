@@ -75,8 +75,7 @@ TEST(DistributedGraphTest, loading_works) {
     cetric::graph::DistributedGraph G = cetric::graph::DistributedGraph<>(
         std::move(result.G),
         result.node_range,
-        rank,
-        size
+        MPI_COMM_WORLD
     );
     // SECTION( "global and local ids are correct" ) {
     //     std::vector<NodeId> local_nodes;

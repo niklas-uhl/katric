@@ -30,6 +30,7 @@ public:
 };
 
 /// Builds the algorithm selected by --algorithm and --communication-policy. `conf` must outlive the algorithm.
-std::unique_ptr<AbstractAlgorithm> make_algorithm(Config const& conf);
+/// The algorithm selected by `conf`, running on the ranks of `comm` (which must outlive it).
+std::unique_ptr<AbstractAlgorithm> make_algorithm(Config const& conf, MPI_Comm comm);
 
 } // namespace cetric

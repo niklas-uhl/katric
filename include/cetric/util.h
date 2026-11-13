@@ -114,7 +114,21 @@ inline void check_mpi_error(int errcode, const std::string& file, int line) {
 
 /// Barrier in its own Caliper region `barrier`, nested in the phase that calls it. The phase's exclusive time is then
 /// the rank's own work, and the barrier's time is the wait for the slowest rank (load imbalance).
-inline void ConditionalBarrier(bool active, MPI_Comm comm = MPI_COMM_WORLD) {
+/// The rank of the calling process in `comm`.
+inline PEID comm_rank(MPI_Comm comm) {
+    PEID rank;
+    MPI_Comm_rank(comm, &rank);
+    return rank;
+}
+
+/// The number of processes in `comm`.
+inline PEID comm_size(MPI_Comm comm) {
+    PEID size;
+    MPI_Comm_size(comm, &size);
+    return size;
+}
+
+inline void ConditionalBarrier(bool active, MPI_Comm comm) {
     if (active) {
         CALI_CXX_MARK_SCOPE("barrier");
         MPI_Barrier(comm);

@@ -110,7 +110,7 @@ inline void preprocessing(
         CALI_CXX_MARK_SCOPE("degree_exchange");
         find_ghosts(G, ghosts);
         ghost_degree = AuxiliaryNodeData<Degree>{ghosts.begin(), ghosts.end()};
-        DegreeCommunicator comm(G, conf.rank, conf.PEs, as_int(MessageTag::Orientation));
+        DegreeCommunicator comm(G, as_int(MessageTag::Orientation));
         comm.get_ghost_degree(
             [&](RankEncodedNodeId node, Degree degree) { ghost_degree[node] = degree; },
             !conf.dense_degree_exchange
@@ -145,11 +145,11 @@ inline void primary_load_balancing(DistributedGraph<>& G, const Config& conf) {
         return CostFunctionRegistry<DistributedGraph<>>::get(conf.primary_cost_function, G, conf, std::move(policy));
     });
     LocalGraphView tmp = G.to_local_graph_view();
-    tmp                = cetric::load_balancing::LoadBalancer::run(std::move(tmp), cost_function, conf);
+    tmp                = cetric::load_balancing::LoadBalancer::run(std::move(tmp), cost_function, conf, G.comm());
     auto node_range    = tmp.local_node_count() == 0
                              ? std::make_pair(std::numeric_limits<NodeId>::max(), std::numeric_limits<NodeId>::max())
                              : std::make_pair(tmp.node_info.front().global_id, tmp.node_info.back().global_id + 1);
-    G                  = DistributedGraph(std::move(tmp), std::move(node_range), conf.rank, conf.PEs);
+    G                  = DistributedGraph(std::move(tmp), std::move(node_range), G.comm());
     compute_ghost_ranks(G, conf);
 }
 
@@ -234,14 +234,14 @@ void ghost_ranks(Graph& G, Config const& conf, PhaseState<P>& s) {
     CALI_CXX_MARK_SCOPE("ghost_ranks");
     s.threshold = get_threshold(G, conf);
     compute_ghost_ranks(G, conf);
-    ConditionalBarrier(true);
+    ConditionalBarrier(true, G.comm());
 }
 
 template <class P>
 void primary_load_balancing(Graph& G, Config const& conf, PhaseState<P>&) {
     CALI_CXX_MARK_SCOPE("primary_load_balancing");
     cetric::primary_load_balancing(G, conf);
-    ConditionalBarrier(conf.global_synchronization);
+    ConditionalBarrier(conf.global_synchronization, G.comm());
 }
 
 /// DiTriC: degree exchange, orientation by degree, neighborhoods by id.
@@ -249,7 +249,7 @@ template <class P>
 void preprocessing_patric(Graph& G, Config const& conf, PhaseState<P>& s) {
     CALI_CXX_MARK_SCOPE("preprocessing");
     preprocessing<node_ordering::id, node_ordering::degree<Graph>>(G, s.ghost_degrees, s.ghosts, conf, true);
-    ConditionalBarrier(conf.global_synchronization);
+    ConditionalBarrier(conf.global_synchronization, G.comm());
 }
 
 /// pre-CETRIC: no degree exchange; cut edges point outward, the local vertices first in each neighborhood.
@@ -263,7 +263,7 @@ void preprocessing_cetric(Graph& G, Config const& conf, PhaseState<P>& s) {
         conf,
         false
     );
-    ConditionalBarrier(conf.global_synchronization);
+    ConditionalBarrier(conf.global_synchronization, G.comm());
 }
 
 /// CETRIC: degree exchange, orientation by degree, the local vertices first; then the ghost expansion.
@@ -277,7 +277,7 @@ void preprocessing_cetric_x(Graph& G, Config const& conf, PhaseState<P>& s) {
             G.remove_in_edges_and_expand_ghosts(node_ordering::id_outward(conf.rank), std::move(policy));
         });
     }
-    ConditionalBarrier(conf.global_synchronization);
+    ConditionalBarrier(conf.global_synchronization, G.comm());
 }
 
 /// The intersections that need no communication; `NodeOrdering` is the neighborhoods' order from preprocessing.
@@ -287,7 +287,7 @@ void local_phase(Graph& G, Config const& conf, PhaseState<P>& s) {
     s.local_iterator.emplace(G, conf, conf.rank, conf.PEs, P{});
     s.local_iterator->set_threshold(s.threshold);
     s.count_triangles([&](auto emit) { s.local_iterator->run_local(emit, NodeOrdering(G, s.ghost_degrees)); });
-    ConditionalBarrier(conf.global_synchronization);
+    ConditionalBarrier(conf.global_synchronization, G.comm());
 }
 
 /// DiTriC's global phase: sends the neighborhoods of the local phase's interface vertices.
@@ -313,12 +313,12 @@ void contraction(Graph& G, Config const& conf, PhaseState<P>& s) {
     profiling::counter_add("compact_nodes", static_cast<std::int64_t>(std::ranges::size(s.G_compact->local_nodes())));
     profiling::counter_add("compact_edges", static_cast<std::int64_t>(s.G_compact->local_edge_count_with_ghost_edges()));
     s.ghosts = node_set{};
-    ConditionalBarrier(conf.global_synchronization);
+    ConditionalBarrier(conf.global_synchronization, G.comm());
 }
 
 /// pre-CETRIC: repartitions the contracted graph (`--secondary-cost-function`, off by default).
 template <class P>
-void secondary_load_balancing(Graph&, Config const& conf, PhaseState<P>& s) {
+void secondary_load_balancing(Graph& G, Config const& conf, PhaseState<P>& s) {
     CALI_CXX_MARK_SCOPE("secondary_load_balancing");
     if (conf.secondary_cost_function != "none") {
         auto cost_function [[maybe_unused]] = with_execution_policy(conf, [&](auto policy) {
@@ -333,16 +333,16 @@ void secondary_load_balancing(Graph&, Config const& conf, PhaseState<P>& s) {
         auto node_range = tmp.local_node_count() == 0
                               ? std::make_pair(std::numeric_limits<NodeId>::max(), std::numeric_limits<NodeId>::max())
                               : std::make_pair(tmp.node_info.front().global_id, tmp.node_info.back().global_id + 1);
-        s.G_compact.emplace(std::move(tmp), std::move(node_range), conf.rank, conf.PEs);
+        s.G_compact.emplace(std::move(tmp), std::move(node_range), G.comm());
         compute_ghost_ranks(*s.G_compact, conf);
         s.rebalanced = true;
     }
-    ConditionalBarrier(conf.global_synchronization);
+    ConditionalBarrier(conf.global_synchronization, G.comm());
 }
 
 /// pre-CETRIC: degree exchange and orientation on the contracted graph.
 template <class P>
-void preprocessing_global(Graph&, Config const& conf, PhaseState<P>& s) {
+void preprocessing_global(Graph& G, Config const& conf, PhaseState<P>& s) {
     CALI_CXX_MARK_SCOPE("preprocessing_global");
     preprocessing<node_ordering::id_outward, node_ordering::degree<CompactGraph>>(
         *s.G_compact,
@@ -351,7 +351,7 @@ void preprocessing_global(Graph&, Config const& conf, PhaseState<P>& s) {
         conf,
         true
     );
-    ConditionalBarrier(conf.global_synchronization);
+    ConditionalBarrier(conf.global_synchronization, G.comm());
 }
 
 /// The global phase on the contracted graph (CETRIC, pre-CETRIC). After a secondary load balancing some of its
@@ -377,7 +377,7 @@ void global_phase_compact(Graph&, Config const& conf, PhaseState<P>& s) {
 }
 
 template <class P>
-void reduce(Graph&, Config const&, PhaseState<P>& s) {
+void reduce(Graph& G, Config const&, PhaseState<P>& s) {
     CALI_CXX_MARK_SCOPE("reduce");
     MPI_Reduce(
         &s.triangle_count,
@@ -386,7 +386,7 @@ void reduce(Graph&, Config const&, PhaseState<P>& s) {
         kamping::types::mpi_type_traits<size_t>::data_type(),
         MPI_SUM,
         0,
-        MPI_COMM_WORLD
+        G.comm()
     );
 }
 } // namespace phases

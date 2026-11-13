@@ -54,16 +54,17 @@ public:
     static graph::LocalGraphView
     run(graph::LocalGraphView&&             G,
         CostFunction&                       cost_function,
-        const Config&                       conf) {
+        const Config&                       conf,
+        MPI_Comm                            comm) {
         CALI_CXX_MARK_SCOPE("redistribution");
-        auto to_send = reassign_nodes(G, cost_function, conf);
-        return GraphCommunicator::relocate(std::move(G), to_send, conf.rank, conf.PEs);
+        auto to_send = reassign_nodes(G, cost_function, conf, comm);
+        return GraphCommunicator::relocate(std::move(G), to_send, comm, conf.rank, conf.PEs);
     }
 
 private:
     template <typename CostFunction>
     static absl::flat_hash_map<PEID, GraphCommunicator::NodeRange>
-    reassign_nodes(const graph::LocalGraphView& G, CostFunction& cost_function, const Config& conf) {
+    reassign_nodes(const graph::LocalGraphView& G, CostFunction& cost_function, const Config& conf, MPI_Comm comm) {
         using namespace cetric::graph;
         std::vector<size_t> cost(G.node_info.size());
         size_t              prefix_sum = 0;
@@ -74,7 +75,7 @@ private:
         }
 
         size_t global_prefix;
-        MPI_Exscan(&prefix_sum, &global_prefix, 1, kamping::types::mpi_type_traits<size_t>::data_type(), MPI_SUM, MPI_COMM_WORLD);
+        MPI_Exscan(&prefix_sum, &global_prefix, 1, kamping::types::mpi_type_traits<size_t>::data_type(), MPI_SUM, comm);
         if (conf.rank == 0) {
             global_prefix = 0;
         }
@@ -82,7 +83,7 @@ private:
         if (conf.rank == conf.PEs - 1) {
             total_cost = global_prefix + prefix_sum;
         }
-        MPI_Bcast(&total_cost, 1, kamping::types::mpi_type_traits<size_t>::data_type(), conf.PEs - 1, MPI_COMM_WORLD);
+        MPI_Bcast(&total_cost, 1, kamping::types::mpi_type_traits<size_t>::data_type(), conf.PEs - 1, comm);
         size_t                                                     per_pe_cost = (total_cost + conf.PEs - 1) / conf.PEs;
         absl::flat_hash_map<PEID, GraphCommunicator::NodeRange> to_send(conf.PEs);
         for (size_t node = 0; node < cost.size(); ++node) {

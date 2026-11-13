@@ -97,7 +97,7 @@ public:
         AuxiliaryNodeData<Degree>&,
         bool                                  dense_degree_exchange
     ) {
-        DegreeCommunicator comm(G, G.rank(), G.size(), as_int(MessageTag::CostFunction));
+        DegreeCommunicator comm(G, as_int(MessageTag::CostFunction));
         if (ghosts.size() == 0) {
             find_ghosts(G, ghosts);
         }
@@ -127,7 +127,7 @@ public:
         }
         if (out_degree.size() <= G.local_node_count()) {
             out_degree.add_ghosts(ghosts.begin(), ghosts.end());
-            DegreeCommunicator comm(G, G.rank(), G.size(), as_int(MessageTag::CostFunction));
+            DegreeCommunicator comm(G, as_int(MessageTag::CostFunction));
             comm.get_ghost_data(
                 [&](auto node) { return out_degree[node]; },
                 [&](auto node, auto data) {

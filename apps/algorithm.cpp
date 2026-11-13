@@ -29,11 +29,11 @@ class KatricAlgorithm final : public AbstractAlgorithm {
 public:
     using RunFunction = std::function<std::size_t(graph::DistributedGraph<>&, Config const&)>;
 
-    KatricAlgorithm(Config const& conf, RunFunction run) : conf_(conf), run_(std::move(run)) {}
+    KatricAlgorithm(Config const& conf, MPI_Comm comm, RunFunction run) : conf_(conf), comm_(comm), run_(std::move(run)) {}
 
     void ingest(kagen::Graph&& graph) override {
         auto input = to_local_input(std::move(graph));
-        pristine_  = graph::DistributedGraph<>(std::move(input.G), input.node_range, conf_.rank, conf_.PEs);
+        pristine_  = graph::DistributedGraph<>(std::move(input.G), input.node_range, comm_);
         report_input_shape();
     }
 
@@ -96,6 +96,7 @@ private:
     }
 
     Config const&             conf_;
+    MPI_Comm                  comm_;
     RunFunction               run_;
     graph::DistributedGraph<> pristine_;
     graph::DistributedGraph<> G_;
@@ -122,12 +123,12 @@ KatricAlgorithm::RunFunction select_run(Algorithm algorithm) {
 }
 } // namespace
 
-std::unique_ptr<AbstractAlgorithm> make_algorithm(Config const& conf) {
+std::unique_ptr<AbstractAlgorithm> make_algorithm(Config const& conf, MPI_Comm comm) {
     if (conf.communication_policy == "new") {
-        return std::make_unique<KatricAlgorithm>(conf, select_run<MessageQueuePolicy>(conf.algorithm));
+        return std::make_unique<KatricAlgorithm>(conf, comm, select_run<MessageQueuePolicy>(conf.algorithm));
     }
     if (conf.communication_policy == "grid") {
-        return std::make_unique<KatricAlgorithm>(conf, select_run<GridPolicy>(conf.algorithm));
+        return std::make_unique<KatricAlgorithm>(conf, comm, select_run<GridPolicy>(conf.algorithm));
     }
     throw std::invalid_argument("unknown communication policy " + conf.communication_policy);
 }

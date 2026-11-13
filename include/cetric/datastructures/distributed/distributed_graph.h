@@ -402,7 +402,7 @@ public:
     inline EdgeId total_edge_count() const {
         EdgeId total_edge_count = local_edge_count();
         if (size_ > 1) {
-            MPI_Allreduce(MPI_IN_PLACE, &total_edge_count, 1, kamping::types::mpi_type_traits<EdgeId>::data_type(), MPI_SUM, MPI_COMM_WORLD);
+            MPI_Allreduce(MPI_IN_PLACE, &total_edge_count, 1, kamping::types::mpi_type_traits<EdgeId>::data_type(), MPI_SUM, comm_);
         }
         return total_edge_count;
     }
@@ -771,7 +771,8 @@ public:
     //     ghosts_expanded_ = true;
     // }
 
-    DistributedGraph(cetric::graph::LocalGraphView&& G, std::pair<NodeId, NodeId> node_range, PEID rank, PEID size)
+    /// The local part of a graph distributed over `comm`, which must outlive the graph.
+    DistributedGraph(cetric::graph::LocalGraphView&& G, std::pair<NodeId, NodeId> node_range, MPI_Comm comm)
         : first_out_(node_range.second - node_range.first + 1),
           first_out_offset_(first_out_.size() - 1),
           degree_(first_out_.size() - 1),
@@ -780,8 +781,9 @@ public:
           oriented_(false),
           local_edge_count_{G.edge_heads.size()},
           node_range_(node_range),
-          rank_(rank),
-          size_(size),
+          comm_(comm),
+          rank_(comm_rank(comm)),
+          size_(comm_size(comm)),
           node_indexer_() {
         // global_to_local_.set_empty_key(-1);
         auto degree_sum = 0;
@@ -804,11 +806,11 @@ public:
         }
         auto nodes = std::views::transform(
             G.node_info,
-            [rank](auto node_info) {
+            [rank = rank_](auto node_info) {
                 return RankEncodedNodeId{node_info.global_id, static_cast<std::uint16_t>(rank)};
             }
         );
-        node_indexer_ = NodeIndexer(node_range, nodes.begin(), nodes.end(), rank);
+        node_indexer_ = NodeIndexer(node_range, nodes.begin(), nodes.end(), rank_);
         for (size_t i = 0; i < G.node_info.size(); i++) {
             if constexpr (std::is_same_v<NodeIndexer, ContinuousNodeIndexer>) {
                 while (current_node != G.node_info[i].global_id) {
@@ -863,7 +865,7 @@ public:
         // if (consecutive_vertices_) {
         // atomic_debug("consecutive vertices");
         std::vector<std::pair<NodeId, NodeId>> ranges(size_);
-        gather_PE_ranges(node_range_.first, node_range_.second, ranges, MPI_COMM_WORLD, rank_, size_);
+        gather_PE_ranges(node_range_.first, node_range_.second, ranges, comm_, rank_, size_);
         auto nodes = local_nodes();
         if constexpr (std::is_same_v<ExecutionPolicy, execution_policy::parallel>) {
             tbb::task_arena arena(policy.num_threads);
@@ -1001,6 +1003,7 @@ public:
         G_compact.oriented_              = false;
         G_compact.local_edge_count_      = G_compact.head_.size();
         G_compact.node_range_            = node_range_;
+        G_compact.comm_                  = comm_;
         G_compact.rank_                  = rank_;
         G_compact.size_                  = size_;
         G_compact.node_indexer_          = std::move(sparse_indexer);
@@ -1124,6 +1127,10 @@ public:
         return ghost_ranks_available_;
     }
 
+    MPI_Comm comm() const {
+        return comm_;
+    }
+
     PEID rank() const {
         return rank_;
     }
@@ -1174,7 +1181,7 @@ public:
     }
     void check_edge_consistency() {
         std::vector<std::pair<NodeId, NodeId>> ranges(size_);
-        gather_PE_ranges(node_range_.first, node_range_.second, ranges, MPI_COMM_WORLD, rank_, size_);
+        gather_PE_ranges(node_range_.first, node_range_.second, ranges, comm_, rank_, size_);
         NodeId max_node_id = ranges.back().second - 1;
         for (auto node: this->local_nodes()) {
             for (auto neighbor: this->adj(node).neighbors()) {
@@ -1209,6 +1216,7 @@ private:
     bool                           oriented_;
     EdgeId                         local_edge_count_{};
     std::pair<NodeId, NodeId>      node_range_;
+    MPI_Comm                       comm_ = MPI_COMM_NULL;
     PEID                           rank_;
     PEID                           size_;
     NodeIndexer                    node_indexer_;

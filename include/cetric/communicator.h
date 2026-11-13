@@ -130,6 +130,7 @@ public:
         std::vector<std::vector<T>> const&    send_buf,
         CompactBuffer<T>&                     recv_buf,
         MPI_Datatype                          mpi_type,
+        MPI_Comm comm,
         PEID                                  rank [[maybe_unused]],
         PEID                                  size,
         int                                   message_tag [[maybe_unused]]
@@ -150,7 +151,7 @@ public:
         }
         std::exclusive_scan(send_counts.begin(), send_counts.end(), send_displs.begin(), 0);
         // timer.start("count_exchange");
-        MPI_Alltoall(send_counts.data(), 1, MPI_INT, recv_counts.data(), 1, MPI_INT, MPI_COMM_WORLD);
+        MPI_Alltoall(send_counts.data(), 1, MPI_INT, recv_counts.data(), 1, MPI_INT, comm);
         // timer.start("count_computation");
         std::exclusive_scan(recv_counts.begin(), recv_counts.end(), recv_displs.begin(), 0);
         int total_receive_count = recv_displs.back() + recv_counts.back();
@@ -172,7 +173,7 @@ public:
             recv_counts.data(),
             recv_displs.data(),
             mpi_type,
-            MPI_COMM_WORLD
+            comm
         );
 
         // timer.start("extent");
@@ -204,6 +205,7 @@ public:
         SendBuf&                              to_send,
         RecvBuf&                              recv_buffers,
         MPI_Datatype                          mpi_type,
+        MPI_Comm comm,
         PEID                                  rank,
         PEID                                  size [[maybe_unused]],
         int                                   message_tag
@@ -220,7 +222,7 @@ public:
                 }
             }
             sparse_all_to_all<size_t, decltype(size_buf), decltype(size_buf_recv)>(
-                size_buf, size_buf_recv, kamping::types::mpi_type_traits<size_t>::data_type(), rank, size, message_tag + 1
+                size_buf, size_buf_recv, kamping::types::mpi_type_traits<size_t>::data_type(), comm, rank, size, message_tag + 1
             );
             std::vector<std::pair<PEID, size_t>> recv_sizes;
             for (const auto& kv: size_buf_recv) {
@@ -263,7 +265,7 @@ public:
                         mpi_type,
                         pe,
                         message_tag,
-                        MPI_COMM_WORLD,
+                        comm,
                         &requests[request++]
                     );
                     stats.send_volume += local_buffer.size();
@@ -277,7 +279,7 @@ public:
             while (iprobe_success > 0) {
                 iprobe_success = 0;
                 MPI_Status status;
-                MPI_Iprobe(MPI_ANY_SOURCE, message_tag, MPI_COMM_WORLD, &iprobe_success, &status);
+                MPI_Iprobe(MPI_ANY_SOURCE, message_tag, comm, &iprobe_success, &status);
                 if (iprobe_success > 0) {
                     int message_length;
                     MPI_Get_count(&status, mpi_type, &message_length);
@@ -291,7 +293,7 @@ public:
                         mpi_type,
                         status.MPI_SOURCE,
                         status.MPI_TAG,
-                        MPI_COMM_WORLD,
+                        comm,
                         &rst
                     );
                     stats.receive_volume += message_length;
@@ -309,7 +311,7 @@ public:
         }
 
         MPI_Request barrier_request;
-        MPI_Ibarrier(MPI_COMM_WORLD, &barrier_request);
+        MPI_Ibarrier(comm, &barrier_request);
 
         int ibarrier_done = 0;
         while (ibarrier_done == 0) {
@@ -326,6 +328,7 @@ public:
         const absl::flat_hash_map<PEID, std::vector<T>>& send_buffers,
         absl::flat_hash_map<PEID, std::vector<T>>&       recv_buffers,
         MPI_Datatype                                        mpi_type,
+        MPI_Comm comm,
         PEID                                                rank,
         PEID                                                size [[maybe_unused]],
         int                                                 message_tag
@@ -358,7 +361,7 @@ public:
                         mpi_type,
                         pe,
                         message_tag,
-                        MPI_COMM_WORLD,
+                        comm,
                         &requests[request++]
                     );
                     stats.send_volume += buffer.size();
@@ -374,7 +377,7 @@ public:
             while (iprobe_success > 0) {
                 iprobe_success = 0;
                 MPI_Status status;
-                MPI_Iprobe(MPI_ANY_SOURCE, message_tag, MPI_COMM_WORLD, &iprobe_success, &status);
+                MPI_Iprobe(MPI_ANY_SOURCE, message_tag, comm, &iprobe_success, &status);
                 if (iprobe_success > 0) {
                     int message_length;
                     MPI_Get_count(&status, mpi_type, &message_length);
@@ -386,7 +389,7 @@ public:
                         mpi_type,
                         status.MPI_SOURCE,
                         status.MPI_TAG,
-                        MPI_COMM_WORLD,
+                        comm,
                         &rst
                     );
                     stats.receive_volume += message_length;
@@ -401,7 +404,7 @@ public:
         }
 
         MPI_Request barrier_request;
-        MPI_Ibarrier(MPI_COMM_WORLD, &barrier_request);
+        MPI_Ibarrier(comm, &barrier_request);
 
         int ibarrier_done = 0;
         while (ibarrier_done == 0) {
@@ -409,7 +412,7 @@ public:
             while (iprobe_success > 0) {
                 iprobe_success = 0;
                 MPI_Status status;
-                MPI_Iprobe(MPI_ANY_SOURCE, message_tag, MPI_COMM_WORLD, &iprobe_success, &status);
+                MPI_Iprobe(MPI_ANY_SOURCE, message_tag, comm, &iprobe_success, &status);
                 if (iprobe_success > 0) {
                     int message_length;
                     MPI_Get_count(&status, mpi_type, &message_length);
@@ -422,7 +425,7 @@ public:
                         mpi_type,
                         status.MPI_SOURCE,
                         status.MPI_TAG,
-                        MPI_COMM_WORLD,
+                        comm,
                         &rst
                     );
                     stats.receive_volume += message_length;
@@ -443,6 +446,7 @@ public:
         absl::flat_hash_map<PEID, std::vector<T>>& send_buffers,
         absl::flat_hash_map<PEID, std::vector<T>>& recv_buffers,
         MPI_Datatype                                  mpi_type,
+        MPI_Comm comm,
         PEID                                          rank,
         PEID                                          size,
         int                                           message_tag
@@ -468,7 +472,7 @@ public:
         for (int i = 1; i < size; ++i) {
             send_displs[i] = send_displs[i - 1] + send_counts[i - 1];
         }
-        MPI_Alltoall(send_counts.data(), 1, MPI_INT, recv_counts.data(), 1, MPI_INT, MPI_COMM_WORLD);
+        MPI_Alltoall(send_counts.data(), 1, MPI_INT, recv_counts.data(), 1, MPI_INT, comm);
         recv_displs[0]       = 0;
         int total_recv_count = 0;
         for (int i = 1; i < size; ++i) {
@@ -498,7 +502,7 @@ public:
             recv_counts.data(),
             recv_displs.data(),
             mpi_type,
-            MPI_COMM_WORLD
+            comm
         );
         send_buffer.clear();
         send_buffer.shrink_to_fit();

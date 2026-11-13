@@ -55,6 +55,7 @@ class IndirectMessageQueueAdaptor {
 public:
     using value_type = typename QueueType::value_type;
     IndirectMessageQueueAdaptor(QueueType& queue) : rank_(), size_(), queue_(queue) {
+        // the grid is laid over the ranks of the queue's communicator, which is MPI_COMM_WORLD (legacy message-queue)
         MPI_Comm_rank(MPI_COMM_WORLD, &rank_);
         MPI_Comm_size(MPI_COMM_WORLD, &size_);
         grid_size_ = std::round(std::sqrt(size_));
