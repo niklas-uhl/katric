@@ -57,11 +57,15 @@ Still to review in stage 2 (current files, in data-flow order):
   handle-based keys (`Orientation::degree(handle)`, `neighbors_as_global_ids`) that no longer exist after `9c64803`:
   it must compute the keys before the in-place conversion (e.g. keep each entry's degree next to it on the trimming
   path) — expect merge conflicts in `global.h`, `graph.h`, `preprocessing.h`
-- **Memory**: the in-place conversion and the dropped input copy lower the summed RSS only ~3-4% each and the busiest
-  rank hardly at all (laptop, permuted RGG, 4 ranks: ~230 MB). The peak is elsewhere — suspects: KaGen generation,
-  and `build_input_graph`'s sorted (head, position) pairs (16 bytes per cut edge). Find it with Caliper's memory
-  high-water mark (`--caliper-config "spot(mem.highwatermark),..."`, untested) before optimizing further. Relevant for
-  the RMAT runs killed at 1536/3072 cores
+- **Memory** (measured 2026-11-18 evening, laptop, 4 ranks, 2^18 vertices / 2^22 edges in total, max RSS after each
+  phase via a temporary getrusage patch; Caliper's memory services need GOTCHA or /proc, i.e. Linux): the peak is set
+  by KaGen's generation, not by katric. Baseline 20 MB, graph 17 MB per rank; after generation + ingest the busiest
+  rank is at 123 MB (RGG), 207 MB (permuted RGG), 120 MB (GNM), 257 MB (RMAT), i.e. KaGen needs 6-14x the graph
+  transiently. katric adds +18 / +17 / +67 / +39 MB on top (GNM: input graph + handles + the 16-byte sorted cut pairs;
+  DiTriC's message buffers up to 20 MB). So the RMAT jobs killed at 1536/3072 cores may die in KaGen's generation
+  already. To check on SuperMUC: build Caliper with GOTCHA on Linux (enables `mem.highwatermark`), or add the
+  getrusage marks properly (as a counter). katric's own lever: the cut pairs (16 B per cut edge) in
+  `build_input_graph`
 - **SuperMUC**: `trimming` suite submitted from the branch; `lb-cost` `rerun2` (48/192/768) queued; old job files
   still pass `--global-synchronization` (accepted and ignored since `8d1eca2`) — remove the flag once they have run;
   use `--copy-binary` for new submissions
