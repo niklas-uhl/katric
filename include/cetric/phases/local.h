@@ -9,7 +9,7 @@
 #include <vector>
 
 #include "cetric/config.h"
-#include "cetric/counters/intersection.h"
+#include "cetric/intersection.h"
 #include "cetric/datastructures/graph_definitions.h"
 #include "cetric/graph/graph.h"
 #include "cetric/phase_counters.h"

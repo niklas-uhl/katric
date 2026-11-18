@@ -51,10 +51,38 @@ std::size_t run_patric(graph::LocalInput&& input, Config const& conf, MPI_Comm c
     TriangleCounter triangles;
     auto [G, threshold] = phases::input_graph(std::move(input), conf, comm);
     phases::primary_load_balancing(G, conf);
-    auto const G_oriented      = phases::preprocessing(G, conf, false);
+    auto const G_oriented      = phases::preprocessing_patric(G, conf);
     G                          = {};
     auto const interface_nodes = phases::local_phase(G_oriented, conf, false, triangles);
     phases::global_phase<CommunicationPolicy>(G_oriented, conf, threshold, interface_nodes, triangles);
+    return phases::reduce(triangles, comm);
+}
+
+/// pre-CETRIC: outward orientation of cut edges, degree exchange only on the contracted graph
+template <class CommunicationPolicy>
+std::size_t run_cetric(graph::LocalInput&& input, Config const& conf, MPI_Comm comm) {
+    TriangleCounter triangles;
+    auto [G, threshold] = phases::input_graph(std::move(input), conf, comm);
+    phases::primary_load_balancing(G, conf);
+    auto const G_oriented = phases::preprocessing_cetric(G, conf);
+    G                     = {};
+    phases::local_phase(G_oriented, conf, false, triangles);
+    auto const G_contracted = phases::preprocessing_global(phases::contraction(G_oriented, conf), conf);
+    phases::global_phase<CommunicationPolicy>(G_contracted, conf, threshold, G_contracted.local_nodes(), triangles);
+    return phases::reduce(triangles, comm);
+}
+
+/// CETRIC (ghost rows)
+template <class CommunicationPolicy>
+std::size_t run_cetric_x(graph::LocalInput&& input, Config const& conf, MPI_Comm comm) {
+    TriangleCounter triangles;
+    auto [G, threshold] = phases::input_graph(std::move(input), conf, comm);
+    phases::primary_load_balancing(G, conf);
+    auto const G_oriented = phases::preprocessing_cetric_x(G, conf);
+    G                     = {};
+    phases::local_phase(G_oriented, conf, true, triangles);
+    auto const G_contracted = phases::contraction(G_oriented, conf);
+    phases::global_phase<CommunicationPolicy>(G_contracted, conf, threshold, G_contracted.local_nodes(), triangles);
     return phases::reduce(triangles, comm);
 }
 

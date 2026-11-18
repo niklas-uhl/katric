@@ -17,183 +17,58 @@
 // IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+
 #include <algorithm>
-#include <filesystem>
-#include <iterator>
+#include <cstddef>
 #include <numeric>
 #include <vector>
 
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
-#include <kamping/types/mpi_type_traits.hpp>
 #include <mpi.h>
 
-#include "cetric/datastructures/distributed/distributed_graph.h"
 #include "cetric/datastructures/graph_definitions.h"
+#include "cetric/graph/build.h"
+#include "cetric/graph/graph.h"
 #include "test_graphs.h"
 
-TEST(DistributedGraphTest, loading_works) {
-    using cetric::graph::Edge;
-    using cetric::graph::EdgeId;
-    using cetric::graph::NodeId;
-    auto input  = "examples/hiv.metis";
-    auto G_full = cetric::testing::read_full_graph(input);
+namespace {
+using cetric::graph::Edge;
+using cetric::graph::Handle;
+using cetric::graph::NodeId;
 
-    // the MPI stuff
-    int rank, size;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
+TEST(InputGraphTest, rows_ghosts_and_handles) {
+    auto const input  = "examples/hiv.metis";
+    auto const G_full = cetric::testing::read_full_graph(input);
+    auto       local  = cetric::testing::read_local_graph(input);
+    auto const range  = local.node_range;
+    auto const G      = cetric::graph::build_input_graph(std::move(local.G), range, MPI_COMM_WORLD);
+    auto const& layer = *G.layer();
 
-    // read it distributed
-    auto result = cetric::testing::read_local_graph(input);
-
-    auto G_view = result.G;
-    // SECTION( "view is correct" ) {
-    std::vector<EdgeId> index;
-    std::exclusive_scan(
-        G_view.node_info.begin(),
-        G_view.node_info.end(),
-        std::back_inserter(index),
-        0,
-        [](EdgeId acc, const auto& node_info) {
-            return acc + node_info.degree;
-            ;
-        }
-    );
-    for (size_t i = 0; i < G_view.node_info.size(); ++i) {
+    // every local vertex has its full neighborhood, in global ids
+    for (Handle const v: G.local_nodes()) {
+        NodeId const      v_global = G.global_id(v);
         std::vector<Edge> edges;
-        NodeId              tail = G_view.node_info[i].global_id;
-        for (size_t edge_id = index[i]; edge_id < index[i] + G_view.node_info[i].degree; edge_id++) {
-            NodeId head = G_view.edge_heads[edge_id];
-            edges.emplace_back(tail, head);
+        for (Handle const u: G.neighbors(v)) {
+            edges.emplace_back(v_global, G.global_id(u));
+            EXPECT_EQ(layer.handle(G.global_id(u)), u);
         }
-        EXPECT_THAT(edges, testing::UnorderedElementsAreArray(G_full[tail]));
+        EXPECT_THAT(edges, testing::UnorderedElementsAreArray(G_full[v_global]));
     }
-    // }
-
-    // construct the "real" datastructure
-    cetric::graph::DistributedGraph G = cetric::graph::DistributedGraph<>(
-        std::move(result.G),
-        result.node_range,
-        MPI_COMM_WORLD
-    );
-    // SECTION( "global and local ids are correct" ) {
-    //     std::vector<NodeId> local_nodes;
-    //     G.for_each_local_node([&](NodeId node) {
-    //         NodeId global_id = G.to_global_id(node);
-    //         CHECK(G.to_local_id(global_id) == node);
-    //         local_nodes.emplace_back(global_id);
-    //     });
-    //     std::sort(local_nodes.begin(), local_nodes.end());
-    //     for(NodeId node = 0; node < G_full.size(); ++node) {
-    //         INFO(node);
-    //         if (std::binary_search(local_nodes.begin(), local_nodes.end(), node)) {
-    //             CHECK(G.is_local(node));
-    //             CHECK_FALSE(G.is_ghost_from_global(node));
-    //         } else {
-    //             CHECK_FALSE(G.is_local(node));
-    //         }
-    //     }
-    // }
-    // SECTION( "all nodes are present" ) {
-    std::vector<NodeId> nodes;
-    for (auto node: G.local_nodes()) {
-        nodes.emplace_back(node.id());
-    }
-
-    std::vector<int> counts(size);
-    int              local_count = nodes.size();
-    MPI_Gather(&local_count, 1, MPI_INT, counts.data(), 1, MPI_INT, 0, MPI_COMM_WORLD);
-    std::vector<int> displs;
-    std::exclusive_scan(counts.begin(), counts.end(), std::back_inserter(displs), 0);
-    std::vector<NodeId> all_nodes;
-    if (rank == 0) {
-        all_nodes.resize(std::accumulate(counts.begin(), counts.end(), 0));
-    }
-    MPI_Gatherv(
-        nodes.data(),
-        local_count,
-        kamping::types::mpi_type_traits<NodeId>::data_type(),
-        all_nodes.data(),
-        counts.data(),
-        displs.data(),
-        kamping::types::mpi_type_traits<NodeId>::data_type(),
-        0,
-        MPI_COMM_WORLD
-    );
-    if (rank == 0) {
-        auto expected_nodes = std::vector<NodeId>(G_full.size());
-        std::iota(expected_nodes.begin(), expected_nodes.end(), 0);
-        EXPECT_THAT(all_nodes, testing::UnorderedElementsAreArray(expected_nodes));
-    }
-    // }
-    // SECTION( "node knows all edges" ) {
-    for (auto node: G.local_nodes()) {
-        std::vector<Edge> edges;
-        EXPECT_EQ(G.degree(node), G_full[node.id()].size());
-        for (cetric::graph::RankEncodedNodeId head: G.adj(node).neighbors()) {
-            edges.push_back(Edge{node.id(), head.id()});
+    // the ghosts are sorted by global id, owned elsewhere, and their owners' ranges contain them
+    for (Handle const g: G.ghosts()) {
+        EXPECT_FALSE(G.is_owned(g));
+        auto const [first, last] = layer.partition().partition_range(G.owner(g));
+        EXPECT_LE(first, G.global_id(g));
+        EXPECT_LT(G.global_id(g), last);
+        if (g > layer.n()) {
+            EXPECT_LT(G.global_id(g - 1), G.global_id(g));
         }
-        EXPECT_EQ(G.degree(node), edges.size());
-        EXPECT_THAT(edges, testing::UnorderedElementsAreArray(G_full[node.id()]));
-        edges.clear();
-        for (auto edge: G.adj(node).edges()) {
-            edges.push_back(Edge{edge.tail.id(), edge.head.id()});
-        }
-        EXPECT_EQ(G.degree(node), edges.size());
-        EXPECT_THAT(edges, testing::UnorderedElementsAreArray(G_full[node.id()]));
     }
-    // }
-    // SECTION( "out and in edges well defined" ) {
-    //     G.for_each_local_node([&](NodeId node) {
-    //         Degree out_degree = 0;
-    //         G.for_each_local_out_edge(node, [&](Edge) {
-    //             out_degree++;
-    //         });
-    //         CHECK(G.degree(node) == out_degree);
-    //     });
-    //     G.for_each_local_node([&](NodeId node) {
-    //         NodeId in_degree = 0;
-    //         G.for_each_local_in_edge(node, [&](Edge) {
-    //             in_degree++;
-    //         });
-    //         CHECK(in_degree == 0);
-    //     });
-    // }
-    // SECTION("orientation works") {
-    //     G.orient([&](NodeId x, NodeId y) {
-    //         return G.to_global_id(x) < G.to_global_id(y);
-    //     });
-    //     G.for_each_local_node([&](NodeId node) {
-    //       Degree degree = 0;
-    //       G.for_each_local_out_edge(node, [&](Edge edge) {
-    //         edge =
-    //             edge.map([&](NodeId local) { return G.to_global_id(local); });
-    //         CHECK(edge.tail < edge.head);
-    //         degree++;
-    //       });
-    //       G.for_each_local_in_edge(node, [&](Edge edge) {
-    //         edge =
-    //             edge.map([&](NodeId local) { return G.to_global_id(local); });
-    //         CHECK(edge.tail < edge.head);
-    //         degree++;
-    //       });
-    //       REQUIRE(degree == G.degree(node));
-    //     });
-    // }
-    // SECTION("Graph expansion works") {
-    //     auto to_global = [&](NodeId node_id) { return G.to_global_id(node_id); };
-    //     G.expand_ghosts();
-    //     G.for_each_ghost_node([&](NodeId node) {
-    //         std::vector<Edge> edges;
-    //         G.for_each_edge(node, [&](Edge edge) {
-    //             NodeId global_id = G.to_global_id(edge.head);
-    //             INFO("global_id " << global_id);
-    //             CHECK(G.to_local_id(global_id) == edge.head);
-    //             // edges.emplace_back(to_global(edge.tail), to_global(edge.head));
-    //             edges.push_back(edge.map(to_global));
-    //         });
-    //         CHECK_THAT(G_full[to_global(node)], Catch::Contains(edges));
-    //     });
-    // }
+    // every vertex is local on exactly one rank
+    std::size_t const local_count = G.local_node_count();
+    std::size_t       total       = 0;
+    MPI_Allreduce(&local_count, &total, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+    EXPECT_EQ(total, G_full.size());
 }
+} // namespace

@@ -4,12 +4,14 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <stdexcept>
 #include <utility>
 #include <vector>
 
 #include <caliper/cali.h>
 
+#include "cetric/caliper.h"
 #include "cetric/communicator.h"
 #include "cetric/config.h"
 #include "cetric/datastructures/local_graph_view.h"
@@ -91,8 +93,10 @@ inline void primary_load_balancing(graph::CsrGraph& G, Config const& conf) {
     ConditionalBarrier(conf.global_synchronization, comm);
 }
 
-/// The ghosts' degrees (region `degree_exchange`).
-inline std::vector<std::uint64_t> ghost_degrees(graph::CsrGraph const& G, Config const& conf) {
+/// The degrees of the ghosts of `G` (a CsrGraph or a ContractedGraph), indexed by ghost slot (region
+/// `degree_exchange`).
+template <typename Graph>
+std::vector<std::uint64_t> ghost_degrees(Graph const& G, Config const& conf) {
     CALI_CXX_MARK_SCOPE("degree_exchange");
     return graph::exchange_ghost_values(
         G,
@@ -102,23 +106,88 @@ inline std::vector<std::uint64_t> ghost_degrees(graph::CsrGraph const& G, Config
     );
 }
 
-/// DiTriC and CETRIC: degree exchange, orientation by (degree, global id) (region `orientation`), rows sorted
-/// (`sorting`). CETRIC (`ghost_rows`) also keeps the ghosts' out-edges to local vertices.
-inline graph::CsrGraph preprocessing(graph::CsrGraph const& G, Config const& conf, bool ghost_rows) {
-    CALI_CXX_MARK_SCOPE("preprocessing");
-    auto const      ghost_degree = ghost_degrees(G, conf);
+/// Orients the edges of `G` from the smaller to the larger `key` (region `orientation`) and sorts the rows by handle
+/// (`sorting`); with `ghost_rows`, also the ghosts' out-edges to local vertices.
+template <typename Key>
+graph::CsrGraph orient_and_sort(graph::CsrGraph const& G, Key&& key, bool ghost_rows) {
     graph::CsrGraph G_oriented;
     {
         CALI_CXX_MARK_SCOPE("orientation");
-        G_oriented = graph::orient_by_degree(G, ghost_degree, ghost_rows);
+        G_oriented = graph::orient(G, key, ghost_rows);
     }
-    {
-        CALI_CXX_MARK_SCOPE("sorting");
-        G_oriented.sort_rows();
-    }
+    CALI_CXX_MARK_SCOPE("sorting");
+    G_oriented.sort_rows();
+    return G_oriented;
+}
+
+/// The orientation key of DiTriC and CETRIC: (degree, global id), the ghosts' degrees from `ghost_degree`.
+inline auto degree_key(graph::CsrGraph const& G, std::vector<std::uint64_t> const& ghost_degree) {
+    return [&G, &ghost_degree](graph::Handle c) {
+        auto const& layer = *G.layer();
+        return std::pair(layer.is_owned(c) ? G.degree(c) : ghost_degree[c - layer.n()], layer.global_id(c));
+    };
+}
+
+/// DiTriC: degree exchange, orientation by degree, and the rows in global ids for the global phase (`global_rows`).
+inline graph::CsrGraph preprocessing_patric(graph::CsrGraph const& G, Config const& conf) {
+    CALI_CXX_MARK_SCOPE("preprocessing");
+    auto const ghost_degree = ghost_degrees(G, conf);
+    auto       G_oriented   = orient_and_sort(G, degree_key(G, ghost_degree), false);
     {
         CALI_CXX_MARK_SCOPE("global_rows");
         G_oriented.add_global_rows();
+    }
+    ConditionalBarrier(conf.global_synchronization, G.comm());
+    return G_oriented;
+}
+
+/// CETRIC: degree exchange, orientation by degree, with the ghosts' out-edges to local vertices (the ghost rows, which
+/// replace the old ghost expansion).
+inline graph::CsrGraph preprocessing_cetric_x(graph::CsrGraph const& G, Config const& conf) {
+    CALI_CXX_MARK_SCOPE("preprocessing");
+    auto const ghost_degree = ghost_degrees(G, conf);
+    auto       G_oriented   = orient_and_sort(G, degree_key(G, ghost_degree), true);
+    ConditionalBarrier(conf.global_synchronization, G.comm());
+    return G_oriented;
+}
+
+/// pre-CETRIC: no degree exchange; local edges by (degree, global id), cut edges outward.
+inline graph::CsrGraph preprocessing_cetric(graph::CsrGraph const& G, Config const& conf) {
+    CALI_CXX_MARK_SCOPE("preprocessing");
+    auto const& layer      = *G.layer();
+    auto        G_oriented = orient_and_sort(
+        G,
+        [&](graph::Handle c) {
+            Degree const degree = layer.is_owned(c) ? G.degree(c) : std::numeric_limits<Degree>::max();
+            return std::pair(degree, layer.global_id(c));
+        },
+        false
+    );
+    ConditionalBarrier(conf.global_synchronization, G.comm());
+    return G_oriented;
+}
+
+/// CETRIC and pre-CETRIC: the edges the local phase did not handle, as the contracted graph.
+inline graph::ContractedGraph contraction(graph::CsrGraph const& G, Config const& conf) {
+    CALI_CXX_MARK_SCOPE("contraction");
+    auto G_contracted = graph::contract(G);
+    profiling::counter_add("compact_nodes", static_cast<std::int64_t>(G_contracted.local_node_count()));
+    profiling::counter_add("compact_edges", static_cast<std::int64_t>(G_contracted.local_edge_count()));
+    ConditionalBarrier(conf.global_synchronization, G.comm());
+    return G_contracted;
+}
+
+/// pre-CETRIC: degree exchange on the contracted graph and its orientation by (contracted degree, global id).
+inline graph::ContractedGraph preprocessing_global(graph::ContractedGraph const& G, Config const& conf) {
+    CALI_CXX_MARK_SCOPE("preprocessing_global");
+    auto const             ghost_degree = ghost_degrees(G, conf);
+    graph::ContractedGraph G_oriented;
+    {
+        CALI_CXX_MARK_SCOPE("orientation");
+        auto const& layer = *G.layer();
+        G_oriented        = graph::orient(G, [&](graph::Handle c) {
+            return std::pair(layer.is_owned(c) ? G.degree(c) : ghost_degree[c - layer.n()], layer.global_id(c));
+        });
     }
     ConditionalBarrier(conf.global_synchronization, G.comm());
     return G_oriented;

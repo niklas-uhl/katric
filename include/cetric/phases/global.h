@@ -19,7 +19,7 @@
 #include "cetric/caliper.h"
 #include "cetric/communication_policy.h"
 #include "cetric/config.h"
-#include "cetric/counters/intersection.h"
+#include "cetric/intersection.h"
 #include "cetric/datastructures/graph_definitions.h"
 #include "cetric/datastructures/span.h"
 #include "cetric/graph/graph.h"

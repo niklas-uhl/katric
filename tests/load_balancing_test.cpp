@@ -25,7 +25,6 @@
 #include <mpi.h>
 #include "cetric/util.h"
 
-#include "cetric/datastructures/distributed/distributed_graph.h"
 #include "cetric/datastructures/graph_definitions.h"
 #include "test_graphs.h"
 

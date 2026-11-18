@@ -17,167 +17,131 @@
 // IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-#include <map>
+
 #include <cstddef>
-#include <unordered_map>
+#include <cstdint>
+#include <limits>
+#include <map>
+#include <utility>
+#include <vector>
 
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 #include <mpi.h>
 
-#include "cetric/counters/global_phase.h"
-#include "cetric/datastructures/distributed/distributed_graph.h"
-#include "cetric/datastructures/distributed/graph_communicator.h"
-#include "cetric/datastructures/distributed/helpers.h"
+#include "cetric/communicator.h"
+#include "cetric/config.h"
 #include "cetric/datastructures/graph_definitions.h"
-#include "cetric/load_balancing.h"
-#include "cetric/util.h"
+#include "cetric/ghost_exchange.h"
+#include "cetric/graph/build.h"
+#include "cetric/graph/graph.h"
 #include "test_graphs.h"
 
 namespace {
+using cetric::graph::Degree;
+using cetric::graph::Handle;
+using cetric::graph::NodeId;
+
 class Orientation : public ::testing::TestWithParam<const char*> {
 protected:
     void SetUp() override {
-        auto input = GetParam();
-        // GENERATE("examples/metis-sample.metis", "examples/triangle.metis");
-        // auto input = GENERATE("examples/triangle.metis");
-        SCOPED_TRACE(input);
+        G_full     = cetric::testing::read_full_graph(GetParam());
+        auto local = cetric::testing::read_local_graph(GetParam());
+        auto range = local.node_range;
+        G          = cetric::graph::build_input_graph(std::move(local.G), range, MPI_COMM_WORLD);
+    }
 
-        // the MPI stuff
-        MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-        MPI_Comm_size(MPI_COMM_WORLD, &size);
+    [[nodiscard]] std::pair<Degree, NodeId> key(NodeId v) const {
+        return {G_full[v].size(), v};
+    }
 
-        // the whole graph, read on every rank
-        G_full = cetric::testing::read_full_graph(input);
-
-        conf.PEs  = size;
-        conf.rank = rank;
-
-        // read it distributed
-        auto result = cetric::testing::read_local_graph(input);
-        G           = cetric::graph::DistributedGraph<>(
-            std::move(result.G),
-            result.node_range,
-            MPI_COMM_WORLD
-        );
+    /// The global ids of a row, sorted.
+    [[nodiscard]] std::vector<NodeId> globals(std::span<Handle const> row) const {
+        std::vector<NodeId> ids;
+        for (Handle const u: row) {
+            ids.push_back(G.global_id(u));
+        }
+        std::ranges::sort(ids);
+        return ids;
     }
 
     std::vector<std::vector<cetric::graph::Edge>> G_full;
-    cetric::graph::DistributedGraph<>             G;
-    cetric::Config                                conf;
-    cetric::PEID                                  rank, size;
+    cetric::graph::CsrGraph                       G;
 };
 
 TEST_P(Orientation, GlobalDegree) {
-    G.find_ghost_ranks();
-    std::unordered_set<cetric::graph::RankEncodedNodeId> ghosts;
-    find_ghosts(G, ghosts);
-    cetric::DegreeCommunicator comm(G, cetric::as_int(cetric::MessageTag::Orientation));
-    // every transport of the degree exchange delivers the same ghost degrees
-    std::map<cetric::GhostExchangeMode, std::map<cetric::NodeId, cetric::Degree>> received;
-    auto ghost_degree = cetric::AuxiliaryNodeData<cetric::Degree>{ghosts.begin(), ghosts.end()};
+    // every transport of the degree exchange delivers the true degree of every ghost
+    std::map<cetric::GhostExchangeMode, std::vector<std::uint64_t>> received;
     for (auto mode: {cetric::GhostExchangeMode::sparse, cetric::GhostExchangeMode::dense, cetric::GhostExchangeMode::grid}) {
-        comm.get_ghost_degree(
-            [&](cetric::RankEncodedNodeId node, cetric::Degree degree) {
-                EXPECT_TRUE(ghosts.contains(node));
-                EXPECT_TRUE(received[mode].emplace(node.id(), degree).second) << "ghost received twice";
-                ghost_degree[node] = degree;
-            },
-            mode
+        received[mode] = cetric::graph::exchange_ghost_values(
+            G,
+            [&](Handle v) { return G.degree(v); },
+            cetric::GhostExchange{mode},
+            cetric::as_int(cetric::MessageTag::Orientation)
         );
-        EXPECT_EQ(received[mode].size(), ghosts.size());
+        ASSERT_EQ(received[mode].size(), G.ghost_count());
+        for (Handle const g: G.ghosts()) {
+            EXPECT_EQ(received[mode][g - G.local_node_count()], G_full[G.global_id(g)].size());
+        }
     }
-    EXPECT_EQ(received[cetric::GhostExchangeMode::dense], received[cetric::GhostExchangeMode::sparse]);
-    EXPECT_EQ(received[cetric::GhostExchangeMode::grid], received[cetric::GhostExchangeMode::sparse]);
-    cetric::node_ordering::degree ord(G, ghost_degree);
-    for (auto node: G.local_nodes()) {
-        G.orient(node, ord);
-        std::vector<cetric::Edge> edges;
-        for (auto e: G.out_adj(node).edges()) {
-            edges.emplace_back(e.tail.id(), e.head.id());
+    auto const& ghost_degree = received[cetric::GhostExchangeMode::sparse];
+    auto const  G_oriented   = cetric::graph::orient(
+        G,
+        [&](Handle c) {
+            Degree const degree = G.is_owned(c) ? G.degree(c) : ghost_degree[c - G.local_node_count()];
+            return std::pair(degree, G.global_id(c));
+        },
+        true
+    );
+    // out-rows: the neighbors with a larger (degree, id); ghost rows: the local neighbors with a larger key
+    for (Handle const v: G.local_nodes()) {
+        NodeId const        v_global = G.global_id(v);
+        std::vector<NodeId> expected;
+        for (auto const& e: G_full[v_global]) {
+            if (key(v_global) < key(e.head)) {
+                expected.push_back(e.head);
+            }
         }
-        for (auto e: G.in_adj(node).edges()) {
-            edges.emplace_back(e.tail.id(), e.head.id());
-        }
-        EXPECT_THAT(edges, testing::UnorderedElementsAreArray(G_full[node.id()]));
-        edges.clear();
-        for (auto e: G.adj(node).edges()) {
-            edges.emplace_back(e.tail.id(), e.head.id());
-        }
-        EXPECT_THAT(edges, testing::UnorderedElementsAreArray(G_full[node.id()]));
+        std::ranges::sort(expected);
+        EXPECT_EQ(globals(G_oriented.neighbors(v)), expected);
     }
-}
-
-TEST_P(Orientation, LocalDegree) {
-    G.find_ghost_ranks();
-    cetric::node_ordering::degree_outward ord(G);
-    for (auto node: G.local_nodes()) {
-        G.orient(node, ord);
-        std::vector<cetric::Edge> edges;
-        for (auto e: G.out_adj(node).edges()) {
-            edges.emplace_back(e.tail.id(), e.head.id());
+    for (Handle const g: G.ghosts()) {
+        NodeId const        g_global = G.global_id(g);
+        std::vector<NodeId> expected;
+        for (auto const& e: G_full[g_global]) {
+            if (G.layer()->owns_global(e.head) && key(g_global) < key(e.head)) {
+                expected.push_back(e.head);
+            }
         }
-        for (auto e: G.in_adj(node).edges()) {
-            edges.emplace_back(e.tail.id(), e.head.id());
-        }
-        EXPECT_THAT(edges, testing::UnorderedElementsAreArray(G_full[node.id()]));
-        edges.clear();
-        for (auto e: G.adj(node).edges()) {
-            edges.emplace_back(e.tail.id(), e.head.id());
-        }
-        EXPECT_THAT(edges, testing::UnorderedElementsAreArray(G_full[node.id()]));
+        std::ranges::sort(expected);
+        EXPECT_EQ(globals(G_oriented.ghost_neighbors(g)), expected);
+        EXPECT_TRUE(std::ranges::is_sorted(G_oriented.ghost_neighbors(g)));
     }
 }
 
-// TEST_P(Orientation, OrientTwice) {
-//     profiling::MessageStatistics dummy;
-//     G.find_ghost_ranks();
-//     G.expand_ghosts();
-//     DegreeCommunicator comm(G, conf.rank, conf.PEs, as_int(MessageTag::Orientation));
-//     comm.get_ghost_degree(
-//         [&](NodeId global_id, Degree degree) { G.get_ghost_payload(G.to_local_id(global_id)).degree = degree; },
-//         dummy);
-//     G.get_graph_payload().ghost_degree_available = true;
+TEST_P(Orientation, LocalDegreeOutward) {
+    // pre-CETRIC: cut edges outward, local edges by (degree, id), no exchange
+    auto const G_oriented = cetric::graph::orient(
+        G,
+        [&](Handle c) {
+            Degree const degree = G.is_owned(c) ? G.degree(c) : std::numeric_limits<Degree>::max();
+            return std::pair(degree, G.global_id(c));
+        },
+        false
+    );
+    for (Handle const v: G.local_nodes()) {
+        NodeId const        v_global = G.global_id(v);
+        std::vector<NodeId> expected;
+        for (auto const& e: G_full[v_global]) {
+            if (!G.layer()->owns_global(e.head) || key(v_global) < key(e.head)) {
+                expected.push_back(e.head);
+            }
+        }
+        std::ranges::sort(expected);
+        EXPECT_EQ(globals(G_oriented.neighbors(v)), expected);
+    }
+}
 
-//     G.orient([&](NodeId a, NodeId b) {
-//         bool cmp = std::make_tuple(G.local_degree(a), G.to_global_id(a)) <
-//                    std::make_tuple(G.local_degree(b), G.to_global_id(b));
-//         return cmp;
-//     });
-//     G.sort_neighborhoods();
-//     G.for_each_local_node([&](NodeId node) {
-//         std::vector<Edge> edges;
-//         G.for_each_local_out_edge(node,
-//                                   [&](Edge e) { edges.emplace_back(G.to_global_id(e.tail), G.to_global_id(e.head));
-//                                   });
-//         G.for_each_local_in_edge(node,
-//                                  [&](Edge e) { edges.emplace_back(G.to_global_id(e.head), G.to_global_id(e.tail));
-//                                  });
-//         EXPECT_THAT(edges, testing::UnorderedElementsAreArray(G_full[G.to_global_id(node)]));
-//         edges.clear();
-//         G.for_each_edge(node, [&](Edge e) { edges.emplace_back(G.to_global_id(e.tail), G.to_global_id(e.head)); });
-//         EXPECT_THAT(edges, testing::UnorderedElementsAreArray(G_full[G.to_global_id(node)]));
-//     });
-//     G.orient([&](NodeId a, NodeId b) {
-//         bool cmp = std::make_tuple(G.degree(a), G.to_global_id(a)) < std::make_tuple(G.degree(b), G.to_global_id(b));
-//         return cmp;
-//     });
-//     G.sort_neighborhoods();
-//     G.for_each_local_node([&](NodeId node) {
-//         std::vector<Edge> edges;
-//         G.for_each_local_out_edge(node,
-//                                   [&](Edge e) { edges.emplace_back(G.to_global_id(e.tail), G.to_global_id(e.head));
-//                                   });
-//         G.for_each_local_in_edge(node,
-//                                  [&](Edge e) { edges.emplace_back(G.to_global_id(e.head), G.to_global_id(e.tail));
-//                                  });
-//         EXPECT_THAT(edges, testing::UnorderedElementsAreArray(G_full[G.to_global_id(node)]));
-//         edges.clear();
-//         G.for_each_edge(node, [&](Edge e) { edges.emplace_back(G.to_global_id(e.tail), G.to_global_id(e.head)); });
-//         EXPECT_THAT(edges, testing::UnorderedElementsAreArray(G_full[G.to_global_id(node)]));
-//     });
-// }
-
-const char* graphs[] = {"examples/metis-sample.metis", "examples/triangle.metis" /*, "examples/com-amazon.metis"*/};
+const char* graphs[] = {"examples/metis-sample.metis", "examples/triangle.metis", "examples/hiv.metis"};
 INSTANTIATE_TEST_SUITE_P(SimpleGraphs, Orientation, ::testing::ValuesIn(graphs));
 } // namespace

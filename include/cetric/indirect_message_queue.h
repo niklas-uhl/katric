@@ -40,15 +40,6 @@ PEID datatype_to_PEID(T const& rank) {
     return rank;
 }
 
-template <>
-inline graph::RankEncodedNodeId PEID_to_datatype<graph::RankEncodedNodeId>(PEID rank) {
-    return graph::RankEncodedNodeId(0, rank);
-}
-template <>
-inline PEID datatype_to_PEID<graph::RankEncodedNodeId>(graph::RankEncodedNodeId const& val) {
-    return val.rank();
-}
-
 using namespace graph;
 template <typename QueueType>
 class IndirectMessageQueueAdaptor {

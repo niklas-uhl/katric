@@ -28,7 +28,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-#include "cetric/counters/intersection.h"
+#include "cetric/intersection.h"
 
 namespace {
 

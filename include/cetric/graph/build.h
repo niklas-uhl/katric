@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <ranges>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -156,17 +157,42 @@ CsrGraph orient(CsrGraph const& G, Key&& key, bool ghost_rows) {
     return CsrGraph(G.layer(), std::move(offsets), std::move(heads), std::move(ghost_offsets), std::move(ghost_heads));
 }
 
-/// The orientation of DiTriC and CETRIC: by (degree, global id), with the ghosts' degrees from `ghost_degree`.
-inline CsrGraph orient_by_degree(CsrGraph const& G, std::vector<std::uint64_t> const& ghost_degree, bool ghost_rows) {
-    auto const& layer = *G.layer();
-    return orient(
-        G,
-        [&](Handle c) {
-            Degree const degree = layer.is_owned(c) ? G.degree(c) : ghost_degree[c - layer.n()];
-            return std::pair(degree, layer.global_id(c));
-        },
-        ghost_rows
-    );
+/// The contraction of CETRIC and pre-CETRIC: the local vertices with a ghost out-neighbor, each with only its ghost
+/// out-neighbors (the edges the local phase did not handle). `G`'s rows must be sorted.
+inline ContractedGraph contract(CsrGraph const& G) {
+    auto const          n = static_cast<Handle>(G.local_node_count());
+    std::vector<Handle> vertices;
+    std::vector<EdgeId> offsets{0};
+    std::vector<Handle> heads;
+    for (Handle const v: G.local_nodes()) {
+        auto const row        = G.neighbors(v);
+        auto const ghost_part = std::ranges::subrange(std::lower_bound(row.begin(), row.end(), n), row.end());
+        if (ghost_part.empty()) {
+            continue;
+        }
+        vertices.push_back(v);
+        heads.insert(heads.end(), ghost_part.begin(), ghost_part.end());
+        offsets.push_back(heads.size());
+    }
+    return ContractedGraph(G.layer(), std::move(vertices), std::move(offsets), std::move(heads));
+}
+
+/// Orients the rows of a contracted graph: keeps u in the row of v if key(v) < key(u). Every vertex keeps its row
+/// (possibly empty).
+template <typename Key>
+ContractedGraph orient(ContractedGraph const& G, Key&& key) {
+    std::vector<Handle> vertices(G.local_nodes().begin(), G.local_nodes().end());
+    std::vector<EdgeId> offsets{0};
+    std::vector<Handle> heads;
+    for (Handle const v: vertices) {
+        for (Handle const u: G.neighbors(v)) {
+            if (key(v) < key(u)) {
+                heads.push_back(u);
+            }
+        }
+        offsets.push_back(heads.size());
+    }
+    return ContractedGraph(G.layer(), std::move(vertices), std::move(offsets), std::move(heads));
 }
 
 } // namespace cetric::graph

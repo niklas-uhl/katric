@@ -15,21 +15,16 @@
 #include "cetric/algorithms.h"
 #include "cetric/caliper.h"
 #include "cetric/config.h"
-#include "cetric/datastructures/distributed/distributed_graph.h"
 #include "cetric/input.h"
 
 namespace cetric {
 
 /// katric's own algorithms (cetric, patric, cetric-x with either communication policy). ingest() keeps the input;
-/// reset() hands each run a fresh copy, as the view the algorithm builds its graphs from (`on_input`) or, for the
-/// algorithms not yet moved to compact ids, as a DistributedGraph (`on_graph`).
+/// reset() hands each run a fresh copy, which the algorithm builds its graphs from.
 namespace {
 class KatricAlgorithm final : public AbstractAlgorithm {
 public:
-    struct RunFunction {
-        std::function<std::size_t(graph::DistributedGraph<>&, Config const&)>              on_graph;
-        std::function<std::size_t(graph::LocalInput&&, Config const&, MPI_Comm)> on_input;
-    };
+    using RunFunction = std::function<std::size_t(graph::LocalInput&&, Config const&, MPI_Comm)>;
 
     KatricAlgorithm(Config const& conf, MPI_Comm comm, RunFunction run) : conf_(conf), comm_(comm), run_(std::move(run)) {}
 
@@ -39,17 +34,12 @@ public:
     }
 
     void reset() override {
-        if (run_.on_input) {
-            input_ = pristine_;
-        } else {
-            auto copy = pristine_;
-            G_        = graph::DistributedGraph<>(std::move(copy.G), copy.node_range, comm_);
-        }
+        input_          = pristine_;
         triangle_count_ = 0;
     }
 
     void run() override {
-        triangle_count_ = run_.on_input ? run_.on_input(std::move(input_), conf_, comm_) : run_.on_graph(G_, conf_);
+        triangle_count_ = run_(std::move(input_), conf_, comm_);
     }
 
     [[nodiscard]] std::size_t triangle_count() const override {
@@ -91,7 +81,6 @@ private:
     RunFunction               run_;
     graph::LocalInput         pristine_;
     graph::LocalInput         input_;
-    graph::DistributedGraph<> G_;
     std::size_t               triangle_count_ = 0;
 };
 
@@ -99,17 +88,17 @@ template <typename CommunicationPolicy>
 KatricAlgorithm::RunFunction select_run(Algorithm algorithm) {
     switch (algorithm) {
         case Algorithm::cetric:
-            return {.on_graph = [](graph::DistributedGraph<>& G, Config const& conf) {
-                return run_cetric(G, conf, CommunicationPolicy{});
-            }};
+            return [](graph::LocalInput&& input, Config const& conf, MPI_Comm comm) {
+                return run_cetric(std::move(input), conf, comm, CommunicationPolicy{});
+            };
         case Algorithm::patric:
-            return {.on_input = [](graph::LocalInput&& input, Config const& conf, MPI_Comm comm) {
+            return [](graph::LocalInput&& input, Config const& conf, MPI_Comm comm) {
                 return run_patric(std::move(input), conf, comm, CommunicationPolicy{});
-            }};
+            };
         case Algorithm::cetric_x:
-            return {.on_graph = [](graph::DistributedGraph<>& G, Config const& conf) {
-                return run_cetric_x(G, conf, CommunicationPolicy{});
-            }};
+            return [](graph::LocalInput&& input, Config const& conf, MPI_Comm comm) {
+                return run_cetric_x(std::move(input), conf, comm, CommunicationPolicy{});
+            };
     }
     throw std::invalid_argument("unknown algorithm");
 }

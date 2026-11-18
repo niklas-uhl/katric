@@ -227,15 +227,16 @@ The deferred kamping-v2 plan from modernization-plan.md, plus the degree exchang
       flat buffer with counts and displacements (option 2 of three, decided 2026-11-13). The alternative without the
       copy (count, then fill: two passes over the adjacency) is worth measuring only if `prepare` matters in `phases`
 
-- [ ] Primary load balancing moves the vertices with `dstl::redistribute` (decided 2026-11-18): the cost split is
+- [x] Primary load balancing moves the vertices with `dstl::redistribute` (decided 2026-11-18, `68bf08b`): the cost split is
       monotone in global-ID order, so the node and edge arrays are one redistribute each, with the receive counts
       from one `MPI_Reduce_scatter_block` (replaces `GraphCommunicator::relocate` and the hand-written NBX
       `sparse_all_to_all` with its size messages). Identical triangle counts on the 70 reference runs and 54 extra
       DPD / IDPD / N runs on 3 / 5 / 8 ranks; only the `redistribution` region's message counters change (no size
       messages, `received_messages` not reported). Needs the dstl fix for empty windows inside a range (a rank
       receiving nothing between two that do, e.g. after a hub whose cost exceeds C/p: stray zero-length message;
-      a rank sending nothing: hang), not merged in kamping-v2 yet. The DPD hang on graphs with fewer vertices than
-      ranks is elsewhere (unchanged)
+      a rank sending nothing: hang) and 64-bit displacements (more than 2^31 elements in total, e.g. the edges at 768
+      cores), kamping-v2 PR #126, katric pinned to it. The DPD hang on graphs with fewer vertices than ranks was in the
+      cost function (gone with stage 2)
 
 KaCCv2's communication primitives (read 2026-11-13, branch `feat/kout-symmetric`; katric already fetches kamping-v2
 with dstl but links neither):
@@ -303,7 +304,8 @@ Compact IDs fit 32 bits per rank (n + g < 2^32), which would halve the adjacency
       constructor; `find_ghost_ranks` uses its `get_rank` (local fast path, else binary search). `gather_PE_ranges`,
       `get_PE_from_node_ranges` and `--binary-rank-search` are gone (configs and suites updated). Identical counters on
       the 78 reference runs (`dc74612`)
-- [ ] Local indexers: KaCCv2's `DenseIndexer` / `SparseIndexer` on plain `uint64` global IDs, with the compact IDs below
+- [x] Local indexers: not adopted. Local index = global id - first (arithmetic, in `VertexLayer`); the contracted graph
+      maps a local vertex to its row with a dense array instead of `SparseIndexer`'s hash map
 - [x] Stage 1: the edge iterator, the ghost exchange and the cost functions ask the graph (`is_owned(v)`, `owner(v)`,
       `global_id(v)`) instead of reading `RankEncodedNodeId`'s rank and ID, so the representation swap below stays
       inside the graph (`e8adcf8`). Also removed `CostFunction::rank()`, which called a graph method that does not
@@ -340,7 +342,7 @@ Compact IDs fit 32 bits per rank (n + g < 2^32), which would halve the adjacency
         0.06 s, global phase 0.29 -> 0.25 s, building 0.085 s), RHG 0.094 -> 0.082 s
       - the DPD hang on graphs with fewer vertices than ranks is gone for DiTriC (the old cost function exchanged the
         degrees a second time on ranks without ghosts, a collective only those ranks entered)
-- [ ] Stage 2, the swap, as a pipeline of immutable graphs built from KaCCv2's building blocks (decided 2026-11-13;
+- [x] Stage 2, the swap, as a pipeline of immutable graphs built from KaCCv2's building blocks (decided 2026-11-13;
       adopt KaCCv2's interface and layering, not `SplitDistributedCSRGraph` or `FilteredGraph`):
       - input graph: what KaGen and the load balancer produce (`LocalGraphView`, global IDs), unchanged
       - oriented graph: `VertexPartition` + `DenseIndexer` for the local vertices; a ghost table (sorted ghost global
@@ -363,18 +365,36 @@ Compact IDs fit 32 bits per rank (n + g < 2^32), which would halve the adjacency
       Removes `RankEncodedNodeId`, `find_ghost_ranks`, `AuxiliaryNodeData`, the mutating `DistributedGraph`
       (`first_out_offset_`, `remove_internal_edges`, `remove_in_edges_and_expand_ghosts`) and the old node indexers.
       Validated by identical counters
+      Done 2026-11-18: CETRIC and pre-CETRIC moved over, the old graph code deleted (`DistributedGraph`,
+      `AuxiliaryNodeData`, `cost_function.h`, `preprocessing.h`, `contraction.h`, `execution.h`, `counters/`,
+      `graph_communicator.h`, `RankEncodedNodeId`; -3000 lines). Identical counters and triangle counts on the 124
+      reference runs; tests ported (input graph, degree exchange over all three transports, both orientations with
+      ghost rows). How it differs from the design above:
+      - no copy of `build_ghost_reverse_index`: the ghost rows come out of the orientation pass (count, then fill,
+        indexed by c - n), sorted because the local vertices are visited in order. They replace the ghost expansion
+      - `ContractedGraph` (`graph/graph.h`): rows for the vertices with cut out-edges, a dense row index per local
+        vertex; pre-CETRIC orients it after its degree exchange (`preprocessing_global`, no `sorting` region: filtering
+        keeps rows sorted)
+      - plain member functions (`neighbors`, `is_owned`, `owner`, `global_id`, ...) instead of KaCCv2's concept
+        overloads; `push_to_ghosts` works on both graph types
+      - region changes: `input_graph` replaces `ghost_ranks` (and the graph construction formerly in `reset`), CETRIC's
+        `ghost_expansion` is gone (its work is in `orientation`), DiTriC has `global_rows`
+      - laptop, 8 ranks, 2^18 / 2^22, per iteration: CETRIC permuted RGG 0.76 -> 0.52 s (preprocessing 0.25 -> 0.08,
+        local phase 0.20 -> 0.10), RHG 0.111 -> 0.081 s; pre-CETRIC permuted RGG 0.57 -> 0.46 s
+        (`preprocessing_global` 0.16 -> 0.04)
 - [ ] Stage 3: 32-bit compact IDs (n + g < 2^32 per rank) — measure the local phase
-- Known issue (pre-existing, also in the binary from before step 1): DPD load balancing on a graph with fewer vertices
-  than ranks (`examples/triangle.metis` on 4 ranks) hangs
-- [ ] Compact IDs in the adjacency, built once after `find_ghosts`; per-ghost arrays for global ID, rank and degree.
+- Fixed by stage 2 (pre-existing issue): DPD load balancing on a graph with fewer vertices than ranks
+  (`examples/triangle.metis` on 4 ranks) hung
+- [x] (stage 2) Compact IDs in the adjacency, built once after `find_ghosts`; per-ghost arrays for global ID, rank and degree.
       In KaCCv2's concepts this is a neighbor handle (`neighbor_t` != `vertex_id_t`, projected by
       `neighbor_target`), so the indexers never see compact IDs
-- [ ] Routing, local tests, `id_outward` and `local_prefix_end` on compact IDs (array lookup / range test);
+- [x] (stage 2) Routing, local tests, `id_outward` and `local_prefix_end` on compact IDs (array lookup / range test);
       `RankEncodedNodeId`, `find_ghost_ranks` (with `gather_PE_ranges` / `get_PE_from_node_ranges`),
       `--binary-rank-search` and `AuxiliaryNodeData` removed
-- [ ] Messages carry global IDs. The numbering preserves the global order, so a receiver merges the received list
-      against `N+(u)` mapped through `to_global` (monotone) without translating the received IDs
-- [ ] Contraction (`compact()`, today a `SparseNodeIndexer`) and the cetric-x ghost CSR on the new IDs
+- [x] (stage 2) Messages carry global IDs. The numbering preserves the global order, so a receiver merges the received
+      list against `N+(u)` mapped through `to_global` (monotone) without translating the received IDs. Done with a
+      copy of the rows in global ids instead (the mapping cost a ghost-id lookup per merge step)
+- [x] (stage 2) Contraction (`compact()`, today a `SparseNodeIndexer`) and the cetric-x ghost CSR on the new IDs
 - [x] Remove the `std::set<RankEncodedNodeId> ghosts` filter in `run_distributed`: every caller passed an empty set
       (removed in step 2, `5f5a54d`)
 - [ ] Compare against `pre-refactor` in `phases`: preprocessing (orientation, degree exchange) and `send_ns`

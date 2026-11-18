@@ -171,14 +171,6 @@ std::ostream& operator<<(std::ostream& out, const std::pair<T, V>& p) {
     return out << "<" << p.first << ", " << p.second << ">";
 }
 
-namespace execution_policy {
-struct sequential {};
-struct parallel {
-    parallel(size_t num_threads) : num_threads(num_threads) {}
-    size_t num_threads;
-};
-} // namespace execution_policy
-
 template <typename IteratorType>
 typename IteratorType::value_type parallel_prefix_sum(IteratorType begin, IteratorType end) {
     size_t size = end - begin;
