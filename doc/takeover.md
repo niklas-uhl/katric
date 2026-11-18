@@ -66,6 +66,12 @@ Still to review in stage 2 (current files, in data-flow order):
   already. To check on SuperMUC: build Caliper with GOTCHA on Linux (enables `mem.highwatermark`), or add the
   getrusage marks properly (as a counter). katric's own lever: the cut pairs (16 B per cut edge) in
   `build_input_graph`
+- **KaGen internals** (read 2026-11-18): edge-list generators (RGG, RMAT/Graph500, ...) are converted at the end
+  (`EdgeListOnlyGenerator::FinalizeCSR`): the edge list (16 B per directed edge) and the CSR (8 B) are alive together.
+  RMAT's `RedistributeEdges` (sort + dedup, round-robin remap) holds the edge list, per-rank send vectors of pairs, a
+  flat send buffer and the receive buffer at once (several 16 B copies of the busiest rank's edges). `permute` adds
+  send/receive buffers and a second CSR. Graph500 also offers `GraphRedistribution::BALANCE_EDGES`
+  (`RedistributeEdgesBalanced`), which could balance RMAT's edges at generation time — worth checking against IDPD
 - **SuperMUC**: `trimming` suite submitted from the branch; `lb-cost` `rerun2` (48/192/768) queued; old job files
   still pass `--global-synchronization` (accepted and ignored since `8d1eca2`) — remove the flag once they have run;
   use `--copy-binary` for new submissions
