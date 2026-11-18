@@ -54,12 +54,11 @@ namespace cetric::load_balancing {
 /// about C/p of the total cost C: vertex v goes to the rank whose share [r C/p, (r+1) C/p) contains the cost before v
 /// (`cost[i]` is the cost of vertex first + i). The vertices stay in global-id order, so the move is a
 /// dstl::redistribute of the degrees and of the heads. Region `redistribution`.
-inline kagen::Graph run(kagen::Graph&& G, std::span<std::size_t const> cost, MPI_Comm comm) {
+inline kagen::Graph run(kagen::Graph&& G, std::span<std::size_t const> cost, kamping::v2::comm_view comm) {
     CALI_CXX_MARK_SCOPE("redistribution");
-    kamping::v2::comm_view const cv{comm};
-    auto const                   size = static_cast<std::size_t>(cv.size());
-    auto const                   rank = static_cast<std::size_t>(cv.rank());
-    std::size_t const            n    = G.vertex_range.second - G.vertex_range.first;
+    auto const        size = static_cast<std::size_t>(comm.size());
+    auto const        rank = static_cast<std::size_t>(comm.rank());
+    std::size_t const n    = G.vertex_range.second - G.vertex_range.first;
     KASSERT(cost.size() == n);
 
     // the cost before each vertex, globally: the ranks before (one scan), then the vertices before on this rank; the
@@ -85,7 +84,7 @@ inline kagen::Graph run(kagen::Graph&& G, std::span<std::size_t const> cost, MPI
     }
     // kamping-v2 has no reduce-scatter yet
     std::array<std::uint64_t, 2> recv{};
-    MPI_Reduce_scatter_block(send.data(), recv.data(), 2, MPI_UINT64_T, MPI_SUM, comm);
+    MPI_Reduce_scatter_block(send.data(), recv.data(), 2, MPI_UINT64_T, MPI_SUM, kamping::v2::handle(comm));
     std::uint64_t const recv_nodes = recv[0];
     std::uint64_t const recv_edges = recv[1];
     KASSERT(recv_edges <= static_cast<std::uint64_t>(std::numeric_limits<int>::max()));

@@ -57,9 +57,9 @@ template <typename Graph, typename Sources, typename VertexToMessage>
     std::size_t       volume_per_message = 1
 ) {
     using Message           = std::remove_cvref_t<decltype(vertex_to_message(*std::ranges::begin(sources)))>;
-    MPI_Comm const    comm  = G.comm();
-    auto const        size  = static_cast<std::size_t>(G.size());
-    PEID const        rank  = G.rank();
+    auto const        comm  = G.comm();
+    auto const        size  = static_cast<std::size_t>(comm.size());
+    PEID const        rank  = comm.rank();
     constexpr auto    never = std::numeric_limits<std::size_t>::max();
     std::vector<int>  send_counts(size, 0);
     std::vector<int>  send_displs(size, 0);

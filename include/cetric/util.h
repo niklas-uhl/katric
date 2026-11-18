@@ -71,19 +71,6 @@ using PEID = int;
     #endif
 #endif
 
-inline PEID comm_rank(MPI_Comm comm) {
-    PEID rank;
-    MPI_Comm_rank(comm, &rank);
-    return rank;
-}
-
-/// The number of processes in `comm`.
-inline PEID comm_size(MPI_Comm comm) {
-    PEID size;
-    MPI_Comm_size(comm, &size);
-    return size;
-}
-
 constexpr unsigned long long log2(unsigned long long x) {
 #if defined                  __has_builtin
     #if __has_builtin(__builtin_clzl)

@@ -86,7 +86,7 @@ inline std::pair<graph::CsrGraph, std::size_t> input_graph(kagen::Graph&& input,
 /// Repartitions `G` into contiguous vertex ranges of equal cost (`--primary-cost-function`, off with "none").
 inline void primary_load_balancing(graph::CsrGraph& G, Config const& conf) {
     CALI_CXX_MARK_SCOPE("primary_load_balancing");
-    MPI_Comm const comm = G.comm();
+    auto const comm = G.comm();
     if (conf.primary_cost_function != "none") {
         auto const cost = vertex_costs(G, conf);
         G               = graph::build_input_graph(load_balancing::run(graph::to_kagen_graph(G), cost, comm), comm);

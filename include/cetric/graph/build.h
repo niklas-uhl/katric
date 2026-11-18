@@ -26,7 +26,7 @@ namespace cetric::graph {
 /// The undirected graph of a rank's part of the input (KaGen's CSR: vertex range, xadj, adjncy in global ids), with
 /// ghosts. Collective. Neighborhoods keep the input's order. The cut edges are sorted once by (head, position): that
 /// gives the ghosts in global-id order and their handles without a lookup per edge.
-inline CsrGraph build_input_graph(kagen::Graph&& input, MPI_Comm comm) {
+inline CsrGraph build_input_graph(kagen::Graph&& input, kamping::v2::comm_view comm) {
     KASSERT(input.representation == kagen::GraphRepresentation::CSR);
     std::pair<NodeId, NodeId> const range{input.vertex_range.first, input.vertex_range.second};
     auto const [first, last] = range;
@@ -34,12 +34,12 @@ inline CsrGraph build_input_graph(kagen::Graph&& input, MPI_Comm comm) {
     auto const        owned  = [first, n](NodeId gid) {
         return gid >= first && gid - first < n;
     };
-    std::vector<Handle>                    head(input.adjncy.size());
-    std::vector<std::pair<NodeId, EdgeId>> cut; // (head, position in head)
+    std::vector<Handle>                    adjncy(input.adjncy.size());
+    std::vector<std::pair<NodeId, EdgeId>> cut; // (head, position in adjncy)
     for (EdgeId e = 0; e < input.adjncy.size(); ++e) {
         NodeId const gid = input.adjncy[e];
         if (owned(gid)) {
-            head[e] = gid - first;
+            adjncy[e] = gid - first;
         } else {
             cut.emplace_back(gid, e);
         }
@@ -50,19 +50,19 @@ inline CsrGraph build_input_graph(kagen::Graph&& input, MPI_Comm comm) {
         if (ghost_ids.empty() || ghost_ids.back() != gid) {
             ghost_ids.push_back(gid);
         }
-        head[e] = n + ghost_ids.size() - 1;
+        adjncy[e] = n + ghost_ids.size() - 1;
     }
     tlx::vector_free(cut);
-    // KaGen's SInt need not be our EdgeId type (unsigned long long vs. unsigned long), so the first_out are copied
-    std::vector<EdgeId> first_out(input.xadj.begin(), input.xadj.end());
-    if (first_out.empty()) {
-        first_out.push_back(0);
+    // KaGen's SInt need not be our EdgeId type (unsigned long long vs. unsigned long), so the xadj are copied
+    std::vector<EdgeId> xadj(input.xadj.begin(), input.xadj.end());
+    if (xadj.empty()) {
+        xadj.push_back(0);
     }
-    KASSERT(first_out.size() == n + 1);
+    KASSERT(xadj.size() == n + 1);
     input.Clear();
     auto layer = std::make_shared<VertexLayer const>(range, std::move(ghost_ids), comm);
     KASSERT(layer->n() == n);
-    return CsrGraph(std::move(layer), std::move(first_out), std::move(head));
+    return CsrGraph(std::move(layer), std::move(xadj), std::move(adjncy));
 }
 
 /// `G` in KaGen's CSR representation (global ids).
@@ -115,38 +115,38 @@ CsrGraph orient(CsrGraph const& G, Key&& key, bool ghost_out_edges) {
     auto const          out   = [&](Handle v, Handle u) {
         return key(v) < key(u);
     };
-    std::vector<EdgeId> first_out(n + 1, 0);
-    std::vector<EdgeId> ghost_first_out(ghost_out_edges ? layer.ghost_count() + 1 : 0, 0);
+    std::vector<EdgeId> xadj(n + 1, 0);
+    std::vector<EdgeId> ghost_xadj(ghost_out_edges ? layer.ghost_count() + 1 : 0, 0);
     for (Handle const v: G.local_nodes()) {
         for (Handle const u: G.neighbors(v)) {
             if (out(v, u)) {
-                first_out[v + 1]++;
+                xadj[v + 1]++;
             } else if (ghost_out_edges && !layer.is_owned(u)) {
-                ghost_first_out[u - n + 1]++;
+                ghost_xadj[u - n + 1]++;
             }
         }
     }
     for (std::size_t c = 0; c < n; ++c) {
-        first_out[c + 1] += first_out[c];
+        xadj[c + 1] += xadj[c];
     }
-    for (std::size_t s = 0; s + 1 < ghost_first_out.size(); ++s) {
-        ghost_first_out[s + 1] += ghost_first_out[s];
+    for (std::size_t s = 0; s + 1 < ghost_xadj.size(); ++s) {
+        ghost_xadj[s + 1] += ghost_xadj[s];
     }
-    std::vector<Handle> head(first_out.back());
-    std::vector<Handle> ghost_head(ghost_out_edges ? ghost_first_out.back() : 0);
-    std::vector<EdgeId> ghost_next(ghost_first_out);
+    std::vector<Handle> adjncy(xadj.back());
+    std::vector<Handle> ghost_adjncy(ghost_out_edges ? ghost_xadj.back() : 0);
+    std::vector<EdgeId> ghost_next(ghost_xadj);
     for (Handle const v: G.local_nodes()) {
-        EdgeId next = first_out[v];
+        EdgeId next = xadj[v];
         for (Handle const u: G.neighbors(v)) {
             if (out(v, u)) {
-                head[next++] = u;
+                adjncy[next++] = u;
             } else if (ghost_out_edges && !layer.is_owned(u)) {
                 // v ascending: each ghost's neighborhood comes out sorted
-                ghost_head[ghost_next[u - n]++] = v;
+                ghost_adjncy[ghost_next[u - n]++] = v;
             }
         }
     }
-    return CsrGraph(G.layer(), std::move(first_out), std::move(head), std::move(ghost_first_out), std::move(ghost_head));
+    return CsrGraph(G.layer(), std::move(xadj), std::move(adjncy), std::move(ghost_xadj), std::move(ghost_adjncy));
 }
 
 /// The contraction of CETRIC and pre-CETRIC: the local vertices with a ghost out-neighbor, each with only its ghost
@@ -154,8 +154,8 @@ CsrGraph orient(CsrGraph const& G, Key&& key, bool ghost_out_edges) {
 inline ContractedGraph contract(CsrGraph const& G) {
     auto const          n = static_cast<Handle>(G.local_node_count());
     std::vector<Handle> vertices;
-    std::vector<EdgeId> first_out{0};
-    std::vector<Handle> head;
+    std::vector<EdgeId> xadj{0};
+    std::vector<Handle> adjncy;
     for (Handle const v: G.local_nodes()) {
         auto const neighbors  = G.neighbors(v);
         auto const ghost_part = std::ranges::subrange(std::lower_bound(neighbors.begin(), neighbors.end(), n), neighbors.end());
@@ -163,10 +163,10 @@ inline ContractedGraph contract(CsrGraph const& G) {
             continue;
         }
         vertices.push_back(v);
-        head.insert(head.end(), ghost_part.begin(), ghost_part.end());
-        first_out.push_back(head.size());
+        adjncy.insert(adjncy.end(), ghost_part.begin(), ghost_part.end());
+        xadj.push_back(adjncy.size());
     }
-    return ContractedGraph(G.layer(), std::move(vertices), std::move(first_out), std::move(head));
+    return ContractedGraph(G.layer(), std::move(vertices), std::move(xadj), std::move(adjncy));
 }
 
 /// Orients a contracted graph: keeps u in the neighborhood of v if key(v) < key(u). Every vertex stays (possibly
@@ -174,17 +174,17 @@ inline ContractedGraph contract(CsrGraph const& G) {
 template <typename Key>
 ContractedGraph orient(ContractedGraph const& G, Key&& key) {
     std::vector<Handle> vertices(G.local_nodes().begin(), G.local_nodes().end());
-    std::vector<EdgeId> first_out{0};
-    std::vector<Handle> head;
+    std::vector<EdgeId> xadj{0};
+    std::vector<Handle> adjncy;
     for (Handle const v: vertices) {
         for (Handle const u: G.neighbors(v)) {
             if (key(v) < key(u)) {
-                head.push_back(u);
+                adjncy.push_back(u);
             }
         }
-        first_out.push_back(head.size());
+        xadj.push_back(adjncy.size());
     }
-    return ContractedGraph(G.layer(), std::move(vertices), std::move(first_out), std::move(head));
+    return ContractedGraph(G.layer(), std::move(vertices), std::move(xadj), std::move(adjncy));
 }
 
 } // namespace cetric::graph

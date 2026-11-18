@@ -1,5 +1,5 @@
-// The graphs the algorithms run on: CSR (first_out, head) over compact ids. A rank numbers its local vertices 0..n-1
-// (in global-id order, so local index = global id - first) and its ghosts n..n+g-1 (in global-id order); head holds
+// The graphs the algorithms run on: CSR (xadj, adjncy) over compact ids. A rank numbers its local vertices 0..n-1
+// (in global-id order, so local index = global id - first) and its ghosts n..n+g-1 (in global-id order); adjncy holds
 // these compact ids ("neighbor handles", as in KaCCv2), not global ids. Ownership, owner and global id of a handle are
 // a comparison or an array lookup. The graphs of one run share their vertex layer (VertexLayer) and are immutable once
 // built (graph/build.h builds them).
@@ -37,11 +37,10 @@ class VertexLayer {
 public:
     /// Collective (builds the partition table). `range` is this rank's half-open range of global ids, `ghost_ids` the
     /// sorted, distinct global ids of the ghosts.
-    VertexLayer(std::pair<NodeId, NodeId> range, std::vector<NodeId> ghost_ids, MPI_Comm comm)
-        : partition_(range, comm),
+    VertexLayer(std::pair<NodeId, NodeId> range, std::vector<NodeId> ghost_ids, kamping::v2::comm_view comm)
+        : partition_(range, kamping::v2::handle(comm)),
           comm_(comm),
-          rank_(comm_rank(comm)),
-          size_(comm_size(comm)),
+          rank_(comm.rank()),
           first_(partition_.vertex_range().first),
           n_(partition_.vertex_range().second - partition_.vertex_range().first),
           ghost_ids_(std::move(ghost_ids)) {
@@ -97,14 +96,8 @@ public:
         return n_ + ghosts_below_;
     }
 
-    [[nodiscard]] MPI_Comm comm() const {
+    [[nodiscard]] kamping::v2::comm_view comm() const {
         return comm_;
-    }
-    [[nodiscard]] PEID rank() const {
-        return rank_;
-    }
-    [[nodiscard]] PEID size() const {
-        return size_;
     }
     [[nodiscard]] VertexPartition<NodeId> const& partition() const {
         return partition_;
@@ -115,16 +108,15 @@ public:
     [[nodiscard]] dstl::grid_comm<dstl::execution_policy::seq> const& grid() const {
         if (!grid_) {
             CALI_CXX_MARK_SCOPE("grid_comm");
-            grid_.emplace(kamping::v2::comm_view{comm_});
+            grid_.emplace(comm_);
         }
         return *grid_;
     }
 
 private:
     VertexPartition<NodeId> partition_;
-    MPI_Comm                comm_;
-    PEID                    rank_;
-    PEID                    size_;
+    kamping::v2::comm_view  comm_;
+    PEID                    rank_; // for owner()
     NodeId                  first_;
     std::size_t             n_;
     std::vector<NodeId>     ghost_ids_;
@@ -133,18 +125,18 @@ private:
     mutable std::optional<dstl::grid_comm<dstl::execution_policy::seq>> grid_;
 };
 
-/// The neighborhoods of a CSR graph as global ids, each ascending: a head array for the same first_out, but not aligned
-/// with `head` entry by entry. A neighborhood sorted by handle is [local vertices][ghosts below the local range][ghosts
+/// The neighborhoods of a CSR graph as global ids, each ascending: an adjncy array for the same xadj, but not aligned
+/// with `adjncy` entry by entry. A neighborhood sorted by handle is [local vertices][ghosts below the local range][ghosts
 /// above], so in global order it is [ghosts below][local vertices][ghosts above].
 inline std::vector<NodeId>
-head_as_global_ids(VertexLayer const& layer, std::vector<EdgeId> const& first_out, std::vector<Handle> const& head) {
-    std::vector<NodeId> result(head.size());
-    for (std::size_t v = 0; v + 1 < first_out.size(); ++v) {
-        auto const first     = head.begin() + static_cast<std::ptrdiff_t>(first_out[v]);
-        auto const last      = head.begin() + static_cast<std::ptrdiff_t>(first_out[v + 1]);
+adjncy_as_global_ids(VertexLayer const& layer, std::vector<EdgeId> const& xadj, std::vector<Handle> const& adjncy) {
+    std::vector<NodeId> result(adjncy.size());
+    for (std::size_t v = 0; v + 1 < xadj.size(); ++v) {
+        auto const first     = adjncy.begin() + static_cast<std::ptrdiff_t>(xadj[v]);
+        auto const last      = adjncy.begin() + static_cast<std::ptrdiff_t>(xadj[v + 1]);
         auto const local_end = std::lower_bound(first, last, Handle{layer.n()});
         auto const below_end = std::lower_bound(local_end, last, layer.ghosts_above());
-        auto       out       = result.begin() + static_cast<std::ptrdiff_t>(first_out[v]);
+        auto       out       = result.begin() + static_cast<std::ptrdiff_t>(xadj[v]);
         for (auto it = local_end; it != below_end; ++it) {
             *out++ = layer.global_id(*it);
         }
@@ -158,26 +150,26 @@ head_as_global_ids(VertexLayer const& layer, std::vector<EdgeId> const& first_ou
     return result;
 }
 
-/// A CSR graph (first_out, head) over the local vertices and, optionally (CETRIC), a second one over the ghosts: each
+/// A CSR graph (xadj, adjncy) over the local vertices and, optionally (CETRIC), a second one over the ghosts: each
 /// ghost's out-edges to local vertices.
 class CsrGraph {
 public:
     CsrGraph() = default;
     CsrGraph(
         std::shared_ptr<VertexLayer const> layer,
-        std::vector<EdgeId>                first_out,
-        std::vector<Handle>                head,
-        std::vector<EdgeId>                ghost_first_out = {},
-        std::vector<Handle>                ghost_head      = {}
+        std::vector<EdgeId>                xadj,
+        std::vector<Handle>                adjncy,
+        std::vector<EdgeId>                ghost_xadj = {},
+        std::vector<Handle>                ghost_adjncy      = {}
     )
         : layer_(std::move(layer)),
-          first_out_(std::move(first_out)),
-          head_(std::move(head)),
-          ghost_first_out_(std::move(ghost_first_out)),
-          ghost_head_(std::move(ghost_head)) {
-        KASSERT(first_out_.size() == layer_->n() + 1);
-        KASSERT(first_out_.back() == head_.size());
-        KASSERT(ghost_first_out_.empty() || ghost_first_out_.size() == layer_->ghost_count() + 1);
+          xadj_(std::move(xadj)),
+          adjncy_(std::move(adjncy)),
+          ghost_xadj_(std::move(ghost_xadj)),
+          ghost_adjncy_(std::move(ghost_adjncy)) {
+        KASSERT(xadj_.size() == layer_->n() + 1);
+        KASSERT(xadj_.back() == adjncy_.size());
+        KASSERT(ghost_xadj_.empty() || ghost_xadj_.size() == layer_->ghost_count() + 1);
     }
 
     [[nodiscard]] std::shared_ptr<VertexLayer const> const& layer() const {
@@ -199,7 +191,7 @@ public:
     }
     /// Number of edges of the local vertices.
     [[nodiscard]] EdgeId local_edge_count() const {
-        return head_.size();
+        return adjncy_.size();
     }
 
     /// The index of local vertex `c` among the local vertices: `c` itself.
@@ -213,21 +205,21 @@ public:
     }
     [[nodiscard]] std::span<Handle const> neighbors(Handle c) const {
         KASSERT(c < layer_->n());
-        return {head_.data() + first_out_[c], first_out_[c + 1] - first_out_[c]};
+        return {adjncy_.data() + xadj_[c], xadj_[c + 1] - xadj_[c]};
     }
     [[nodiscard]] Degree degree(Handle c) const {
         KASSERT(c < layer_->n());
-        return first_out_[c + 1] - first_out_[c];
+        return xadj_[c + 1] - xadj_[c];
     }
 
     [[nodiscard]] bool has_ghost_out_edges() const {
-        return !ghost_first_out_.empty();
+        return !ghost_xadj_.empty();
     }
     /// The out-neighbors of ghost `c`: local vertices.
     [[nodiscard]] std::span<Handle const> ghost_neighbors(Handle c) const {
         KASSERT(has_ghost_out_edges() && c >= layer_->n());
         auto const slot = c - layer_->n();
-        return {ghost_head_.data() + ghost_first_out_[slot], ghost_first_out_[slot + 1] - ghost_first_out_[slot]};
+        return {ghost_adjncy_.data() + ghost_xadj_[slot], ghost_xadj_[slot + 1] - ghost_xadj_[slot]};
     }
     [[nodiscard]] Degree ghost_degree(Handle c) const {
         return ghost_neighbors(c).size();
@@ -237,21 +229,21 @@ public:
     /// works on these: messages carry global ids, and merging them needs no lookup per entry.
     [[nodiscard]] std::span<NodeId const> neighbors_as_global_ids(Handle c) const {
         KASSERT(c < layer_->n());
-        KASSERT(head_as_global_ids_.size() == head_.size(), "add_neighbors_as_global_ids() was not called");
-        return {head_as_global_ids_.data() + first_out_[c], first_out_[c + 1] - first_out_[c]};
+        KASSERT(adjncy_as_global_ids_.size() == adjncy_.size(), "add_neighbors_as_global_ids() was not called");
+        return {adjncy_as_global_ids_.data() + xadj_[c], xadj_[c + 1] - xadj_[c]};
     }
 
     /// Building step (after sort_neighborhoods()): the neighbors as global ids.
     void add_neighbors_as_global_ids() {
-        head_as_global_ids_ = head_as_global_ids(*layer_, first_out_, head_);
+        adjncy_as_global_ids_ = adjncy_as_global_ids(*layer_, xadj_, adjncy_);
     }
 
     /// Building step: sorts every neighborhood by handle (local vertices first, then ghosts, each by global id).
     void sort_neighborhoods() {
-        for (std::size_t c = 0; c + 1 < first_out_.size(); ++c) {
+        for (std::size_t c = 0; c + 1 < xadj_.size(); ++c) {
             std::sort(
-                head_.begin() + static_cast<std::ptrdiff_t>(first_out_[c]),
-                head_.begin() + static_cast<std::ptrdiff_t>(first_out_[c + 1])
+                adjncy_.begin() + static_cast<std::ptrdiff_t>(xadj_[c]),
+                adjncy_.begin() + static_cast<std::ptrdiff_t>(xadj_[c + 1])
             );
         }
     }
@@ -265,23 +257,17 @@ public:
     [[nodiscard]] NodeId global_id(Handle c) const {
         return layer_->global_id(c);
     }
-    [[nodiscard]] MPI_Comm comm() const {
+    [[nodiscard]] kamping::v2::comm_view comm() const {
         return layer_->comm();
-    }
-    [[nodiscard]] PEID rank() const {
-        return layer_->rank();
-    }
-    [[nodiscard]] PEID size() const {
-        return layer_->size();
     }
 
 private:
     std::shared_ptr<VertexLayer const> layer_;
-    std::vector<EdgeId>                first_out_;
-    std::vector<Handle>                head_;
-    std::vector<NodeId>                head_as_global_ids_; // see neighbors_as_global_ids()
-    std::vector<EdgeId>                ghost_first_out_;
-    std::vector<Handle>                ghost_head_;
+    std::vector<EdgeId>                xadj_;
+    std::vector<Handle>                adjncy_;
+    std::vector<NodeId>                adjncy_as_global_ids_; // see neighbors_as_global_ids()
+    std::vector<EdgeId>                ghost_xadj_;
+    std::vector<Handle>                ghost_adjncy_;
 };
 
 /// The contracted graph of CETRIC and pre-CETRIC: a CSR graph over some of the local vertices (those with cut edges),
@@ -292,25 +278,25 @@ public:
     static constexpr std::size_t not_kept = std::numeric_limits<std::size_t>::max();
 
     ContractedGraph() = default;
-    /// `vertices` ascending; the neighbors of vertices[i] are head[first_out[i], first_out[i + 1]).
+    /// `vertices` ascending; the neighbors of vertices[i] are adjncy[xadj[i], xadj[i + 1]).
     ContractedGraph(
         std::shared_ptr<VertexLayer const> layer,
         std::vector<Handle>                vertices,
-        std::vector<EdgeId>                first_out,
-        std::vector<Handle>                head
+        std::vector<EdgeId>                xadj,
+        std::vector<Handle>                adjncy
     )
         : layer_(std::move(layer)),
           vertices_(std::move(vertices)),
           index_of_(layer_->n(), not_kept),
-          first_out_(std::move(first_out)),
-          head_(std::move(head)) {
-        KASSERT(first_out_.size() == vertices_.size() + 1);
-        KASSERT(first_out_.back() == head_.size());
+          xadj_(std::move(xadj)),
+          adjncy_(std::move(adjncy)) {
+        KASSERT(xadj_.size() == vertices_.size() + 1);
+        KASSERT(xadj_.back() == adjncy_.size());
         KASSERT(std::ranges::is_sorted(vertices_));
         for (std::size_t i = 0; i < vertices_.size(); ++i) {
             index_of_[vertices_[i]] = i;
         }
-        head_as_global_ids_ = head_as_global_ids(*layer_, first_out_, head_);
+        adjncy_as_global_ids_ = adjncy_as_global_ids(*layer_, xadj_, adjncy_);
     }
 
     [[nodiscard]] std::shared_ptr<VertexLayer const> const& layer() const {
@@ -324,7 +310,7 @@ public:
         return vertices_.size();
     }
     [[nodiscard]] EdgeId local_edge_count() const {
-        return head_.size();
+        return adjncy_.size();
     }
     /// The index of kept vertex `c`.
     [[nodiscard]] std::size_t to_local_idx(Handle c) const {
@@ -337,7 +323,7 @@ public:
     }
     [[nodiscard]] std::span<Handle const> neighbors(Handle c) const {
         auto const i = to_local_idx(c);
-        return {head_.data() + first_out_[i], first_out_[i + 1] - first_out_[i]};
+        return {adjncy_.data() + xadj_[i], xadj_[i + 1] - xadj_[i]};
     }
     [[nodiscard]] Degree degree(Handle c) const {
         return neighbors(c).size();
@@ -345,7 +331,7 @@ public:
     /// The neighbors of kept vertex `c` as global ids, ascending.
     [[nodiscard]] std::span<NodeId const> neighbors_as_global_ids(Handle c) const {
         auto const i = to_local_idx(c);
-        return {head_as_global_ids_.data() + first_out_[i], first_out_[i + 1] - first_out_[i]};
+        return {adjncy_as_global_ids_.data() + xadj_[i], xadj_[i + 1] - xadj_[i]};
     }
 
     [[nodiscard]] bool is_owned(Handle c) const {
@@ -357,23 +343,17 @@ public:
     [[nodiscard]] NodeId global_id(Handle c) const {
         return layer_->global_id(c);
     }
-    [[nodiscard]] MPI_Comm comm() const {
+    [[nodiscard]] kamping::v2::comm_view comm() const {
         return layer_->comm();
-    }
-    [[nodiscard]] PEID rank() const {
-        return layer_->rank();
-    }
-    [[nodiscard]] PEID size() const {
-        return layer_->size();
     }
 
 private:
     std::shared_ptr<VertexLayer const> layer_;
     std::vector<Handle>                vertices_;
     std::vector<std::size_t>           index_of_; // per local vertex: its index, or not_kept
-    std::vector<EdgeId>                first_out_;
-    std::vector<Handle>                head_;
-    std::vector<NodeId>                head_as_global_ids_;
+    std::vector<EdgeId>                xadj_;
+    std::vector<Handle>                adjncy_;
+    std::vector<NodeId>                adjncy_as_global_ids_;
 };
 
 } // namespace cetric::graph
