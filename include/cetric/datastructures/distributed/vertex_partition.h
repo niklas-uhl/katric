@@ -78,6 +78,15 @@ public:
         return static_cast<int>(std::distance(vtx_dist_.begin(), it)) - 1;
     }
 
+    /// The rank owning `v`, searching only from rank `from` on (`v` must not lie before rank `from`'s range): for
+    /// ascending lookups, e.g. along a sorted neighborhood.
+    [[nodiscard]] int get_rank_from(VId v, int from) const {
+        KASSERT(from >= 0 && static_cast<std::size_t>(from) < vtx_dist_.size() && vtx_dist_[static_cast<std::size_t>(from)] <= v);
+        auto it = std::upper_bound(vtx_dist_.begin() + from, vtx_dist_.end(), v);
+        KASSERT(it != vtx_dist_.end(), "vertex " << v << " out of global bounds");
+        return static_cast<int>(std::distance(vtx_dist_.begin(), it)) - 1;
+    }
+
 private:
     VertexRange      vertex_range_{};
     std::vector<VId> vtx_dist_;

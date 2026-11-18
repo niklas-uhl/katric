@@ -93,10 +93,8 @@ inline void primary_load_balancing(graph::CsrGraph& G, Config const& conf) {
     }
 }
 
-/// The degrees of the ghosts of `G` (a CsrGraph or a ContractedGraph), indexed by ghost slot (region
-/// `degree_exchange`).
-template <typename Graph>
-std::vector<std::uint64_t> ghost_degrees(Graph const& G, Config const& conf) {
+/// The degrees of the ghosts of `G`, indexed by ghost slot (region `degree_exchange`).
+inline std::vector<std::uint64_t> ghost_degrees(graph::CsrGraph const& G, Config const& conf) {
     CALI_CXX_MARK_SCOPE("degree_exchange");
     return graph::exchange_ghost_values(
         G,
@@ -128,17 +126,11 @@ inline auto degree_key(graph::CsrGraph const& G, std::vector<std::uint64_t> cons
     };
 }
 
-/// DiTriC: degree exchange, orientation by degree, and the neighbors as global ids for the global phase (region
-/// `neighbors_as_global_ids`).
+/// DiTriC: degree exchange, orientation by degree.
 inline graph::CsrGraph preprocessing_patric(graph::CsrGraph const& G, Config const& conf) {
     CALI_CXX_MARK_SCOPE("preprocessing");
     auto const ghost_degree = ghost_degrees(G, conf);
-    auto       G_oriented   = orient_and_sort(G, degree_key(G, ghost_degree), false);
-    {
-        CALI_CXX_MARK_SCOPE("neighbors_as_global_ids");
-        G_oriented.add_neighbors_as_global_ids();
-    }
-    return G_oriented;
+    return orient_and_sort(G, degree_key(G, ghost_degree), false);
 }
 
 /// CETRIC: degree exchange, orientation by degree, with the ghosts' out-edges to local vertices (which replace the
@@ -165,28 +157,65 @@ inline graph::CsrGraph preprocessing_cetric(graph::CsrGraph const& G, Config con
     return G_oriented;
 }
 
-/// CETRIC and pre-CETRIC: the edges the local phase did not handle, as the contracted graph.
-inline graph::ContractedGraph contraction(graph::CsrGraph const& G, Config const& conf) {
-    CALI_CXX_MARK_SCOPE("contraction");
-    auto G_contracted = graph::contract(G);
-    profiling::counter_add("compact_nodes", static_cast<std::int64_t>(G_contracted.local_node_count()));
-    profiling::counter_add("compact_edges", static_cast<std::int64_t>(G_contracted.local_edge_count()));
-    return G_contracted;
+/// DiTriC, after the local phase: the oriented graph converted to global ids in place for the global phase (region
+/// `global_ids`).
+inline graph::GlobalIdGraph global_ids(graph::CsrGraph&& G) {
+    CALI_CXX_MARK_SCOPE("global_ids");
+    return graph::to_global_ids(std::move(G));
 }
 
-/// pre-CETRIC: degree exchange on the contracted graph and its orientation by (contracted degree, global id).
-inline graph::ContractedGraph preprocessing_global(graph::ContractedGraph const& G, Config const& conf) {
-    CALI_CXX_MARK_SCOPE("preprocessing_global");
-    auto const             ghost_degree = ghost_degrees(G, conf);
-    graph::ContractedGraph G_oriented;
-    {
-        CALI_CXX_MARK_SCOPE("orientation");
-        auto const& layer = *G.layer();
-        G_oriented        = graph::orient(G, [&](graph::Handle c) {
-            return std::pair(layer.is_owned(c) ? G.degree(c) : ghost_degree[c - layer.n()], layer.global_id(c));
-        });
+/// The number of ghost out-neighbors of local vertex `v` (its neighborhood sorted by handle ends with them).
+inline Degree ghost_degree(graph::CsrGraph const& G, graph::Handle v) {
+    auto const neighbors = G.neighbors(v);
+    return static_cast<Degree>(
+        neighbors.end() - std::lower_bound(neighbors.begin(), neighbors.end(), graph::Handle{G.local_node_count()})
+    );
+}
+
+/// The contraction's counters: the vertices with cut edges (compact_nodes) and their cut out-edges (compact_edges).
+inline void report_contraction(graph::CsrGraph const& G) {
+    std::int64_t nodes = 0;
+    std::int64_t edges = 0;
+    for (graph::Handle const v: G.local_nodes()) {
+        auto const degree = static_cast<std::int64_t>(ghost_degree(G, v));
+        nodes += degree > 0 ? 1 : 0;
+        edges += degree;
     }
-    return G_oriented;
+    profiling::counter_add("compact_nodes", nodes);
+    profiling::counter_add("compact_edges", edges);
+}
+
+/// CETRIC: the edges the local phase did not handle (the cut out-edges), as global ids, contracted in place.
+inline graph::GlobalIdGraph contraction(graph::CsrGraph&& G) {
+    CALI_CXX_MARK_SCOPE("contraction");
+    report_contraction(G);
+    return graph::contract_to_global_ids(std::move(G), [](graph::Handle, Degree, graph::Handle) { return true; });
+}
+
+/// pre-CETRIC: the contraction (region `contraction`: its counters), then the contracted graph's degree exchange and
+/// orientation by (contracted degree, global id), contracting in place (region `preprocessing_global`).
+inline graph::GlobalIdGraph contraction_and_preprocessing_global(graph::CsrGraph&& G, Config const& conf) {
+    {
+        CALI_CXX_MARK_SCOPE("contraction");
+        report_contraction(G);
+    }
+    CALI_CXX_MARK_SCOPE("preprocessing_global");
+    std::vector<std::uint64_t> ghost_degree;
+    {
+        CALI_CXX_MARK_SCOPE("degree_exchange");
+        ghost_degree = graph::exchange_ghost_values(
+            G,
+            [&](graph::Handle v) { return phases::ghost_degree(G, v); },
+            conf.degree_exchange,
+            MessageTag::Orientation
+        );
+    }
+    CALI_CXX_MARK_SCOPE("orientation");
+    auto const layer = G.layer();
+    return graph::contract_to_global_ids(std::move(G), [&](graph::Handle v, Degree degree, graph::Handle w) {
+        return std::pair(degree, layer->global_id(v))
+               < std::pair(Degree{ghost_degree[w - layer->n()]}, layer->global_id(w));
+    });
 }
 
 } // namespace phases

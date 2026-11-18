@@ -149,42 +149,55 @@ CsrGraph orient(CsrGraph const& G, Key&& key, bool ghost_out_edges) {
     return CsrGraph(G.layer(), std::move(xadj), std::move(adjncy), std::move(ghost_xadj), std::move(ghost_adjncy));
 }
 
-/// The contraction of CETRIC and pre-CETRIC: the local vertices with a ghost out-neighbor, each with only its ghost
-/// out-neighbors (the edges the local phase did not handle). `G`'s neighborhoods must be sorted.
-inline ContractedGraph contract(CsrGraph const& G) {
-    auto const          n = static_cast<Handle>(G.local_node_count());
-    std::vector<Handle> vertices;
-    std::vector<EdgeId> xadj{0};
-    std::vector<Handle> adjncy;
-    for (Handle const v: G.local_nodes()) {
-        auto const neighbors  = G.neighbors(v);
-        auto const ghost_part = std::ranges::subrange(std::lower_bound(neighbors.begin(), neighbors.end(), n), neighbors.end());
-        if (ghost_part.empty()) {
-            continue;
+/// DiTriC: the out-neighborhoods of `G` (sorted by handle) as global ids, in place. A neighborhood sorted by handle is
+/// [local vertices][ghosts below the local range][ghosts above]; translated and with the ghosts below rotated to the
+/// front it is ascending.
+inline GlobalIdGraph to_global_ids(CsrGraph&& G) {
+    auto [layer_ptr, xadj, adjncy] = std::move(G).release();
+    auto const& layer              = *layer_ptr;
+    for (std::size_t v = 0; v < layer.n(); ++v) {
+        auto const first     = adjncy.begin() + static_cast<std::ptrdiff_t>(xadj[v]);
+        auto const last      = adjncy.begin() + static_cast<std::ptrdiff_t>(xadj[v + 1]);
+        auto const local_end = std::lower_bound(first, last, Handle{layer.n()});
+        auto const below_end = std::lower_bound(local_end, last, layer.ghosts_above());
+        for (auto it = first; it != last; ++it) {
+            *it = layer.global_id(*it);
         }
-        vertices.push_back(v);
-        adjncy.insert(adjncy.end(), ghost_part.begin(), ghost_part.end());
-        xadj.push_back(adjncy.size());
+        std::rotate(first, local_end, below_end);
     }
-    return ContractedGraph(G.layer(), std::move(vertices), std::move(xadj), std::move(adjncy));
+    return GlobalIdGraph(std::move(layer_ptr), std::move(xadj), std::move(adjncy));
 }
 
-/// Orients a contracted graph: keeps u in the neighborhood of v if key(v) < key(u). Every vertex stays (possibly
-/// without neighbors).
-template <typename Key>
-ContractedGraph orient(ContractedGraph const& G, Key&& key) {
-    std::vector<Handle> vertices(G.local_nodes().begin(), G.local_nodes().end());
-    std::vector<EdgeId> xadj{0};
-    std::vector<Handle> adjncy;
-    for (Handle const v: vertices) {
-        for (Handle const u: G.neighbors(v)) {
-            if (key(v) < key(u)) {
-                adjncy.push_back(u);
+/// CETRIC and pre-CETRIC: contracts `G` (neighborhoods sorted by handle) to its cut edges, in place: of each
+/// neighborhood only the ghost part is kept ([ghosts below][ghosts above], already in global order), as global ids, and
+/// of that only the ghosts w with `keep(v, d, w)`, where d is the size of v's ghost part (pre-CETRIC orients the
+/// contracted graph so). The kept vertices are those with a ghost out-neighbor before filtering.
+template <typename Keep>
+GlobalIdGraph contract_to_global_ids(CsrGraph&& G, Keep&& keep) {
+    auto [layer_ptr, xadj, adjncy] = std::move(G).release();
+    auto const&         layer      = *layer_ptr;
+    auto const          n          = static_cast<Handle>(layer.n());
+    std::vector<Handle> kept;
+    EdgeId              out   = 0;
+    EdgeId              begin = 0; // xadj[v] before it was overwritten
+    for (Handle v = 0; v < n; ++v) {
+        EdgeId const end        = xadj[v + 1];
+        auto const   last       = adjncy.begin() + static_cast<std::ptrdiff_t>(end);
+        auto const   ghost_part = std::lower_bound(adjncy.begin() + static_cast<std::ptrdiff_t>(begin), last, n);
+        auto const   degree     = static_cast<Degree>(last - ghost_part);
+        if (degree > 0) {
+            kept.push_back(v);
+        }
+        for (auto it = ghost_part; it != last; ++it) {
+            if (keep(v, degree, *it)) {
+                adjncy[out++] = layer.global_id(*it); // out <= it: writes never overtake reads
             }
         }
-        xadj.push_back(adjncy.size());
+        xadj[v + 1] = out;
+        begin       = end;
     }
-    return ContractedGraph(G.layer(), std::move(vertices), std::move(xadj), std::move(adjncy));
+    adjncy.resize(out);
+    return GlobalIdGraph(std::move(layer_ptr), std::move(xadj), std::move(adjncy), std::move(kept));
 }
 
 } // namespace cetric::graph
