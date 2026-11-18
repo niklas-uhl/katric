@@ -17,6 +17,7 @@
 #include "cetric/communication_policy.h"
 #include "cetric/config.h"
 #include "cetric/counters/intersection.h"
+#include "cetric/phase_counters.h"
 #include "cetric/datastructures/distributed/distributed_graph.h"
 #include "cetric/datastructures/graph_definitions.h"
 #include "cetric/datastructures/span.h"
@@ -25,43 +26,6 @@
 #include "kassert/kassert.hpp"
 
 namespace cetric {
-
-/// The message queue's buffer threshold (`--threshold`, `--threshold-scale`).
-template <typename Graph>
-std::size_t get_threshold(Graph const& G, Config const& conf) {
-    switch (conf.threshold) {
-        case Threshold::local_nodes:
-            return conf.threshold_scale * G.local_node_count();
-        case Threshold::local_edges:
-            return conf.threshold_scale * G.local_edge_count();
-        case Threshold::none:
-            return std::numeric_limits<std::size_t>::max();
-    }
-    return 0;
-}
-
-/// Work counters of the global phase.
-struct GlobalPhaseCounters {
-    std::size_t skipped_nodes            = 0;
-    std::size_t interface_nodes          = 0;
-    std::size_t wedge_checks             = 0;
-    std::size_t intersection_size_global = 0;
-    std::size_t type3_triangles          = 0;
-
-    /// Adds the counts and the message statistics of the phase's queue to the open Caliper region.
-    template <typename MessageStatistics>
-    void report(MessageStatistics const& messages) const {
-        profiling::counter_add("skipped_nodes", skipped_nodes);
-        profiling::counter_add("interface_nodes", interface_nodes);
-        profiling::counter_add("wedge_checks", wedge_checks);
-        profiling::counter_add("intersection_size_global", intersection_size_global);
-        profiling::counter_add("type3_triangles", type3_triangles);
-        profiling::counter_add("sent_messages", messages.sent_messages);
-        profiling::counter_add("send_volume", messages.send_volume);
-        profiling::counter_add("received_messages", messages.received_messages);
-        profiling::counter_add("receive_volume", messages.receive_volume);
-    }
-};
 
 namespace global_phase {
 
@@ -125,7 +89,7 @@ void intersect_with_message(
         v_last,
         [&](graph::RankEncodedNodeId w) {
             counters.type3_triangles++;
-            emit(graph::Triangle<graph::RankEncodedNodeId>{v, u, w});
+            emit(graph::Triangle<graph::NodeId>{v.id(), u.id(), w.id()});
         },
         node_ordering,
         conf

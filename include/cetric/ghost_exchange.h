@@ -88,7 +88,7 @@ template <typename Graph, typename Sources, typename VertexToMessage>
         for (auto u: sources) {
             auto const           u_local = G.to_local_idx(u);
             std::optional<Message> message;
-            for (auto v: G.adj(u).neighbors()) {
+            for (auto v: G.neighbors(u)) {
                 PEID const v_rank = G.owner(v);
                 if (v_rank == rank || last_source_sent_to[static_cast<std::size_t>(v_rank)] == u_local) {
                     continue;

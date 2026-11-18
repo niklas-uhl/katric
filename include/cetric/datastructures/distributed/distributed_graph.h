@@ -479,6 +479,11 @@ public:
         return adj_for<AdjacencyType::full>(node);
     }
 
+    /// The full neighborhood of a local vertex (the name the ghost exchange uses).
+    [[nodiscard]] auto neighbors(RankEncodedNodeId node) const {
+        return adj(node).neighbors();
+    }
+
     EdgeRange<RankEncodedNodeId, RangeModifiability::non_modifiable> out_adj(RankEncodedNodeId node) const {
         return adj_for<AdjacencyType::out>(node);
     }

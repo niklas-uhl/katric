@@ -9,26 +9,11 @@
 #include "cetric/caliper.h"
 #include "cetric/config.h"
 #include "cetric/counters/intersection.h"
+#include "cetric/phase_counters.h"
 #include "cetric/datastructures/distributed/distributed_graph.h"
 #include "cetric/datastructures/graph_definitions.h"
 
 namespace cetric {
-
-/// Work counters of the local phase.
-struct LocalPhaseCounters {
-    std::size_t skipped_nodes           = 0;
-    std::size_t wedge_checks            = 0;
-    std::size_t intersection_size_local = 0;
-    std::size_t local_triangles         = 0;
-
-    /// Adds the counts to the open Caliper region.
-    void report() const {
-        profiling::counter_add("skipped_nodes", skipped_nodes);
-        profiling::counter_add("wedge_checks", wedge_checks);
-        profiling::counter_add("intersection_size_local", intersection_size_local);
-        profiling::counter_add("local_triangles", local_triangles);
-    }
-};
 
 namespace local_phase {
 
@@ -88,7 +73,7 @@ void intersect_edge(
         u_last,
         [&](graph::RankEncodedNodeId w) {
             counters.local_triangles++;
-            emit(graph::Triangle<graph::RankEncodedNodeId>{v, u, w});
+            emit(graph::Triangle<graph::NodeId>{v.id(), u.id(), w.id()});
         },
         node_ordering,
         conf
