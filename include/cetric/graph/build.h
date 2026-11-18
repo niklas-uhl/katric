@@ -26,7 +26,7 @@ namespace cetric::graph {
 /// The undirected graph of a rank's part of the input (KaGen's CSR: vertex range, xadj, adjncy in global ids), with
 /// ghosts. Collective. Neighborhoods keep the input's order. The cut edges are sorted once by (head, position): that
 /// gives the ghosts in global-id order and their handles without a lookup per edge.
-inline CsrGraph build_input_graph(kagen::Graph&& input, kamping::v2::comm_view comm) {
+inline CsrGraph build_input_graph(kagen::Graph const& input, kamping::v2::comm_view comm) {
     KASSERT(input.representation == kagen::GraphRepresentation::CSR);
     std::pair<NodeId, NodeId> const range{input.vertex_range.first, input.vertex_range.second};
     auto const [first, last] = range;
@@ -53,13 +53,13 @@ inline CsrGraph build_input_graph(kagen::Graph&& input, kamping::v2::comm_view c
         adjncy[e] = n + ghost_ids.size() - 1;
     }
     tlx::vector_free(cut);
-    // KaGen's SInt need not be our EdgeId type (unsigned long long vs. unsigned long), so the xadj are copied
+    // copied: the input is only read (the harness reuses it for every iteration), and KaGen's SInt need not be our
+    // EdgeId type anyway (unsigned long long vs. unsigned long)
     std::vector<EdgeId> xadj(input.xadj.begin(), input.xadj.end());
     if (xadj.empty()) {
         xadj.push_back(0);
     }
     KASSERT(xadj.size() == n + 1);
-    input.Clear();
     auto layer = std::make_shared<VertexLayer const>(range, std::move(ghost_ids), comm);
     KASSERT(layer->n() == n);
     return CsrGraph(std::move(layer), std::move(xadj), std::move(adjncy));

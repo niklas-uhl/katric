@@ -46,9 +46,9 @@ void global_phase(
 
 /// DiTriC
 template <class CommunicationPolicy>
-std::size_t run_patric(kagen::Graph&& input, Config const& conf, MPI_Comm comm) {
+std::size_t run_patric(kagen::Graph const& input, Config const& conf, MPI_Comm comm) {
     TriangleCounter triangles;
-    auto [G, threshold] = phases::input_graph(std::move(input), conf, comm);
+    auto [G, threshold] = phases::input_graph(input, conf, comm);
     phases::primary_load_balancing(G, conf);
     auto G_oriented = phases::preprocessing_patric(G, conf);
     G               = {};
@@ -60,9 +60,9 @@ std::size_t run_patric(kagen::Graph&& input, Config const& conf, MPI_Comm comm) 
 
 /// pre-CETRIC: outward orientation of cut edges, degree exchange only on the contracted graph
 template <class CommunicationPolicy>
-std::size_t run_cetric(kagen::Graph&& input, Config const& conf, MPI_Comm comm) {
+std::size_t run_cetric(kagen::Graph const& input, Config const& conf, MPI_Comm comm) {
     TriangleCounter triangles;
-    auto [G, threshold] = phases::input_graph(std::move(input), conf, comm);
+    auto [G, threshold] = phases::input_graph(input, conf, comm);
     phases::primary_load_balancing(G, conf);
     auto G_oriented = phases::preprocessing_cetric(G, conf);
     G               = {};
@@ -74,9 +74,9 @@ std::size_t run_cetric(kagen::Graph&& input, Config const& conf, MPI_Comm comm) 
 
 /// CETRIC (with the ghosts' out-edges)
 template <class CommunicationPolicy>
-std::size_t run_cetric_x(kagen::Graph&& input, Config const& conf, MPI_Comm comm) {
+std::size_t run_cetric_x(kagen::Graph const& input, Config const& conf, MPI_Comm comm) {
     TriangleCounter triangles;
-    auto [G, threshold] = phases::input_graph(std::move(input), conf, comm);
+    auto [G, threshold] = phases::input_graph(input, conf, comm);
     phases::primary_load_balancing(G, conf);
     auto G_oriented = phases::preprocessing_cetric_x(G, conf);
     G               = {};

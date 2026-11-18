@@ -76,9 +76,9 @@ namespace phases {
 
 /// The input graph with compact ids (ghosts found, their owners looked up). Returns it and the message queue's
 /// threshold (from the input graph).
-inline std::pair<graph::CsrGraph, std::size_t> input_graph(kagen::Graph&& input, Config const& conf, MPI_Comm comm) {
+inline std::pair<graph::CsrGraph, std::size_t> input_graph(kagen::Graph const& input, Config const& conf, MPI_Comm comm) {
     CALI_CXX_MARK_SCOPE("input_graph");
-    auto              G         = graph::build_input_graph(std::move(input), comm);
+    auto              G         = graph::build_input_graph(input, comm);
     std::size_t const threshold = get_threshold(G, conf);
     return {std::move(G), threshold};
 }

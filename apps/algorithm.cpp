@@ -20,11 +20,11 @@
 namespace cetric {
 
 /// katric's own algorithms (cetric, patric, cetric-x with either communication policy). ingest() keeps the input;
-/// reset() hands each run a fresh copy, which the algorithm builds its graphs from.
+/// every run only reads it to build its graphs, so nothing is copied per iteration.
 namespace {
 class KatricAlgorithm final : public AbstractAlgorithm {
 public:
-    using RunFunction = std::function<std::size_t(kagen::Graph&&, Config const&, MPI_Comm)>;
+    using RunFunction = std::function<std::size_t(kagen::Graph const&, Config const&, MPI_Comm)>;
 
     KatricAlgorithm(Config const& conf, MPI_Comm comm, RunFunction run) : conf_(conf), comm_(comm), run_(std::move(run)) {}
 
@@ -34,12 +34,11 @@ public:
     }
 
     void reset() override {
-        input_          = pristine_;
         triangle_count_ = 0;
     }
 
     void run() override {
-        triangle_count_ = run_(std::move(input_), conf_, comm_);
+        triangle_count_ = run_(pristine_, conf_, comm_);
     }
 
     [[nodiscard]] std::size_t triangle_count() const override {
@@ -77,7 +76,6 @@ private:
     MPI_Comm                  comm_;
     RunFunction               run_;
     kagen::Graph              pristine_;
-    kagen::Graph              input_;
     std::size_t               triangle_count_ = 0;
 };
 
@@ -85,16 +83,16 @@ template <typename CommunicationPolicy>
 KatricAlgorithm::RunFunction select_run(Algorithm algorithm) {
     switch (algorithm) {
         case Algorithm::cetric:
-            return [](kagen::Graph&& input, Config const& conf, MPI_Comm comm) {
-                return run_cetric(std::move(input), conf, comm, CommunicationPolicy{});
+            return [](kagen::Graph const& input, Config const& conf, MPI_Comm comm) {
+                return run_cetric(input, conf, comm, CommunicationPolicy{});
             };
         case Algorithm::patric:
-            return [](kagen::Graph&& input, Config const& conf, MPI_Comm comm) {
-                return run_patric(std::move(input), conf, comm, CommunicationPolicy{});
+            return [](kagen::Graph const& input, Config const& conf, MPI_Comm comm) {
+                return run_patric(input, conf, comm, CommunicationPolicy{});
             };
         case Algorithm::cetric_x:
-            return [](kagen::Graph&& input, Config const& conf, MPI_Comm comm) {
-                return run_cetric_x(std::move(input), conf, comm, CommunicationPolicy{});
+            return [](kagen::Graph const& input, Config const& conf, MPI_Comm comm) {
+                return run_cetric_x(input, conf, comm, CommunicationPolicy{});
             };
     }
     throw std::invalid_argument("unknown algorithm");
