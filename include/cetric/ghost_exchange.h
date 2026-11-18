@@ -31,6 +31,7 @@
 #include "cetric/caliper.h"
 #include "cetric/config.h"
 #include "cetric/message_statistics.h"
+#include "cetric/message_tags.h"
 #include "cetric/util.h"
 
 namespace cetric {
@@ -52,7 +53,7 @@ template <typename Graph, typename Sources, typename VertexToMessage>
     Sources&&         sources,
     VertexToMessage&& vertex_to_message,
     GhostExchangeMode mode,
-    int               tag,
+    MessageTag        tag,
     std::size_t       volume_per_message = 1
 ) {
     using Message           = std::remove_cvref_t<decltype(vertex_to_message(*std::ranges::begin(sources)))>;

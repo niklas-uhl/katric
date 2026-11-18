@@ -29,7 +29,7 @@
 #include <gtest/gtest.h>
 #include <mpi.h>
 
-#include "cetric/communicator.h"
+#include "cetric/message_tags.h"
 #include "cetric/config.h"
 #include "cetric/datastructures/graph_definitions.h"
 #include "cetric/ghost_exchange.h"
@@ -76,7 +76,7 @@ TEST_P(Orientation, GlobalDegree) {
             G,
             [&](Handle v) { return G.degree(v); },
             mode,
-            cetric::as_int(cetric::MessageTag::Orientation)
+            cetric::MessageTag::Orientation
         );
         ASSERT_EQ(received[mode].size(), G.ghost_count());
         for (Handle const g: G.ghosts()) {

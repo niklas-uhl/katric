@@ -44,7 +44,7 @@
 #include <kassert/kassert.hpp>
 #include <mpi.h>
 
-#include "cetric/communicator.h"
+#include "cetric/message_tags.h"
 #include "cetric/message_statistics.h"
 #include "cetric/util.h"
 
@@ -113,7 +113,7 @@ inline kagen::Graph run(kagen::Graph&& G, std::span<std::size_t const> cost, MPI
     balanced.representation = kagen::GraphRepresentation::CSR;
     balanced.vertex_range   = {last - recv_nodes, last};
     balanced.adjncy.resize(recv_edges);
-    int const tag = as_int(MessageTag::LoadBalancing);
+    auto const tag = MessageTag::LoadBalancing;
     dstl::redistribute(degrees, balanced_degrees, comm, tag);
     dstl::redistribute(G.adjncy, balanced.adjncy, comm, tag);
     balanced.xadj.resize(recv_nodes + 1, 0);

@@ -26,30 +26,15 @@
 #ifndef PARALLEL_TRIANGLE_COUNTER_UTIL_H
 #define PARALLEL_TRIANGLE_COUNTER_UTIL_H
 
-#include <array>
-#include <atomic>
+#include <algorithm>
 #include <cstddef>
+#include <cstdio>
 #include <cstdlib>
-#include <exception>
-#include <iostream>
-#include <istream>
-#include <iterator>
-#include <ostream>
-#include <set>
-#include <sstream>
+#include <string>
 #include <vector>
 
-#include <caliper/cali.h>
-#include <fmt/core.h>
-#include <fmt/ostream.h>
-#include <fmt/ranges.h>
 #include <mpi.h>
-#include <tbb/blocked_range.h>
-#include <tbb/parallel_scan.h>
 #include <unistd.h>
-
-#include <spdlog/spdlog.h>
-#include "cetric/datastructures/graph_definitions.h"
 
 namespace cetric {
 using PEID = int;
@@ -86,34 +71,6 @@ using PEID = int;
     #endif
 #endif
 
-struct MPIException : public std::exception {
-    MPIException(const std::string& msg) : msg_() {
-        PEID rank;
-        MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-        msg_ = fmt::format("[R{}] {}", rank, msg);
-    }
-    const char* what() const throw() {
-        return msg_.c_str();
-    }
-
-private:
-    std::string msg_;
-};
-
-inline void check_mpi_error(int errcode, const std::string& file, int line) {
-    if (errcode != MPI_SUCCESS) {
-        std::array<char, MPI_MAX_ERROR_STRING> buf;
-        int                                    resultlen;
-        MPI_Error_string(errcode, buf.data(), &resultlen);
-        std::string msg(buf.begin(), buf.begin() + resultlen);
-        msg = msg + " in " + file + ":" + std::to_string(line);
-        throw MPIException(msg);
-    }
-}
-
-/// Barrier in its own Caliper region `barrier`, nested in the phase that calls it. The phase's exclusive time is then
-/// the rank's own work, and the barrier's time is the wait for the slowest rank (load imbalance).
-/// The rank of the calling process in `comm`.
 inline PEID comm_rank(MPI_Comm comm) {
     PEID rank;
     MPI_Comm_rank(comm, &rank);
@@ -143,80 +100,7 @@ constexpr unsigned long long log2(unsigned long long x) {
 #endif
 }
 
-template <class T>
-std::ostream& operator<<(std::ostream& out, const std::vector<T>& v) {
-    if (v.empty()) {
-        out << "[]";
-    } else {
-        out << "[";
-        for (const auto& elem: v) {
-            out << elem << ", ";
-            ;
-        }
-        out << "\b\b]";
-    }
-    return out;
-}
-
-template <class T, class V>
-std::ostream& operator<<(std::ostream& out, const std::pair<T, V>& p) {
-    return out << "<" << p.first << ", " << p.second << ">";
-}
-
-template <typename IteratorType>
-typename IteratorType::value_type parallel_prefix_sum(IteratorType begin, IteratorType end) {
-    size_t size = end - begin;
-    return tbb::parallel_scan(
-        tbb::blocked_range<size_t>(0, size),
-        0,
-        [&begin,
-         &end,
-         &size](tbb::blocked_range<size_t> const& r, typename IteratorType::value_type sum, bool is_final_scan) ->
-        typename IteratorType::value_type {
-            auto temp = sum;
-            for (size_t i = r.begin(); i < r.end(); ++i) {
-                auto temp_prev = temp;
-                temp += *(begin + i);
-                if (is_final_scan) {
-                    *(begin + i) = temp_prev;
-                }
-            }
-            return temp;
-        },
-        std::plus<typename IteratorType::value_type>{}
-    );
-}
 } // namespace cetric
 
-
-static thread_local int my_tid   = -1;
-static std::atomic<int> next_tid = 0;
-class ConcurrencyTracker {
-public:
-    ConcurrencyTracker(size_t max_threads) : tid_regions(3 * max_threads) {}
-    void track(const std::string& region) {
-        if (my_tid == -1) {
-            my_tid = next_tid.fetch_add(1, std::memory_order_relaxed);
-        }
-        tid_regions[my_tid].insert(region);
-    }
-    std::string dump() {
-        int                        end = next_tid;
-        std::map<std::string, int> m;
-        for (int i = 0; i < end; i++) {
-            for (auto n: tid_regions[i]) {
-                m[n] += 1;
-            }
-        }
-        std::stringstream out;
-        for (auto& kv : m) {
-          out << kv.first << "[" << kv.second << "]; ";
-        }
-        return out.str();
-    }
-
-private:
-    std::vector<std::set<std::string>> tid_regions;
-};
 
 #endif // PARALLEL_TRIANGLE_COUNTER_UTIL_H

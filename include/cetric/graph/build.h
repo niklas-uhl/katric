@@ -87,7 +87,7 @@ inline kagen::Graph to_kagen_graph(CsrGraph const& G) {
 /// by ghost slot (handle - n). Message counters as push_to_ghosts(), two words per entry (vertex and value).
 template <typename Graph, typename ValueFunc>
 std::vector<std::uint64_t>
-exchange_ghost_values(Graph const& G, ValueFunc&& value, GhostExchangeMode mode, int tag) {
+exchange_ghost_values(Graph const& G, ValueFunc&& value, GhostExchangeMode mode, MessageTag tag) {
     // (vertex, value)
     auto const received = push_to_ghosts(
         G,

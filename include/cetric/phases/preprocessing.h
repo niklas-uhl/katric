@@ -13,7 +13,7 @@
 #include <caliper/cali.h>
 
 #include "cetric/caliper.h"
-#include "cetric/communicator.h"
+#include "cetric/message_tags.h"
 #include "cetric/config.h"
 #include <kagen.h>
 #include "cetric/ghost_exchange.h"
@@ -50,13 +50,13 @@ inline std::vector<std::size_t> vertex_costs(graph::CsrGraph const& G, Config co
             G,
             [&](Handle v) { return G.degree(v); },
             conf.degree_exchange,
-            as_int(MessageTag::CostFunction)
+            MessageTag::CostFunction
         );
         for (Handle const v: G.local_nodes()) {
             out_degree[v] = std::ranges::count_if(G.neighbors(v), [&](Handle u) { return key(u) > key(v); });
         }
         auto const ghost_out_degree =
-            graph::exchange_ghost_values(G, [&](Handle v) { return out_degree[v]; }, conf.degree_exchange, as_int(MessageTag::CostFunctionOutDegree));
+            graph::exchange_ghost_values(G, [&](Handle v) { return out_degree[v]; }, conf.degree_exchange, MessageTag::CostFunctionOutDegree);
         std::ranges::copy(ghost_out_degree, out_degree.begin() + static_cast<std::ptrdiff_t>(layer.n()));
     }
     CALI_CXX_MARK_SCOPE("cost_function_evaluation");
@@ -102,7 +102,7 @@ std::vector<std::uint64_t> ghost_degrees(Graph const& G, Config const& conf) {
         G,
         [&](graph::Handle v) { return G.degree(v); },
         conf.degree_exchange,
-        as_int(MessageTag::Orientation)
+        MessageTag::Orientation
     );
 }
 

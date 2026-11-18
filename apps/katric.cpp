@@ -53,7 +53,6 @@
 #include "cetric/config.h"
 #include "cetric/ghost_exchange.h"
 #include "cetric/input.h"
-#include "cetric/timer.h"
 
 int main(int argc, char* argv[]) {
     int thread_support_level;
@@ -142,10 +141,10 @@ int main(int argc, char* argv[]) {
             {
                 // the algorithm's run time; its maximum across ranks in the timers output is the iteration's run time
                 CALI_CXX_MARK_SCOPE("total");
-                cetric::profiling::Timer timer;
+                double const start = MPI_Wtime();
                 algorithm->run();
                 MPI_Barrier(comm);
-                local_time = timer.elapsed_time();
+                local_time = MPI_Wtime() - start;
             }
             iteration_annotation.end();
             triangles   = algorithm->triangle_count();
