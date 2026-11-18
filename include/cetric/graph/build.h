@@ -12,9 +12,7 @@
 #include <utility>
 #include <vector>
 
-#include <kamping/types/contiguous_type.hpp>
-#include <kamping/types/mpi_type_traits.hpp>
-#include <kamping/types/scoped_datatype.hpp>
+#include <kamping/v2/types/std/unsafe/utility.hpp>
 #include <kassert/kassert.hpp>
 #include <mpi.h>
 #include <tlx/vector_free.hpp>
@@ -90,19 +88,12 @@ inline LocalGraphView to_local_graph_view(CsrGraph const& G) {
 /// by ghost slot (handle - n). Message counters as push_to_ghosts(), two words per entry (vertex and value).
 template <typename Graph, typename ValueFunc>
 std::vector<std::uint64_t> exchange_ghost_values(Graph const& G, ValueFunc&& value, GhostExchange exchange, int tag) {
-    struct Entry {
-        NodeId        node = 0;
-        std::uint64_t data = 0;
-    };
-    static_assert(sizeof(Entry) == 2 * sizeof(std::uint64_t));
-    kamping::types::ScopedDatatype const entry_type{
-        kamping::types::mpi_type_traits<std::array<std::uint64_t, 2>>::data_type()};
+    // (vertex, value)
     auto const received = push_to_ghosts(
         G,
         G.local_nodes(),
-        [&](Handle v) { return Entry{G.global_id(v), static_cast<std::uint64_t>(value(v))}; },
+        [&](Handle v) { return std::pair<NodeId, std::uint64_t>{G.global_id(v), static_cast<std::uint64_t>(value(v))}; },
         exchange,
-        entry_type.data_type(),
         tag,
         2
     );

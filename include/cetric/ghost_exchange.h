@@ -20,11 +20,13 @@
 #include <kamping/v2/collectives/alltoall.hpp>
 #include <kamping/v2/collectives/alltoallv.hpp>
 #include <kamping/v2/p2p/mrecv.hpp>
+#include <kamping/v2/type_pool.hpp>
+#include <kamping/v2/views/auto_counts_view.hpp>
+#include <kamping/v2/views/auto_displs_view.hpp>
+#include <kamping/v2/views/resize_v_view.hpp>
 #include <kamping/v2/views/resize_view.hpp>
 #include <kamping/v2/views/with_counts_view.hpp>
 #include <kamping/v2/views/with_displs_view.hpp>
-#include <kamping/v2/views/with_type_view.hpp>
-#include <kamping/v2/views/with_value_type_view.hpp>
 #include <mpi.h>
 
 #include "cetric/caliper.h"
@@ -57,7 +59,9 @@ inline GhostExchange degree_exchange(Config const& conf) {
 /// message of every ghost it holds. Deduplication: a vertex's neighborhood is scanned at once, so remembering per rank
 /// the last vertex sent there suffices. `vertex_to_message` is only called for vertices with a remote neighbor.
 ///
-/// `message_type` is the MPI datatype of `Message`. `tag` must not be in use on `comm` during the call (sparse mode).
+/// `Message` must have a kamping-v2 datatype (a builtin type, or `kamping::v2::datatype_traits`, e.g. `std::pair` with
+/// kamping/v2/types/std/unsafe/utility.hpp, as its bytes); it is registered in a type pool for the call. `tag` must not be in use on `comm`
+/// during the call (sparse mode).
 /// Reports the message counters of the exchange (sent/received messages and volume) to the open Caliper region, with
 /// the volume in units of `volume_per_message`; the grid mode reports no received message count, since its unordered
 /// receive does not tell the sources apart. Caliper regions `prepare` (bucketing) and `exchange`.
@@ -67,7 +71,6 @@ template <typename Graph, typename Sources, typename VertexToMessage>
     Sources&&         sources,
     VertexToMessage&& vertex_to_message,
     GhostExchange     exchange,
-    MPI_Datatype      message_type,
     int               tag,
     std::size_t       volume_per_message = 1
 ) {
@@ -124,6 +127,7 @@ template <typename Graph, typename Sources, typename VertexToMessage>
     {
         CALI_CXX_MARK_SCOPE("exchange");
         namespace views = kamping::v2::views;
+        kamping::v2::type_pool pool; // commits Message's datatype on first use
         switch (exchange.mode) {
             case GhostExchangeMode::sparse: {
                 std::vector<std::pair<int, std::span<Message const>>> messages;
@@ -141,9 +145,9 @@ template <typename Graph, typename Sources, typename VertexToMessage>
                 std::vector<Message> message;
                 dstl::sparse_alltoall(
                     dstl::sparse_alltoall_algorithm::nbx,
-                    messages | views::with_value_type(message_type),
+                    messages | views::with_auto_value_pool(pool),
                     [&](kamping::v2::probe_result probe) {
-                        kamping::v2::mrecv(message | views::with_type(message_type) | views::resize, std::move(probe));
+                        kamping::v2::mrecv(message | views::with_auto_pool(pool) | views::resize, std::move(probe));
                         stats.received_messages++;
                         recv_buf.insert(recv_buf.end(), message.begin(), message.end());
                     },
@@ -153,21 +157,14 @@ template <typename Graph, typename Sources, typename VertexToMessage>
                 break;
             }
             case GhostExchangeMode::dense: {
-                std::vector<int> recv_counts(size);
-                kamping::v2::alltoall(send_counts, recv_counts, comm);
-                std::vector<int> recv_displs(size, 0);
-                for (std::size_t r = 1; r < size; ++r) {
-                    recv_displs[r] = recv_displs[r - 1] + recv_counts[r - 1];
-                }
-                recv_buf.resize(static_cast<std::size_t>(recv_displs.back() + recv_counts.back()));
-                kamping::v2::alltoallv(
-                    send_buf | views::with_type(message_type) | views::with_counts(send_counts)
+                // the receive counts are deferred: alltoallv exchanges them first
+                auto [sent, received] = kamping::v2::alltoallv(
+                    send_buf | views::with_auto_pool(pool) | views::with_counts(send_counts)
                         | views::with_displs(send_displs),
-                    recv_buf | views::with_type(message_type) | views::with_counts(recv_counts)
-                        | views::with_displs(recv_displs),
+                    recv_buf | views::with_auto_pool(pool) | views::auto_counts() | views::auto_displs() | views::resize_v,
                     comm
                 );
-                for (int count: recv_counts) {
+                for (int count: received.mpi_counts()) {
                     stats.received_messages += count > 0 ? 1 : 0;
                 }
                 break;
@@ -181,9 +178,9 @@ template <typename Graph, typename Sources, typename VertexToMessage>
                 grid_comm_cache& grid_comms = exchange.grid_comms != nullptr ? *exchange.grid_comms : call_cache;
                 auto const&      grid       = grid_comms.get_or_create(comm, make_grid);
                 dstl::grid_alltoallv(
-                    send_buf | views::with_type(message_type) | views::with_counts(send_counts)
+                    send_buf | views::with_auto_pool(pool) | views::with_counts(send_counts)
                         | views::with_displs(send_displs),
-                    recv_buf | views::with_type(message_type) | views::resize,
+                    recv_buf | views::with_auto_pool(pool) | views::resize,
                     grid,
                     dstl::layout::unordered{}
                 );
