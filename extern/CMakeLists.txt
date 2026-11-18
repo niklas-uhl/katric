@@ -147,10 +147,12 @@ FetchContent_Declare(
   GIT_SHALLOW ON
   SYSTEM EXCLUDE_FROM_ALL)
 
+# Reflection (Boost.PFR, as_struct datatypes) is not needed by katric.
+set(KAMPING_V2_ENABLE_REFLECTION OFF)
 FetchContent_Declare(
   kamping-v2
   GIT_REPOSITORY https://github.com/kamping-site/kamping-v2
-  GIT_TAG ff22928f1c827fc5e569d04827861d9e48b48337 # main
+  GIT_TAG 0f906667db6d87bffd81f9e4d043c32ad05c395c # main
   SYSTEM EXCLUDE_FROM_ALL)
 
 set(MESSAGE_QUEUE_BLOCKING_RECEIVE ON CACHE BOOL "Receive messages blocking")
