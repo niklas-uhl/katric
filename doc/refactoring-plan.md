@@ -128,7 +128,14 @@ by those `.cpp` files):
       SuperMUC-NG shuts down at the end of 2026): `lb-cost` (idea 9: DiTriC on RHG, primary cost function none / DPD /
       IDPD), `no-sync` (upper bound for idea 5: DiTriC and CETRIC on RGG / RHG, `global-synchronization` on / off),
       `degree-exchange` (step 3's transports dense / sparse / grid, DiTriC on permuted RGG and RHG). Every
-      configuration verified on the laptop (4 ranks, `--verify`)
+      configuration verified on the laptop (4 ranks, `--verify`). First results (`*_26_11_18`, 48-768 cores):
+      - `degree-exchange`: dense / sparse / grid within 5-10% of each other on permuted RGG (2.7-5.3 s) and RHG
+      - `no-sync`: without barriers patric is unchanged, cetric-x on RGG 7-11% faster (48/192 cores; 768 not run)
+      - `lb-cost`: DPD / IDPD make RHG ~2x slower (48/192): the repartitioning costs 0.7-0.8 s and the global phase
+        grows from 0.1-0.15 to 0.6-1.05 s, the local phase gains only 5-10%. At 768 every DPD/IDPD run died: the
+        global edge array (> 2^31 entries) overflowed `dstl::redistribute`'s int displacements (fixed in PR #126)
+      Extended (2026-11-18): `degree-exchange` and `no-sync` by RMAT and GNM (the paper's 2^16 / 2^20 per core) and
+      1536 / 3072 cores (RHG at 3072 has the 19M-degree hub)
 
 ### 1. Prune
 

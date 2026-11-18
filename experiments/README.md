@@ -33,8 +33,8 @@ further notebooks next to it (`just notebook <name>`). `uv sync --group eval` in
 | `paper-hybrid-real-world` | Hybrid CETRIC (MPI + TBB), 1 to 48 threads per rank |
 | `phases` | Phase breakdown of DiTriC and CETRIC (one thread per rank) on RGG 2D / RHG with and without vertex permutation (locality x skew), node multiples up to 3072 cores |
 | `lb-cost` | DiTriC on RHG with primary load balancing `none` / `DPD` / `IDPD`, 48 to 768 cores (idea 9) |
-| `no-sync` | DiTriC and CETRIC on RGG / RHG with and without barriers between the phases, 48 to 768 cores (idea 5) |
-| `degree-exchange` | DiTriC on permuted RGG and RHG with `--degree-exchange dense` / `sparse` / `grid`, 48 to 768 cores |
+| `no-sync` | DiTriC and CETRIC on RGG / RHG / RMAT / GNM with and without barriers between the phases, 48 to 3072 cores (idea 5) |
+| `degree-exchange` | DiTriC on permuted RGG, RHG, RMAT and GNM with `--degree-exchange dense` / `sparse` / `grid`, 48 to 3072 cores |
 | `local/smoke` | The paper configurations on small inputs, every count verified |
 | `local/phases` | `phases` on a laptop (1 to 8 cores, smaller graphs) |
 

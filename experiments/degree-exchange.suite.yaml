@@ -1,16 +1,18 @@
 # Transport of the degree exchange (step 3 of doc/refactoring-plan.md, `--degree-exchange`): dense alltoallv (the
 # configs' choice and the largest preprocessing item without locality: 3.0 s at 48, 5.7 s at 1536 cores in `phases`),
 # NBX sparse all-to-all, and the 2D grid. Permuted RGG (no locality: every rank talks to almost every other one,
-# the worst case for sparse) and RHG with locality (few partner ranks, the best case for sparse).
+# the worst case for sparse), RHG with locality (few partner ranks, the best case for sparse), RMAT and GNM (no
+# locality; RMAT's hubs make the exchange irregular). Extended 2026-11-18 by RMAT/GNM and 1536/3072 cores: up to 768
+# the three transports were within 5-10% of each other.
 # Look at the region `degree_exchange` (sub-regions `prepare`, `exchange`); the rest of the run is identical.
 name: degree-exchange
 executable: apps/katric
 output_path_option_name: caliper-output
 threads_option_name: num-threads
-ncores: [48, 192, 768]
-max_cores: 768
+ncores: [48, 192, 768, 1536, 3072]
+max_cores: 3072
 threads_per_rank: [1]
-time_limit: 5
+time_limit: 10
 graphs:
   - generator: kagen
     type: rgg2d
@@ -24,6 +26,19 @@ graphs:
     N: 18
     M: 22
     gamma: 2.8
+    seed: 28475421
+    scale_weak: true
+  # no locality: RMAT (skewed, hubs at low ids) and GNM (uniform), the paper's weak-scaling sizes
+  - generator: kagen
+    type: rmat
+    N: 16
+    M: 20
+    seed: 28475421
+    scale_weak: true
+  - generator: kagen
+    type: gnm-undirected
+    N: 16
+    M: 20
     seed: 28475421
     scale_weak: true
 config:
