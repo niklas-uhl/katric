@@ -27,8 +27,10 @@ def _(mo):
         restrict_navigation=False,
         label="Experiment directories (select several to compare machines or suites)",
     )
-    browser
-    return (browser,)
+    # re-reads the selected directories, e.g. after new runs finished or `just fetch-from-*` copied more
+    reload = mo.ui.run_button(label="Reload files")
+    mo.vstack([browser, reload])
+    return browser, reload
 
 
 @app.cell(hide_code=True)
@@ -44,7 +46,8 @@ def _(mo, r):
 
 
 @app.cell(hide_code=True)
-def _(browser, katric_eval, mo):
+def _(browser, katric_eval, mo, reload):
+    reload  # clicking the button reruns this cell (and with it everything built on the loaded data)
     # a selected directory without profiles of its own stands for the experiment directories below it
     def _expand(d):
         if (d / "output").is_dir() or any(d.glob("*.cali")):
