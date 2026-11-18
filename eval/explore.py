@@ -86,9 +86,9 @@ def _(mo):
     mo.md("""
     ## Scaling
 
-    Run time of an iteration: maximum across ranks of the selected region, mean over the iterations. Hover for
-    details, click points (shift-click for more) to list their runs under *Details*, click a legend entry to
-    highlight a configuration.
+    Run time of an iteration: maximum across ranks of the selected region, mean over the iterations; error bars span
+    the fastest and the slowest iteration. Hover for details, click points (shift-click for more) to list their
+    runs under *Details*, click a legend entry to highlight a configuration.
     """)
     return
 
@@ -99,7 +99,7 @@ def _(pl, r, region, runs):
         r.timers.filter(region=region.value)
         .join(runs, on="run")
         .group_by("graph", "series", "machine", "config", "cores", "threads")
-        .agg(time=pl.col("max").mean())
+        .agg(time=pl.col("max").mean(), time_min=pl.col("max").min(), time_max=pl.col("max").max())
         .with_columns(line=pl.format("{} {}", "series", "threads"))  # one line per series and threads/rank
         .sort("graph", "series", "cores")
     )
@@ -110,19 +110,25 @@ def _(pl, r, region, runs):
 def _(alt, mo, region, times):
     _select = alt.selection_point(fields=["graph", "series", "cores", "threads"])
     _legend = alt.selection_point(fields=["series"], bind="legend")
+    _title = f"time of '{region.value}' [s]"
+    _base = alt.Chart().encode(
+        x=alt.X("cores:Q", scale=alt.Scale(type="log", base=2),
+                axis=alt.Axis(values=sorted(times["cores"].unique()))),  # ticks at the measured core counts
+        y=alt.Y("time:Q", scale=alt.Scale(type="log"), title=_title),
+        color=alt.Color("series:N", legend=alt.Legend(orient="bottom", direction="vertical", labelLimit=0)),
+        detail="line:N",
+        opacity=alt.condition(_select & _legend, alt.value(1.0), alt.value(0.15)),
+        tooltip=["series", "threads", "cores", alt.Tooltip("time:Q", format=".4g"),
+                 alt.Tooltip("time_min:Q", title="min", format=".4g"),
+                 alt.Tooltip("time_max:Q", title="max", format=".4g")],
+    )
     chart = mo.ui.altair_chart(
-        alt.Chart(times)
-        .mark_line(point=True)
-        .add_params(_select, _legend)
-        .encode(
-            x=alt.X("cores:Q", scale=alt.Scale(type="log", base=2),
-                    axis=alt.Axis(values=sorted(times["cores"].unique()))),  # ticks at the measured core counts
-            y=alt.Y("time:Q", scale=alt.Scale(type="log"), title=f"time of '{region.value}' [s]"),
-            color=alt.Color("series:N", legend=alt.Legend(orient="bottom", direction="vertical", labelLimit=0)),
-            shape=alt.Shape("threads:N", title="threads/rank"),
-            detail="line:N",
-            opacity=alt.condition(_select & _legend, alt.value(1.0), alt.value(0.15)),
-            tooltip=["series", "threads", "cores", alt.Tooltip("time:Q", format=".4g")],
+        alt.layer(
+            _base.mark_line(point=True).add_params(_select, _legend)
+            .encode(shape=alt.Shape("threads:N", title="threads/rank")),
+            # fastest and slowest iteration
+            _base.mark_errorbar(ticks=True).encode(y=alt.Y("time_min:Q", title=_title), y2="time_max:Q"),
+            data=times,
         )
         .properties(width=250, height=200)
         .facet(alt.Facet("graph:N", title=None), columns=3)
