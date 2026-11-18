@@ -133,11 +133,11 @@ private:
     mutable std::optional<dstl::grid_comm<dstl::execution_policy::seq>> grid_;
 };
 
-/// The neighborhoods of a CSR graph in global ids, each ascending. A neighborhood sorted by handle is [local
-/// vertices][ghosts below the local range][ghosts above], so in global order it is [ghosts below][local vertices][ghosts
-/// above]. Returns the head array of the same first_out.
+/// The neighborhoods of a CSR graph as global ids, each ascending: a head array for the same first_out, but not aligned
+/// with `head` entry by entry. A neighborhood sorted by handle is [local vertices][ghosts below the local range][ghosts
+/// above], so in global order it is [ghosts below][local vertices][ghosts above].
 inline std::vector<NodeId>
-global_head(VertexLayer const& layer, std::vector<EdgeId> const& first_out, std::vector<Handle> const& head) {
+head_as_global_ids(VertexLayer const& layer, std::vector<EdgeId> const& first_out, std::vector<Handle> const& head) {
     std::vector<NodeId> result(head.size());
     for (std::size_t v = 0; v + 1 < first_out.size(); ++v) {
         auto const first     = head.begin() + static_cast<std::ptrdiff_t>(first_out[v]);
@@ -233,17 +233,17 @@ public:
         return ghost_neighbors(c).size();
     }
 
-    /// The neighbors of local vertex `c` in global ids, ascending (after add_global_neighbors()). The global phase works
-    /// on these: messages carry global ids, and merging them needs no lookup per entry.
-    [[nodiscard]] std::span<NodeId const> global_neighbors(Handle c) const {
+    /// The neighbors of local vertex `c` as global ids, ascending (after add_neighbors_as_global_ids()). The global phase
+    /// works on these: messages carry global ids, and merging them needs no lookup per entry.
+    [[nodiscard]] std::span<NodeId const> neighbors_as_global_ids(Handle c) const {
         KASSERT(c < layer_->n());
-        KASSERT(global_head_.size() == head_.size(), "add_global_neighbors() was not called");
-        return {global_head_.data() + first_out_[c], first_out_[c + 1] - first_out_[c]};
+        KASSERT(head_as_global_ids_.size() == head_.size(), "add_neighbors_as_global_ids() was not called");
+        return {head_as_global_ids_.data() + first_out_[c], first_out_[c + 1] - first_out_[c]};
     }
 
-    /// Building step (after sort_neighborhoods()): the neighbors in global ids.
-    void add_global_neighbors() {
-        global_head_ = global_head(*layer_, first_out_, head_);
+    /// Building step (after sort_neighborhoods()): the neighbors as global ids.
+    void add_neighbors_as_global_ids() {
+        head_as_global_ids_ = head_as_global_ids(*layer_, first_out_, head_);
     }
 
     /// Building step: sorts every neighborhood by handle (local vertices first, then ghosts, each by global id).
@@ -279,13 +279,13 @@ private:
     std::shared_ptr<VertexLayer const> layer_;
     std::vector<EdgeId>                first_out_;
     std::vector<Handle>                head_;
-    std::vector<NodeId>                global_head_; // the neighbors in global ids, see global_neighbors()
+    std::vector<NodeId>                head_as_global_ids_; // see neighbors_as_global_ids()
     std::vector<EdgeId>                ghost_first_out_;
     std::vector<Handle>                ghost_head_;
 };
 
 /// The contracted graph of CETRIC and pre-CETRIC: a CSR graph over some of the local vertices (those with cut edges),
-/// neighborhoods sorted by handle and also kept in global ids. Shares the vertex layer (handles) with the graph it came
+/// neighborhoods sorted by handle and also kept as global ids. Shares the vertex layer (handles) with the graph it came
 /// from; its vertices are indexed 0..k-1 in handle order.
 class ContractedGraph {
 public:
@@ -310,7 +310,7 @@ public:
         for (std::size_t i = 0; i < vertices_.size(); ++i) {
             index_of_[vertices_[i]] = i;
         }
-        global_head_ = global_head(*layer_, first_out_, head_);
+        head_as_global_ids_ = head_as_global_ids(*layer_, first_out_, head_);
     }
 
     [[nodiscard]] std::shared_ptr<VertexLayer const> const& layer() const {
@@ -342,9 +342,10 @@ public:
     [[nodiscard]] Degree degree(Handle c) const {
         return neighbors(c).size();
     }
-    [[nodiscard]] std::span<NodeId const> global_neighbors(Handle c) const {
+    /// The neighbors of kept vertex `c` as global ids, ascending.
+    [[nodiscard]] std::span<NodeId const> neighbors_as_global_ids(Handle c) const {
         auto const i = to_local_idx(c);
-        return {global_head_.data() + first_out_[i], first_out_[i + 1] - first_out_[i]};
+        return {head_as_global_ids_.data() + first_out_[i], first_out_[i + 1] - first_out_[i]};
     }
 
     [[nodiscard]] bool is_owned(Handle c) const {
@@ -372,7 +373,7 @@ private:
     std::vector<std::size_t>           index_of_; // per local vertex: its index, or not_kept
     std::vector<EdgeId>                first_out_;
     std::vector<Handle>                head_;
-    std::vector<NodeId>                global_head_;
+    std::vector<NodeId>                head_as_global_ids_;
 };
 
 } // namespace cetric::graph

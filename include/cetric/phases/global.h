@@ -83,7 +83,7 @@ void process_message(
         if (!G.is_local(u)) {
             continue;
         }
-        auto const u_neighbors = G.global_neighbors(u);
+        auto const u_neighbors = G.neighbors_as_global_ids(u);
         // for the edge (v, u) we check the open wedges (v, u, w) for w in N+(u)
         counters.wedge_checks += u_neighbors.size();
         counters.intersection_size_global += entries.size() + u_neighbors.size();
@@ -105,7 +105,7 @@ void process_message(
 /// The message of `v`: [v, N+(v)...] in global ids, ascending.
 template <typename Graph>
 std::vector<graph::NodeId> make_message(Graph const& G, graph::Handle v) {
-    auto const                 neighbors = G.global_neighbors(v);
+    auto const                 neighbors = G.neighbors_as_global_ids(v);
     std::vector<graph::NodeId> message;
     message.reserve(1 + neighbors.size());
     message.push_back(G.global_id(v));

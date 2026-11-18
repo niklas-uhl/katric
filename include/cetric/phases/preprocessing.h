@@ -128,14 +128,15 @@ inline auto degree_key(graph::CsrGraph const& G, std::vector<std::uint64_t> cons
     };
 }
 
-/// DiTriC: degree exchange, orientation by degree, and the neighbors in global ids for the global phase (`global_neighbors`).
+/// DiTriC: degree exchange, orientation by degree, and the neighbors as global ids for the global phase (region
+/// `neighbors_as_global_ids`).
 inline graph::CsrGraph preprocessing_patric(graph::CsrGraph const& G, Config const& conf) {
     CALI_CXX_MARK_SCOPE("preprocessing");
     auto const ghost_degree = ghost_degrees(G, conf);
     auto       G_oriented   = orient_and_sort(G, degree_key(G, ghost_degree), false);
     {
-        CALI_CXX_MARK_SCOPE("global_neighbors");
-        G_oriented.add_global_neighbors();
+        CALI_CXX_MARK_SCOPE("neighbors_as_global_ids");
+        G_oriented.add_neighbors_as_global_ids();
     }
     return G_oriented;
 }
