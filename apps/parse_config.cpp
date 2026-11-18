@@ -90,6 +90,9 @@ cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::P
     app.add_flag("--pseudo2core", conf.pseudo2core);
 
     add_enum_option(app, "--degree-exchange", conf.degree_exchange);
+    // Removed in 401dcb9 (there are no barriers between the phases any more); still accepted, and ignored, so that job
+    // files generated before still run. Remove once they have.
+    app.add_flag("--global-synchronization", "Ignored (deprecated)");
 
     add_enum_option(app, "--algorithm", conf.algorithm);
 
