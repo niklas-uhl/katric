@@ -61,7 +61,6 @@ struct Config {
     size_t                iterations                        = 1;
     bool                  verify                            = false;
     std::string           primary_cost_function             = "N";
-    std::string           secondary_cost_function           = "none";
     Algorithm             algorithm                         = Algorithm::cetric;
     Threshold             threshold                         = Threshold::local_nodes;
     double                threshold_scale                   = 1.0;

@@ -79,32 +79,15 @@ void global_phase(
     });
 }
 
-/// The global phase on the contracted graph (CETRIC, pre-CETRIC). After a secondary load balancing (`rebalanced`)
-/// some of its edges are local again; those go through a local phase first.
+/// The global phase on the contracted graph (CETRIC, pre-CETRIC): every vertex left in it sends its neighborhood.
 template <class CommunicationPolicy>
-void global_phase(
-    CompactGraph& G_compact, Config const& conf, std::size_t threshold, bool rebalanced, TriangleCounter& triangles
-) {
+void global_phase(CompactGraph& G_compact, Config const& conf, std::size_t threshold, TriangleCounter& triangles) {
     CALI_CXX_MARK_SCOPE("global_phase");
-    // the neighborhoods are sorted by id_outward; without internal edges that is the same as id
-    if (rebalanced) {
-        std::vector<RankEncodedNodeId> interface_nodes;
-        triangles([&](auto emit) {
-            interface_nodes = cetric::local_phase::run<false>(G_compact, conf, emit, node_ordering::id_outward(conf.rank));
-        });
-        for_each_local_node(G_compact, conf, conf.local_parallel, [&](auto node) {
-            G_compact.remove_internal_edges(node, node_ordering::id_outward(conf.rank));
-        });
-        triangles([&](auto emit) {
-            cetric::global_phase::run<CommunicationPolicy>(G_compact, conf, threshold, interface_nodes, emit, node_ordering::id());
-        });
-    } else {
-        triangles([&](auto emit) {
-            cetric::global_phase::run<CommunicationPolicy>(
-                G_compact, conf, threshold, G_compact.local_nodes(), emit, node_ordering::id()
-            );
-        });
-    }
+    triangles([&](auto emit) {
+        cetric::global_phase::run<CommunicationPolicy>(
+            G_compact, conf, threshold, G_compact.local_nodes(), emit, node_ordering::id()
+        );
+    });
 }
 
 /// The sum of the ranks' triangle counts, on rank 0.
@@ -142,9 +125,8 @@ std::size_t run_cetric(DistributedGraph<>& G, Config const& conf) {
     phases::preprocessing_cetric(G, conf);
     phases::local_phase<node_ordering::id_outward>(G, conf, triangles);
     auto       G_compact  = phases::contraction(G, conf, node_ordering::degree_outward(G));
-    bool const rebalanced = phases::secondary_load_balancing(G_compact, conf);
     phases::preprocessing_global(G_compact, conf);
-    phases::global_phase<CommunicationPolicy>(G_compact, conf, threshold, rebalanced, triangles);
+    phases::global_phase<CommunicationPolicy>(G_compact, conf, threshold, triangles);
     return phases::reduce(triangles, G.comm());
 }
 
@@ -157,7 +139,7 @@ std::size_t run_cetric_x(DistributedGraph<>& G, Config const& conf) {
     phases::preprocessing_cetric_x(G, conf);
     phases::local_phase<node_ordering::id_outward>(G, conf, triangles);
     auto G_compact = phases::contraction(G, conf, node_ordering::id_outward(conf.rank));
-    phases::global_phase<CommunicationPolicy>(G_compact, conf, threshold, false, triangles);
+    phases::global_phase<CommunicationPolicy>(G_compact, conf, threshold, triangles);
     return phases::reduce(triangles, G.comm());
 }
 

@@ -1,5 +1,5 @@
 // CETRIC and pre-CETRIC between the local and the global phase: contraction to the cut edges, and for pre-CETRIC the
-// optional secondary load balancing and the contracted graph's orientation. Each phase is a Caliper region and ends
+// contracted graph's orientation. Each phase is a Caliper region and ends
 // in a barrier with `--global-synchronization`.
 #pragma once
 
@@ -39,24 +39,6 @@ CompactGraph contraction(DistributedGraph<>& G, Config const& conf, Ordering con
     profiling::counter_add("compact_edges", static_cast<std::int64_t>(G_compact.local_edge_count_with_ghost_edges()));
     ConditionalBarrier(conf.global_synchronization, G.comm());
     return G_compact;
-}
-
-/// pre-CETRIC: repartitions the contracted graph (`--secondary-cost-function`, off with "none"). Returns whether it
-/// did; then some of the contracted graph's edges are local again.
-inline bool secondary_load_balancing(CompactGraph& G_compact, Config const& conf) {
-    CALI_CXX_MARK_SCOPE("secondary_load_balancing");
-    bool const rebalance = conf.secondary_cost_function != "none";
-    if (rebalance) {
-        auto cost_function [[maybe_unused]] = with_execution_policy(conf, [&](auto policy) {
-            return CostFunctionRegistry<CompactGraph>::get(conf.secondary_cost_function, G_compact, conf, std::move(policy));
-        });
-        auto       view  = G_compact.to_local_graph_view();
-        auto const range = node_range_of(view);
-        G_compact        = CompactGraph(std::move(view), range, G_compact.comm());
-        compute_ghost_ranks(G_compact, conf);
-    }
-    ConditionalBarrier(conf.global_synchronization, G_compact.comm());
-    return rebalance;
 }
 
 /// pre-CETRIC: degree exchange and orientation on the contracted graph.

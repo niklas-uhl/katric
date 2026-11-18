@@ -320,6 +320,12 @@ Compact IDs fit 32 bits per rank (n + g < 2^32), which would halve the adjacency
       `paper-hybrid-real-world` (run it from the paper commit). `intersection()` moved below the kernels it calls (it
       found them only through ADL). Identical counters and triangle counts on the 70 reference runs and the 54 extra
       load-balancing runs
+- [x] Dropped `--secondary-cost-function` and the "rebalanced" branch of the contracted global phase (decided
+      2026-11-18): it never rebalanced (the cost was computed, then the contracted graph rebuilt in place, so the
+      local pass after it found nothing). Idea 1 gets a real rebalancing step on the new graph. Identical counters
+- Stage 2 carried out as a new pipeline next to the old graph (decided 2026-11-18): the new graph types and phase
+  code first, then the algorithms move over one at a time (DiTriC, CETRIC, pre-CETRIC), each checked by identical
+  counters; the old graph code goes at the end
 - [ ] Stage 2, the swap, as a pipeline of immutable graphs built from KaCCv2's building blocks (decided 2026-11-13;
       adopt KaCCv2's interface and layering, not `SplitDistributedCSRGraph` or `FilteredGraph`):
       - input graph: what KaGen and the load balancer produce (`LocalGraphView`, global IDs), unchanged
