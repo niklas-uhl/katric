@@ -326,6 +326,20 @@ Compact IDs fit 32 bits per rank (n + g < 2^32), which would halve the adjacency
 - Stage 2 carried out as a new pipeline next to the old graph (decided 2026-11-18): the new graph types and phase
   code first, then the algorithms move over one at a time (DiTriC, CETRIC, pre-CETRIC), each checked by identical
   counters; the old graph code goes at the end
+- [x] Stage 2, DiTriC on the new pipeline (2026-11-18): `graph/graph.h` (`VertexLayer`: range, ghosts' global ids and
+      owners sorted by global id, partition table; `CsrGraph`: rows over handles, optional ghost rows and rows in
+      global ids), `graph/build.h` (input graph, `exchange_ghost_values` on push_to_ghosts, `orient`), `phases/`
+      (preprocessing with the cost functions, local and global kernels, drivers). Identical counters on the 124
+      reference runs. Notes:
+      - the input graph is built inside the run (region `input_graph`, replacing `ghost_ranks`): one sort of the cut
+        edges by (head, position) gives the ghosts and the handles. The old graph was built in the untimed `reset`
+      - the global phase works on a copy of each out-row in global ids (`global_rows` in preprocessing): merging a
+        message against handles needed a ghost-id lookup per step (1.65x slower message handling on permuted RGG).
+        Oriented graph = m/2 handles + m/2 global ids, the old graph held m entries
+      - laptop, 8 ranks, 2^18 vertices / 2^22 edges: permuted RGG 0.49 -> 0.41 s per iteration (preprocessing 0.16 ->
+        0.06 s, global phase 0.29 -> 0.25 s, building 0.085 s), RHG 0.094 -> 0.082 s
+      - the DPD hang on graphs with fewer vertices than ranks is gone for DiTriC (the old cost function exchanged the
+        degrees a second time on ranks without ghosts, a collective only those ranks entered)
 - [ ] Stage 2, the swap, as a pipeline of immutable graphs built from KaCCv2's building blocks (decided 2026-11-13;
       adopt KaCCv2's interface and layering, not `SplitDistributedCSRGraph` or `FilteredGraph`):
       - input graph: what KaGen and the load balancer produce (`LocalGraphView`, global IDs), unchanged

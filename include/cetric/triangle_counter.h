@@ -6,7 +6,10 @@
 #include <functional>
 #include <tuple>
 
+#include <caliper/cali.h>
+#include <kamping/types/mpi_type_traits.hpp>
 #include <kassert/kassert.hpp>
+#include <mpi.h>
 #include <spdlog/spdlog.h>
 #include <tbb/combinable.h>
 #include <tbb/concurrent_vector.h>
@@ -58,4 +61,19 @@ private:
     tbb::concurrent_vector<graph::Triangle<graph::NodeId>> triangles_;
 };
 
+namespace phases {
+
+/// The sum of the ranks' triangle counts, on rank 0.
+inline std::size_t reduce(TriangleCounter& triangles, MPI_Comm comm) {
+    std::size_t total = 0;
+    {
+        CALI_CXX_MARK_SCOPE("reduce");
+        std::size_t const local = triangles.count();
+        MPI_Reduce(&local, &total, 1, kamping::types::mpi_type_traits<std::size_t>::data_type(), MPI_SUM, 0, comm);
+    }
+    triangles.verify();
+    return total;
+}
+
+} // namespace phases
 } // namespace cetric

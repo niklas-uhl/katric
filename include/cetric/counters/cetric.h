@@ -64,21 +64,6 @@ std::vector<RankEncodedNodeId> local_phase(DistributedGraph<>& G, Config const& 
     return interface_nodes;
 }
 
-/// DiTriC's global phase: sends the neighborhoods of the local phase's interface vertices.
-template <class CommunicationPolicy>
-void global_phase(
-    DistributedGraph<>&                   G,
-    Config const&                         conf,
-    std::size_t                           threshold,
-    std::vector<RankEncodedNodeId> const& interface_nodes,
-    TriangleCounter&                      triangles
-) {
-    CALI_CXX_MARK_SCOPE("global_phase");
-    triangles([&](auto emit) {
-        cetric::global_phase::run<CommunicationPolicy>(G, conf, threshold, interface_nodes, emit, node_ordering::id());
-    });
-}
-
 /// The global phase on the contracted graph (CETRIC, pre-CETRIC): every vertex left in it sends its neighborhood.
 template <class CommunicationPolicy>
 void global_phase(CompactGraph& G_compact, Config const& conf, std::size_t threshold, TriangleCounter& triangles) {
@@ -90,31 +75,7 @@ void global_phase(CompactGraph& G_compact, Config const& conf, std::size_t thres
     });
 }
 
-/// The sum of the ranks' triangle counts, on rank 0.
-inline std::size_t reduce(TriangleCounter& triangles, MPI_Comm comm) {
-    std::size_t total = 0;
-    {
-        CALI_CXX_MARK_SCOPE("reduce");
-        std::size_t const local = triangles.count();
-        MPI_Reduce(&local, &total, 1, kamping::types::mpi_type_traits<std::size_t>::data_type(), MPI_SUM, 0, comm);
-    }
-    triangles.verify();
-    return total;
-}
-
 } // namespace phases
-
-/// DiTriC
-template <class CommunicationPolicy>
-std::size_t run_patric(DistributedGraph<>& G, Config const& conf) {
-    TriangleCounter   triangles;
-    std::size_t const threshold = phases::ghost_ranks(G, conf);
-    phases::primary_load_balancing(G, conf);
-    phases::preprocessing_patric(G, conf);
-    auto const interface_nodes = phases::local_phase<node_ordering::id>(G, conf, triangles);
-    phases::global_phase<CommunicationPolicy>(G, conf, threshold, interface_nodes, triangles);
-    return phases::reduce(triangles, G.comm());
-}
 
 /// pre-CETRIC
 template <class CommunicationPolicy>

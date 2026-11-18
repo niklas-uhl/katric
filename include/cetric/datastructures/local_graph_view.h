@@ -3,6 +3,8 @@
 #pragma once
 
 #include <cstddef>
+#include <limits>
+#include <utility>
 #include <vector>
 
 #include "cetric/datastructures/graph_definitions.h"
@@ -37,6 +39,20 @@ struct LocalGraphView {
         }
         return offsets;
     }
+
+    /// The half-open range of global ids of the nodes, (max, max) without nodes.
+    [[nodiscard]] std::pair<NodeId, NodeId> node_range() const {
+        if (node_info.empty()) {
+            return {std::numeric_limits<NodeId>::max(), std::numeric_limits<NodeId>::max()};
+        }
+        return {node_info.front().global_id, node_info.back().global_id + 1};
+    }
+};
+
+/// A rank's part of the input: the view and its range of global ids (which may include vertices without a NodeInfo).
+struct LocalInput {
+    LocalGraphView            G;
+    std::pair<NodeId, NodeId> node_range; // [first, last)
 };
 
 } // namespace cetric::graph

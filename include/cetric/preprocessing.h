@@ -53,14 +53,6 @@ void compute_ghost_ranks(Graph& G, Config const& conf) {
     with_execution_policy(conf, [&](auto policy) { G.find_ghost_ranks(std::move(policy)); });
 }
 
-/// The half-open global id range of a local graph view; (max, max) without vertices.
-inline std::pair<NodeId, NodeId> node_range_of(LocalGraphView const& view) {
-    if (view.local_node_count() == 0) {
-        return {std::numeric_limits<NodeId>::max(), std::numeric_limits<NodeId>::max()};
-    }
-    return {view.node_info.front().global_id, view.node_info.back().global_id + 1};
-}
-
 namespace phases {
 
 /// Sets the neighbors' ranks; returns the message queue's threshold (from the input graph).
@@ -80,17 +72,10 @@ inline void primary_load_balancing(DistributedGraph<>& G, Config const& conf) {
             return CostFunctionRegistry<DistributedGraph<>>::get(conf.primary_cost_function, G, conf, std::move(policy));
         });
         LocalGraphView view = load_balancing::LoadBalancer::run(G.to_local_graph_view(), cost_function, conf, G.comm());
-        auto const     range = node_range_of(view);
+        auto const     range = view.node_range();
         G                    = DistributedGraph(std::move(view), range, G.comm());
         compute_ghost_ranks(G, conf);
     }
-    ConditionalBarrier(conf.global_synchronization, G.comm());
-}
-
-/// DiTriC: degree exchange, orientation by degree, neighborhoods by id.
-inline void preprocessing_patric(DistributedGraph<>& G, Config const& conf) {
-    CALI_CXX_MARK_SCOPE("preprocessing");
-    orient_and_sort<node_ordering::id, node_ordering::degree<DistributedGraph<>>>(G, conf, true);
     ConditionalBarrier(conf.global_synchronization, G.comm());
 }
 

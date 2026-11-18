@@ -7,14 +7,16 @@
 #include "cetric/communication_policy.h"
 #include "cetric/config.h"
 #include "cetric/datastructures/distributed/distributed_graph.h"
+#include "cetric/datastructures/local_graph_view.h"
+#include <mpi.h>
 
 namespace cetric {
 // Each run modifies G (orientation, load balancing, ghost expansion). The returned triangle count is only valid on
 // rank 0.
 
-/// DiTriC
-std::size_t run_patric(graph::DistributedGraph<>& G, Config const& conf, MessageQueuePolicy policy);
-std::size_t run_patric(graph::DistributedGraph<>& G, Config const& conf, GridPolicy policy);
+/// DiTriC (on compact ids: builds its graphs from the input)
+std::size_t run_patric(graph::LocalInput&& input, Config const& conf, MPI_Comm comm, MessageQueuePolicy policy);
+std::size_t run_patric(graph::LocalInput&& input, Config const& conf, MPI_Comm comm, GridPolicy policy);
 /// pre-CETRIC: outward orientation of cut edges, degree exchange only on the contracted graph
 std::size_t run_cetric(graph::DistributedGraph<>& G, Config const& conf, MessageQueuePolicy policy);
 std::size_t run_cetric(graph::DistributedGraph<>& G, Config const& conf, GridPolicy policy);

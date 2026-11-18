@@ -21,19 +21,14 @@ inline kagen::Graph generate_input(std::string const& kagen_option_string, MPI_C
     return gen.GenerateFromOptionString(kagen_option_string);
 }
 
-/// The local part of a KaGen graph as the view katric's DistributedGraph is built from.
-struct LocalInput {
-    graph::LocalGraphView                   G;
-    std::pair<graph::NodeId, graph::NodeId> node_range; // [first, last) global ids of the local vertices
-};
-
-inline LocalInput to_local_input(kagen::Graph&& graph) {
+/// The local part of a KaGen graph as the view katric's graphs are built from.
+inline graph::LocalInput to_local_input(kagen::Graph&& graph) {
     auto [first, last] = graph.vertex_range;
     auto xadj          = graph.TakeXadj<>();
     auto adjncy        = graph.TakeAdjncy<>();
     graph.Clear();
 
-    LocalInput input;
+    graph::LocalInput input;
     input.node_range = {static_cast<graph::NodeId>(first), static_cast<graph::NodeId>(last)};
     input.G.node_info.reserve(last - first);
     for (kagen::SInt v = 0; v < last - first; ++v) {

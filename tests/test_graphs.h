@@ -31,7 +31,7 @@ inline std::vector<std::vector<graph::Edge>> read_full_graph(std::string const& 
 }
 
 /// The local part of the graph, distributed over MPI_COMM_WORLD with KaGen's default distribution.
-inline LocalInput read_local_graph(std::string const& metis_file) {
+inline graph::LocalInput read_local_graph(std::string const& metis_file) {
     return to_local_input(generate_input(metis_option_string(metis_file), MPI_COMM_WORLD));
 }
 
