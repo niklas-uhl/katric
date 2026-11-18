@@ -15,7 +15,7 @@
 #include "cetric/caliper.h"
 #include "cetric/communicator.h"
 #include "cetric/config.h"
-#include "cetric/datastructures/local_graph_view.h"
+#include <kagen.h>
 #include "cetric/ghost_exchange.h"
 #include "cetric/graph/build.h"
 #include "cetric/graph/graph.h"
@@ -76,9 +76,9 @@ namespace phases {
 
 /// The input graph with compact ids (ghosts found, their owners looked up). Returns it and the message queue's
 /// threshold (from the input graph).
-inline std::pair<graph::CsrGraph, std::size_t> input_graph(graph::LocalInput&& input, Config const& conf, MPI_Comm comm) {
+inline std::pair<graph::CsrGraph, std::size_t> input_graph(kagen::Graph&& input, Config const& conf, MPI_Comm comm) {
     CALI_CXX_MARK_SCOPE("input_graph");
-    auto              G         = graph::build_input_graph(std::move(input.G), input.node_range, comm);
+    auto              G         = graph::build_input_graph(std::move(input), comm);
     std::size_t const threshold = get_threshold(G, conf);
     return {std::move(G), threshold};
 }
@@ -88,11 +88,8 @@ inline void primary_load_balancing(graph::CsrGraph& G, Config const& conf) {
     CALI_CXX_MARK_SCOPE("primary_load_balancing");
     MPI_Comm const comm = G.comm();
     if (conf.primary_cost_function != "none") {
-        auto const cost      = vertex_costs(G, conf);
-        auto       cost_of   = [&cost](graph::LocalGraphView const&, graph::NodeId v) { return cost[v]; };
-        auto       view      = load_balancing::LoadBalancer::run(graph::to_local_graph_view(G), cost_of, conf, comm);
-        auto const range     = view.node_range();
-        G                    = graph::build_input_graph(std::move(view), range, comm);
+        auto const cost = vertex_costs(G, conf);
+        G               = graph::build_input_graph(load_balancing::run(graph::to_kagen_graph(G), cost, comm), comm);
     }
 }
 

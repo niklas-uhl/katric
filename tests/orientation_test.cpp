@@ -47,8 +47,7 @@ protected:
     void SetUp() override {
         G_full     = cetric::testing::read_full_graph(GetParam());
         auto local = cetric::testing::read_local_graph(GetParam());
-        auto range = local.node_range;
-        G          = cetric::graph::build_input_graph(std::move(local.G), range, MPI_COMM_WORLD);
+        G          = cetric::graph::build_input_graph(std::move(local), MPI_COMM_WORLD);
     }
 
     [[nodiscard]] std::pair<Degree, NodeId> key(NodeId v) const {

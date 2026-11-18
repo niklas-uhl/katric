@@ -18,92 +18,75 @@
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include <cstddef>
+#include <cstdint>
+#include <numeric>
+#include <vector>
 
 #include <gtest/gtest.h>
-#include "cetric/load_balancing.h"
-#include <kamping/types/mpi_type_traits.hpp>
+#include <kagen.h>
 #include <mpi.h>
-#include "cetric/util.h"
 
 #include "cetric/datastructures/graph_definitions.h"
+#include "cetric/load_balancing.h"
 #include "test_graphs.h"
 
 namespace {
-using namespace cetric;
-using namespace cetric::graph;
+using cetric::graph::NodeId;
+
 class LoadBalancing : public ::testing::TestWithParam<const char*> {
 protected:
     void SetUp() override {
-        auto input = GetParam();
-        // GENERATE("examples/metis-sample.metis", "examples/triangle.metis");
-        //  auto input = GENERATE("examples/triangle.metis");
-        SCOPED_TRACE(input);
-
-        // the MPI stuff
         MPI_Comm_rank(MPI_COMM_WORLD, &rank);
         MPI_Comm_size(MPI_COMM_WORLD, &size);
-
-        // the whole graph, read on every rank
-        G_full = cetric::testing::read_full_graph(input);
-
-        conf.PEs  = size;
-        conf.rank = rank;
-
-        // read it distributed
-        G_view = cetric::testing::read_local_graph(input).G;
+        G_full = cetric::testing::read_full_graph(GetParam());
+        G      = cetric::testing::read_local_graph(GetParam());
     }
 
-    std::vector<std::vector<Edge>>            G_full;
-    LocalGraphView                            G_view;
-    Config                                    conf;
-    PEID                                      rank, size;
+    /// Balances `G` by `cost_of(global id)` and checks that every vertex arrives once, with all its edges, on the rank
+    /// whose share [r C/p, (r+1) C/p) of the total cost C contains the cost before it.
+    template <typename CostOf>
+    void balance_and_check(CostOf&& cost_of) {
+        std::vector<std::size_t> cost;
+        for (auto v = G.vertex_range.first; v < G.vertex_range.second; ++v) {
+            cost.push_back(cost_of(v));
+        }
+        std::vector<std::size_t> cost_before(G_full.size());
+        std::size_t              total = 0;
+        for (NodeId v = 0; v < G_full.size(); ++v) {
+            cost_before[v] = total;
+            total += cost_of(v);
+        }
+        std::size_t const per_pe_cost = std::max<std::size_t>((total + size - 1) / size, 1);
+
+        G = cetric::load_balancing::run(std::move(G), cost, MPI_COMM_WORLD);
+        auto const [first, last] = G.vertex_range;
+        ASSERT_EQ(G.xadj.size(), last - first + 1);
+        ASSERT_EQ(G.xadj.back(), G.adjncy.size());
+        for (auto v = first; v < last; ++v) {
+            auto const i = v - first;
+            EXPECT_EQ(G.xadj[i + 1] - G.xadj[i], G_full[v].size());
+            for (auto e = G.xadj[i]; e < G.xadj[i + 1]; ++e) {
+                EXPECT_EQ(G.adjncy[e], G_full[v][e - G.xadj[i]].head);
+            }
+            EXPECT_EQ(std::min<std::size_t>(cost_before[v] / per_pe_cost, size - 1), static_cast<std::size_t>(rank));
+        }
+        std::uint64_t const local = last - first;
+        std::uint64_t       global = 0;
+        MPI_Allreduce(&local, &global, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+        EXPECT_EQ(global, G_full.size());
+    }
+
+    std::vector<std::vector<cetric::graph::Edge>> G_full;
+    kagen::Graph                                  G;
+    int                                           rank = 0, size = 0;
 };
 
 TEST_P(LoadBalancing, BalancingWithConstCost) {
-    auto G_view_old = G_view;
-    auto cost       = [](const LocalGraphView&, NodeId) {
-        return 1;
-    };
-    size_t per_pe_cost = (G_full.size() + size - 1) / size;
-    G_view             = load_balancing::LoadBalancer::run(std::move(G_view), cost, conf, MPI_COMM_WORLD);
-    for (size_t node = 0; node < G_view.node_info.size(); ++node) {
-        auto expected_degree = G_full.at(G_view.node_info.at(node).global_id).size();
-        auto actual_degree   = G_view.node_info.at(node).degree;
-        EXPECT_EQ(G_view.node_info.at(node).global_id / per_pe_cost, rank);
-        EXPECT_EQ(expected_degree, actual_degree);
-    }
-    NodeId local_node_count = G_view.node_info.size();
-    NodeId total_node_count = 0;
-    MPI_Reduce(&local_node_count, &total_node_count, 1, kamping::types::mpi_type_traits<NodeId>::data_type(), MPI_SUM, 0, MPI_COMM_WORLD);
-    if (rank == 0) {
-        ASSERT_EQ(total_node_count, G_full.size());
-    }
+    balance_and_check([](NodeId) { return std::size_t{1}; });
 }
 
 TEST_P(LoadBalancing, BalancingWithDegree) {
-    std::vector<NodeId> actual_cost(G_full.size());
-    auto                running_sum = 0;
-    for (size_t i = 0; i < G_full.size(); ++i) {
-        actual_cost[i] = running_sum;
-        running_sum += G_full.at(i).size();
-    }
-    size_t per_pe_cost = (running_sum + size - 1) / size;
-    auto   cost        = [](const LocalGraphView& G, NodeId node) {
-        return G.node_info[node].degree;
-    };
-    G_view = load_balancing::LoadBalancer::run(std::move(G_view), cost, conf, MPI_COMM_WORLD);
-    for (size_t node = 0; node < G_view.node_info.size(); ++node) {
-        auto expected_degree = G_full.at(G_view.node_info.at(node).global_id).size();
-        auto actual_degree   = G_view.node_info.at(node).degree;
-        EXPECT_EQ(expected_degree, actual_degree);
-        EXPECT_EQ(actual_cost.at(G_view.node_info.at(node).global_id) / per_pe_cost, rank);
-    }
-    NodeId local_node_count = G_view.node_info.size();
-    NodeId total_node_count = 0;
-    MPI_Reduce(&local_node_count, &total_node_count, 1, kamping::types::mpi_type_traits<NodeId>::data_type(), MPI_SUM, 0, MPI_COMM_WORLD);
-    if (rank == 0) {
-        ASSERT_EQ(total_node_count, G_full.size());
-    }
+    balance_and_check([&](NodeId v) { return G_full[v].size(); });
 }
 
 const char* graphs[] = {"examples/metis-sample.metis", "examples/triangle.metis", "examples/com-amazon.metis"};

@@ -24,12 +24,12 @@ namespace cetric {
 namespace {
 class KatricAlgorithm final : public AbstractAlgorithm {
 public:
-    using RunFunction = std::function<std::size_t(graph::LocalInput&&, Config const&, MPI_Comm)>;
+    using RunFunction = std::function<std::size_t(kagen::Graph&&, Config const&, MPI_Comm)>;
 
     KatricAlgorithm(Config const& conf, MPI_Comm comm, RunFunction run) : conf_(conf), comm_(comm), run_(std::move(run)) {}
 
     void ingest(kagen::Graph&& graph) override {
-        pristine_ = to_local_input(std::move(graph));
+        pristine_ = std::move(graph);
         report_input_shape();
     }
 
@@ -50,14 +50,11 @@ private:
     /// Per-rank shape of the input partition, reported once into the region `ingest` (min/max/sum across ranks).
     /// Relates phase costs to locality: cut edges are the edges whose head is on another rank.
     void report_input_shape() const {
-        auto const [first, last] = pristine_.node_range;
-        auto const& view         = pristine_.G;
+        auto const [first, last] = pristine_.vertex_range;
         std::size_t wedges = 0, edges = 0, cut_edges = 0, interface_nodes = 0, max_degree = 0;
-        std::size_t next = 0;
-        for (auto const& info: view.node_info) {
-            std::size_t const degree = info.degree;
-            auto const        heads  = std::span(view.edge_heads).subspan(next, degree);
-            next += degree;
+        for (std::size_t i = 0; i < last - first; ++i) {
+            std::size_t const degree = pristine_.xadj[i + 1] - pristine_.xadj[i];
+            auto const        heads  = std::span(pristine_.adjncy).subspan(pristine_.xadj[i], degree);
             std::size_t const cut = std::ranges::count_if(heads, [&](auto w) { return w < first || w >= last; });
             wedges += degree * (degree - 1) / 2;
             edges += degree;
@@ -79,8 +76,8 @@ private:
     Config const&             conf_;
     MPI_Comm                  comm_;
     RunFunction               run_;
-    graph::LocalInput         pristine_;
-    graph::LocalInput         input_;
+    kagen::Graph              pristine_;
+    kagen::Graph              input_;
     std::size_t               triangle_count_ = 0;
 };
 
@@ -88,15 +85,15 @@ template <typename CommunicationPolicy>
 KatricAlgorithm::RunFunction select_run(Algorithm algorithm) {
     switch (algorithm) {
         case Algorithm::cetric:
-            return [](graph::LocalInput&& input, Config const& conf, MPI_Comm comm) {
+            return [](kagen::Graph&& input, Config const& conf, MPI_Comm comm) {
                 return run_cetric(std::move(input), conf, comm, CommunicationPolicy{});
             };
         case Algorithm::patric:
-            return [](graph::LocalInput&& input, Config const& conf, MPI_Comm comm) {
+            return [](kagen::Graph&& input, Config const& conf, MPI_Comm comm) {
                 return run_patric(std::move(input), conf, comm, CommunicationPolicy{});
             };
         case Algorithm::cetric_x:
-            return [](graph::LocalInput&& input, Config const& conf, MPI_Comm comm) {
+            return [](kagen::Graph&& input, Config const& conf, MPI_Comm comm) {
                 return run_cetric_x(std::move(input), conf, comm, CommunicationPolicy{});
             };
     }

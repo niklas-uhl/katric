@@ -41,8 +41,7 @@ TEST(InputGraphTest, rows_ghosts_and_handles) {
     auto const input  = "examples/hiv.metis";
     auto const G_full = cetric::testing::read_full_graph(input);
     auto       local  = cetric::testing::read_local_graph(input);
-    auto const range  = local.node_range;
-    auto const G      = cetric::graph::build_input_graph(std::move(local.G), range, MPI_COMM_WORLD);
+    auto const G      = cetric::graph::build_input_graph(std::move(local), MPI_COMM_WORLD);
     auto const& layer = *G.layer();
 
     // every local vertex has its full neighborhood, in global ids

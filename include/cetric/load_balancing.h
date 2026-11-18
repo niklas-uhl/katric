@@ -19,119 +19,115 @@
  * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#ifndef NEW_LOAD_BALANCING_H_CYE8RYEL
-#define NEW_LOAD_BALANCING_H_CYE8RYEL
+// Primary load balancing: repartitions the graph into contiguous vertex ranges of about equal cost.
+#pragma once
 
 #include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <limits>
+#include <numeric>
+#include <span>
+#include <utility>
 #include <vector>
 
 #include <caliper/cali.h>
 #include <dstl/redistribute.hpp>
-#include <kamping/types/contiguous_type.hpp>
-#include <kamping/types/mpi_type_traits.hpp>
-#include <kamping/types/scoped_datatype.hpp>
-#include <kamping/v2/views/with_type_view.hpp>
+#include <kamping/v2/collectives/alltoall.hpp>
+#include <kamping/v2/collectives/bcast.hpp>
+#include <kamping/v2/collectives/scan.hpp>
+#include <kamping/v2/comm.hpp>
+#include <kagen.h>
 #include <kassert/kassert.hpp>
 #include <mpi.h>
 
 #include "cetric/communicator.h"
-#include "cetric/config.h"
-#include "cetric/datastructures/local_graph_view.h"
 #include "cetric/message_statistics.h"
+#include "cetric/util.h"
 
-namespace cetric {
-namespace load_balancing {
+namespace cetric::load_balancing {
 
-/// Primary load balancing: splits the global prefix sum of a per-vertex cost into p contiguous vertex ranges of
-/// about equal cost and moves the vertices (with their adjacency lists) there. The vertices stay in global-ID order,
-/// so the move is a dstl::redistribute of the node and edge arrays.
-class LoadBalancer {
-public:
-    template <typename CostFunction>
-    static graph::LocalGraphView
-    run(graph::LocalGraphView&& G, CostFunction& cost_function, const Config& conf, MPI_Comm comm) {
-        CALI_CXX_MARK_SCOPE("redistribution");
-        auto const counts = counts_per_destination(G, cost_function, conf, comm);
+/// The sum of `local` over the ranks before this one (one MPI_Scan; well defined on empty ranks too).
+inline std::uint64_t sum_before(std::uint64_t local, MPI_Comm comm) {
+    std::array<std::uint64_t, 1> const send{local};
+    std::array<std::uint64_t, 1>       inclusive{};
+    kamping::v2::scan(send, inclusive, comm);
+    return inclusive[0] - local;
+}
 
-        // what this rank receives: nodes and edges, summed over all sources
-        std::array<std::uint64_t, 2> recv{};
-        MPI_Reduce_scatter_block(counts.data(), recv.data(), 2, MPI_UINT64_T, MPI_SUM, comm);
-        KASSERT(recv[1] <= static_cast<std::uint64_t>(std::numeric_limits<int>::max()));
+/// Moves the vertices of `G` (KaGen's CSR, with their adjacency lists) so that each rank gets a contiguous range of
+/// about C/p of the total cost C: vertex v goes to the rank whose share [r C/p, (r+1) C/p) contains the cost before v
+/// (`cost[i]` is the cost of vertex first + i). The vertices stay in global-id order, so the move is a
+/// dstl::redistribute of the degrees and of the heads. Region `redistribution`.
+inline kagen::Graph run(kagen::Graph&& G, std::span<std::size_t const> cost, MPI_Comm comm) {
+    CALI_CXX_MARK_SCOPE("redistribution");
+    kamping::v2::comm_view const cv{comm};
+    auto const                   size = static_cast<std::size_t>(cv.size());
+    auto const                   rank = static_cast<std::size_t>(cv.rank());
+    std::size_t const            n    = G.vertex_range.second - G.vertex_range.first;
+    KASSERT(cost.size() == n);
 
-        profiling::MessageStatistics stats;
-        for (int pe = 0; pe < conf.PEs; ++pe) {
-            auto const nodes = counts[2 * static_cast<std::size_t>(pe)];
-            auto const edges = counts[2 * static_cast<std::size_t>(pe) + 1];
-            if (pe == conf.rank) {
-                stats.receive_volume = recv[0] + recv[1] - nodes - edges;
-                continue;
-            }
-            stats.sent_messages += (nodes > 0) + (edges > 0);
-            stats.send_volume += nodes + edges;
+    // the cost before each vertex, globally: the ranks before (one scan), then the vertices before on this rank; the
+    // last rank's sum is the total
+    std::uint64_t const      local_cost = std::reduce(cost.begin(), cost.end(), std::uint64_t{0});
+    std::uint64_t const      before     = sum_before(local_cost, comm);
+    std::vector<std::size_t> cost_before(n);
+    std::exclusive_scan(cost.begin(), cost.end(), cost_before.begin(), before);
+    std::array<std::uint64_t, 1> total{before + local_cost};
+    kamping::v2::bcast(total, static_cast<int>(size) - 1, comm);
+    std::size_t const per_pe_cost = std::max<std::size_t>((total[0] + size - 1) / size, 1);
+
+    // vertices and edges this rank sends to each rank, interleaved; and what it receives
+    std::vector<std::uint64_t> send(2 * size, 0);
+    auto const degree = [&G](std::size_t i) {
+        return G.xadj[i + 1] - G.xadj[i];
+    };
+    for (std::size_t i = 0; i < n; ++i) {
+        auto const dest = std::min(cost_before[i] / per_pe_cost, size - 1);
+        send[2 * dest]++;
+        send[2 * dest + 1] += degree(i);
+    }
+    std::vector<std::uint64_t> recv(2 * size);
+    kamping::v2::alltoall(send, recv, comm);
+    std::uint64_t recv_nodes = 0;
+    std::uint64_t recv_edges = 0;
+    for (std::size_t r = 0; r < size; ++r) {
+        recv_nodes += recv[2 * r];
+        recv_edges += recv[2 * r + 1];
+    }
+    KASSERT(recv_edges <= static_cast<std::uint64_t>(std::numeric_limits<int>::max()));
+
+    profiling::MessageStatistics stats;
+    for (std::size_t r = 0; r < size; ++r) {
+        if (r == rank) {
+            stats.receive_volume = recv_nodes + recv_edges - send[2 * r] - send[2 * r + 1];
+            continue;
         }
-
-        // The destinations are monotone in global-ID order, so the concatenation of the senders' arrays is the
-        // concatenation of the receivers' arrays.
-        graph::LocalGraphView          G_balanced;
-        kamping::types::ScopedDatatype node_info_type{node_info_datatype()};
-        G_balanced.node_info.resize(recv[0]);
-        G_balanced.edge_heads.resize(recv[1]);
-        int const tag = as_int(MessageTag::LoadBalancing);
-        namespace views = kamping::v2::views;
-        dstl::redistribute(
-            G.node_info | views::with_type(node_info_type.data_type()),
-            G_balanced.node_info | views::with_type(node_info_type.data_type()),
-            comm,
-            tag
-        );
-        dstl::redistribute(G.edge_heads, G_balanced.edge_heads, comm, tag);
-        stats.report();
-        return G_balanced;
+        stats.sent_messages += (send[2 * r] > 0) + (send[2 * r + 1] > 0);
+        stats.send_volume += send[2 * r] + send[2 * r + 1];
     }
 
-private:
-    static MPI_Datatype node_info_datatype() {
-        static_assert(sizeof(graph::LocalGraphView::NodeInfo) == 2 * sizeof(graph::NodeId));
-        return kamping::types::mpi_type_traits<std::array<graph::NodeId, 2>>::data_type();
+    // the new range starts after the vertices of the ranks before
+    std::uint64_t const first = sum_before(recv_nodes, comm);
+
+    std::vector<kagen::SInt> degrees(n);
+    for (std::size_t i = 0; i < n; ++i) {
+        degrees[i] = degree(i);
     }
+    std::vector<kagen::SInt> balanced_degrees(recv_nodes);
+    kagen::Graph             balanced;
+    balanced.representation = kagen::GraphRepresentation::CSR;
+    balanced.vertex_range   = {first, first + recv_nodes};
+    balanced.adjncy.resize(recv_edges);
+    int const tag = as_int(MessageTag::LoadBalancing);
+    dstl::redistribute(degrees, balanced_degrees, comm, tag);
+    dstl::redistribute(G.adjncy, balanced.adjncy, comm, tag);
+    balanced.xadj.resize(recv_nodes + 1, 0);
+    std::inclusive_scan(balanced_degrees.begin(), balanced_degrees.end(), balanced.xadj.begin() + 1);
+    stats.report();
+    return balanced;
+}
 
-    /// Number of nodes and edges (interleaved, 2 per rank) this rank sends to each rank: node v goes to the rank whose
-    /// share [r * C/p, (r+1) * C/p) of the total cost C contains the cost prefix sum before v.
-    template <typename CostFunction>
-    static std::vector<std::uint64_t> counts_per_destination(
-        const graph::LocalGraphView& G, CostFunction& cost_function, const Config& conf, MPI_Comm comm
-    ) {
-        std::vector<std::size_t> cost(G.node_info.size());
-        std::size_t              prefix_sum = 0;
-        for (std::size_t node = 0; node < G.node_info.size(); ++node) {
-            cost[node] = prefix_sum;
-            prefix_sum += cost_function(G, node);
-        }
-
-        std::size_t global_prefix = 0;
-        MPI_Exscan(&prefix_sum, &global_prefix, 1, kamping::types::mpi_type_traits<std::size_t>::data_type(), MPI_SUM, comm);
-        if (conf.rank == 0) {
-            global_prefix = 0;
-        }
-        std::size_t total_cost = global_prefix + prefix_sum;
-        MPI_Bcast(&total_cost, 1, kamping::types::mpi_type_traits<std::size_t>::data_type(), conf.PEs - 1, comm);
-        std::size_t const per_pe_cost = std::max<std::size_t>((total_cost + conf.PEs - 1) / conf.PEs, 1);
-
-        std::vector<std::uint64_t> counts(2 * static_cast<std::size_t>(conf.PEs), 0);
-        for (std::size_t node = 0; node < cost.size(); ++node) {
-            auto const new_pe = std::min<std::size_t>((cost[node] + global_prefix) / per_pe_cost, conf.PEs - 1);
-            counts[2 * new_pe]++;
-            counts[2 * new_pe + 1] += G.node_info[node].degree;
-        }
-        return counts;
-    }
-};
-
-} // namespace load_balancing
-} // namespace cetric
-
-#endif /* cargend of include guard: NEW_LOAD_BALANCING_H_CYE8RYEL */
+} // namespace cetric::load_balancing

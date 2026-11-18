@@ -1,5 +1,5 @@
-// Building the graphs of graph/graph.h: the input graph from a LocalGraphView, the exchange of per-vertex values to the
-// ghosts, the orientation, and the way back to a LocalGraphView for load balancing.
+// Building the graphs of graph/graph.h: the input graph from KaGen's CSR, the exchange of per-vertex values to the
+// ghosts, the orientation, and the way back to KaGen's CSR for load balancing.
 #pragma once
 
 #include <algorithm>
@@ -13,29 +13,31 @@
 #include <vector>
 
 #include <kamping/v2/types/std/unsafe/utility.hpp>
+#include <kagen.h>
 #include <kassert/kassert.hpp>
 #include <mpi.h>
 #include <tlx/vector_free.hpp>
 
-#include "cetric/datastructures/local_graph_view.h"
 #include "cetric/ghost_exchange.h"
 #include "cetric/graph/graph.h"
 
 namespace cetric::graph {
 
-/// The undirected graph of a rank's part of the input, with ghosts. Collective. Rows keep the input's neighbor order.
-/// The cut edges are sorted once by (head, position): that gives the ghosts in global-id order and their handles without
-/// a lookup per edge.
-inline CsrGraph build_input_graph(LocalGraphView&& view, std::pair<NodeId, NodeId> range, MPI_Comm comm) {
+/// The undirected graph of a rank's part of the input (KaGen's CSR: vertex range, xadj, adjncy in global ids), with
+/// ghosts. Collective. Rows keep the input's neighbor order. The cut edges are sorted once by (head, position): that
+/// gives the ghosts in global-id order and their handles without a lookup per edge.
+inline CsrGraph build_input_graph(kagen::Graph&& input, MPI_Comm comm) {
+    KASSERT(input.representation == kagen::GraphRepresentation::CSR);
+    std::pair<NodeId, NodeId> const range{input.vertex_range.first, input.vertex_range.second};
     auto const [first, last] = range;
     std::size_t const n      = first < last ? last - first : 0;
     auto const        owned  = [first, n](NodeId gid) {
         return gid >= first && gid - first < n;
     };
-    std::vector<Handle>                    heads(view.edge_heads.size());
+    std::vector<Handle>                    heads(input.adjncy.size());
     std::vector<std::pair<NodeId, EdgeId>> cut; // (head, position in heads)
-    for (EdgeId e = 0; e < view.edge_heads.size(); ++e) {
-        NodeId const gid = view.edge_heads[e];
+    for (EdgeId e = 0; e < input.adjncy.size(); ++e) {
+        NodeId const gid = input.adjncy[e];
         if (owned(gid)) {
             heads[e] = gid - first;
         } else {
@@ -51,37 +53,34 @@ inline CsrGraph build_input_graph(LocalGraphView&& view, std::pair<NodeId, NodeI
         heads[e] = n + ghost_ids.size() - 1;
     }
     tlx::vector_free(cut);
+    // KaGen's SInt need not be our EdgeId type (unsigned long long vs. unsigned long), so the offsets are copied
+    std::vector<EdgeId> offsets(input.xadj.begin(), input.xadj.end());
+    if (offsets.empty()) {
+        offsets.push_back(0);
+    }
+    KASSERT(offsets.size() == n + 1);
+    input.Clear();
     auto layer = std::make_shared<VertexLayer const>(range, std::move(ghost_ids), comm);
     KASSERT(layer->n() == n);
-
-    // vertices of the range without a NodeInfo have no edges; node_info is sorted by global id, so its adjacency lists
-    // are already in row order
-    std::vector<EdgeId> offsets(n + 1, 0);
-    for (auto const& info: view.node_info) {
-        KASSERT(layer->owns_global(info.global_id));
-        offsets[info.global_id - first + 1] = info.degree;
-    }
-    for (std::size_t c = 0; c < n; ++c) {
-        offsets[c + 1] += offsets[c];
-    }
-    KASSERT(offsets.back() == heads.size());
-    tlx::vector_free(view.edge_heads);
-    tlx::vector_free(view.node_info);
     return CsrGraph(std::move(layer), std::move(offsets), std::move(heads));
 }
 
-/// The rows of `G` as a LocalGraphView (global ids), every local vertex included.
-inline LocalGraphView to_local_graph_view(CsrGraph const& G) {
-    LocalGraphView view;
-    view.node_info.reserve(G.local_node_count());
-    view.edge_heads.reserve(G.local_edge_count());
+/// The rows of `G` in KaGen's CSR representation (global ids).
+inline kagen::Graph to_kagen_graph(CsrGraph const& G) {
+    auto const&  layer = *G.layer();
+    kagen::Graph input;
+    input.representation = kagen::GraphRepresentation::CSR;
+    input.vertex_range   = {layer.first(), layer.first() + layer.n()};
+    input.xadj.reserve(G.local_node_count() + 1);
+    input.adjncy.reserve(G.local_edge_count());
+    input.xadj.push_back(0);
     for (Handle const v: G.local_nodes()) {
-        view.node_info.emplace_back(G.global_id(v), G.degree(v));
         for (Handle const u: G.neighbors(v)) {
-            view.edge_heads.push_back(G.global_id(u));
+            input.adjncy.push_back(G.global_id(u));
         }
+        input.xadj.push_back(input.adjncy.size());
     }
-    return view;
+    return input;
 }
 
 /// Sends `value(v)` of every local vertex v to the ranks holding v as a ghost and returns the received values, indexed

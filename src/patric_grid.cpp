@@ -5,7 +5,7 @@
 #include "cetric/phases/drivers.h"
 
 namespace cetric {
-std::size_t run_patric(graph::LocalInput&& input, Config const& conf, MPI_Comm comm, GridPolicy /*policy*/) {
+std::size_t run_patric(kagen::Graph&& input, Config const& conf, MPI_Comm comm, GridPolicy /*policy*/) {
     return run_patric<GridPolicy>(std::move(input), conf, comm);
 }
 } // namespace cetric

@@ -10,7 +10,7 @@
 #include <caliper/cali.h>
 
 #include "cetric/config.h"
-#include "cetric/datastructures/local_graph_view.h"
+#include <kagen.h>
 #include "cetric/graph/graph.h"
 #include "cetric/phases/global.h"
 #include "cetric/phases/local.h"
@@ -46,7 +46,7 @@ void global_phase(
 
 /// DiTriC
 template <class CommunicationPolicy>
-std::size_t run_patric(graph::LocalInput&& input, Config const& conf, MPI_Comm comm) {
+std::size_t run_patric(kagen::Graph&& input, Config const& conf, MPI_Comm comm) {
     TriangleCounter triangles;
     auto [G, threshold] = phases::input_graph(std::move(input), conf, comm);
     phases::primary_load_balancing(G, conf);
@@ -59,7 +59,7 @@ std::size_t run_patric(graph::LocalInput&& input, Config const& conf, MPI_Comm c
 
 /// pre-CETRIC: outward orientation of cut edges, degree exchange only on the contracted graph
 template <class CommunicationPolicy>
-std::size_t run_cetric(graph::LocalInput&& input, Config const& conf, MPI_Comm comm) {
+std::size_t run_cetric(kagen::Graph&& input, Config const& conf, MPI_Comm comm) {
     TriangleCounter triangles;
     auto [G, threshold] = phases::input_graph(std::move(input), conf, comm);
     phases::primary_load_balancing(G, conf);
@@ -73,7 +73,7 @@ std::size_t run_cetric(graph::LocalInput&& input, Config const& conf, MPI_Comm c
 
 /// CETRIC (ghost rows)
 template <class CommunicationPolicy>
-std::size_t run_cetric_x(graph::LocalInput&& input, Config const& conf, MPI_Comm comm) {
+std::size_t run_cetric_x(kagen::Graph&& input, Config const& conf, MPI_Comm comm) {
     TriangleCounter triangles;
     auto [G, threshold] = phases::input_graph(std::move(input), conf, comm);
     phases::primary_load_balancing(G, conf);

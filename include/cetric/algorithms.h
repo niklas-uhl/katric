@@ -8,18 +8,18 @@
 
 #include "cetric/communication_policy.h"
 #include "cetric/config.h"
-#include "cetric/datastructures/local_graph_view.h"
+#include <kagen.h>
 
 namespace cetric {
-// Each run builds its graphs from `input` (consumed). The returned triangle count is only valid on rank 0.
+// Each run builds its graphs from `input` (KaGen's CSR representation, consumed). The returned triangle count is only valid on rank 0.
 
 /// DiTriC
-std::size_t run_patric(graph::LocalInput&& input, Config const& conf, MPI_Comm comm, MessageQueuePolicy policy);
-std::size_t run_patric(graph::LocalInput&& input, Config const& conf, MPI_Comm comm, GridPolicy policy);
+std::size_t run_patric(kagen::Graph&& input, Config const& conf, MPI_Comm comm, MessageQueuePolicy policy);
+std::size_t run_patric(kagen::Graph&& input, Config const& conf, MPI_Comm comm, GridPolicy policy);
 /// pre-CETRIC: outward orientation of cut edges, degree exchange only on the contracted graph
-std::size_t run_cetric(graph::LocalInput&& input, Config const& conf, MPI_Comm comm, MessageQueuePolicy policy);
-std::size_t run_cetric(graph::LocalInput&& input, Config const& conf, MPI_Comm comm, GridPolicy policy);
+std::size_t run_cetric(kagen::Graph&& input, Config const& conf, MPI_Comm comm, MessageQueuePolicy policy);
+std::size_t run_cetric(kagen::Graph&& input, Config const& conf, MPI_Comm comm, GridPolicy policy);
 /// CETRIC (ghost rows)
-std::size_t run_cetric_x(graph::LocalInput&& input, Config const& conf, MPI_Comm comm, MessageQueuePolicy policy);
-std::size_t run_cetric_x(graph::LocalInput&& input, Config const& conf, MPI_Comm comm, GridPolicy policy);
+std::size_t run_cetric_x(kagen::Graph&& input, Config const& conf, MPI_Comm comm, MessageQueuePolicy policy);
+std::size_t run_cetric_x(kagen::Graph&& input, Config const& conf, MPI_Comm comm, GridPolicy policy);
 } // namespace cetric
