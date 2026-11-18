@@ -154,6 +154,43 @@ by those `.cpp` files):
       either way; imbalance is read from the work counters (max / avg over ranks) and `termination`. The `no-sync`
       suite is gone with the option; `lb-cost-rmat` added (DiTriC, none / DPD / IDPD, 48 / 192 cores)
 
+- Results 2026-11-18 on the new graph (build `8d1eca2`, stage 2 + no barriers; `phases_26_11_18` 48 / 192 cores,
+  `lb-cost-rmat_26_11_18`, `lb-cost_rerun2_26_11_18` 48 cores; RHG at 192 and lb-cost 192 / 768 still outstanding).
+  Where to pick up: the three next steps at the end of this list
+  - `phases`, new vs old graph (time per iteration): faster everywhere, x0.66-0.96. CETRIC without locality gains
+    most (permuted RGG 192: 20.6 -> 13.5 s; preprocessing 9.6 -> 4.0 s and local phase 2.8 -> 0.9 s from the ghost
+    rows); DiTriC preprocessing 6.4 -> 3.7 s, global phase -10-15% (rows in global ids); with locality x0.85-0.96.
+    With locality the global phase now looks slower (RGG 0.03 -> 0.15 s): without barriers it absorbs the local
+    phase's imbalance; the total still drops
+  - new costs without locality: `input_graph` 2.1-2.3 s (one sort of ~8M (head, position) pairs per rank; includes
+    building the graph, untimed before) and `degree_exchange` 1.9-2.7 s, mostly depositing the received values
+    (binary search over ~6M ghosts per entry)
+  - CETRIC vs DiTriC (direct communication): with locality all three algorithms are equal (RGG 1.78-1.85 s, RHG
+    1.53-1.71 s at 48): the local phase is 75% of the time and the global phase is tiny, so CETRIC's 2.5-4.7x smaller
+    send volume (RGG 2.0 vs 5.2 M entries at 48, RHG 1.7 vs 7.9 M) does not show. Without locality DiTriC is best
+    (permuted RGG 9.6 / 11.5 s vs CETRIC 11.8 / 13.5 s, pre-CETRIC 10.9 / 12.6 s; permuted RHG 9.4 vs 11.6 / 13.7 s):
+    contraction removes nothing (send volume and global work within 2% of DiTriC) and CETRIC pays for the ghost rows,
+    pre-CETRIC for the second degree exchange. Grid indirection is slower than direct in every case up to 192 cores.
+    CETRIC can only win where the global phase matters and locality removes much of it: larger p, smaller n/p, or
+    real-world graphs with a good partition
+  - `lb-cost-rmat`: IDPD fixes RMAT, DPD only partly. Time per iteration none / DPD / IDPD: 46 / 20.6 / 11.2 s at
+    48 cores (x4.1 with IDPD), 187 / 49 / 23 s at 192 (x8.1). IDPD balances the global-phase work almost perfectly
+    (wedge checks max/avg 6.4 -> 1.05 at 48, 16.4 -> 1.06 at 192); what remains is send-volume imbalance (x2.5-3.05,
+    the hubs' messages). IDPD counts in-neighbors, where DiTriC does the work (at the receiver); DPD models computing
+    at the tail (idea 1), which DiTriC does not do: Arifuzzaman's surrogate argument, measured. Balancing costs
+    1.3-3.5 s. RMAT does not weak-scale even balanced: global work 22 -> 149 * 10^9 wedge checks from 48 to 192 cores
+  - `lb-cost` RHG at 48 on the new graph: none 1.58, DPD 2.99, IDPD 2.63 s. RHG's work is already balanced at this
+    scale (local max/avg 1.08); repartitioning moves range boundaries into the hub region and turns local work into
+    global work (global wedge checks 0.01 -> 1.27 * 10^9)
+  - Next steps (in this order):
+    1. Rebalance only when needed: compute the IDPD cost, and redistribute only if its max/avg over ranks exceeds a
+       threshold (one allreduce); covers RMAT (needs it) and RHG (does not)
+    2. The two new costs: build the input graph by bucketing the cut edges by owner rank first, then sorting per
+       bucket; deposit the exchanged ghost values by a linear merge (dense mode receives in rank order, each source's
+       part ascending, i.e. in global-id order already; sparse and grid need a sort)
+    3. Idea 1 (compute at the tail, balanced by DPD) against DiTriC + IDPD on RMAT, the bar to beat
+  - Message trimming (idea 2) is on branch `feat/message-trimming` (see idea 2 below); suite `trimming` submitted
+
 ### 1. Prune
 
 Options that are dead or only used in old exploration suites (`experiments/legacy`), never in the paper suites.
