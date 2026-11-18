@@ -22,6 +22,7 @@
 #include <cstdint>
 #include <limits>
 #include <map>
+#include <memory>
 #include <utility>
 #include <vector>
 
@@ -55,6 +56,16 @@ protected:
         return {G_full[v].size(), v};
     }
 
+    /// An orientation by (degree(c), global id).
+    template <typename DegreeFunc>
+    [[nodiscard]] std::shared_ptr<cetric::graph::Orientation const> orientation(DegreeFunc&& degree) const {
+        std::vector<Degree> degrees(G.local_node_count() + G.ghost_count());
+        for (Handle c = 0; c < degrees.size(); ++c) {
+            degrees[c] = degree(c);
+        }
+        return std::make_shared<cetric::graph::Orientation const>(G.layer(), std::move(degrees));
+    }
+
     /// The global ids of a row, sorted.
     [[nodiscard]] std::vector<NodeId> globals(std::span<Handle const> row) const {
         std::vector<NodeId> ids;
@@ -85,14 +96,9 @@ TEST_P(Orientation, GlobalDegree) {
         }
     }
     auto const& ghost_degree = received[cetric::GhostExchangeMode::sparse];
-    auto const  G_oriented   = cetric::graph::orient(
-        G,
-        [&](Handle c) {
-            Degree const degree = G.is_owned(c) ? G.degree(c) : ghost_degree[c - G.local_node_count()];
-            return std::pair(degree, G.global_id(c));
-        },
-        true
-    );
+    auto const  G_oriented   = cetric::graph::orient(G, orientation([&](Handle c) {
+        return G.is_owned(c) ? G.degree(c) : ghost_degree[c - G.local_node_count()];
+    }), true);
     // out-rows: the neighbors with a larger (degree, id); ghost rows: the local neighbors with a larger key
     for (Handle const v: G.local_nodes()) {
         NodeId const        v_global = G.global_id(v);
@@ -121,14 +127,9 @@ TEST_P(Orientation, GlobalDegree) {
 
 TEST_P(Orientation, LocalDegreeOutward) {
     // pre-CETRIC: cut edges outward, local edges by (degree, id), no exchange
-    auto const G_oriented = cetric::graph::orient(
-        G,
-        [&](Handle c) {
-            Degree const degree = G.is_owned(c) ? G.degree(c) : std::numeric_limits<Degree>::max();
-            return std::pair(degree, G.global_id(c));
-        },
-        false
-    );
+    auto const G_oriented = cetric::graph::orient(G, orientation([&](Handle c) {
+        return G.is_owned(c) ? G.degree(c) : std::numeric_limits<Degree>::max();
+    }), false);
     for (Handle const v: G.local_nodes()) {
         NodeId const        v_global = G.global_id(v);
         std::vector<NodeId> expected;

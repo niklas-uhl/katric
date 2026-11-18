@@ -114,14 +114,13 @@ std::vector<std::uint64_t> exchange_ghost_values(Graph const& G, ValueFunc&& val
     return values;
 }
 
-/// Orients the edges of the undirected graph `G` from the smaller to the larger `key` and returns the out-edges, rows
-/// unsorted (in `G`'s order). With `ghost_rows`, also the ghosts' out-edges to local vertices (CETRIC), sorted.
-template <typename Key>
-CsrGraph orient(CsrGraph const& G, Key&& key, bool ghost_rows) {
+/// Orients the edges of the undirected graph `G` by `orientation` and returns the out-edges, rows unsorted (in `G`'s
+/// order). With `ghost_rows`, also the ghosts' out-edges to local vertices (CETRIC), sorted.
+inline CsrGraph orient(CsrGraph const& G, std::shared_ptr<Orientation const> orientation, bool ghost_rows) {
     auto const&         layer = *G.layer();
     std::size_t const   n     = layer.n();
     auto const          out   = [&](Handle v, Handle u) {
-        return key(v) < key(u);
+        return orientation->before(v, u);
     };
     std::vector<EdgeId> offsets(n + 1, 0);
     std::vector<EdgeId> ghost_offsets(ghost_rows ? layer.ghost_count() + 1 : 0, 0);
@@ -154,7 +153,14 @@ CsrGraph orient(CsrGraph const& G, Key&& key, bool ghost_rows) {
             }
         }
     }
-    return CsrGraph(G.layer(), std::move(offsets), std::move(heads), std::move(ghost_offsets), std::move(ghost_heads));
+    return CsrGraph(
+        G.layer(),
+        std::move(offsets),
+        std::move(heads),
+        std::move(ghost_offsets),
+        std::move(ghost_heads),
+        std::move(orientation)
+    );
 }
 
 /// The contraction of CETRIC and pre-CETRIC: the local vertices with a ghost out-neighbor, each with only its ghost
@@ -174,25 +180,26 @@ inline ContractedGraph contract(CsrGraph const& G) {
         heads.insert(heads.end(), ghost_part.begin(), ghost_part.end());
         offsets.push_back(heads.size());
     }
-    return ContractedGraph(G.layer(), std::move(vertices), std::move(offsets), std::move(heads));
+    return ContractedGraph(G.layer(), std::move(vertices), std::move(offsets), std::move(heads), G.orientation());
 }
 
-/// Orients the rows of a contracted graph: keeps u in the row of v if key(v) < key(u). Every vertex keeps its row
+/// Orients the rows of a contracted graph: keeps u in the row of v if v comes before u. Every vertex keeps its row
 /// (possibly empty).
-template <typename Key>
-ContractedGraph orient(ContractedGraph const& G, Key&& key) {
+inline ContractedGraph orient(ContractedGraph const& G, std::shared_ptr<Orientation const> orientation) {
     std::vector<Handle> vertices(G.local_nodes().begin(), G.local_nodes().end());
     std::vector<EdgeId> offsets{0};
     std::vector<Handle> heads;
     for (Handle const v: vertices) {
         for (Handle const u: G.neighbors(v)) {
-            if (key(v) < key(u)) {
+            if (orientation->before(v, u)) {
                 heads.push_back(u);
             }
         }
         offsets.push_back(heads.size());
     }
-    return ContractedGraph(G.layer(), std::move(vertices), std::move(offsets), std::move(heads));
+    return ContractedGraph(
+        G.layer(), std::move(vertices), std::move(offsets), std::move(heads), std::move(orientation)
+    );
 }
 
 } // namespace cetric::graph

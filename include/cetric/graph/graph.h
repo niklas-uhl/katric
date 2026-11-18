@@ -118,6 +118,27 @@ private:
     std::size_t             ghosts_below_ = 0;
 };
 
+/// An orientation: v -> u iff key(v) < key(u), with key(c) = (degree[c], global id of c) and a degree per local vertex
+/// and ghost. Kept by the oriented graphs, so the global phase can compare keys (message trimming).
+class Orientation {
+public:
+    Orientation(std::shared_ptr<VertexLayer const> layer, std::vector<Degree> degree)
+        : layer_(std::move(layer)),
+          degree_(std::move(degree)) {
+        KASSERT(degree_.size() == layer_->n() + layer_->ghost_count());
+    }
+    [[nodiscard]] std::pair<Degree, NodeId> key(Handle c) const {
+        return {degree_[c], layer_->global_id(c)};
+    }
+    [[nodiscard]] bool before(Handle a, Handle b) const {
+        return key(a) < key(b);
+    }
+
+private:
+    std::shared_ptr<VertexLayer const> layer_;
+    std::vector<Degree>                degree_;
+};
+
 /// Rows sorted by handle in global ids, ascending. A sorted row is [local vertices][ghosts below the local range][ghosts
 /// above], so in global order it is [ghosts below][local vertices][ghosts above].
 inline std::vector<NodeId>
@@ -152,9 +173,11 @@ public:
         std::vector<EdgeId>                offsets,
         std::vector<Handle>                heads,
         std::vector<EdgeId>                ghost_offsets = {},
-        std::vector<Handle>                ghost_heads   = {}
+        std::vector<Handle>                ghost_heads   = {},
+        std::shared_ptr<Orientation const> orientation   = {}
     )
         : layer_(std::move(layer)),
+          orientation_(std::move(orientation)),
           offsets_(std::move(offsets)),
           heads_(std::move(heads)),
           ghost_offsets_(std::move(ghost_offsets)),
@@ -166,6 +189,10 @@ public:
 
     [[nodiscard]] std::shared_ptr<VertexLayer const> const& layer() const {
         return layer_;
+    }
+    /// The orientation the rows follow (none for the input graph).
+    [[nodiscard]] std::shared_ptr<Orientation const> const& orientation() const {
+        return orientation_;
     }
 
     /// The vertices with a row: all local vertices.
@@ -259,6 +286,7 @@ public:
 
 private:
     std::shared_ptr<VertexLayer const> layer_;
+    std::shared_ptr<Orientation const> orientation_;
     std::vector<EdgeId>                offsets_;
     std::vector<Handle>                heads_;
     std::vector<NodeId>                global_heads_;
@@ -278,9 +306,11 @@ public:
         std::shared_ptr<VertexLayer const> layer,
         std::vector<Handle>                vertices,
         std::vector<EdgeId>                offsets,
-        std::vector<Handle>                heads
+        std::vector<Handle>                heads,
+        std::shared_ptr<Orientation const> orientation
     )
         : layer_(std::move(layer)),
+          orientation_(std::move(orientation)),
           vertices_(std::move(vertices)),
           row_of_(layer_->n(), no_row),
           offsets_(std::move(offsets)),
@@ -296,6 +326,10 @@ public:
 
     [[nodiscard]] std::shared_ptr<VertexLayer const> const& layer() const {
         return layer_;
+    }
+    /// The orientation the rows follow.
+    [[nodiscard]] std::shared_ptr<Orientation const> const& orientation() const {
+        return orientation_;
     }
     /// The vertices with a row, ascending.
     [[nodiscard]] std::span<Handle const> local_nodes() const {
@@ -348,6 +382,7 @@ public:
 
 private:
     std::shared_ptr<VertexLayer const> layer_;
+    std::shared_ptr<Orientation const> orientation_;
     std::vector<Handle>                vertices_;
     std::vector<std::size_t>           row_of_; // per local vertex
     std::vector<EdgeId>                offsets_;
