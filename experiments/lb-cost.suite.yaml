@@ -1,0 +1,30 @@
+# Idea 9 of doc/refactoring-plan.md: how much one cost-based repartitioning (primary load balancing) fixes the
+# imbalance on skewed inputs, and what the redistribution costs. RHG with locality, where the barrier share grows
+# with p (17% at 192, 37% at 768 cores in `phases`). DiTriC only; `none` is the `phases` configuration on the same
+# binary. DPD = PATRIC's tail cost Σ_{u∈N+(v)} d+(v)+d+(u), IDPD = its surrogate (push) variant.
+# The repartitioning runs in preprocessing (region `primary_load_balancing`); compare barrier shares in `phases`.
+name: lb-cost
+executable: apps/katric
+output_path_option_name: caliper-output
+threads_option_name: num-threads
+ncores: [48, 192, 768]
+max_cores: 768
+threads_per_rank: [1]
+time_limit: 5
+graphs:
+  - generator: kagen
+    type: rhg
+    N: 18
+    M: 22
+    gamma: 2.8
+    seed: 28475421
+    scale_weak: true
+config:
+  - algorithm: patric
+    threshold: local-nodes
+    degree-exchange: dense
+    global-synchronization: true
+    communication-policy: new
+    primary-cost-function: [none, DPD, IDPD]
+    intersection-method: merge
+    iterations: 3

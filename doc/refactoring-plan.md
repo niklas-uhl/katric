@@ -124,6 +124,12 @@ by those `.cpp` files):
       remaining baseline from this commit: the algorithm code is unchanged since `1962d4e`, step 1 changes the
       suite (`id-node-ordering` goes away)
 
+- [ ] Targeted suites on SuperMUC-NG (48 / 192 / 768 cores; added 2026-11-18, run while the refactoring continues;
+      SuperMUC-NG shuts down at the end of 2026): `lb-cost` (idea 9: DiTriC on RHG, primary cost function none / DPD /
+      IDPD), `no-sync` (upper bound for idea 5: DiTriC and CETRIC on RGG / RHG, `global-synchronization` on / off),
+      `degree-exchange` (step 3's transports dense / sparse / grid, DiTriC on permuted RGG and RHG). Every
+      configuration verified on the laptop (4 ranks, `--verify`)
+
 ### 1. Prune
 
 Options that are dead or only used in old exploration suites (`experiments/legacy`), never in the paper suites.

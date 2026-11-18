@@ -1,0 +1,36 @@
+# Upper bound for idea 5 of doc/refactoring-plan.md (interleaving the phases): the same runs with and without the
+# barriers between the phases. Without them a rank starts its next phase as soon as its own work is done, so the
+# total time shows how much the barriers (the slowest rank's phase + the next slowest's) cost. Per-phase regions
+# then include waiting inside the following phase, so compare whole iterations only.
+# Locality inputs, where the barrier share is largest (RGG 25-29%, RHG up to 67% at 1536 cores in `phases`).
+name: no-sync
+executable: apps/katric
+output_path_option_name: caliper-output
+threads_option_name: num-threads
+ncores: [48, 192, 768]
+max_cores: 768
+threads_per_rank: [1]
+time_limit: 5
+graphs:
+  - generator: kagen
+    type: rgg2d
+    N: 18
+    M: 22
+    seed: 28475421
+    scale_weak: true
+  - generator: kagen
+    type: rhg
+    N: 18
+    M: 22
+    gamma: 2.8
+    seed: 28475421
+    scale_weak: true
+config:
+  - algorithm: [patric, cetric-x]
+    threshold: local-nodes
+    degree-exchange: dense
+    global-synchronization: [true, false]
+    communication-policy: new
+    primary-cost-function: none
+    intersection-method: merge
+    iterations: 3

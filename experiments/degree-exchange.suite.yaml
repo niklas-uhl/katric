@@ -1,0 +1,37 @@
+# Transport of the degree exchange (step 3 of doc/refactoring-plan.md, `--degree-exchange`): dense alltoallv (the
+# configs' choice and the largest preprocessing item without locality: 3.0 s at 48, 5.7 s at 1536 cores in `phases`),
+# NBX sparse all-to-all, and the 2D grid. Permuted RGG (no locality: every rank talks to almost every other one,
+# the worst case for sparse) and RHG with locality (few partner ranks, the best case for sparse).
+# Look at the region `degree_exchange` (sub-regions `prepare`, `exchange`); the rest of the run is identical.
+name: degree-exchange
+executable: apps/katric
+output_path_option_name: caliper-output
+threads_option_name: num-threads
+ncores: [48, 192, 768]
+max_cores: 768
+threads_per_rank: [1]
+time_limit: 5
+graphs:
+  - generator: kagen
+    type: rgg2d
+    N: 18
+    M: 22
+    permute: 1
+    seed: 28475421
+    scale_weak: true
+  - generator: kagen
+    type: rhg
+    N: 18
+    M: 22
+    gamma: 2.8
+    seed: 28475421
+    scale_weak: true
+config:
+  - algorithm: patric
+    threshold: local-nodes
+    degree-exchange: [dense, sparse, grid]
+    global-synchronization: true
+    communication-policy: new
+    primary-cost-function: none
+    intersection-method: merge
+    iterations: 3
