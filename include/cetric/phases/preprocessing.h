@@ -46,13 +46,17 @@ inline std::vector<std::size_t> vertex_costs(graph::CsrGraph const& G, Config co
     };
     {
         CALI_CXX_MARK_SCOPE("cost_function_communication");
-        int const tag = as_int(MessageTag::CostFunction);
-        ghost_degree  = graph::exchange_ghost_values(G, [&](Handle v) { return G.degree(v); }, degree_exchange(conf), tag);
+        ghost_degree = graph::exchange_ghost_values(
+            G,
+            [&](Handle v) { return G.degree(v); },
+            degree_exchange(conf),
+            as_int(MessageTag::CostFunction)
+        );
         for (Handle const v: G.local_nodes()) {
             out_degree[v] = std::ranges::count_if(G.neighbors(v), [&](Handle u) { return key(u) > key(v); });
         }
         auto const ghost_out_degree =
-            graph::exchange_ghost_values(G, [&](Handle v) { return out_degree[v]; }, degree_exchange(conf), tag);
+            graph::exchange_ghost_values(G, [&](Handle v) { return out_degree[v]; }, degree_exchange(conf), as_int(MessageTag::CostFunctionOutDegree));
         std::ranges::copy(ghost_out_degree, out_degree.begin() + static_cast<std::ptrdiff_t>(layer.n()));
     }
     CALI_CXX_MARK_SCOPE("cost_function_evaluation");

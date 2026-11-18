@@ -49,14 +49,13 @@ struct has_data : std::false_type {};
 template <class T>
 struct has_data<T, std::void_t<typename T::data>> : std::true_type {};
 
+/// Tags of the point-to-point exchanges. Consecutive sparse (NBX) exchanges need distinct tags: a rank that has left
+/// one may already send for the next while another rank still probes for the first.
 enum class MessageTag {
-    CostFunction            = 0,
-    LoadBalancing           = 5,
-    LoadBalancingBoundaries = 9,
-    RHGFix                  = 13,
-    ReportCost              = 25,
-    Orientation             = 31,
-    Neighborhood            = 42,
+    CostFunction          = 0, // ghost degrees for the cost function
+    CostFunctionOutDegree = 1, // ghost out-degrees for the cost function, right after the degrees
+    LoadBalancing         = 5,
+    Orientation           = 31,
 };
 
 inline int as_int(const MessageTag tag) {
