@@ -220,6 +220,16 @@ The deferred kamping-v2 plan from modernization-plan.md, plus the degree exchang
       flat buffer with counts and displacements (option 2 of three, decided 2026-11-13). The alternative without the
       copy (count, then fill: two passes over the adjacency) is worth measuring only if `prepare` matters in `phases`
 
+- [ ] Primary load balancing moves the vertices with `dstl::redistribute` (decided 2026-11-18): the cost split is
+      monotone in global-ID order, so the node and edge arrays are one redistribute each, with the receive counts
+      from one `MPI_Reduce_scatter_block` (replaces `GraphCommunicator::relocate` and the hand-written NBX
+      `sparse_all_to_all` with its size messages). Identical triangle counts on the 70 reference runs and 54 extra
+      DPD / IDPD / N runs on 3 / 5 / 8 ranks; only the `redistribution` region's message counters change (no size
+      messages, `received_messages` not reported). Needs the dstl fix for empty windows inside a range (a rank
+      receiving nothing between two that do, e.g. after a hub whose cost exceeds C/p: stray zero-length message;
+      a rank sending nothing: hang), not merged in kamping-v2 yet. The DPD hang on graphs with fewer vertices than
+      ranks is elsewhere (unchanged)
+
 KaCCv2's communication primitives (read 2026-11-13, branch `feat/kout-symmetric`; katric already fetches kamping-v2
 with dstl but links neither):
 

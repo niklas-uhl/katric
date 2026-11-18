@@ -23,82 +23,111 @@
 #define NEW_LOAD_BALANCING_H_CYE8RYEL
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
-#include <iterator>
-#include <numeric>
-#include <absl/container/flat_hash_map.h>
-#include <absl/container/flat_hash_set.h>
-#include <sstream>
-#include <string>
+#include <cstdint>
+#include <limits>
 #include <vector>
 
-#include <fmt/core.h>
-#include "cetric/datastructures/local_graph_view.h"
+#include <caliper/cali.h>
+#include <dstl/redistribute.hpp>
+#include <kamping/types/contiguous_type.hpp>
 #include <kamping/types/mpi_type_traits.hpp>
+#include <kamping/types/scoped_datatype.hpp>
+#include <kamping/v2/views/with_type_view.hpp>
+#include <kassert/kassert.hpp>
 #include <mpi.h>
 
+#include "cetric/communicator.h"
 #include "cetric/config.h"
-#include <caliper/cali.h>
-
-#include "cetric/cost_function.h"
-#include "cetric/datastructures/graph_definitions.h"
-#include "cetric/timer.h"
-#include "cetric/util.h"
+#include "cetric/datastructures/local_graph_view.h"
+#include "cetric/message_statistics.h"
 
 namespace cetric {
 namespace load_balancing {
 
+/// Primary load balancing: splits the global prefix sum of a per-vertex cost into p contiguous vertex ranges of
+/// about equal cost and moves the vertices (with their adjacency lists) there. The vertices stay in global-ID order,
+/// so the move is a dstl::redistribute of the node and edge arrays.
 class LoadBalancer {
 public:
     template <typename CostFunction>
     static graph::LocalGraphView
-    run(graph::LocalGraphView&&             G,
-        CostFunction&                       cost_function,
-        const Config&                       conf,
-        MPI_Comm                            comm) {
+    run(graph::LocalGraphView&& G, CostFunction& cost_function, const Config& conf, MPI_Comm comm) {
         CALI_CXX_MARK_SCOPE("redistribution");
-        auto to_send = reassign_nodes(G, cost_function, conf, comm);
-        return GraphCommunicator::relocate(std::move(G), to_send, comm, conf.rank, conf.PEs);
+        auto const counts = counts_per_destination(G, cost_function, conf, comm);
+
+        // what this rank receives: nodes and edges, summed over all sources
+        std::array<std::uint64_t, 2> recv{};
+        MPI_Reduce_scatter_block(counts.data(), recv.data(), 2, MPI_UINT64_T, MPI_SUM, comm);
+        KASSERT(recv[1] <= static_cast<std::uint64_t>(std::numeric_limits<int>::max()));
+
+        profiling::MessageStatistics stats;
+        for (int pe = 0; pe < conf.PEs; ++pe) {
+            auto const nodes = counts[2 * static_cast<std::size_t>(pe)];
+            auto const edges = counts[2 * static_cast<std::size_t>(pe) + 1];
+            if (pe == conf.rank) {
+                stats.receive_volume = recv[0] + recv[1] - nodes - edges;
+                continue;
+            }
+            stats.sent_messages += (nodes > 0) + (edges > 0);
+            stats.send_volume += nodes + edges;
+        }
+
+        // The destinations are monotone in global-ID order, so the concatenation of the senders' arrays is the
+        // concatenation of the receivers' arrays.
+        graph::LocalGraphView          G_balanced;
+        kamping::types::ScopedDatatype node_info_type{node_info_datatype()};
+        G_balanced.node_info.resize(recv[0]);
+        G_balanced.edge_heads.resize(recv[1]);
+        int const tag = as_int(MessageTag::LoadBalancing);
+        namespace views = kamping::v2::views;
+        dstl::redistribute(
+            G.node_info | views::with_type(node_info_type.data_type()),
+            G_balanced.node_info | views::with_type(node_info_type.data_type()),
+            comm,
+            tag
+        );
+        dstl::redistribute(G.edge_heads, G_balanced.edge_heads, comm, tag);
+        stats.report();
+        return G_balanced;
     }
 
 private:
+    static MPI_Datatype node_info_datatype() {
+        static_assert(sizeof(graph::LocalGraphView::NodeInfo) == 2 * sizeof(graph::NodeId));
+        return kamping::types::mpi_type_traits<std::array<graph::NodeId, 2>>::data_type();
+    }
+
+    /// Number of nodes and edges (interleaved, 2 per rank) this rank sends to each rank: node v goes to the rank whose
+    /// share [r * C/p, (r+1) * C/p) of the total cost C contains the cost prefix sum before v.
     template <typename CostFunction>
-    static absl::flat_hash_map<PEID, GraphCommunicator::NodeRange>
-    reassign_nodes(const graph::LocalGraphView& G, CostFunction& cost_function, const Config& conf, MPI_Comm comm) {
-        using namespace cetric::graph;
-        std::vector<size_t> cost(G.node_info.size());
-        size_t              prefix_sum = 0;
-        for (size_t node = 0; node < G.node_info.size(); ++node) {
-            cost[node]       = prefix_sum;
-            size_t node_cost = cost_function(G, node);
-            prefix_sum += node_cost;
+    static std::vector<std::uint64_t> counts_per_destination(
+        const graph::LocalGraphView& G, CostFunction& cost_function, const Config& conf, MPI_Comm comm
+    ) {
+        std::vector<std::size_t> cost(G.node_info.size());
+        std::size_t              prefix_sum = 0;
+        for (std::size_t node = 0; node < G.node_info.size(); ++node) {
+            cost[node] = prefix_sum;
+            prefix_sum += cost_function(G, node);
         }
 
-        size_t global_prefix;
-        MPI_Exscan(&prefix_sum, &global_prefix, 1, kamping::types::mpi_type_traits<size_t>::data_type(), MPI_SUM, comm);
+        std::size_t global_prefix = 0;
+        MPI_Exscan(&prefix_sum, &global_prefix, 1, kamping::types::mpi_type_traits<std::size_t>::data_type(), MPI_SUM, comm);
         if (conf.rank == 0) {
             global_prefix = 0;
         }
-        size_t total_cost;
-        if (conf.rank == conf.PEs - 1) {
-            total_cost = global_prefix + prefix_sum;
-        }
-        MPI_Bcast(&total_cost, 1, kamping::types::mpi_type_traits<size_t>::data_type(), conf.PEs - 1, comm);
-        size_t                                                     per_pe_cost = (total_cost + conf.PEs - 1) / conf.PEs;
-        absl::flat_hash_map<PEID, GraphCommunicator::NodeRange> to_send(conf.PEs);
-        for (size_t node = 0; node < cost.size(); ++node) {
-            cost[node] += global_prefix;
-            PEID new_pe = std::min(static_cast<int>(cost[node] / per_pe_cost), conf.PEs - 1);
-            if (to_send.find(new_pe) == to_send.end()) {
-                to_send[new_pe] = GraphCommunicator::NodeRange{node, node};
-            } else {
-                to_send[new_pe].to = node;
-            }
-        }
+        std::size_t total_cost = global_prefix + prefix_sum;
+        MPI_Bcast(&total_cost, 1, kamping::types::mpi_type_traits<std::size_t>::data_type(), conf.PEs - 1, comm);
+        std::size_t const per_pe_cost = std::max<std::size_t>((total_cost + conf.PEs - 1) / conf.PEs, 1);
 
-        cost.resize(0);
-        cost.shrink_to_fit();
-        return to_send;
+        std::vector<std::uint64_t> counts(2 * static_cast<std::size_t>(conf.PEs), 0);
+        for (std::size_t node = 0; node < cost.size(); ++node) {
+            auto const new_pe = std::min<std::size_t>((cost[node] + global_prefix) / per_pe_cost, conf.PEs - 1);
+            counts[2 * new_pe]++;
+            counts[2 * new_pe + 1] += G.node_info[node].degree;
+        }
+        return counts;
     }
 };
 
