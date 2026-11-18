@@ -33,6 +33,13 @@ using Handle = std::uint64_t;
 
 /// This rank's vertices and ghosts: the local vertex range, the ghosts' global ids and owners (both sorted by global
 /// id), and the partition table of all ranks.
+///
+/// The graphs of a run (input, oriented, contracted) use the same handles and share one layer through a
+/// `std::shared_ptr`: copying it per graph would duplicate the ghost table, and the graphs' lifetimes do not nest (the
+/// input graph is dropped after preprocessing; load balancing replaces the input graph together with its layer). A
+/// layer thus lives until its last graph is gone, at the latest at the end of the run. Its destruction is collective
+/// if a grid exchange ran on it (it frees the grid communicator); all ranks drop their graphs at the same point of the
+/// driver, so this is safe.
 class VertexLayer {
 public:
     /// Collective (builds the partition table). `range` is this rank's half-open range of global ids, `ghost_ids` the
