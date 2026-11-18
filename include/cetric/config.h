@@ -91,7 +91,6 @@ struct Config {
     PEID        PEs;
     PEID        rank;
     size_t      num_threads = 1;
-    size_t      grainsize   = 1;
 
     std::string git_commit;
 

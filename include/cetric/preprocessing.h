@@ -10,7 +10,7 @@
 
 #include "cetric/config.h"
 #include "cetric/cost_function.h"
-#include "cetric/counters/cetric_edge_iterator.h"
+#include "cetric/counters/global_phase.h"
 #include "cetric/datastructures/auxiliary_node_data.h"
 #include "cetric/datastructures/distributed/distributed_graph.h"
 #include "cetric/datastructures/distributed/graph_communicator.h"

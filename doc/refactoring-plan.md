@@ -302,14 +302,17 @@ Compact IDs fit 32 bits per rank (n + g < 2^32), which would halve the adjacency
       inside the graph (`e8adcf8`). Also removed `CostFunction::rank()`, which called a graph method that does not
       exist (never instantiated). Noticed: the parallel cost evaluation increments a shared `node_index` from all
       threads (a race; hybrid path, frozen)
-- [ ] Before stage 2 (decided 2026-11-13): restructure `cetric_edge_iterator.h` (948 lines) into `local_phase.h`
-      (`intersect_local_edge` + the sequential loop, free functions over the graph, returning the interface vertices
-      as a vector) and `global_phase.h` (sending N+(v), the message handler, queue setup), without a class holding
-      state across phases. Remove the frozen hybrid code (four parallel local variants, the parallel global phase with
-      its task pools, the async send path) instead of carrying it through both refactors; it stays in git history and
-      is re-ported later onto the new kernels (thread-local counters in `TriangleCounter`). Hybrid ctests and
-      `configs/hybrid.toml` disabled until then; the paper's hybrid suite runs from the paper commit. Pure
-      restructuring, identical counters
+- [x] Before stage 2 (decided 2026-11-13): `cetric_edge_iterator.h` (948 lines) split into `counters/local_phase.h`
+      (`local_phase::intersect_edge` + `local_phase::run<with_ghosts>`, free functions over the graph, returning the
+      interface vertices) and `counters/global_phase.h` (`global_phase::run`: sending N+(v), the message handler, queue
+      setup; `last_proc` is local to the call), about 370 lines together, no class holding state across phases. The
+      frozen hybrid code is gone (four parallel local variants, the parallel global phase with its task pools, the
+      async send path, `concurrent_buffered_queue.h`, `task_pool.h`, `thread_pool.h`); it stays in git history and is
+      re-ported later. `--num-threads > 1` now exits with an error; the hybrid options stay accepted so the paper
+      configs parse, `--grainsize` is gone. Hybrid ctest and the 2-thread smoke runs disabled, so is
+      `paper-hybrid-real-world` (run it from the paper commit). `intersection()` moved below the kernels it calls (it
+      found them only through ADL). Identical counters and triangle counts on the 70 reference runs and the 54 extra
+      load-balancing runs
 - [ ] Stage 2, the swap, as a pipeline of immutable graphs built from KaCCv2's building blocks (decided 2026-11-13;
       adopt KaCCv2's interface and layering, not `SplitDistributedCSRGraph` or `FilteredGraph`):
       - input graph: what KaGen and the load balancer produce (`LocalGraphView`, global IDs), unchanged

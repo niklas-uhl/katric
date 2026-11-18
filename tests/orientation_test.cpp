@@ -25,7 +25,7 @@
 #include <gtest/gtest.h>
 #include <mpi.h>
 
-#include "cetric/counters/cetric_edge_iterator.h"
+#include "cetric/counters/global_phase.h"
 #include "cetric/datastructures/distributed/distributed_graph.h"
 #include "cetric/datastructures/distributed/graph_communicator.h"
 #include "cetric/datastructures/distributed/helpers.h"

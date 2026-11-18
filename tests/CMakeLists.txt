@@ -43,15 +43,15 @@ if(TARGET katric)
     set(kagen_${graph} "file$<SEMICOLON>filename=${PROJECT_SOURCE_DIR}/examples/${graph}.metis$<SEMICOLON>input_format=metis$<SEMICOLON>distribution=balance-edges")
   endforeach()
   set(kagen_rgg2d "rgg2d$<SEMICOLON>n=16384$<SEMICOLON>m=131072$<SEMICOLON>seed=7")
-  set(example_configs "cetric" "ditric" "ditric-grid" "hybrid" "ditric-dense-exchange" "cetric-grid-exchange")
+  set(example_configs "cetric" "ditric" "ditric-grid" "ditric-dense-exchange" "cetric-grid-exchange")
   set(args_cetric --config ${PROJECT_SOURCE_DIR}/configs/cetric.toml)
   set(args_ditric --config ${PROJECT_SOURCE_DIR}/configs/ditric.toml)
   set(args_ditric-grid --config ${PROJECT_SOURCE_DIR}/configs/ditric.toml --config
                        ${PROJECT_SOURCE_DIR}/configs/2d-grid.toml)
   set(args_ditric-dense-exchange --config ${PROJECT_SOURCE_DIR}/configs/ditric.toml --degree-exchange dense)
   set(args_cetric-grid-exchange --config ${PROJECT_SOURCE_DIR}/configs/cetric.toml --degree-exchange grid)
-  set(args_hybrid --config ${PROJECT_SOURCE_DIR}/configs/cetric.toml --config ${PROJECT_SOURCE_DIR}/configs/hybrid.toml
-                  --num-threads 2)
+  # the hybrid configuration (configs/hybrid.toml, --num-threads > 1) is disabled until the hybrid path is re-ported
+  # (doc/refactoring-plan.md)
   foreach(entry IN LISTS example_graphs)
     string(REPLACE "=" ";" entry "${entry}")
     list(GET entry 0 graph)

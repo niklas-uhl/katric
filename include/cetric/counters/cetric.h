@@ -23,6 +23,7 @@
 #define CETRIC_H_1MZUS6LP
 
 #include <cstddef>
+#include <vector>
 
 #include <caliper/cali.h>
 #include <kamping/types/mpi_type_traits.hpp>
@@ -30,7 +31,8 @@
 
 #include "cetric/config.h"
 #include "cetric/contraction.h"
-#include "cetric/counters/cetric_edge_iterator.h"
+#include "cetric/counters/global_phase.h"
+#include "cetric/counters/local_phase.h"
 #include "cetric/datastructures/distributed/distributed_graph.h"
 #include "cetric/execution.h"
 #include "cetric/preprocessing.h"
@@ -44,23 +46,37 @@
 namespace cetric {
 namespace phases {
 
-/// The intersections that need no communication. `NodeOrdering` is the neighborhoods' order from preprocessing.
-/// Returns the edge iterator, which holds the interface vertices for DiTriC's global phase.
-template <class CommunicationPolicy, typename NodeOrdering>
-auto local_phase(DistributedGraph<>& G, Config const& conf, std::size_t threshold, TriangleCounter& triangles) {
+/// The intersections that need no communication (CETRIC also through the ghosts' adjacencies). `NodeOrdering` is the
+/// neighborhoods' order from preprocessing. Returns the interface vertices, the senders of DiTriC's global phase.
+template <typename NodeOrdering>
+std::vector<RankEncodedNodeId> local_phase(DistributedGraph<>& G, Config const& conf, TriangleCounter& triangles) {
     CALI_CXX_MARK_SCOPE("local_phase");
-    CetricEdgeIterator<DistributedGraph<>, CommunicationPolicy> ctr(G, conf, conf.rank, conf.PEs, CommunicationPolicy{});
-    ctr.set_threshold(threshold);
-    triangles([&](auto emit) { ctr.run_local(emit, NodeOrdering(G, AuxiliaryNodeData<Degree>{})); });
+    std::vector<RankEncodedNodeId> interface_nodes;
+    NodeOrdering const             node_ordering(G, AuxiliaryNodeData<Degree>{});
+    triangles([&](auto emit) {
+        if (conf.algorithm == Algorithm::cetric_x) {
+            interface_nodes = cetric::local_phase::run<true>(G, conf, emit, node_ordering);
+        } else {
+            interface_nodes = cetric::local_phase::run<false>(G, conf, emit, node_ordering);
+        }
+    });
     ConditionalBarrier(conf.global_synchronization, G.comm());
-    return ctr;
+    return interface_nodes;
 }
 
 /// DiTriC's global phase: sends the neighborhoods of the local phase's interface vertices.
-template <typename EdgeIterator>
-void global_phase(EdgeIterator& ctr, TriangleCounter& triangles) {
+template <class CommunicationPolicy>
+void global_phase(
+    DistributedGraph<>&                   G,
+    Config const&                         conf,
+    std::size_t                           threshold,
+    std::vector<RankEncodedNodeId> const& interface_nodes,
+    TriangleCounter&                      triangles
+) {
     CALI_CXX_MARK_SCOPE("global_phase");
-    triangles([&](auto emit) { ctr.run_distributed(emit, node_ordering::id()); });
+    triangles([&](auto emit) {
+        cetric::global_phase::run<CommunicationPolicy>(G, conf, threshold, interface_nodes, emit, node_ordering::id());
+    });
 }
 
 /// The global phase on the contracted graph (CETRIC, pre-CETRIC). After a secondary load balancing (`rebalanced`)
@@ -70,18 +86,24 @@ void global_phase(
     CompactGraph& G_compact, Config const& conf, std::size_t threshold, bool rebalanced, TriangleCounter& triangles
 ) {
     CALI_CXX_MARK_SCOPE("global_phase");
-    CetricEdgeIterator<CompactGraph, CommunicationPolicy> ctr(G_compact, conf, conf.rank, conf.PEs, CommunicationPolicy{});
-    ctr.set_threshold(threshold);
     // the neighborhoods are sorted by id_outward; without internal edges that is the same as id
     if (rebalanced) {
-        triangles([&](auto emit) { ctr.run_local(emit, node_ordering::id_outward(conf.rank)); });
+        std::vector<RankEncodedNodeId> interface_nodes;
+        triangles([&](auto emit) {
+            interface_nodes = cetric::local_phase::run<false>(G_compact, conf, emit, node_ordering::id_outward(conf.rank));
+        });
         for_each_local_node(G_compact, conf, conf.local_parallel, [&](auto node) {
             G_compact.remove_internal_edges(node, node_ordering::id_outward(conf.rank));
         });
-        triangles([&](auto emit) { ctr.run_distributed(emit, node_ordering::id()); });
+        triangles([&](auto emit) {
+            cetric::global_phase::run<CommunicationPolicy>(G_compact, conf, threshold, interface_nodes, emit, node_ordering::id());
+        });
     } else {
-        auto nodes = G_compact.local_nodes();
-        triangles([&](auto emit) { ctr.run_distributed(emit, nodes.begin(), nodes.end(), node_ordering::id()); });
+        triangles([&](auto emit) {
+            cetric::global_phase::run<CommunicationPolicy>(
+                G_compact, conf, threshold, G_compact.local_nodes(), emit, node_ordering::id()
+            );
+        });
     }
 }
 
@@ -106,8 +128,8 @@ std::size_t run_patric(DistributedGraph<>& G, Config const& conf) {
     std::size_t const threshold = phases::ghost_ranks(G, conf);
     phases::primary_load_balancing(G, conf);
     phases::preprocessing_patric(G, conf);
-    auto ctr = phases::local_phase<CommunicationPolicy, node_ordering::id>(G, conf, threshold, triangles);
-    phases::global_phase(ctr, triangles);
+    auto const interface_nodes = phases::local_phase<node_ordering::id>(G, conf, triangles);
+    phases::global_phase<CommunicationPolicy>(G, conf, threshold, interface_nodes, triangles);
     return phases::reduce(triangles, G.comm());
 }
 
@@ -118,7 +140,7 @@ std::size_t run_cetric(DistributedGraph<>& G, Config const& conf) {
     std::size_t const threshold = phases::ghost_ranks(G, conf);
     phases::primary_load_balancing(G, conf);
     phases::preprocessing_cetric(G, conf);
-    phases::local_phase<CommunicationPolicy, node_ordering::id_outward>(G, conf, threshold, triangles);
+    phases::local_phase<node_ordering::id_outward>(G, conf, triangles);
     auto       G_compact  = phases::contraction(G, conf, node_ordering::degree_outward(G));
     bool const rebalanced = phases::secondary_load_balancing(G_compact, conf);
     phases::preprocessing_global(G_compact, conf);
@@ -133,7 +155,7 @@ std::size_t run_cetric_x(DistributedGraph<>& G, Config const& conf) {
     std::size_t const threshold = phases::ghost_ranks(G, conf);
     phases::primary_load_balancing(G, conf);
     phases::preprocessing_cetric_x(G, conf);
-    phases::local_phase<CommunicationPolicy, node_ordering::id_outward>(G, conf, threshold, triangles);
+    phases::local_phase<node_ordering::id_outward>(G, conf, triangles);
     auto G_compact = phases::contraction(G, conf, node_ordering::id_outward(conf.rank));
     phases::global_phase<CommunicationPolicy>(G_compact, conf, threshold, false, triangles);
     return phases::reduce(triangles, G.comm());

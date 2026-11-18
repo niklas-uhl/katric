@@ -4,7 +4,7 @@ executable: apps/katric
 output_path_option_name: caliper-output
 threads_option_name: num-threads
 ncores: [2, 4]
-threads_per_rank: [1, 2]
+threads_per_rank: [1] # 2 again once the hybrid path is re-ported (doc/refactoring-plan.md)
 time_limit: 1
 graphs:
   - import: examples

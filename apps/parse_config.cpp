@@ -20,6 +20,7 @@
 #include "./parse_config.h"
 
 #include <cstdlib>
+#include <iostream>
 
 #include <CLI/CLI.hpp>
 #include <CLI/Error.hpp>
@@ -85,7 +86,6 @@ cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::P
     );
 
     app.add_option("--num-threads", conf.num_threads);
-    app.add_option("--grainsize", conf.grainsize);
     app.add_option("--global-degree-of-parallelism", conf.global_degree_of_parallelism);
     app.add_option("--local-degree-of-parallelism", conf.local_degree_of_parallelism);
 
@@ -117,6 +117,16 @@ cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::P
     CLI11_PARSE_MPI(app, argc, argv, rank, size);
     if (conf.num_threads == 0) {
         conf.num_threads = tbb::this_task_arena::max_concurrency();
+    }
+    if (conf.num_threads > 1) {
+        // the phases are sequential; the options of the hybrid path (--local-parallel, --global-parallel,
+        // --edge-partitioning, --task-pool-type, --task-priorities, --*-degree-of-parallelism) stay accepted so that
+        // the paper configurations parse, and come back into use when it is re-ported (doc/refactoring-plan.md)
+        if (rank == 0) {
+            std::cerr << "--num-threads > 1 is not supported: the hybrid (MPI + TBB) path is being re-ported\n";
+        }
+        MPI_Finalize();
+        std::exit(1);
     }
     if (conf.caliper_config.empty() && !conf.caliper_output.empty()) {
         conf.caliper_config = "spot,katric-timers,katric-counters";

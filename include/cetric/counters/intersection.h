@@ -37,47 +37,6 @@
 namespace cetric {
 
 template <class InputIt1, class InputIt2, class OnIntersection, class Compare>
-void intersection(
-    InputIt1         first1,
-    InputIt1         last1,
-    InputIt2         first2,
-    InputIt2         last2,
-    OnIntersection&& on_intersection,
-    Compare          comp,
-    Config const&    conf
-) {
-    KASSERT(std::adjacent_find(first1, last1) == last1);
-    KASSERT(std::is_sorted(first1, last1, comp), fmt::format("{}", std::ranges::subrange(first1, last1)));
-    KASSERT(std::is_sorted(first1, last1, comp));
-    KASSERT(std::adjacent_find(first2, last2) == last2);
-    KASSERT(std::is_sorted(first2, last2, comp), fmt::format("{}", std::ranges::subrange(first2, last2)));
-
-    switch (conf.intersection_method) {
-        case IntersectionMethod::merge:
-            merge_intersection(first1, last1, first2, last2, on_intersection, comp);
-            break;
-        case IntersectionMethod::binary_search:
-            binary_search_intersection(first1, last1, first2, last2, on_intersection, comp);
-            break;
-        case IntersectionMethod::binary:
-            binary_intersection(first1, last1, first2, last2, on_intersection, comp, conf.binary_intersection_cutoff);
-            break;
-        case IntersectionMethod::hybrid:
-            auto dist1 = last1 - first1;
-            auto dist2 = last2 - first2;
-            if (dist2 < dist1) {
-                std::swap(dist1, dist2);
-            }
-            if (dist1 * log2(dist2) < conf.hybrid_cutoff_scale * (dist1 + dist2)) {
-                binary_search_intersection(first1, last1, first2, last2, on_intersection, comp);
-            } else {
-                merge_intersection(first1, last1, first2, last2, on_intersection, comp);
-            }
-            break;
-    }
-}
-
-template <class InputIt1, class InputIt2, class OnIntersection, class Compare>
 void merge_intersection(
     InputIt1 first1, InputIt1 last1, InputIt2 first2, InputIt2 last2, OnIntersection&& on_intersection, Compare comp
 ) {
@@ -250,6 +209,48 @@ void binary_intersection(
         }
     }
 #endif
+}
+
+/// Intersects two sorted ranges with the method of `--intersection-method`; calls `on_intersection` per common element.
+template <class InputIt1, class InputIt2, class OnIntersection, class Compare>
+void intersection(
+    InputIt1         first1,
+    InputIt1         last1,
+    InputIt2         first2,
+    InputIt2         last2,
+    OnIntersection&& on_intersection,
+    Compare          comp,
+    Config const&    conf
+) {
+    KASSERT(std::adjacent_find(first1, last1) == last1);
+    KASSERT(std::is_sorted(first1, last1, comp), fmt::format("{}", std::ranges::subrange(first1, last1)));
+    KASSERT(std::is_sorted(first1, last1, comp));
+    KASSERT(std::adjacent_find(first2, last2) == last2);
+    KASSERT(std::is_sorted(first2, last2, comp), fmt::format("{}", std::ranges::subrange(first2, last2)));
+
+    switch (conf.intersection_method) {
+        case IntersectionMethod::merge:
+            merge_intersection(first1, last1, first2, last2, on_intersection, comp);
+            break;
+        case IntersectionMethod::binary_search:
+            binary_search_intersection(first1, last1, first2, last2, on_intersection, comp);
+            break;
+        case IntersectionMethod::binary:
+            binary_intersection(first1, last1, first2, last2, on_intersection, comp, conf.binary_intersection_cutoff);
+            break;
+        case IntersectionMethod::hybrid:
+            auto dist1 = last1 - first1;
+            auto dist2 = last2 - first2;
+            if (dist2 < dist1) {
+                std::swap(dist1, dist2);
+            }
+            if (dist1 * log2(dist2) < conf.hybrid_cutoff_scale * (dist1 + dist2)) {
+                binary_search_intersection(first1, last1, first2, last2, on_intersection, comp);
+            } else {
+                merge_intersection(first1, last1, first2, last2, on_intersection, comp);
+            }
+            break;
+    }
 }
 
 } // namespace cetric
