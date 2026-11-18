@@ -35,10 +35,11 @@
 
 #include <caliper/cali.h>
 #include <dstl/redistribute.hpp>
-#include <kamping/v2/collectives/alltoall.hpp>
 #include <kamping/v2/collectives/bcast.hpp>
 #include <kamping/v2/collectives/scan.hpp>
 #include <kamping/v2/comm.hpp>
+#include <kamping/v2/sentinels.hpp>
+#include <kamping/v2/views/ref_single_view.hpp>
 #include <kagen.h>
 #include <kassert/kassert.hpp>
 #include <mpi.h>
@@ -48,14 +49,6 @@
 #include "cetric/util.h"
 
 namespace cetric::load_balancing {
-
-/// The sum of `local` over the ranks before this one (one MPI_Scan; well defined on empty ranks too).
-inline std::uint64_t sum_before(std::uint64_t local, MPI_Comm comm) {
-    std::array<std::uint64_t, 1> const send{local};
-    std::array<std::uint64_t, 1>       inclusive{};
-    kamping::v2::scan(send, inclusive, comm);
-    return inclusive[0] - local;
-}
 
 /// Moves the vertices of `G` (KaGen's CSR, with their adjacency lists) so that each rank gets a contiguous range of
 /// about C/p of the total cost C: vertex v goes to the rank whose share [r C/p, (r+1) C/p) contains the cost before v
@@ -71,13 +64,14 @@ inline kagen::Graph run(kagen::Graph&& G, std::span<std::size_t const> cost, MPI
 
     // the cost before each vertex, globally: the ranks before (one scan), then the vertices before on this rank; the
     // last rank's sum is the total
-    std::uint64_t const      local_cost = std::reduce(cost.begin(), cost.end(), std::uint64_t{0});
-    std::uint64_t const      before     = sum_before(local_cost, comm);
+    namespace views                = kamping::v2::views;
+    std::uint64_t const local_cost = std::reduce(cost.begin(), cost.end(), std::uint64_t{0});
+    std::uint64_t       total      = local_cost; // inclusive prefix here, the total after the broadcast
+    kamping::v2::scan(kamping::v2::inplace, views::ref_single(total), comm);
     std::vector<std::size_t> cost_before(n);
-    std::exclusive_scan(cost.begin(), cost.end(), cost_before.begin(), before);
-    std::array<std::uint64_t, 1> total{before + local_cost};
-    kamping::v2::bcast(total, static_cast<int>(size) - 1, comm);
-    std::size_t const per_pe_cost = std::max<std::size_t>((total[0] + size - 1) / size, 1);
+    std::exclusive_scan(cost.begin(), cost.end(), cost_before.begin(), total - local_cost);
+    kamping::v2::bcast(views::ref_single(total), static_cast<int>(size) - 1, comm);
+    std::size_t const per_pe_cost = std::max<std::size_t>((total + size - 1) / size, 1);
 
     // vertices and edges this rank sends to each rank, interleaved; and what it receives
     std::vector<std::uint64_t> send(2 * size, 0);
@@ -89,14 +83,11 @@ inline kagen::Graph run(kagen::Graph&& G, std::span<std::size_t const> cost, MPI
         send[2 * dest]++;
         send[2 * dest + 1] += degree(i);
     }
-    std::vector<std::uint64_t> recv(2 * size);
-    kamping::v2::alltoall(send, recv, comm);
-    std::uint64_t recv_nodes = 0;
-    std::uint64_t recv_edges = 0;
-    for (std::size_t r = 0; r < size; ++r) {
-        recv_nodes += recv[2 * r];
-        recv_edges += recv[2 * r + 1];
-    }
+    // kamping-v2 has no reduce-scatter yet
+    std::array<std::uint64_t, 2> recv{};
+    MPI_Reduce_scatter_block(send.data(), recv.data(), 2, MPI_UINT64_T, MPI_SUM, comm);
+    std::uint64_t const recv_nodes = recv[0];
+    std::uint64_t const recv_edges = recv[1];
     KASSERT(recv_edges <= static_cast<std::uint64_t>(std::numeric_limits<int>::max()));
 
     profiling::MessageStatistics stats;
@@ -110,7 +101,8 @@ inline kagen::Graph run(kagen::Graph&& G, std::span<std::size_t const> cost, MPI
     }
 
     // the new range starts after the vertices of the ranks before
-    std::uint64_t const first = sum_before(recv_nodes, comm);
+    std::uint64_t last = recv_nodes;
+    kamping::v2::scan(kamping::v2::inplace, views::ref_single(last), comm);
 
     std::vector<kagen::SInt> degrees(n);
     for (std::size_t i = 0; i < n; ++i) {
@@ -119,7 +111,7 @@ inline kagen::Graph run(kagen::Graph&& G, std::span<std::size_t const> cost, MPI
     std::vector<kagen::SInt> balanced_degrees(recv_nodes);
     kagen::Graph             balanced;
     balanced.representation = kagen::GraphRepresentation::CSR;
-    balanced.vertex_range   = {first, first + recv_nodes};
+    balanced.vertex_range   = {last - recv_nodes, last};
     balanced.adjncy.resize(recv_edges);
     int const tag = as_int(MessageTag::LoadBalancing);
     dstl::redistribute(degrees, balanced_degrees, comm, tag);
