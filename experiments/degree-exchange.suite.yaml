@@ -45,7 +45,6 @@ config:
   - algorithm: patric
     threshold: local-nodes
     degree-exchange: [dense, sparse, grid]
-    global-synchronization: true
     communication-policy: new
     primary-cost-function: none
     intersection-method: merge

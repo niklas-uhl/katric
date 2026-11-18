@@ -128,13 +128,6 @@ inline PEID comm_size(MPI_Comm comm) {
     return size;
 }
 
-inline void ConditionalBarrier(bool active, MPI_Comm comm) {
-    if (active) {
-        CALI_CXX_MARK_SCOPE("barrier");
-        MPI_Barrier(comm);
-    }
-}
-
 constexpr unsigned long long log2(unsigned long long x) {
 #if defined                  __has_builtin
     #if __has_builtin(__builtin_clzl)

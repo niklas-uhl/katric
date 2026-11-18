@@ -1,0 +1,28 @@
+# lb-cost on RMAT (KaGen defaults, the paper's weak-scaling size), where the imbalance is worst: without balancing the
+# busiest rank does 6.4x the average global-phase work and an iteration takes 58 s at 48 and 230 s at 192 cores
+# (no-sync suite, 2026-11-18; jobs at 1536 / 3072 cores ran out of memory). DiTriC with primary load balancing none /
+# DPD (PATRIC's tail cost) / IDPD (push variant); compare the work counters' max / avg over ranks and the time per
+# iteration. Two iterations, as the unbalanced runs are long.
+name: lb-cost-rmat
+executable: apps/katric
+output_path_option_name: caliper-output
+threads_option_name: num-threads
+ncores: [48, 192]
+max_cores: 192
+threads_per_rank: [1]
+time_limit: 15
+graphs:
+  - generator: kagen
+    type: rmat
+    N: 16
+    M: 20
+    seed: 28475421
+    scale_weak: true
+config:
+  - algorithm: patric
+    threshold: local-nodes
+    degree-exchange: dense
+    communication-policy: new
+    primary-cost-function: [none, DPD, IDPD]
+    intersection-method: merge
+    iterations: 2

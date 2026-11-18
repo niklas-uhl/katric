@@ -2,7 +2,7 @@
 # imbalance on skewed inputs, and what the redistribution costs. RHG with locality, where the barrier share grows
 # with p (17% at 192, 37% at 768 cores in `phases`). DiTriC only; `none` is the `phases` configuration on the same
 # binary. DPD = PATRIC's tail cost Σ_{u∈N+(v)} d+(v)+d+(u), IDPD = its surrogate (push) variant.
-# The repartitioning runs in preprocessing (region `primary_load_balancing`); compare barrier shares in `phases`.
+# The repartitioning runs in its own region `primary_load_balancing`; compare the work counters' max / avg over ranks.
 name: lb-cost
 executable: apps/katric
 output_path_option_name: caliper-output
@@ -23,7 +23,6 @@ config:
   - algorithm: patric
     threshold: local-nodes
     degree-exchange: dense
-    global-synchronization: true
     communication-policy: new
     primary-cost-function: [none, DPD, IDPD]
     intersection-method: merge

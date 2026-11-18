@@ -12,7 +12,6 @@ config:
   - algorithm: [patric, cetric-x]
     threshold: local-nodes
     degree-exchange: dense
-    global-synchronization: true
     communication-policy: [new, grid]
     intersection-method: merge
     iterations: 2
@@ -23,7 +22,6 @@ config:
     local-parallel: true
     global-parallel: true
     degree-exchange: dense
-    global-synchronization: true
     communication-policy: grid
     intersection-method: merge
     task-pool-type: task-group

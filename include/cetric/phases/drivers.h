@@ -30,7 +30,6 @@ local_phase(graph::CsrGraph const& G, Config const& conf, bool with_ghosts, Tria
     triangles([&](auto emit) {
         interface_nodes = with_ghosts ? local::run<true>(G, conf, emit) : local::run<false>(G, conf, emit);
     });
-    ConditionalBarrier(conf.global_synchronization, G.comm());
     return interface_nodes;
 }
 

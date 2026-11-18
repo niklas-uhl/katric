@@ -1,9 +1,11 @@
 # Where the time goes: DiTriC (patric), CETRIC (cetric-x) and pre-CETRIC (cetric), with direct and grid communication,
 # one thread per rank, on locality x skew inputs (phases.instances.yaml). Power-of-two multiples of a node up to 3072 cores (SuperMUC-NG: 48, 96, ..., 1536, 3072);
 # `--cores` overrides them.
-# Phases are separated by barriers (global-synchronization), which run in nested `barrier` regions, so a phase's
-# exclusive time is the rank's own work and `barrier` is the imbalance. The global phase additionally has
-# `termination` and the counters send_ns / handle_ns; the input's shape (cut edges, interface nodes) is in `ingest`.
+# Up to cb22a44, phases were separated by barriers (global-synchronization), which ran in nested `barrier` regions, so a
+# phase's exclusive time was the rank's own work and `barrier` the imbalance. Since then there are no barriers: a phase's
+# time includes waiting inside the next phase's first collective; use the work counters (max/avg over ranks) for
+# imbalance. The global phase additionally has `termination` and the counters send_ns / handle_ns; the input's shape
+# (cut edges, interface nodes) is in `ingest`.
 # Up to 7cf91b7 the second configuration was cetric-x with neighborhoods sorted purely by degree
 # (`id-node-ordering: false`, removed in step 1 of doc/refactoring-plan.md); later configurations moved up by one.
 # Evaluate with `just notebook`. A laptop version is local/phases.suite.yaml.
@@ -21,7 +23,6 @@ config:
   - algorithm: [patric, cetric-x]
     threshold: local-nodes
     degree-exchange: dense
-    global-synchronization: true
     communication-policy: new
     primary-cost-function: none
     intersection-method: merge
@@ -31,7 +32,6 @@ config:
   - algorithm: cetric
     threshold: local-nodes
     degree-exchange: dense
-    global-synchronization: true
     communication-policy: new
     primary-cost-function: none
     intersection-method: merge
@@ -40,7 +40,6 @@ config:
   - algorithm: [patric, cetric-x, cetric]
     threshold: local-nodes
     degree-exchange: dense
-    global-synchronization: true
     communication-policy: grid
     primary-cost-function: none
     intersection-method: merge

@@ -1,5 +1,6 @@
 // The phases before the local phase on compact ids: building the input graph, the primary load balancing, and the
-// orientation. Each phase is a Caliper region and ends in a barrier with `--global-synchronization`.
+// orientation. Each phase is a Caliper region; there are no barriers between the phases, so a phase's time on a rank
+// includes waiting for other ranks inside the next phase's first collective.
 #pragma once
 
 #include <cstddef>
@@ -75,7 +76,6 @@ inline std::pair<graph::CsrGraph, std::size_t> input_graph(graph::LocalInput&& i
     CALI_CXX_MARK_SCOPE("input_graph");
     auto              G         = graph::build_input_graph(std::move(input.G), input.node_range, comm);
     std::size_t const threshold = get_threshold(G, conf);
-    ConditionalBarrier(true, comm);
     return {std::move(G), threshold};
 }
 
@@ -90,7 +90,6 @@ inline void primary_load_balancing(graph::CsrGraph& G, Config const& conf) {
         auto const range     = view.node_range();
         G                    = graph::build_input_graph(std::move(view), range, comm);
     }
-    ConditionalBarrier(conf.global_synchronization, comm);
 }
 
 /// The degrees of the ghosts of `G` (a CsrGraph or a ContractedGraph), indexed by ghost slot (region
@@ -137,7 +136,6 @@ inline graph::CsrGraph preprocessing_patric(graph::CsrGraph const& G, Config con
         CALI_CXX_MARK_SCOPE("global_rows");
         G_oriented.add_global_rows();
     }
-    ConditionalBarrier(conf.global_synchronization, G.comm());
     return G_oriented;
 }
 
@@ -147,7 +145,6 @@ inline graph::CsrGraph preprocessing_cetric_x(graph::CsrGraph const& G, Config c
     CALI_CXX_MARK_SCOPE("preprocessing");
     auto const ghost_degree = ghost_degrees(G, conf);
     auto       G_oriented   = orient_and_sort(G, degree_key(G, ghost_degree), true);
-    ConditionalBarrier(conf.global_synchronization, G.comm());
     return G_oriented;
 }
 
@@ -163,7 +160,6 @@ inline graph::CsrGraph preprocessing_cetric(graph::CsrGraph const& G, Config con
         },
         false
     );
-    ConditionalBarrier(conf.global_synchronization, G.comm());
     return G_oriented;
 }
 
@@ -173,7 +169,6 @@ inline graph::ContractedGraph contraction(graph::CsrGraph const& G, Config const
     auto G_contracted = graph::contract(G);
     profiling::counter_add("compact_nodes", static_cast<std::int64_t>(G_contracted.local_node_count()));
     profiling::counter_add("compact_edges", static_cast<std::int64_t>(G_contracted.local_edge_count()));
-    ConditionalBarrier(conf.global_synchronization, G.comm());
     return G_contracted;
 }
 
@@ -189,7 +184,6 @@ inline graph::ContractedGraph preprocessing_global(graph::ContractedGraph const&
             return std::pair(layer.is_owned(c) ? G.degree(c) : ghost_degree[c - layer.n()], layer.global_id(c));
         });
     }
-    ConditionalBarrier(conf.global_synchronization, G.comm());
     return G_oriented;
 }
 

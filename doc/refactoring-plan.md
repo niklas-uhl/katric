@@ -148,6 +148,11 @@ by those `.cpp` files):
         6.4x the average global-phase work (local phase 11x); at 48 cores 45 of the 52 s global phase are other
         ranks waiting in `termination`. The case for idea 1 / cost-based balancing; small `lb-cost` runs on RMAT next
       - the `lb-cost` rerun at 768 (64-bit redistribute) has not run yet
+      Decisions (2026-11-18): `--degree-exchange sparse` is not feasible at scale without locality, kept as an option
+      (the code is small and local); the configs say `dense`. The barriers between the phases and
+      `--global-synchronization` are removed: they only served the legacy phase timing and cost nothing measurable
+      either way; imbalance is read from the work counters (max / avg over ranks) and `termination`. The `no-sync`
+      suite is gone with the option; `lb-cost-rmat` added (DiTriC, none / DPD / IDPD, 48 / 192 cores)
 
 ### 1. Prune
 
