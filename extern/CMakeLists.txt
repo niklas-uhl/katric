@@ -152,7 +152,7 @@ set(KAMPING_V2_ENABLE_REFLECTION OFF)
 FetchContent_Declare(
   kamping-v2
   GIT_REPOSITORY https://github.com/kamping-site/kamping-v2
-  GIT_TAG eecd810c2257229c00324bf1f43ca7c8c4f062ff # fix/redistribute-empty-windows (PR #126, on main 0f90666); back to main once merged
+  GIT_TAG 7634a78a29ce0620d371dd56cb868dfd5d56d46d # fix/redistribute-empty-windows (PR #126: empty windows, 64-bit displacements; on main 0f90666); back to main once merged
   SYSTEM EXCLUDE_FROM_ALL)
 
 set(MESSAGE_QUEUE_BLOCKING_RECEIVE ON CACHE BOOL "Receive messages blocking")
