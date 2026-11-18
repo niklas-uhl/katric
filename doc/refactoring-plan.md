@@ -136,6 +136,18 @@ by those `.cpp` files):
         global edge array (> 2^31 entries) overflowed `dstl::redistribute`'s int displacements (fixed in PR #126)
       Extended (2026-11-18): `degree-exchange` and `no-sync` by RMAT and GNM (the paper's 2^16 / 2^20 per core) and
       1536 / 3072 cores (RHG at 3072 has the 19M-degree hub)
+      Results of the extension (`*_rerun_26_11_18`, binary `466103e`, i.e. still the old graph):
+      - `degree-exchange`: dense and grid are equal up to 3072 cores; sparse (NBX) loses from 1536 on without locality
+        (GNM exchange 1.58 vs 0.51 s at 3072). Keep dense. The transport is not the lever: 2-3 s of the region at
+        768-3072 cores on permuted RGG were local work (exclusive time: finding the ghosts and filling
+        AuxiliaryNodeData's hash map), the exchange itself 0.2-1.6 s. Stage 2 removed that local work
+      - `no-sync`: dropping the barriers changes nothing beyond noise (±10%) for DiTriC and CETRIC on RGG, RHG and GNM,
+        up to 3072 cores. Idea 5 (interleaving the phases) has little to gain on these inputs
+      - RMAT (KaGen defaults, 2^16 / 2^20 per core) does not run at scale: 58 s per iteration at 48 cores (GNM: 2.3 s),
+        230 s at 192 (job timeout), killed (memory) at 1536 / 3072. 40x GNM's wedge checks, and the busiest rank does
+        6.4x the average global-phase work (local phase 11x); at 48 cores 45 of the 52 s global phase are other
+        ranks waiting in `termination`. The case for idea 1 / cost-based balancing; small `lb-cost` runs on RMAT next
+      - the `lb-cost` rerun at 768 (64-bit redistribute) has not run yet
 
 ### 1. Prune
 
