@@ -34,6 +34,7 @@ further notebooks next to it (`just notebook <name>`). `uv sync --group eval` in
 | `phases` | Phase breakdown of DiTriC and CETRIC (one thread per rank) on RGG 2D / RHG with and without vertex permutation (locality x skew), node multiples up to 3072 cores |
 | `lb-cost` | DiTriC on RHG with primary load balancing `none` / `DPD` / `IDPD`, 48 to 768 cores (idea 9) |
 | `lb-cost-rmat` | `lb-cost` on RMAT (the worst imbalance), 48 and 192 cores |
+| `trimming` | DiTriC and CETRIC with and without message trimming on permuted RGG, RHG and GNM, 48 to 1536 cores |
 | `degree-exchange` | DiTriC on permuted RGG, RHG, RMAT and GNM with `--degree-exchange dense` / `sparse` / `grid`, 48 to 3072 cores |
 | `local/smoke` | The paper configurations on small inputs, every count verified |
 | `local/phases` | `phases` on a laptop (1 to 8 cores, smaller graphs) |

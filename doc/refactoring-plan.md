@@ -430,7 +430,17 @@ graph on top of the shared partition/indexer layer.
 The algorithm ideas (models in [model/](model/)):
 
 1. Compute at the tail + one rebalancing step (cost-based, DPD/IDPD): the growing imbalance on skewed inputs
-2. Forward-style message trimming: send volume of the global phase
+2. Forward-style message trimming: send volume of the global phase. Implemented on `feat/message-trimming`
+   (2026-11-18), `--message-trimming` (off by default): for each destination rank r of N+(v), the message holds only
+   the entries from r's first receiver on in orientation order (key = (degree, global id), kept with the oriented
+   graph as `Orientation`); no message if nothing follows that receiver. The keys of a row are computed once per sender
+   and the message is a filtered copy of the row in global ids. Verified on 216 runs (all algorithms, direct / grid /
+   DPD, 2-8 ranks); identical counters with the option off. Laptop, 8 ranks: global-phase send volume x0.75 on GNM and
+   permuted RGG, x0.85 on RMAT, x0.62 on com-amazon, x0.23 (DiTriC) / x0.57 (CETRIC) on RHG; messages x0.64-0.85;
+   sending 1.1-1.5x slower (a filtered copy per destination instead of a memcpy), handling unchanged or slightly
+   faster. Shared memory hides the saving; suite `trimming` (48-1536 cores) measures it on SuperMUC-NG. The model
+   ([model/trim.py](model/trim.py)) said -64% on com-amazon counting only neighbor entries; the measured volume also
+   counts the sender id and separator per message
 3. Compact-forward skip in the local phase: for an edge v→u every common out-neighbor w comes after u in
    orientation order, so with N+(v) in orientation order the intersection can start after u. Today's degree order
    is slow because of its comparator (degree lookups per comparison, hash map for ghosts), not the order. Ways to

@@ -133,6 +133,9 @@ public:
     [[nodiscard]] bool before(Handle a, Handle b) const {
         return key(a) < key(b);
     }
+    [[nodiscard]] Degree degree(Handle c) const {
+        return degree_[c];
+    }
 
 private:
     std::shared_ptr<VertexLayer const> layer_;

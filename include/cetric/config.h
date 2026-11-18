@@ -81,6 +81,7 @@ struct Config {
     grid_comm_cache*  grid_comms      = nullptr; // not owned, set by the driver (katric.cpp)
 
     bool pseudo2core             = false;
+    bool message_trimming        = false;
 
     // Caliper ConfigManager configuration (e.g. "spot"); empty disables Caliper. Output file via caliper_output.
     std::string caliper_config = "";

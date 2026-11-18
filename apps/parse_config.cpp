@@ -88,6 +88,12 @@ cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::P
     app.add_option("--local-degree-of-parallelism", conf.local_degree_of_parallelism);
 
     app.add_flag("--pseudo2core", conf.pseudo2core);
+    app.add_flag(
+        "--message-trimming",
+        conf.message_trimming,
+        "Global phase: send each rank only the part of N+(v) from its first receiver on (in orientation order), and "
+        "nothing if no entry follows it"
+    );
 
     add_enum_option(app, "--degree-exchange", conf.degree_exchange);
     // Removed in 401dcb9 (there are no barriers between the phases any more); still accepted, and ignored, so that job

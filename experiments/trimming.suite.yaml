@@ -1,0 +1,43 @@
+# Idea 2 of doc/refactoring-plan.md, forward-style message trimming (`--message-trimming`): a rank gets only the part
+# of N+(v) from its first receiver on (in orientation order), and no message if nothing follows it. On the laptop
+# (8 ranks) the global phase's send volume drops by 25% without locality (GNM, permuted RGG), 15% on RMAT, 37% on
+# com-amazon and 43-77% on RHG, for 1.1-1.5x the sending time; whether it pays off depends on the network.
+# DiTriC and CETRIC with and without trimming; compare the global phase's time, send_volume and send_ns.
+name: trimming
+executable: apps/katric
+output_path_option_name: caliper-output
+threads_option_name: num-threads
+ncores: [48, 192, 768, 1536]
+max_cores: 1536
+threads_per_rank: [1]
+time_limit: 10
+graphs:
+  - generator: kagen
+    type: rgg2d
+    N: 18
+    M: 22
+    permute: 1
+    seed: 28475421
+    scale_weak: true
+  - generator: kagen
+    type: rhg
+    N: 18
+    M: 22
+    gamma: 2.8
+    seed: 28475421
+    scale_weak: true
+  - generator: kagen
+    type: gnm-undirected
+    N: 16
+    M: 20
+    seed: 28475421
+    scale_weak: true
+config:
+  - algorithm: [patric, cetric-x]
+    threshold: local-nodes
+    degree-exchange: dense
+    communication-policy: new
+    primary-cost-function: none
+    intersection-method: merge
+    message-trimming: [false, true]
+    iterations: 3
