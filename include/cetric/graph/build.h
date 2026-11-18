@@ -87,13 +87,14 @@ inline LocalGraphView to_local_graph_view(CsrGraph const& G) {
 /// Sends `value(v)` of every local vertex v to the ranks holding v as a ghost and returns the received values, indexed
 /// by ghost slot (handle - n). Message counters as push_to_ghosts(), two words per entry (vertex and value).
 template <typename Graph, typename ValueFunc>
-std::vector<std::uint64_t> exchange_ghost_values(Graph const& G, ValueFunc&& value, GhostExchange exchange, int tag) {
+std::vector<std::uint64_t>
+exchange_ghost_values(Graph const& G, ValueFunc&& value, GhostExchangeMode mode, int tag) {
     // (vertex, value)
     auto const received = push_to_ghosts(
         G,
         G.local_nodes(),
         [&](Handle v) { return std::pair<NodeId, std::uint64_t>{G.global_id(v), static_cast<std::uint64_t>(value(v))}; },
-        exchange,
+        mode,
         tag,
         2
     );

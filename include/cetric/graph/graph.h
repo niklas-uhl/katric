@@ -10,14 +10,18 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <ranges>
 #include <span>
 #include <utility>
 #include <vector>
 
+#include <dstl/grid_comm.hpp>
+#include <kamping/v2/comm.hpp>
 #include <kassert/kassert.hpp>
 #include <mpi.h>
 
+#include "cetric/caliper.h"
 #include "cetric/datastructures/distributed/vertex_partition.h"
 #include "cetric/datastructures/graph_definitions.h"
 #include "cetric/util.h"
@@ -105,6 +109,16 @@ public:
     [[nodiscard]] VertexPartition<NodeId> const& partition() const {
         return partition_;
     }
+    /// The 2D grid over the communicator's ranks for the grid exchange, built on first use (a collective split: the
+    /// first call must be made by all ranks together, as every exchange is). Each run builds its own, as it builds its
+    /// vertex layer; it is freed with the layer.
+    [[nodiscard]] dstl::grid_comm<dstl::execution_policy::seq> const& grid() const {
+        if (!grid_) {
+            CALI_CXX_MARK_SCOPE("grid_comm");
+            grid_.emplace(kamping::v2::comm_view{comm_});
+        }
+        return *grid_;
+    }
 
 private:
     VertexPartition<NodeId> partition_;
@@ -116,6 +130,7 @@ private:
     std::vector<NodeId>     ghost_ids_;
     std::vector<PEID>       owners_;
     std::size_t             ghosts_below_ = 0;
+    mutable std::optional<dstl::grid_comm<dstl::execution_policy::seq>> grid_;
 };
 
 /// Rows sorted by handle in global ids, ascending. A sorted row is [local vertices][ghosts below the local range][ghosts

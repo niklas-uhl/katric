@@ -76,7 +76,7 @@ TEST_P(Orientation, GlobalDegree) {
         received[mode] = cetric::graph::exchange_ghost_values(
             G,
             [&](Handle v) { return G.degree(v); },
-            cetric::GhostExchange{mode},
+            mode,
             cetric::as_int(cetric::MessageTag::Orientation)
         );
         ASSERT_EQ(received[mode].size(), G.ghost_count());

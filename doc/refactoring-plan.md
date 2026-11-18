@@ -452,11 +452,15 @@ Compact IDs fit 32 bits per rank (n + g < 2^32), which would halve the adjacency
 - [x] Remove the `std::set<RankEncodedNodeId> ghosts` filter in `run_distributed`: every caller passed an empty set
       (removed in step 2, `5f5a54d`)
 - [ ] Compare against `pre-refactor` in `phases`: preprocessing (orientation, degree exchange) and `send_ns`
-- [ ] A communication context next to the graph's communicator (`G.comm()`) for per-communicator state, e.g. the
+- [x] (2026-11-18, superseded) A communication context next to the graph's communicator (`G.comm()`) for per-communicator state, e.g. the
       degree exchange's `grid_comm_cache`, which today reaches the callers through a non-owning pointer in `Config`
       (`Config::grid_comms`; a `Config` without it silently splits the communicator on every grid exchange). Decided
       2026-11-13 to keep the caller-owned cache over a static keyval and move it here when the graph's ID and
-      partition layer is reworked
+      partition layer is reworked. Done instead: the vertex layer builds the grid
+      communicator on its first grid exchange and frees it with the graph, so every run pays for its split (a cache
+      across iterations made only the first iteration pay, which the median over iterations hides). `grid_comm_cache`,
+      `Config::grid_comms` and `GhostExchange` are gone; push_to_ghosts takes the transport only. With load balancing
+      the rebalanced graph builds a second one
 
 KaCCv2's graph class itself (`SplitDistributedCSRGraph`, CSR plus split-vertex replicas) is not adopted: katric
 needs the out/in split per vertex after orientation, the ghost CSR and contraction, so it keeps its own oriented

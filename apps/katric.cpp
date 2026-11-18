@@ -74,10 +74,6 @@ int main(int argc, char* argv[]) {
         MPI_Comm_size(comm, &size);
         DEBUG_BARRIER(rank);
         cetric::Config      conf = parse_config(argc, argv, rank, size);
-        // grid communicators of the degree exchange, reused across iterations; freed (collectively) at the end of this
-        // block, before MPI_Finalize
-        cetric::grid_comm_cache grid_comms;
-        conf.grid_comms = &grid_comms;
         size_t              expected_triangles = 0;
         tbb::global_control global_limit(tbb::global_control::max_allowed_parallelism, conf.num_threads);
 
