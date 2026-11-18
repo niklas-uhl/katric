@@ -392,6 +392,8 @@ Compact IDs fit 32 bits per rank (n + g < 2^32), which would halve the adjacency
       - the global phase works on a copy of each out-row in global ids (`global_rows` in preprocessing): merging a
         message against handles needed a ghost-id lookup per step (1.65x slower message handling on permuted RGG).
         Oriented graph = m/2 handles + m/2 global ids, the old graph held m entries
+        (renamed 2026-11-18 with the CSR naming: `first_out`/`head`, `global_neighbors`; the region `global_rows` is
+        `global_neighbors` from `e365b1b` on, "ghost rows" are the ghosts' out-edges)
       - laptop, 8 ranks, 2^18 vertices / 2^22 edges: permuted RGG 0.49 -> 0.41 s per iteration (preprocessing 0.16 ->
         0.06 s, global phase 0.29 -> 0.25 s, building 0.085 s), RHG 0.094 -> 0.082 s
       - the DPD hang on graphs with fewer vertices than ranks is gone for DiTriC (the old cost function exchanged the

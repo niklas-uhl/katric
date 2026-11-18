@@ -64,7 +64,7 @@ struct Splitter {
 };
 
 /// Handles a received message [v, N+(v)...] (global ids, ascending): for every local vertex u in it, emits the
-/// triangles (v, u, w) for w in N+(v) ∩ N+(u), merging against u's row in global ids.
+/// triangles (v, u, w) for w in N+(v) ∩ N+(u), merging against u's neighbors in global ids.
 template <typename Graph, typename It, typename TriangleFunc>
 void process_message(
     Graph const& G, Config const& conf, It begin, It end, GlobalPhaseCounters& counters, TriangleFunc& emit
@@ -83,13 +83,13 @@ void process_message(
         if (!G.is_local(u)) {
             continue;
         }
-        auto const u_row = G.global_neighbors(u);
+        auto const u_neighbors = G.global_neighbors(u);
         // for the edge (v, u) we check the open wedges (v, u, w) for w in N+(u)
-        counters.wedge_checks += u_row.size();
-        counters.intersection_size_global += entries.size() + u_row.size();
+        counters.wedge_checks += u_neighbors.size();
+        counters.intersection_size_global += entries.size() + u_neighbors.size();
         cetric::intersection(
-            u_row.begin(),
-            u_row.end(),
+            u_neighbors.begin(),
+            u_neighbors.end(),
             entries.begin(),
             entries.end(),
             [&](graph::NodeId w) {
@@ -105,16 +105,16 @@ void process_message(
 /// The message of `v`: [v, N+(v)...] in global ids, ascending.
 template <typename Graph>
 std::vector<graph::NodeId> make_message(Graph const& G, graph::Handle v) {
-    auto const                 row = G.global_neighbors(v);
+    auto const                 neighbors = G.global_neighbors(v);
     std::vector<graph::NodeId> message;
-    message.reserve(1 + row.size());
+    message.reserve(1 + neighbors.size());
     message.push_back(G.global_id(v));
-    message.insert(message.end(), row.begin(), row.end());
+    message.insert(message.end(), neighbors.begin(), neighbors.end());
     return message;
 }
 
 /// The global phase: sends the message of every vertex v of `senders` once to each rank holding the head of a cut
-/// out-edge of v (the ghosts of a row are in global order, so the heads on one rank are consecutive), and handles the
+/// out-edge of v (the ghosts of a neighborhood are in global order, so the heads on one rank are consecutive), and handles the
 /// received messages. `threshold` is the message queue's buffer size.
 template <class CommunicationPolicy, typename Graph, typename Senders, typename TriangleFunc>
 void run(Graph const& G, Config const& conf, std::size_t threshold, Senders const& senders, TriangleFunc emit) {
@@ -128,7 +128,7 @@ void run(Graph const& G, Config const& conf, std::size_t threshold, Senders cons
     }();
     queue.set_threshold(threshold);
     GlobalPhaseCounters counters;
-    // the rank the message of a sender went to last, per row
+    // the rank the message of a sender went to last, by its local index
     std::vector<PEID> last_proc(G.local_node_count(), -1);
     // Time spent building and posting messages and handling received ones (the intersections), accumulated per call
     // because a Caliper region per message would cost more than the work it measures. The rest of the phase's
@@ -147,11 +147,11 @@ void run(Graph const& G, Config const& conf, std::size_t threshold, Senders cons
             counters.skipped_nodes++;
         } else {
             auto const start = clock::now();
-            auto const v_row = G.to_local_idx(v);
+            auto const v_idx = G.to_local_idx(v);
             for (graph::Handle const u: G.neighbors(v)) {
-                if (!G.is_owned(u) && last_proc[v_row] != G.owner(u)) {
+                if (!G.is_owned(u) && last_proc[v_idx] != G.owner(u)) {
                     queue.post_message(make_message(G, v), G.owner(u));
-                    last_proc[v_row] = G.owner(u);
+                    last_proc[v_idx] = G.owner(u);
                 }
             }
             send_time += clock::now() - start;

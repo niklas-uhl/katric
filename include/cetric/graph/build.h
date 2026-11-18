@@ -24,7 +24,7 @@
 namespace cetric::graph {
 
 /// The undirected graph of a rank's part of the input (KaGen's CSR: vertex range, xadj, adjncy in global ids), with
-/// ghosts. Collective. Rows keep the input's neighbor order. The cut edges are sorted once by (head, position): that
+/// ghosts. Collective. Neighborhoods keep the input's order. The cut edges are sorted once by (head, position): that
 /// gives the ghosts in global-id order and their handles without a lookup per edge.
 inline CsrGraph build_input_graph(kagen::Graph&& input, MPI_Comm comm) {
     KASSERT(input.representation == kagen::GraphRepresentation::CSR);
@@ -34,12 +34,12 @@ inline CsrGraph build_input_graph(kagen::Graph&& input, MPI_Comm comm) {
     auto const        owned  = [first, n](NodeId gid) {
         return gid >= first && gid - first < n;
     };
-    std::vector<Handle>                    heads(input.adjncy.size());
-    std::vector<std::pair<NodeId, EdgeId>> cut; // (head, position in heads)
+    std::vector<Handle>                    head(input.adjncy.size());
+    std::vector<std::pair<NodeId, EdgeId>> cut; // (head, position in head)
     for (EdgeId e = 0; e < input.adjncy.size(); ++e) {
         NodeId const gid = input.adjncy[e];
         if (owned(gid)) {
-            heads[e] = gid - first;
+            head[e] = gid - first;
         } else {
             cut.emplace_back(gid, e);
         }
@@ -50,22 +50,22 @@ inline CsrGraph build_input_graph(kagen::Graph&& input, MPI_Comm comm) {
         if (ghost_ids.empty() || ghost_ids.back() != gid) {
             ghost_ids.push_back(gid);
         }
-        heads[e] = n + ghost_ids.size() - 1;
+        head[e] = n + ghost_ids.size() - 1;
     }
     tlx::vector_free(cut);
-    // KaGen's SInt need not be our EdgeId type (unsigned long long vs. unsigned long), so the offsets are copied
-    std::vector<EdgeId> offsets(input.xadj.begin(), input.xadj.end());
-    if (offsets.empty()) {
-        offsets.push_back(0);
+    // KaGen's SInt need not be our EdgeId type (unsigned long long vs. unsigned long), so the first_out are copied
+    std::vector<EdgeId> first_out(input.xadj.begin(), input.xadj.end());
+    if (first_out.empty()) {
+        first_out.push_back(0);
     }
-    KASSERT(offsets.size() == n + 1);
+    KASSERT(first_out.size() == n + 1);
     input.Clear();
     auto layer = std::make_shared<VertexLayer const>(range, std::move(ghost_ids), comm);
     KASSERT(layer->n() == n);
-    return CsrGraph(std::move(layer), std::move(offsets), std::move(heads));
+    return CsrGraph(std::move(layer), std::move(first_out), std::move(head));
 }
 
-/// The rows of `G` in KaGen's CSR representation (global ids).
+/// `G` in KaGen's CSR representation (global ids).
 inline kagen::Graph to_kagen_graph(CsrGraph const& G) {
     auto const&  layer = *G.layer();
     kagen::Graph input;
@@ -105,85 +105,86 @@ exchange_ghost_values(Graph const& G, ValueFunc&& value, GhostExchangeMode mode,
     return values;
 }
 
-/// Orients the edges of the undirected graph `G` from the smaller to the larger `key` and returns the out-edges, rows
-/// unsorted (in `G`'s order). With `ghost_rows`, also the ghosts' out-edges to local vertices (CETRIC), sorted.
+/// Orients the edges of the undirected graph `G` from the smaller to the larger `key` and returns the out-edges,
+/// neighborhoods unsorted (in `G`'s order). With `ghost_out_edges`, also the ghosts' out-edges to local vertices
+/// (CETRIC), sorted.
 template <typename Key>
-CsrGraph orient(CsrGraph const& G, Key&& key, bool ghost_rows) {
+CsrGraph orient(CsrGraph const& G, Key&& key, bool ghost_out_edges) {
     auto const&         layer = *G.layer();
     std::size_t const   n     = layer.n();
     auto const          out   = [&](Handle v, Handle u) {
         return key(v) < key(u);
     };
-    std::vector<EdgeId> offsets(n + 1, 0);
-    std::vector<EdgeId> ghost_offsets(ghost_rows ? layer.ghost_count() + 1 : 0, 0);
+    std::vector<EdgeId> first_out(n + 1, 0);
+    std::vector<EdgeId> ghost_first_out(ghost_out_edges ? layer.ghost_count() + 1 : 0, 0);
     for (Handle const v: G.local_nodes()) {
         for (Handle const u: G.neighbors(v)) {
             if (out(v, u)) {
-                offsets[v + 1]++;
-            } else if (ghost_rows && !layer.is_owned(u)) {
-                ghost_offsets[u - n + 1]++;
+                first_out[v + 1]++;
+            } else if (ghost_out_edges && !layer.is_owned(u)) {
+                ghost_first_out[u - n + 1]++;
             }
         }
     }
     for (std::size_t c = 0; c < n; ++c) {
-        offsets[c + 1] += offsets[c];
+        first_out[c + 1] += first_out[c];
     }
-    for (std::size_t s = 0; s + 1 < ghost_offsets.size(); ++s) {
-        ghost_offsets[s + 1] += ghost_offsets[s];
+    for (std::size_t s = 0; s + 1 < ghost_first_out.size(); ++s) {
+        ghost_first_out[s + 1] += ghost_first_out[s];
     }
-    std::vector<Handle> heads(offsets.back());
-    std::vector<Handle> ghost_heads(ghost_rows ? ghost_offsets.back() : 0);
-    std::vector<EdgeId> ghost_next(ghost_offsets);
+    std::vector<Handle> head(first_out.back());
+    std::vector<Handle> ghost_head(ghost_out_edges ? ghost_first_out.back() : 0);
+    std::vector<EdgeId> ghost_next(ghost_first_out);
     for (Handle const v: G.local_nodes()) {
-        EdgeId next = offsets[v];
+        EdgeId next = first_out[v];
         for (Handle const u: G.neighbors(v)) {
             if (out(v, u)) {
-                heads[next++] = u;
-            } else if (ghost_rows && !layer.is_owned(u)) {
-                // v ascending: each ghost row comes out sorted
-                ghost_heads[ghost_next[u - n]++] = v;
+                head[next++] = u;
+            } else if (ghost_out_edges && !layer.is_owned(u)) {
+                // v ascending: each ghost's neighborhood comes out sorted
+                ghost_head[ghost_next[u - n]++] = v;
             }
         }
     }
-    return CsrGraph(G.layer(), std::move(offsets), std::move(heads), std::move(ghost_offsets), std::move(ghost_heads));
+    return CsrGraph(G.layer(), std::move(first_out), std::move(head), std::move(ghost_first_out), std::move(ghost_head));
 }
 
 /// The contraction of CETRIC and pre-CETRIC: the local vertices with a ghost out-neighbor, each with only its ghost
-/// out-neighbors (the edges the local phase did not handle). `G`'s rows must be sorted.
+/// out-neighbors (the edges the local phase did not handle). `G`'s neighborhoods must be sorted.
 inline ContractedGraph contract(CsrGraph const& G) {
     auto const          n = static_cast<Handle>(G.local_node_count());
     std::vector<Handle> vertices;
-    std::vector<EdgeId> offsets{0};
-    std::vector<Handle> heads;
+    std::vector<EdgeId> first_out{0};
+    std::vector<Handle> head;
     for (Handle const v: G.local_nodes()) {
-        auto const row        = G.neighbors(v);
-        auto const ghost_part = std::ranges::subrange(std::lower_bound(row.begin(), row.end(), n), row.end());
+        auto const neighbors  = G.neighbors(v);
+        auto const ghost_part = std::ranges::subrange(std::lower_bound(neighbors.begin(), neighbors.end(), n), neighbors.end());
         if (ghost_part.empty()) {
             continue;
         }
         vertices.push_back(v);
-        heads.insert(heads.end(), ghost_part.begin(), ghost_part.end());
-        offsets.push_back(heads.size());
+        head.insert(head.end(), ghost_part.begin(), ghost_part.end());
+        first_out.push_back(head.size());
     }
-    return ContractedGraph(G.layer(), std::move(vertices), std::move(offsets), std::move(heads));
+    return ContractedGraph(G.layer(), std::move(vertices), std::move(first_out), std::move(head));
 }
 
-/// Orients the rows of a contracted graph: keeps u in the row of v if key(v) < key(u). Every vertex keeps its row
-/// (possibly empty).
+/// Orients a contracted graph: keeps u in the neighborhood of v if key(v) < key(u). Every vertex stays (possibly
+/// without neighbors).
 template <typename Key>
 ContractedGraph orient(ContractedGraph const& G, Key&& key) {
     std::vector<Handle> vertices(G.local_nodes().begin(), G.local_nodes().end());
-    std::vector<EdgeId> offsets{0};
-    std::vector<Handle> heads;
+    std::vector<EdgeId> first_out{0};
+    std::vector<Handle> head;
     for (Handle const v: vertices) {
         for (Handle const u: G.neighbors(v)) {
             if (key(v) < key(u)) {
-                heads.push_back(u);
+                head.push_back(u);
             }
         }
-        offsets.push_back(heads.size());
+        first_out.push_back(head.size());
     }
-    return ContractedGraph(G.layer(), std::move(vertices), std::move(offsets), std::move(heads));
+    return ContractedGraph(G.layer(), std::move(vertices), std::move(first_out), std::move(head));
 }
 
 } // namespace cetric::graph

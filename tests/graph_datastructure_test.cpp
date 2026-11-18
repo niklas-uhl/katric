@@ -37,7 +37,7 @@ using cetric::graph::Edge;
 using cetric::graph::Handle;
 using cetric::graph::NodeId;
 
-TEST(InputGraphTest, rows_ghosts_and_handles) {
+TEST(InputGraphTest, neighbors_ghosts_and_handles) {
     auto const input  = "examples/hiv.metis";
     auto const G_full = cetric::testing::read_full_graph(input);
     auto       local  = cetric::testing::read_local_graph(input);

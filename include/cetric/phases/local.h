@@ -1,5 +1,5 @@
 // The local phase on compact ids: the intersections for the edges whose triangles a rank can find without
-// communication. Rows are sorted by handle, so a row lists its local vertices first.
+// communication. Neighborhoods are sorted by handle, so they list their local vertices first.
 #pragma once
 
 #include <algorithm>
@@ -16,13 +16,13 @@
 
 namespace cetric::local {
 
-/// The row of `c`: N+(c) for a local vertex, the ghost row (CETRIC: its out-edges to local vertices) for a ghost.
-inline std::span<graph::Handle const> row(graph::CsrGraph const& G, graph::Handle c) {
+/// N+(c) for a local vertex, and for a ghost (CETRIC) its out-edges to local vertices.
+inline std::span<graph::Handle const> neighbors_with_ghosts(graph::CsrGraph const& G, graph::Handle c) {
     return G.is_owned(c) ? G.neighbors(c) : G.ghost_neighbors(c);
 }
 
 /// The work for one edge v -> u: emits the triangles (v, u, w) for w in N+(v) ∩ N+(u), where a ghost's neighborhood is
-/// its ghost row. A ghost row holds only local vertices, so when one end is a ghost the other side is clipped to its
+/// its out-edges to local vertices. A ghost's neighbors are only local vertices, so when one end is a ghost the other side is clipped to its
 /// local prefix; this bounds the merge and keeps the work counters exact.
 template <typename TriangleFunc>
 void intersect_edge(
@@ -33,12 +33,12 @@ void intersect_edge(
     LocalPhaseCounters&    counters,
     TriangleFunc&          emit
 ) {
-    auto const   v_row   = row(G, v);
-    auto const   u_row   = row(G, u);
-    auto         v_first = v_row.begin();
-    auto         v_last  = v_row.end();
-    auto         u_first = u_row.begin();
-    auto         u_last  = u_row.end();
+    auto const   v_neighbors   = neighbors_with_ghosts(G, v);
+    auto const   u_neighbors   = neighbors_with_ghosts(G, u);
+    auto         v_first = v_neighbors.begin();
+    auto         v_last  = v_neighbors.end();
+    auto         u_first = u_neighbors.begin();
+    auto         u_last  = u_neighbors.end();
     auto const   n       = static_cast<graph::Handle>(G.local_node_count());
     if (!G.is_owned(u)) {
         v_last = std::lower_bound(v_first, v_last, n);
@@ -63,7 +63,7 @@ void intersect_edge(
 }
 
 /// The local phase: the intersection for every edge v -> u with both ends local and, `with_ghosts` (CETRIC), also for
-/// the edges with a ghost end, through the ghost rows. Returns the interface vertices (local vertices with a cut
+/// the edges with a ghost end, through the ghosts' out-edges. Returns the interface vertices (local vertices with a cut
 /// out-edge), ascending.
 template <bool with_ghosts, typename TriangleFunc>
 std::vector<graph::Handle> run(graph::CsrGraph const& G, Config const& conf, TriangleFunc emit) {
@@ -75,14 +75,14 @@ std::vector<graph::Handle> run(graph::CsrGraph const& G, Config const& conf, Tri
             return;
         }
         bool is_interface = false;
-        for (graph::Handle const u: row(G, v)) {
+        for (graph::Handle const u: neighbors_with_ghosts(G, v)) {
             if (!G.is_owned(u)) {
                 if (G.is_owned(v) && !is_interface) {
                     interface_nodes.push_back(v);
                     is_interface = true;
                 }
                 if constexpr (!with_ghosts) {
-                    // without ghost rows only local heads are intersected; they come first
+                    // without the ghosts' out-edges only local heads are intersected; they come first
                     break;
                 }
             }

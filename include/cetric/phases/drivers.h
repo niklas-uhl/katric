@@ -21,7 +21,7 @@
 namespace cetric {
 namespace phases {
 
-/// The intersections that need no communication (CETRIC also through the ghost rows). Returns the interface vertices,
+/// The intersections that need no communication (CETRIC also through the ghosts' out-edges). Returns the interface vertices,
 /// the senders of DiTriC's global phase.
 inline std::vector<graph::Handle>
 local_phase(graph::CsrGraph const& G, Config const& conf, bool with_ghosts, TriangleCounter& triangles) {
@@ -71,7 +71,7 @@ std::size_t run_cetric(kagen::Graph&& input, Config const& conf, MPI_Comm comm) 
     return phases::reduce(triangles, comm);
 }
 
-/// CETRIC (ghost rows)
+/// CETRIC (with the ghosts' out-edges)
 template <class CommunicationPolicy>
 std::size_t run_cetric_x(kagen::Graph&& input, Config const& conf, MPI_Comm comm) {
     TriangleCounter triangles;

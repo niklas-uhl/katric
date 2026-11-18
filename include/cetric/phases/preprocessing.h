@@ -106,17 +106,17 @@ std::vector<std::uint64_t> ghost_degrees(Graph const& G, Config const& conf) {
     );
 }
 
-/// Orients the edges of `G` from the smaller to the larger `key` (region `orientation`) and sorts the rows by handle
-/// (`sorting`); with `ghost_rows`, also the ghosts' out-edges to local vertices.
+/// Orients the edges of `G` from the smaller to the larger `key` (region `orientation`) and sorts the neighborhoods by
+/// handle (`sorting`); with `ghost_out_edges`, also the ghosts' out-edges to local vertices.
 template <typename Key>
-graph::CsrGraph orient_and_sort(graph::CsrGraph const& G, Key&& key, bool ghost_rows) {
+graph::CsrGraph orient_and_sort(graph::CsrGraph const& G, Key&& key, bool ghost_out_edges) {
     graph::CsrGraph G_oriented;
     {
         CALI_CXX_MARK_SCOPE("orientation");
-        G_oriented = graph::orient(G, key, ghost_rows);
+        G_oriented = graph::orient(G, key, ghost_out_edges);
     }
     CALI_CXX_MARK_SCOPE("sorting");
-    G_oriented.sort_rows();
+    G_oriented.sort_neighborhoods();
     return G_oriented;
 }
 
@@ -128,20 +128,20 @@ inline auto degree_key(graph::CsrGraph const& G, std::vector<std::uint64_t> cons
     };
 }
 
-/// DiTriC: degree exchange, orientation by degree, and the rows in global ids for the global phase (`global_rows`).
+/// DiTriC: degree exchange, orientation by degree, and the neighbors in global ids for the global phase (`global_neighbors`).
 inline graph::CsrGraph preprocessing_patric(graph::CsrGraph const& G, Config const& conf) {
     CALI_CXX_MARK_SCOPE("preprocessing");
     auto const ghost_degree = ghost_degrees(G, conf);
     auto       G_oriented   = orient_and_sort(G, degree_key(G, ghost_degree), false);
     {
-        CALI_CXX_MARK_SCOPE("global_rows");
-        G_oriented.add_global_rows();
+        CALI_CXX_MARK_SCOPE("global_neighbors");
+        G_oriented.add_global_neighbors();
     }
     return G_oriented;
 }
 
-/// CETRIC: degree exchange, orientation by degree, with the ghosts' out-edges to local vertices (the ghost rows, which
-/// replace the old ghost expansion).
+/// CETRIC: degree exchange, orientation by degree, with the ghosts' out-edges to local vertices (which replace the
+/// old ghost expansion).
 inline graph::CsrGraph preprocessing_cetric_x(graph::CsrGraph const& G, Config const& conf) {
     CALI_CXX_MARK_SCOPE("preprocessing");
     auto const ghost_degree = ghost_degrees(G, conf);

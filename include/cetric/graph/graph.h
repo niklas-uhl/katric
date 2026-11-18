@@ -1,8 +1,8 @@
-// The graphs the algorithms run on: CSR over compact ids. A rank numbers its local vertices 0..n-1 (in global-id order,
-// so local index = global id - first) and its ghosts n..n+g-1 (in global-id order); adjacency lists hold these compact
-// ids ("neighbor handles", as in KaCCv2), not global ids. Ownership, owner and global id of a handle are a comparison or
-// an array lookup. The graphs of one run share their vertex layer (VertexLayer) and are immutable once built
-// (graph/build.h builds them).
+// The graphs the algorithms run on: CSR (first_out, head) over compact ids. A rank numbers its local vertices 0..n-1
+// (in global-id order, so local index = global id - first) and its ghosts n..n+g-1 (in global-id order); head holds
+// these compact ids ("neighbor handles", as in KaCCv2), not global ids. Ownership, owner and global id of a handle are
+// a comparison or an array lookup. The graphs of one run share their vertex layer (VertexLayer) and are immutable once
+// built (graph/build.h builds them).
 #pragma once
 
 #include <algorithm>
@@ -133,17 +133,18 @@ private:
     mutable std::optional<dstl::grid_comm<dstl::execution_policy::seq>> grid_;
 };
 
-/// Rows sorted by handle in global ids, ascending. A sorted row is [local vertices][ghosts below the local range][ghosts
-/// above], so in global order it is [ghosts below][local vertices][ghosts above].
+/// The neighborhoods of a CSR graph in global ids, each ascending. A neighborhood sorted by handle is [local
+/// vertices][ghosts below the local range][ghosts above], so in global order it is [ghosts below][local vertices][ghosts
+/// above]. Returns the head array of the same first_out.
 inline std::vector<NodeId>
-global_rows(VertexLayer const& layer, std::vector<EdgeId> const& offsets, std::vector<Handle> const& heads) {
-    std::vector<NodeId> global_heads(heads.size());
-    for (std::size_t row = 0; row + 1 < offsets.size(); ++row) {
-        auto const first     = heads.begin() + static_cast<std::ptrdiff_t>(offsets[row]);
-        auto const last      = heads.begin() + static_cast<std::ptrdiff_t>(offsets[row + 1]);
+global_head(VertexLayer const& layer, std::vector<EdgeId> const& first_out, std::vector<Handle> const& head) {
+    std::vector<NodeId> result(head.size());
+    for (std::size_t v = 0; v + 1 < first_out.size(); ++v) {
+        auto const first     = head.begin() + static_cast<std::ptrdiff_t>(first_out[v]);
+        auto const last      = head.begin() + static_cast<std::ptrdiff_t>(first_out[v + 1]);
         auto const local_end = std::lower_bound(first, last, Handle{layer.n()});
         auto const below_end = std::lower_bound(local_end, last, layer.ghosts_above());
-        auto       out       = global_heads.begin() + static_cast<std::ptrdiff_t>(offsets[row]);
+        auto       out       = result.begin() + static_cast<std::ptrdiff_t>(first_out[v]);
         for (auto it = local_end; it != below_end; ++it) {
             *out++ = layer.global_id(*it);
         }
@@ -154,36 +155,36 @@ global_rows(VertexLayer const& layer, std::vector<EdgeId> const& offsets, std::v
             *out++ = layer.global_id(*it);
         }
     }
-    return global_heads;
+    return result;
 }
 
-/// A CSR graph with a row for every local vertex and, optionally (CETRIC), a row for every ghost: the ghost's
-/// out-edges to local vertices.
+/// A CSR graph (first_out, head) over the local vertices and, optionally (CETRIC), a second one over the ghosts: each
+/// ghost's out-edges to local vertices.
 class CsrGraph {
 public:
     CsrGraph() = default;
     CsrGraph(
         std::shared_ptr<VertexLayer const> layer,
-        std::vector<EdgeId>                offsets,
-        std::vector<Handle>                heads,
-        std::vector<EdgeId>                ghost_offsets = {},
-        std::vector<Handle>                ghost_heads   = {}
+        std::vector<EdgeId>                first_out,
+        std::vector<Handle>                head,
+        std::vector<EdgeId>                ghost_first_out = {},
+        std::vector<Handle>                ghost_head      = {}
     )
         : layer_(std::move(layer)),
-          offsets_(std::move(offsets)),
-          heads_(std::move(heads)),
-          ghost_offsets_(std::move(ghost_offsets)),
-          ghost_heads_(std::move(ghost_heads)) {
-        KASSERT(offsets_.size() == layer_->n() + 1);
-        KASSERT(offsets_.back() == heads_.size());
-        KASSERT(ghost_offsets_.empty() || ghost_offsets_.size() == layer_->ghost_count() + 1);
+          first_out_(std::move(first_out)),
+          head_(std::move(head)),
+          ghost_first_out_(std::move(ghost_first_out)),
+          ghost_head_(std::move(ghost_head)) {
+        KASSERT(first_out_.size() == layer_->n() + 1);
+        KASSERT(first_out_.back() == head_.size());
+        KASSERT(ghost_first_out_.empty() || ghost_first_out_.size() == layer_->ghost_count() + 1);
     }
 
     [[nodiscard]] std::shared_ptr<VertexLayer const> const& layer() const {
         return layer_;
     }
 
-    /// The vertices with a row: all local vertices.
+    /// All local vertices.
     [[nodiscard]] auto local_nodes() const {
         return std::views::iota(Handle{0}, Handle{layer_->n()});
     }
@@ -196,60 +197,62 @@ public:
     [[nodiscard]] std::size_t ghost_count() const {
         return layer_->ghost_count();
     }
-    /// Number of edges in the local vertices' rows.
+    /// Number of edges of the local vertices.
     [[nodiscard]] EdgeId local_edge_count() const {
-        return heads_.size();
+        return head_.size();
     }
 
-    /// The row of local vertex `c` (its index among the rows).
+    /// The index of local vertex `c` among the local vertices: `c` itself.
     [[nodiscard]] std::size_t to_local_idx(Handle c) const {
         KASSERT(c < layer_->n());
         return c;
     }
-    /// Whether `c` has a row: every local vertex.
+    /// Whether `c` is a vertex of this graph: every local vertex.
     [[nodiscard]] bool is_local(Handle c) const {
         return c < layer_->n();
     }
     [[nodiscard]] std::span<Handle const> neighbors(Handle c) const {
         KASSERT(c < layer_->n());
-        return {heads_.data() + offsets_[c], offsets_[c + 1] - offsets_[c]};
+        return {head_.data() + first_out_[c], first_out_[c + 1] - first_out_[c]};
     }
     [[nodiscard]] Degree degree(Handle c) const {
         KASSERT(c < layer_->n());
-        return offsets_[c + 1] - offsets_[c];
+        return first_out_[c + 1] - first_out_[c];
     }
 
-    [[nodiscard]] bool has_ghost_rows() const {
-        return !ghost_offsets_.empty();
+    [[nodiscard]] bool has_ghost_out_edges() const {
+        return !ghost_first_out_.empty();
     }
-    /// The row of ghost `c`: its out-edges to local vertices.
+    /// The out-neighbors of ghost `c`: local vertices.
     [[nodiscard]] std::span<Handle const> ghost_neighbors(Handle c) const {
-        KASSERT(has_ghost_rows() && c >= layer_->n());
+        KASSERT(has_ghost_out_edges() && c >= layer_->n());
         auto const slot = c - layer_->n();
-        return {ghost_heads_.data() + ghost_offsets_[slot], ghost_offsets_[slot + 1] - ghost_offsets_[slot]};
+        return {ghost_head_.data() + ghost_first_out_[slot], ghost_first_out_[slot + 1] - ghost_first_out_[slot]};
     }
     [[nodiscard]] Degree ghost_degree(Handle c) const {
         return ghost_neighbors(c).size();
     }
 
-    /// The row of local vertex `c` in global ids, ascending (after add_global_rows()). The global phase works on these:
-    /// messages carry global ids, and merging them needs no lookup per entry.
+    /// The neighbors of local vertex `c` in global ids, ascending (after add_global_neighbors()). The global phase works
+    /// on these: messages carry global ids, and merging them needs no lookup per entry.
     [[nodiscard]] std::span<NodeId const> global_neighbors(Handle c) const {
         KASSERT(c < layer_->n());
-        KASSERT(global_heads_.size() == heads_.size(), "add_global_rows() was not called");
-        return {global_heads_.data() + offsets_[c], offsets_[c + 1] - offsets_[c]};
+        KASSERT(global_head_.size() == head_.size(), "add_global_neighbors() was not called");
+        return {global_head_.data() + first_out_[c], first_out_[c + 1] - first_out_[c]};
     }
 
-    /// Building step (after sort_rows()): the rows in global ids.
-    void add_global_rows() {
-        global_heads_ = global_rows(*layer_, offsets_, heads_);
+    /// Building step (after sort_neighborhoods()): the neighbors in global ids.
+    void add_global_neighbors() {
+        global_head_ = global_head(*layer_, first_out_, head_);
     }
 
-    /// Building step: sorts every row by handle (local vertices first, then ghosts, each by global id).
-    void sort_rows() {
-        for (std::size_t c = 0; c + 1 < offsets_.size(); ++c) {
-            std::sort(heads_.begin() + static_cast<std::ptrdiff_t>(offsets_[c]),
-                      heads_.begin() + static_cast<std::ptrdiff_t>(offsets_[c + 1]));
+    /// Building step: sorts every neighborhood by handle (local vertices first, then ghosts, each by global id).
+    void sort_neighborhoods() {
+        for (std::size_t c = 0; c + 1 < first_out_.size(); ++c) {
+            std::sort(
+                head_.begin() + static_cast<std::ptrdiff_t>(first_out_[c]),
+                head_.begin() + static_cast<std::ptrdiff_t>(first_out_[c + 1])
+            );
         }
     }
 
@@ -274,45 +277,46 @@ public:
 
 private:
     std::shared_ptr<VertexLayer const> layer_;
-    std::vector<EdgeId>                offsets_;
-    std::vector<Handle>                heads_;
-    std::vector<NodeId>                global_heads_;
-    std::vector<EdgeId>                ghost_offsets_;
-    std::vector<Handle>                ghost_heads_;
+    std::vector<EdgeId>                first_out_;
+    std::vector<Handle>                head_;
+    std::vector<NodeId>                global_head_; // the neighbors in global ids, see global_neighbors()
+    std::vector<EdgeId>                ghost_first_out_;
+    std::vector<Handle>                ghost_head_;
 };
 
-/// The contracted graph of CETRIC and pre-CETRIC: rows only for some local vertices (those with cut edges), sorted by
-/// handle, together with their rows in global ids. Shares the vertex layer (handles) with the graph it came from.
+/// The contracted graph of CETRIC and pre-CETRIC: a CSR graph over some of the local vertices (those with cut edges),
+/// neighborhoods sorted by handle and also kept in global ids. Shares the vertex layer (handles) with the graph it came
+/// from; its vertices are indexed 0..k-1 in handle order.
 class ContractedGraph {
 public:
-    static constexpr std::size_t no_row = std::numeric_limits<std::size_t>::max();
+    static constexpr std::size_t not_kept = std::numeric_limits<std::size_t>::max();
 
     ContractedGraph() = default;
-    /// `vertices` ascending; row i belongs to vertices[i].
+    /// `vertices` ascending; the neighbors of vertices[i] are head[first_out[i], first_out[i + 1]).
     ContractedGraph(
         std::shared_ptr<VertexLayer const> layer,
         std::vector<Handle>                vertices,
-        std::vector<EdgeId>                offsets,
-        std::vector<Handle>                heads
+        std::vector<EdgeId>                first_out,
+        std::vector<Handle>                head
     )
         : layer_(std::move(layer)),
           vertices_(std::move(vertices)),
-          row_of_(layer_->n(), no_row),
-          offsets_(std::move(offsets)),
-          heads_(std::move(heads)) {
-        KASSERT(offsets_.size() == vertices_.size() + 1);
-        KASSERT(offsets_.back() == heads_.size());
+          index_of_(layer_->n(), not_kept),
+          first_out_(std::move(first_out)),
+          head_(std::move(head)) {
+        KASSERT(first_out_.size() == vertices_.size() + 1);
+        KASSERT(first_out_.back() == head_.size());
         KASSERT(std::ranges::is_sorted(vertices_));
-        for (std::size_t row = 0; row < vertices_.size(); ++row) {
-            row_of_[vertices_[row]] = row;
+        for (std::size_t i = 0; i < vertices_.size(); ++i) {
+            index_of_[vertices_[i]] = i;
         }
-        global_heads_ = global_rows(*layer_, offsets_, heads_);
+        global_head_ = global_head(*layer_, first_out_, head_);
     }
 
     [[nodiscard]] std::shared_ptr<VertexLayer const> const& layer() const {
         return layer_;
     }
-    /// The vertices with a row, ascending.
+    /// The kept vertices, ascending.
     [[nodiscard]] std::span<Handle const> local_nodes() const {
         return vertices_;
     }
@@ -320,26 +324,27 @@ public:
         return vertices_.size();
     }
     [[nodiscard]] EdgeId local_edge_count() const {
-        return heads_.size();
+        return head_.size();
     }
+    /// The index of kept vertex `c`.
     [[nodiscard]] std::size_t to_local_idx(Handle c) const {
         KASSERT(is_local(c));
-        return row_of_[c];
+        return index_of_[c];
     }
-    /// Whether local vertex or ghost `c` has a row.
+    /// Whether local vertex or ghost `c` is a vertex of this graph (a kept local vertex).
     [[nodiscard]] bool is_local(Handle c) const {
-        return c < layer_->n() && row_of_[c] != no_row;
+        return c < layer_->n() && index_of_[c] != not_kept;
     }
     [[nodiscard]] std::span<Handle const> neighbors(Handle c) const {
-        auto const row = to_local_idx(c);
-        return {heads_.data() + offsets_[row], offsets_[row + 1] - offsets_[row]};
+        auto const i = to_local_idx(c);
+        return {head_.data() + first_out_[i], first_out_[i + 1] - first_out_[i]};
     }
     [[nodiscard]] Degree degree(Handle c) const {
         return neighbors(c).size();
     }
     [[nodiscard]] std::span<NodeId const> global_neighbors(Handle c) const {
-        auto const row = to_local_idx(c);
-        return {global_heads_.data() + offsets_[row], offsets_[row + 1] - offsets_[row]};
+        auto const i = to_local_idx(c);
+        return {global_head_.data() + first_out_[i], first_out_[i + 1] - first_out_[i]};
     }
 
     [[nodiscard]] bool is_owned(Handle c) const {
@@ -364,10 +369,10 @@ public:
 private:
     std::shared_ptr<VertexLayer const> layer_;
     std::vector<Handle>                vertices_;
-    std::vector<std::size_t>           row_of_; // per local vertex
-    std::vector<EdgeId>                offsets_;
-    std::vector<Handle>                heads_;
-    std::vector<NodeId>                global_heads_;
+    std::vector<std::size_t>           index_of_; // per local vertex: its index, or not_kept
+    std::vector<EdgeId>                first_out_;
+    std::vector<Handle>                head_;
+    std::vector<NodeId>                global_head_;
 };
 
 } // namespace cetric::graph

@@ -54,10 +54,10 @@ protected:
         return {G_full[v].size(), v};
     }
 
-    /// The global ids of a row, sorted.
-    [[nodiscard]] std::vector<NodeId> globals(std::span<Handle const> row) const {
+    /// The global ids of a neighborhood, sorted.
+    [[nodiscard]] std::vector<NodeId> globals(std::span<Handle const> neighbors) const {
         std::vector<NodeId> ids;
-        for (Handle const u: row) {
+        for (Handle const u: neighbors) {
             ids.push_back(G.global_id(u));
         }
         std::ranges::sort(ids);
@@ -92,7 +92,7 @@ TEST_P(Orientation, GlobalDegree) {
         },
         true
     );
-    // out-rows: the neighbors with a larger (degree, id); ghost rows: the local neighbors with a larger key
+    // out-neighbors: the neighbors with a larger (degree, id); a ghost's out-neighbors: its local neighbors with a larger key
     for (Handle const v: G.local_nodes()) {
         NodeId const        v_global = G.global_id(v);
         std::vector<NodeId> expected;
