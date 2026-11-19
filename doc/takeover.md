@@ -48,16 +48,30 @@ Decisions taken (with reasons, so they are not re-opened by accident):
   in-place conversion instead
 - send loop: binary search over the partition table from the current owner; galloping/O(1) not worth it
 
-Still to review in stage 2 (current files, in data-flow order):
+Still to review in stage 2, in the order of the algorithm's flow (decided 2026-11-19): everything hangs off
+`count_triangles` (`phases/drivers.h`), and each step reads what the previous one produced. Paths below
+`include/katric/`; "(reviewed)" marks what was approved already.
 
-1. `include/katric/graph/graph.h`: `CsrGraph` (`release()`, ghost out-edges), `GlobalIdGraph` (new: `is_kept`,
-   contracted vs. full)
-2. `include/katric/graph/build.h`: `build_input_graph` (cut-edge sort), `exchange_ghost_values`, `orient`,
-   `to_global_ids` (translate + rotate), `contract_to_global_ids` (in-place compaction)
-3. `include/katric/phases/preprocessing.h`: `vertex_costs`, `preprocessing` (ghost rows with `--contraction`),
-   `contraction`
-4. `include/katric/phases/local.h`, `phases/global.h` (owner runs in the send loop), `phases/drivers.h`
-5. small: `phase_counters.h`, `triangle_counter.h`, `intersection.h`
+0. Entry: `apps/algorithm.cpp` (`make_algorithm`, `ingest`, `run`; the harness is reviewed, the dispatch on the
+   communication policy is new), then `phases/drivers.h` `count_triangles` as the table of contents
+1. Input graph, `phases/preprocessing.h` `input_graph`: `graph/graph.h` `VertexLayer` (reviewed) and `CsrGraph`
+   (`release()`, `local_nodes`/`ghosts`); `graph/build.h` `build_input_graph` (cut-edge sort, handles);
+   `phase_counters.h` `get_threshold`
+2. Primary load balancing, `preprocessing.h` `primary_load_balancing`: `vertex_costs` (N / DPD / IDPD, two ghost
+   exchanges), `build.h` `exchange_ghost_values` -> `ghost_exchange.h` `push_to_ghosts` (reviewed), `build.h`
+   `to_kagen_graph` -> `load_balancing.h` `run` (reviewed) -> `build_input_graph` again. Moves undirected
+   neighborhoods (open point, plan section "Variants")
+3. Preprocessing, `preprocessing.h` `preprocessing`: `ghost_degrees`, `degree_key`, `orient_and_sort` -> `build.h`
+   `orient` (ghost rows with `--contraction`); `CsrGraph::sort_neighborhoods`, `ghost_neighbors` / `ghost_degree`
+4. Local phase, `drivers.h` `local_phase`: `phases/local.h` `run<with_ghosts>`, `neighbors_with_ghosts`, the edge
+   kernel; `intersection.h`, `triangle_counter.h`, `phase_counters.h`
+5. Into global ids, one of two: without contraction `preprocessing.h` `global_ids` -> `build.h` `to_global_ids`
+   (translate + rotate); with contraction `preprocessing.h` `contraction` -> `report_contraction` -> `build.h`
+   `contract_to_global_ids` (in-place compaction). Both give `graph.h` `GlobalIdGraph` (`kept` / `is_kept`,
+   neighbors in global ids)
+6. Global phase, `drivers.h` `global_phase`: `phases/global.h` `run` (send loop: owner runs via `get_rank_from`),
+   `make_message`, the handler (`Merger` / `Splitter`); `communication_policy.h`, `message_tags.h`
+7. `triangle_counter.h` `reduce`
 
 ## Open items
 
