@@ -147,24 +147,8 @@ inline std::vector<std::uint64_t> ghost_degrees(graph::Graph const& G,
       conf.degree_exchange, MessageTag::Orientation);
 }
 
-/// Orients the edges of `G` from the smaller to the larger `key` (region
-/// `orientation`) and sorts the neighborhoods by handle (`sorting`); with
-/// `ghost_out_edges`, also the ghosts' out-edges to local vertices. Consumes
-/// `G`.
-template <typename Key>
-graph::Graph orient_and_sort(graph::Graph&& G,
-                             Key const& key,
-                             bool ghost_out_edges) {
-  auto G_oriented = [&] {
-    CALI_CXX_MARK_SCOPE("orientation");
-    return graph::orient(std::move(G), key, ghost_out_edges);
-  }();
-  CALI_CXX_MARK_SCOPE("sorting");
-  G_oriented.sort_neighborhoods();
-  return G_oriented;
-}
-
-/// Degree exchange and orientation by (degree, global id). With
+/// Degree exchange and orientation by (degree, global id) (region
+/// `orientation`), then the neighborhoods sorted by handle (`sorting`). With
 /// `--contraction`, also the ghosts' out-edges to local vertices, so that the
 /// local phase finds every triangle with two local vertices. Consumes the input
 /// graph `G`.
@@ -172,7 +156,15 @@ inline graph::Graph preprocessing(graph::Graph&& G, Config const& conf) {
   CALI_CXX_MARK_SCOPE("preprocessing");
   auto const ghost_degree = ghost_degrees(G, conf);
   auto const key = degree_key(G, ghost_degree);
-  return orient_and_sort(std::move(G), key, conf.contraction);
+  auto G_oriented = [&] {
+    CALI_CXX_MARK_SCOPE("orientation");
+    return graph::orient(std::move(G), key, conf.contraction);
+  }();
+  {
+    CALI_CXX_MARK_SCOPE("sorting");
+    G_oriented.sort_neighborhoods();
+  }
+  return G_oriented;
 }
 
 /// Without contraction, after the local phase: the oriented graph converted to
