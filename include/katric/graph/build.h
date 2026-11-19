@@ -26,7 +26,7 @@ namespace katric::graph {
 /// The undirected graph of a rank's part of the input (KaGen's CSR: vertex range, xadj, adjncy in global ids), with
 /// ghosts. Collective. Neighborhoods keep the input's order. The cut edges are sorted once by (head, position): that
 /// gives the ghosts in global-id order and their handles without a lookup per edge.
-inline CsrGraph build_input_graph(kagen::Graph const& input, kamping::v2::comm_view comm) {
+inline auto build_input_graph(kagen::Graph const& input, kamping::v2::comm_view comm) -> CsrGraph {
     KASSERT(input.representation == kagen::GraphRepresentation::CSR);
     std::pair<NodeId, NodeId> const range{input.vertex_range.first, input.vertex_range.second};
     auto const [first, last] = range;

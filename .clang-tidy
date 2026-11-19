@@ -12,7 +12,7 @@ Checks:
   - '-bugprone-chained-comparison'
 HeaderFilterRegex: 'include/katric/'
 CheckOptions:
-  readability-identifier-length.IgnoredVariableNames: '^([Guv]|it|kv)$'
-  readability-identifier-length.IgnoredParameterNames: '^([Guv]|it|kv)$'
+  readability-identifier-length.IgnoredVariableNames: '^([Guvw]|it|kv)$'
+  readability-identifier-length.IgnoredParameterNames: '^([Guvw]|it|kv)$'
   readability-function-cognitive-complexity.Threshold: 80
   misc-non-private-member-variables-in-classes.IgnorePublicMemberVariables: true
