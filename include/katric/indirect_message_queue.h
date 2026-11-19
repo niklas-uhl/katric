@@ -40,7 +40,6 @@ PEID datatype_to_PEID(T const& rank) {
     return rank;
 }
 
-using namespace graph;
 template <typename QueueType>
 class IndirectMessageQueueAdaptor {
 public:

@@ -71,11 +71,15 @@ inline auto vertex_costs(graph::Graph const& G, Config const& conf)
     std::size_t edge = 0;
     for (VertexHandle const v : G.local_vertices()) {
       auto const key_v = key(v);
+      std::uint64_t out_degree_v = 0;
       for (VertexHandle const u : G.neighbors(v)) {
-        bool const out = key(u) > key_v;
+        bool const out = key_v < key(u);
         is_out_edge[edge++] = out;
-        local_out_degree[numbering.to_local_index(v)] += out ? 1 : 0;
+        if (out) {
+          ++out_degree_v;
+        }
       }
+      local_out_degree[numbering.to_local_index(v)] = out_degree_v;
     }
   }
   std::vector<std::uint64_t> ghost_out_degree;
@@ -180,9 +184,10 @@ inline graph::GlobalIdGraph global_ids(graph::Graph&& G) {
 
 /// The number of cut out-edges of local vertex `v` (its neighborhood sorted by
 /// handle ends with them).
-inline Degree cut_out_degree(graph::Graph const& G, graph::VertexHandle v) {
+inline graph::Degree cut_out_degree(graph::Graph const& G,
+                                    graph::VertexHandle v) {
   auto const neighbors = G.neighbors(v);
-  return static_cast<Degree>(
+  return static_cast<graph::Degree>(
       neighbors.end() - std::lower_bound(neighbors.begin(), neighbors.end(),
                                          G.numbering().first_ghost()));
 }
