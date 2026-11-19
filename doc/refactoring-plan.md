@@ -46,14 +46,14 @@ default).
 | | DiTriC (default) | CETRIC (`--contraction`) |
 |---|---|---|
 | old name | `--algorithm patric` (still accepted) | `--algorithm cetric-x` (still accepted) |
-| preprocessing | degree exchange, orientation by (degree, global id) | the same, plus the ghost rows: the ghosts' out-edges to local vertices |
-| stored | local rows N+(v), including the cut out-edges | the same plus the ghost rows; every cut edge is stored on both of its ranks (as in the input) |
-| local phase | intersections over the local rows | also through the ghost rows: every triangle with >= 2 local vertices |
+| preprocessing | degree exchange, orientation by (degree, global id) | the same, plus the ghosts' out-edges to local vertices |
+| stored | the out-neighbors N+(v) of the local vertices, including the cut out-edges | the same plus the ghosts' out-edges; every cut edge is stored on both of its ranks (as in the input) |
+| local phase | intersections over the out-neighbors of the local vertices | also through the ghosts' out-edges: every triangle with >= 2 local vertices |
 | global phase | `global_ids`: whole graph in place; sends the full N+(v) of the interface vertices | `contraction`: only the cut out-edges; sends the contracted N+(v) |
 
 The code namespace, include directory, CMake targets and options are `katric` too (`katric::`, `include/katric/`,
-`KATRIC_*`; before: `cetric`). Ghost rows and contraction come only together: contraction without ghost rows loses the triangles g < v < w (g remote,
-v->w local); ghost rows without contraction count them twice. Both variants push (surrogate); computing at the tail
+`KATRIC_*`; before: `cetric`). The ghosts' out-edges and contraction come only together: contraction without them loses the triangles g < v < w (g remote,
+v->w local); the ghosts' out-edges without contraction count them twice. Both variants push (surrogate); computing at the tail
 (idea 1) would be a different algorithm.
 
 pre-CETRIC (`--algorithm cetric`, local orientation with cut edges outward, reorientation by the contracted degree
@@ -66,11 +66,11 @@ Load balancing per variant (open, after the review):
 - DiTriC: exchange the degrees once, orient, compute the cost (IDPD needs the in-neighbors, so before dropping them),
   then move only N+(v) (at most sqrt(2m) entries per vertex instead of d(v)); no second degree exchange. Today the
   primary load balancing moves the undirected neighborhoods before orientation (historical)
-- CETRIC: moving N+(v) alone does not deliver v's ghost rows (its in-edges from remote tails), so the primary load
+- CETRIC: moving N+(v) alone does not deliver v's in-edges from remote tails (the ghosts' out-edges to v), so the primary load
   balancing stays on the undirected input. The full-graph IDPD prices the wrong work (DiTriC's receive work); the
   global phase's cost is the contracted IDPD (sum over cut in-edges w->v of d+_cut(w) + d+_cut(v)), known only after
   the first partition. Option: at the contraction, exchange the cut degree, reorient the cut-edge graph by (cut degree,
-  global id) taking each edge from whichever side keeps it (local row or ghost row; bounds d+_cut by sqrt(2 m_cut)),
+  global id) taking each edge from whichever side keeps it (a local vertex's out-edge or a ghost's out-edge; bounds d+_cut by sqrt(2 m_cut)),
   exchange the cut out-degree, compute the contracted IDPD, and rebalance the contracted graph if its max/avg exceeds a
   threshold. After such a move the global phase must also intersect rank-local pairs (`global.h` skips them today).
   First step: the contracted IDPD's max/avg as a counter
@@ -207,7 +207,7 @@ by those `.cpp` files):
     1.53-1.71 s at 48): the local phase is 75% of the time and the global phase is tiny, so CETRIC's 2.5-4.7x smaller
     send volume (RGG 2.0 vs 5.2 M entries at 48, RHG 1.7 vs 7.9 M) does not show. Without locality DiTriC is best
     (permuted RGG 9.6 / 11.5 s vs CETRIC 11.8 / 13.5 s, pre-CETRIC 10.9 / 12.6 s; permuted RHG 9.4 vs 11.6 / 13.7 s):
-    contraction removes nothing (send volume and global work within 2% of DiTriC) and CETRIC pays for the ghost rows,
+    contraction removes nothing (send volume and global work within 2% of DiTriC) and CETRIC pays for the ghosts' out-edges,
     pre-CETRIC for the second degree exchange. Grid indirection is slower than direct in every case up to 192 cores.
     CETRIC can only win where the global phase matters and locality removes much of it: larger p, smaller n/p, or
     real-world graphs with a good partition
@@ -448,7 +448,7 @@ Compact IDs fit 32 bits per rank (n + g < 2^32), which would halve the adjacency
   code first, then the algorithms move over one at a time (DiTriC, CETRIC, pre-CETRIC), each checked by identical
   counters; the old graph code goes at the end
 - [x] Stage 2, DiTriC on the new pipeline (2026-11-18): `graph/graph.h` (`VertexLayer`: range, ghosts' global ids and
-      owners sorted by global id, partition table; `CsrGraph`: rows over handles, optional ghost rows and rows in
+      owners sorted by global id, partition table; `CsrGraph`: rows over handles, optional ghosts' out-edges and rows in
       global ids), `graph/build.h` (input graph, `exchange_ghost_values` on push_to_ghosts, `orient`), `phases/`
       (preprocessing with the cost functions, local and global kernels, drivers). Identical counters on the 124
       reference runs. Notes:
@@ -471,10 +471,10 @@ Compact IDs fit 32 bits per rank (n + g < 2^32), which would halve the adjacency
         IDs + owner per ghost, from `get_rank` once per ghost; global ID -> slot by binary search, no hash map: only
         needed while building and when depositing exchanged data); an out-CSR over compact IDs (katric's own builder:
         each undirected edge kept at its smaller endpoint in (degree, global ID)); per-ghost degrees from
-        `push_to_ghosts` deposited into a `std::vector` indexed by `c - n`; for CETRIC the ghost rows (each ghost's
+        `push_to_ghosts` deposited into a `std::vector` indexed by `c - n`; for CETRIC the ghosts' out-edges (each ghost's
         out-edges into local vertices) from KaCCv2's `build_ghost_reverse_index`, adjusted to index by `c - n`
         instead of its hash slot map and to take an edge filter (the ghost -> local orientation); its targets come out
-        sorted by local index, the order the clipping needs. No in-edges kept (only the ghost rows needed them)
+        sorted by local index, the order the clipping needs. No in-edges kept (only the ghosts' out-edges needed them)
       - contracted graph: `SparseIndexer` over the vertices with cut edges (inserted in global-ID order) + their out-CSR,
         sharing the oriented graph's ghost table and compact IDs
       - the compact ID is KaCCv2's neighbor handle: overload `neighbor_is_local` (`c < n`), `neighbor_owner`,
@@ -491,8 +491,8 @@ Compact IDs fit 32 bits per rank (n + g < 2^32), which would halve the adjacency
       `AuxiliaryNodeData`, `cost_function.h`, `preprocessing.h`, `contraction.h`, `execution.h`, `counters/`,
       `graph_communicator.h`, `RankEncodedNodeId`; -3000 lines). Identical counters and triangle counts on the 124
       reference runs; tests ported (input graph, degree exchange over all three transports, both orientations with
-      ghost rows). How it differs from the design above:
-      - no copy of `build_ghost_reverse_index`: the ghost rows come out of the orientation pass (count, then fill,
+      ghosts' out-edges). How it differs from the design above:
+      - no copy of `build_ghost_reverse_index`: the ghosts' out-edges come out of the orientation pass (count, then fill,
         indexed by c - n), sorted because the local vertices are visited in order. They replace the ghost expansion
       - `ContractedGraph` (`graph/graph.h`): rows for the vertices with cut out-edges, a dense row index per local
         vertex; pre-CETRIC orients it after its degree exchange (`preprocessing_global`, no `sorting` region: filtering

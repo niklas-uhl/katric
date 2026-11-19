@@ -43,7 +43,7 @@ Decisions taken (with reasons, so they are not re-opened by accident):
 
 - graphs do **not** inherit from `kagen::Graph` (our `adjncy` holds handles, oriented, contracted, 32-bit handles later)
 - `VertexLayer` stays a `shared_ptr` (graphs of a run share it, lifetimes do not nest)
-- `GlobalIdGraph` stays a separate type (its neighbors are a different number space than `CsrGraph`'s)
+- `GlobalIdGraph` stays a separate type (its neighbors are a different number space than `Graph`'s)
 - no concat view for translating during the merge (the per-entry ghost-id lookup was the measured 1.65x cost);
   in-place conversion instead
 - send loop: binary search over the partition table from the current owner; galloping/O(1) not worth it
@@ -55,7 +55,7 @@ Still to review in stage 2, in the order of the algorithm's flow (decided 2026-1
 0. (reviewed 2026-11-19) Entry: `apps/algorithm.cpp` (`make_algorithm`, `ingest`, `run`), `phases/drivers.h`
    `count_triangles`. Kept: `count_triangles` takes the input by `const&` (by value would cost a copy per iteration
    in the harness; KaGen's `SInt` vs. our `EdgeId`/`Handle` rules out reusing its buffers)
-1. Input graph, `phases/preprocessing.h` `input_graph`: `graph/graph.h` `VertexLayer` (reviewed) and `CsrGraph`
+1. Input graph, `phases/preprocessing.h` `input_graph` (reviewed 2026-11-19, as is `get_threshold`): `graph/graph.h` `VertexLayer` (reviewed) and `Graph`
    (`release()`, `local_nodes`/`ghosts`); `graph/build.h` `build_input_graph` (cut-edge sort, handles);
    `phase_counters.h` `get_threshold`
 2. Primary load balancing, `preprocessing.h` `primary_load_balancing`: `vertex_costs` (N / DPD / IDPD, two ghost
@@ -63,7 +63,7 @@ Still to review in stage 2, in the order of the algorithm's flow (decided 2026-1
    `to_kagen_graph` -> `load_balancing.h` `run` (reviewed) -> `build_input_graph` again. Moves undirected
    neighborhoods (open point, plan section "Variants")
 3. Preprocessing, `preprocessing.h` `preprocessing`: `ghost_degrees`, `degree_key`, `orient_and_sort` -> `build.h`
-   `orient` (ghost rows with `--contraction`); `CsrGraph::sort_neighborhoods`, `ghost_neighbors` / `ghost_degree`
+   `orient` (the ghosts' out-edges with `--contraction`); `Graph::sort_neighborhoods`, `ghost_neighbors` / `ghost_degree`
 4. Local phase, `drivers.h` `local_phase`: `phases/local.h` `run<with_ghosts>`, `neighbors_with_ghosts`, the edge
    kernel; `intersection.h`, `triangle_counter.h`, `phase_counters.h`
 5. Into global ids, one of two: without contraction `preprocessing.h` `global_ids` -> `build.h` `to_global_ids`

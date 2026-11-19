@@ -25,7 +25,7 @@ namespace phases {
 /// The intersections that need no communication (CETRIC also through the
 /// ghosts' out-edges). Returns the interface vertices, the senders of DiTriC's
 /// global phase.
-inline auto local_phase(graph::CsrGraph const& G,
+inline auto local_phase(graph::Graph const& G,
                         Config const& conf,
                         bool with_ghosts,
                         TriangleCounter& triangles)
@@ -55,8 +55,8 @@ void global_phase(graph::GlobalIdGraph const& G,
 }  // namespace phases
 
 /// KaTric: DiTriC, or CETRIC with `--contraction` (the local phase also covers
-/// the triangles with two local vertices, through the ghost rows; the global
-/// phase sends only the cut edges).
+/// the triangles with two local vertices, through the ghosts' out-edges; the
+/// global phase sends only the cut edges).
 template <class CommunicationPolicy>
 auto count_triangles(kagen::Graph const& input,
                      Config const& conf,

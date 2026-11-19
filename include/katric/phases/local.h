@@ -17,8 +17,8 @@
 namespace katric::local {
 
 /// N+(c) for a local vertex, and for a ghost (CETRIC) its out-edges to local vertices.
-inline std::span<graph::Handle const> neighbors_with_ghosts(graph::CsrGraph const& G, graph::Handle c) {
-    return G.is_owned(c) ? G.neighbors(c) : G.ghost_neighbors(c);
+inline std::span<graph::Handle const> neighbors_with_ghosts(graph::Graph const& G, graph::Handle c) {
+    return G.is_owned(c) ? G.neighbors(c) : G.ghost_out_neighbors(c);
 }
 
 /// The work for one edge v -> u: emits the triangles (v, u, w) for w in N+(v) ∩ N+(u), where a ghost's neighborhood is
@@ -26,7 +26,7 @@ inline std::span<graph::Handle const> neighbors_with_ghosts(graph::CsrGraph cons
 /// local prefix; this bounds the merge and keeps the work counters exact.
 template <typename TriangleFunc>
 void intersect_edge(
-    graph::CsrGraph const& G,
+    graph::Graph const& G,
     Config const&          conf,
     graph::Handle          v,
     graph::Handle          u,
@@ -66,7 +66,7 @@ void intersect_edge(
 /// the edges with a ghost end, through the ghosts' out-edges. Returns the interface vertices (local vertices with a cut
 /// out-edge), ascending.
 template <bool with_ghosts, typename TriangleFunc>
-std::vector<graph::Handle> run(graph::CsrGraph const& G, Config const& conf, TriangleFunc emit) {
+std::vector<graph::Handle> run(graph::Graph const& G, Config const& conf, TriangleFunc emit) {
     std::vector<graph::Handle> interface_nodes;
     LocalPhaseCounters         counters;
     auto                       for_each_out_edge = [&](graph::Handle v, graph::Degree degree) {
@@ -94,7 +94,7 @@ std::vector<graph::Handle> run(graph::CsrGraph const& G, Config const& conf, Tri
     }
     if constexpr (with_ghosts) {
         for (graph::Handle const v: G.ghosts()) {
-            for_each_out_edge(v, G.ghost_degree(v));
+            for_each_out_edge(v, G.ghost_out_degree(v));
         }
     }
     counters.report();

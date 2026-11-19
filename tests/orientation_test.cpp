@@ -65,7 +65,7 @@ protected:
     }
 
     std::vector<std::vector<katric::graph::Edge>> G_full;
-    katric::graph::CsrGraph                       G;
+    katric::graph::Graph                       G;
 };
 
 TEST_P(Orientation, GlobalDegree) {
@@ -113,13 +113,13 @@ TEST_P(Orientation, GlobalDegree) {
             }
         }
         std::ranges::sort(expected);
-        EXPECT_EQ(globals(G_oriented.ghost_neighbors(g)), expected);
-        EXPECT_TRUE(std::ranges::is_sorted(G_oriented.ghost_neighbors(g)));
+        EXPECT_EQ(globals(G_oriented.ghost_out_neighbors(g)), expected);
+        EXPECT_TRUE(std::ranges::is_sorted(G_oriented.ghost_out_neighbors(g)));
     }
 }
 
 TEST_P(Orientation, LocalDegreeOutward) {
-    // pre-CETRIC: cut edges outward, local edges by (degree, id), no exchange
+    // an arbitrary key: cut edges outward, local edges by (degree, id), no exchange
     auto const G_oriented = katric::graph::orient(
         G,
         [&](Handle c) {

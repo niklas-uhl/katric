@@ -133,12 +133,12 @@ private:
     mutable std::optional<dstl::grid_comm<dstl::execution_policy::seq>> grid_;
 };
 
-/// A CSR graph (xadj, adjncy) over the local vertices and, optionally (CETRIC), a second one over the ghosts: each
-/// ghost's out-edges to local vertices.
-class CsrGraph {
+/// A rank's graph on handles: the neighbors of the local vertices (CSR: xadj, adjncy) and, optionally (CETRIC), each
+/// ghost's out-edges to local vertices (a second CSR over the ghosts).
+class Graph {
 public:
-    CsrGraph() = default;
-    CsrGraph(
+    Graph() = default;
+    Graph(
         std::shared_ptr<VertexLayer const> layer,
         std::vector<EdgeId>                xadj,
         std::vector<Handle>                adjncy,
@@ -153,6 +153,7 @@ public:
         KASSERT(xadj_.size() == layer_->n() + 1);
         KASSERT(xadj_.back() == adjncy_.size());
         KASSERT(ghost_xadj_.empty() || ghost_xadj_.size() == layer_->ghost_count() + 1);
+        KASSERT(ghost_xadj_.empty() || ghost_xadj_.back() == ghost_adjncy_.size());
     }
 
     [[nodiscard]] std::shared_ptr<VertexLayer const> const& layer() const {
@@ -182,10 +183,6 @@ public:
         KASSERT(c < layer_->n());
         return c;
     }
-    /// Whether `c` is a vertex of this graph: every local vertex.
-    [[nodiscard]] bool is_local(Handle c) const {
-        return c < layer_->n();
-    }
     [[nodiscard]] std::span<Handle const> neighbors(Handle c) const {
         KASSERT(c < layer_->n());
         return {adjncy_.data() + xadj_[c], xadj_[c + 1] - xadj_[c]};
@@ -199,16 +196,17 @@ public:
         return !ghost_xadj_.empty();
     }
     /// The out-neighbors of ghost `c`: local vertices.
-    [[nodiscard]] std::span<Handle const> ghost_neighbors(Handle c) const {
+    [[nodiscard]] std::span<Handle const> ghost_out_neighbors(Handle c) const {
         KASSERT(has_ghost_out_edges() && c >= layer_->n());
         auto const slot = c - layer_->n();
         return {ghost_adjncy_.data() + ghost_xadj_[slot], ghost_xadj_[slot + 1] - ghost_xadj_[slot]};
     }
-    [[nodiscard]] Degree ghost_degree(Handle c) const {
-        return ghost_neighbors(c).size();
+    [[nodiscard]] Degree ghost_out_degree(Handle c) const {
+        return ghost_out_neighbors(c).size();
     }
 
-    /// Building step: sorts every neighborhood by handle (local vertices first, then ghosts, each by global id).
+    /// Building step: sorts every neighborhood of a local vertex by handle (local vertices first, then ghosts, each by
+    /// global id). The ghosts' out-neighbors need no sorting: `orient` writes them in ascending order.
     void sort_neighborhoods() {
         for (std::size_t c = 0; c + 1 < xadj_.size(); ++c) {
             std::sort(
@@ -246,8 +244,8 @@ private:
 };
 
 /// The graph of the global phase: the out-neighbors of the local vertices as global ids, each neighborhood ascending.
-/// Converted from an oriented CsrGraph after the local phase (graph/build.h), reusing its arrays: DiTriC keeps every
-/// neighborhood, CETRIC and pre-CETRIC keep (contract to) the cut edges of the vertices with any. Messages carry
+/// Converted from an oriented Graph after the local phase (graph/build.h), reusing its arrays: without contraction
+/// every neighborhood is kept, with contraction (CETRIC) only the cut edges of the vertices with any. Messages carry
 /// global ids, so the global phase works on these directly.
 class GlobalIdGraph {
 public:

@@ -32,7 +32,7 @@ namespace katric {
 /// over in-neighbors (push), both with the orientation by (degree, global id).
 /// Region `cost_function_communication` for the ghosts' degrees and
 /// out-degrees, `cost_function_evaluation` for the costs.
-inline std::vector<std::size_t> vertex_costs(graph::CsrGraph const& G,
+inline std::vector<std::size_t> vertex_costs(graph::Graph const& G,
                                              Config const& conf) {
   using graph::Handle;
   std::string const& name = conf.primary_cost_function;
@@ -86,7 +86,7 @@ namespace phases {
 inline auto input_graph(kagen::Graph const& input,
                         Config const& conf,
                         kamping::v2::comm_view comm)
-    -> std::pair<graph::CsrGraph, std::size_t> {
+    -> std::pair<graph::Graph, std::size_t> {
   CALI_CXX_MARK_SCOPE("input_graph");
   auto G = graph::build_input_graph(input, comm);
   std::size_t const threshold = get_threshold(G, conf);
@@ -95,7 +95,7 @@ inline auto input_graph(kagen::Graph const& input,
 
 /// Repartitions `G` into contiguous vertex ranges of equal cost
 /// (`--primary-cost-function`, off with "none").
-inline void primary_load_balancing(graph::CsrGraph& G, Config const& conf) {
+inline void primary_load_balancing(graph::Graph& G, Config const& conf) {
   CALI_CXX_MARK_SCOPE("primary_load_balancing");
   auto const comm = G.comm();
   if (conf.primary_cost_function != "none") {
@@ -107,7 +107,7 @@ inline void primary_load_balancing(graph::CsrGraph& G, Config const& conf) {
 
 /// The degrees of the ghosts of `G`, indexed by ghost slot (region
 /// `degree_exchange`).
-inline std::vector<std::uint64_t> ghost_degrees(graph::CsrGraph const& G,
+inline std::vector<std::uint64_t> ghost_degrees(graph::Graph const& G,
                                                 Config const& conf) {
   CALI_CXX_MARK_SCOPE("degree_exchange");
   return graph::exchange_ghost_values(
@@ -119,10 +119,10 @@ inline std::vector<std::uint64_t> ghost_degrees(graph::CsrGraph const& G,
 /// `orientation`) and sorts the neighborhoods by handle (`sorting`); with
 /// `ghost_out_edges`, also the ghosts' out-edges to local vertices.
 template <typename Key>
-graph::CsrGraph orient_and_sort(graph::CsrGraph const& G,
+graph::Graph orient_and_sort(graph::Graph const& G,
                                 Key&& key,
                                 bool ghost_out_edges) {
-  graph::CsrGraph G_oriented;
+  graph::Graph G_oriented;
   {
     CALI_CXX_MARK_SCOPE("orientation");
     G_oriented = graph::orient(G, key, ghost_out_edges);
@@ -134,7 +134,7 @@ graph::CsrGraph orient_and_sort(graph::CsrGraph const& G,
 
 /// The orientation key of DiTriC and CETRIC: (degree, global id), the ghosts'
 /// degrees from `ghost_degree`.
-inline auto degree_key(graph::CsrGraph const& G,
+inline auto degree_key(graph::Graph const& G,
                        std::vector<std::uint64_t> const& ghost_degree) {
   return [&G, &ghost_degree](graph::Handle c) {
     auto const& layer = *G.layer();
@@ -145,9 +145,9 @@ inline auto degree_key(graph::CsrGraph const& G,
 }
 
 /// Degree exchange and orientation by (degree, global id). With
-/// `--contraction`, also the ghosts' out-edges to local vertices (the ghost
-/// rows), so that the local phase finds every triangle with two local vertices.
-inline graph::CsrGraph preprocessing(graph::CsrGraph const& G,
+/// `--contraction`, also the ghosts' out-edges to local vertices, so that the
+/// local phase finds every triangle with two local vertices.
+inline graph::Graph preprocessing(graph::Graph const& G,
                                      Config const& conf) {
   CALI_CXX_MARK_SCOPE("preprocessing");
   auto const ghost_degree = ghost_degrees(G, conf);
@@ -156,14 +156,14 @@ inline graph::CsrGraph preprocessing(graph::CsrGraph const& G,
 
 /// Without contraction, after the local phase: the oriented graph converted to
 /// global ids in place for the global phase (region `global_ids`).
-inline graph::GlobalIdGraph global_ids(graph::CsrGraph&& G) {
+inline graph::GlobalIdGraph global_ids(graph::Graph&& G) {
   CALI_CXX_MARK_SCOPE("global_ids");
   return graph::to_global_ids(std::move(G));
 }
 
 /// The number of cut out-edges of local vertex `v` (its neighborhood sorted by
 /// handle ends with them).
-inline Degree cut_out_degree(graph::CsrGraph const& G, graph::Handle v) {
+inline Degree cut_out_degree(graph::Graph const& G, graph::Handle v) {
   auto const neighbors = G.neighbors(v);
   return static_cast<Degree>(
       neighbors.end() - std::lower_bound(neighbors.begin(), neighbors.end(),
@@ -172,7 +172,7 @@ inline Degree cut_out_degree(graph::CsrGraph const& G, graph::Handle v) {
 
 /// The contraction's counters: the vertices with cut edges (compact_nodes) and
 /// their cut out-edges (compact_edges).
-inline void report_contraction(graph::CsrGraph const& G) {
+inline void report_contraction(graph::Graph const& G) {
   std::int64_t nodes = 0;
   std::int64_t edges = 0;
   for (graph::Handle const v : G.local_nodes()) {
@@ -187,7 +187,7 @@ inline void report_contraction(graph::CsrGraph const& G) {
 /// With contraction, after the local phase: the edges the local phase did not
 /// handle (the cut out-edges), as global ids, contracted in place (region
 /// `contraction`).
-inline graph::GlobalIdGraph contraction(graph::CsrGraph&& G) {
+inline graph::GlobalIdGraph contraction(graph::Graph&& G) {
   CALI_CXX_MARK_SCOPE("contraction");
   report_contraction(G);
   return graph::contract_to_global_ids(std::move(G));

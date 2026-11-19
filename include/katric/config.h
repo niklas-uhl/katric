@@ -59,7 +59,7 @@ struct Config {
     size_t                iterations                        = 1;
     bool                  verify                            = false;
     std::string           primary_cost_function             = "N";
-    /// CETRIC instead of DiTriC: ghost rows in the local phase, only the cut edges in the global phase
+    /// CETRIC instead of DiTriC: the ghosts' out-edges in the local phase, only the cut edges in the global phase
     bool                  contraction                       = false;
     Threshold             threshold                         = Threshold::local_nodes;
     double                threshold_scale                   = 1.0;
