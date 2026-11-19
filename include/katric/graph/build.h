@@ -57,11 +57,10 @@ inline auto build_input_graph(kagen::Graph const& input,
     }
     head = ghost_ids.size() - 1;  // from here on: the head's ghost index
   }
-  auto layer =
-      std::make_shared<VertexLayer const>(range, std::move(ghost_ids), comm);
-  KASSERT(layer->num_local_vertices() == num_local);
+  VertexLayer layer(range, std::move(ghost_ids), comm);
+  KASSERT(layer.num_local_vertices() == num_local);
   for (auto const& [ghost_index, position] : cut) {
-    adjncy[position] = layer->ghost_handle(ghost_index);
+    adjncy[position] = layer.ghost_handle(ghost_index);
   }
   decltype(cut){}.swap(cut);  // frees the cut pairs before the copy of xadj
   // copied: the input is only read (the harness reuses it for every iteration),
@@ -79,7 +78,7 @@ inline auto build_input_graph(kagen::Graph const& input,
 inline auto to_kagen_graph(Graph const& G) -> kagen::Graph {
   kagen::Graph input;
   input.representation = kagen::GraphRepresentation::CSR;
-  input.vertex_range = G.layer()->local_range();
+  input.vertex_range = G.layer().local_range();
   input.xadj.reserve(G.num_local_vertices() + 1);
   input.adjncy.reserve(G.num_local_edges());
   input.xadj.push_back(0);
@@ -108,7 +107,7 @@ auto exchange_ghost_values(Graph const& G,
             G.global_id(v), static_cast<std::uint64_t>(value(v))};
       },
       mode, tag, 2);
-  auto const& layer = *G.layer();
+  auto const& layer = G.layer();
   std::vector<std::uint64_t> values(layer.num_ghosts());
   for (auto const& [vertex, data] : received) {
     values[layer.to_ghost_index(layer.handle(vertex))] = data;
@@ -118,11 +117,13 @@ auto exchange_ghost_values(Graph const& G,
 
 /// Orients the edges of the undirected graph `G` from the smaller to the larger
 /// `key` and returns the out-edges, neighborhoods unsorted (in `G`'s order).
+/// Consumes `G`: the oriented graph takes over its vertex layer (`key` may read
+/// `G` while the orientation runs).
 /// With `ghost_out_edges`, also the ghosts' out-edges to local vertices
 /// (CETRIC), sorted.
 template <typename Key>
-auto orient(Graph const& G, Key const& key, bool ghost_out_edges) -> Graph {
-  auto const& layer = *G.layer();
+auto orient(Graph&& G, Key const& key, bool ghost_out_edges) -> Graph {
+  auto const& layer = G.layer();
   std::size_t const num_local = layer.num_local_vertices();
   auto const out = [&](VertexHandle v, VertexHandle u) -> bool {
     return key(v) < key(u);
@@ -161,9 +162,9 @@ auto orient(Graph const& G, Key const& key, bool ghost_out_edges) -> Graph {
     }
   }
   if (!ghost_out_edges) {
-    return {G.layer(), {std::move(xadj), std::move(adjncy)}};
+    return {std::move(G).release().first, {std::move(xadj), std::move(adjncy)}};
   }
-  return {G.layer(),
+  return {std::move(G).release().first,
           {std::move(xadj), std::move(adjncy)},
           AdjacencyArray<VertexHandle>{std::move(ghost_xadj),
                                        std::move(ghost_adjncy)}};
@@ -175,8 +176,7 @@ auto orient(Graph const& G, Key const& key, bool ghost_out_edges) -> Graph {
 /// vertices][ghosts above] it is ascending. A new array: the handles cannot be
 /// reused for global ids.
 inline auto to_global_ids(Graph&& G) -> GlobalIdGraph {
-  auto [layer_ptr, local] = std::move(G).release();
-  auto const& layer = *layer_ptr;
+  auto [layer, local] = std::move(G).release();
   std::vector<VertexId> global;
   global.reserve(local.num_edges());
   auto const translate = [&](auto first, auto last) -> void {
@@ -195,7 +195,7 @@ inline auto to_global_ids(Graph&& G) -> GlobalIdGraph {
     translate(below_end, neighbors.end());
   }
   auto xadj = std::move(local).release().first;
-  return {std::move(layer_ptr), {std::move(xadj), std::move(global)}};
+  return {std::move(layer), {std::move(xadj), std::move(global)}};
 }
 
 /// Contracts `G` (neighborhoods sorted by handle) to its cut edges: of each
@@ -203,8 +203,7 @@ inline auto to_global_ids(Graph&& G) -> GlobalIdGraph {
 /// already in global order), as global ids. The kept vertices are those with a
 /// cut out-edge.
 inline auto contract_to_global_ids(Graph&& G) -> GlobalIdGraph {
-  auto [layer_ptr, local] = std::move(G).release();
-  auto const& layer = *layer_ptr;
+  auto [layer, local] = std::move(G).release();
   auto const cut_neighbors = [&](std::size_t index) -> auto {
     auto const neighbors = local.neighbors(index);
     return std::ranges::subrange(
@@ -229,9 +228,8 @@ inline auto contract_to_global_ids(Graph&& G) -> GlobalIdGraph {
     }
     xadj[index + 1] = global.size();
   }
-  return {std::move(layer_ptr),
-          {std::move(xadj), std::move(global)},
-          std::move(kept)};
+  return {
+      std::move(layer), {std::move(xadj), std::move(global)}, std::move(kept)};
 }
 
 }  // namespace katric::graph

@@ -64,8 +64,7 @@ auto count_triangles(kagen::Graph const& input,
   TriangleCounter triangles;
   auto [G, threshold] = phases::input_graph(input, conf, comm);
   phases::primary_load_balancing(G, conf);
-  auto G_oriented = phases::preprocessing(G, conf);
-  G = {};
+  auto G_oriented = phases::preprocessing(std::move(G), conf);
   auto const interface_nodes =
       phases::local_phase(G_oriented, conf, conf.contraction, triangles);
   if (conf.contraction) {

@@ -31,7 +31,7 @@ namespace katric {
 inline auto degree_key(graph::Graph const& G,
                        std::vector<std::uint64_t> const& ghost_degree) {
   return [&G, &ghost_degree](graph::VertexHandle vertex) {
-    auto const& layer = *G.layer();
+    auto const& layer = G.layer();
     return std::pair(layer.is_local(vertex)
                          ? G.degree(vertex)
                          : ghost_degree[layer.to_ghost_index(vertex)],
@@ -55,7 +55,7 @@ inline auto vertex_costs(graph::Graph const& G, Config const& conf)
   if (name != "DPD" && name != "IDPD") {
     throw std::runtime_error("Unsupported cost function");
   }
-  auto const& layer = *G.layer();
+  auto const& layer = G.layer();
   std::vector<std::uint64_t> ghost_degree;
   std::vector<std::uint64_t> local_out_degree(G.num_local_vertices());
   std::vector<std::uint64_t> ghost_out_degree;
@@ -133,16 +133,16 @@ inline std::vector<std::uint64_t> ghost_degrees(graph::Graph const& G,
 
 /// Orients the edges of `G` from the smaller to the larger `key` (region
 /// `orientation`) and sorts the neighborhoods by handle (`sorting`); with
-/// `ghost_out_edges`, also the ghosts' out-edges to local vertices.
+/// `ghost_out_edges`, also the ghosts' out-edges to local vertices. Consumes
+/// `G`.
 template <typename Key>
-graph::Graph orient_and_sort(graph::Graph const& G,
+graph::Graph orient_and_sort(graph::Graph&& G,
                              Key const& key,
                              bool ghost_out_edges) {
-  graph::Graph G_oriented;
-  {
+  auto G_oriented = [&] {
     CALI_CXX_MARK_SCOPE("orientation");
-    G_oriented = graph::orient(G, key, ghost_out_edges);
-  }
+    return graph::orient(std::move(G), key, ghost_out_edges);
+  }();
   CALI_CXX_MARK_SCOPE("sorting");
   G_oriented.sort_neighborhoods();
   return G_oriented;
@@ -150,11 +150,13 @@ graph::Graph orient_and_sort(graph::Graph const& G,
 
 /// Degree exchange and orientation by (degree, global id). With
 /// `--contraction`, also the ghosts' out-edges to local vertices, so that the
-/// local phase finds every triangle with two local vertices.
-inline graph::Graph preprocessing(graph::Graph const& G, Config const& conf) {
+/// local phase finds every triangle with two local vertices. Consumes the input
+/// graph `G`.
+inline graph::Graph preprocessing(graph::Graph&& G, Config const& conf) {
   CALI_CXX_MARK_SCOPE("preprocessing");
   auto const ghost_degree = ghost_degrees(G, conf);
-  return orient_and_sort(G, degree_key(G, ghost_degree), conf.contraction);
+  auto const key = degree_key(G, ghost_degree);
+  return orient_and_sort(std::move(G), key, conf.contraction);
 }
 
 /// Without contraction, after the local phase: the oriented graph converted to
@@ -170,7 +172,7 @@ inline Degree cut_out_degree(graph::Graph const& G, graph::VertexHandle v) {
   auto const neighbors = G.neighbors(v);
   return static_cast<Degree>(
       neighbors.end() - std::lower_bound(neighbors.begin(), neighbors.end(),
-                                         G.layer()->first_ghost()));
+                                         G.layer().first_ghost()));
 }
 
 /// The contraction's counters: the vertices with cut edges (compact_nodes) and

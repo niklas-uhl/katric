@@ -69,7 +69,7 @@ template <typename It, typename TriangleFunc>
 void process_message(
     graph::GlobalIdGraph const& G, Config const& conf, It begin, It end, GlobalPhaseCounters& counters, TriangleFunc& emit
 ) {
-    auto const&         layer   = *G.layer();
+    auto const&         layer   = G.layer();
     graph::VertexId const v       = *begin;
     auto const          entries = std::span<graph::VertexId const>(std::to_address(std::next(begin)), std::to_address(end));
     KASSERT(!layer.is_local_id(v));
@@ -107,7 +107,7 @@ inline std::vector<graph::VertexId> make_message(graph::GlobalIdGraph const& G, 
     auto const                 neighbors = G.neighbors(v);
     std::vector<graph::VertexId> message;
     message.reserve(1 + neighbors.size());
-    message.push_back(G.layer()->global_id(v));
+    message.push_back(G.layer().global_id(v));
     message.insert(message.end(), neighbors.begin(), neighbors.end());
     return message;
 }
@@ -132,7 +132,7 @@ void run(
     }();
     queue.set_threshold(threshold);
     GlobalPhaseCounters counters;
-    auto const&         layer     = *G.layer();
+    auto const&         layer     = G.layer();
     auto const&         partition = layer.partition();
     // Time spent building and posting messages and handling received ones (the intersections), accumulated per call
     // because a Caliper region per message would cost more than the work it measures. `poll_time` is the time in

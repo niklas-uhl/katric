@@ -11,7 +11,6 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <memory>
 #include <optional>
 #include <ranges>
 #include <span>
@@ -47,14 +46,14 @@ inline auto format_as(VertexHandle vertex) -> std::uint64_t {
 /// ids and owners (both sorted by global id), and the partition table of all
 /// ranks.
 ///
-/// The graphs of a run (input, oriented, contracted) use the same handles and
-/// share one layer through a `std::shared_ptr`: copying it per graph would
-/// duplicate the ghost table, and the graphs' lifetimes do not nest (the input
-/// graph is dropped after preprocessing; load balancing replaces the input
-/// graph together with its layer). A layer thus lives until its last graph is
-/// gone, at the latest at the end of the run. Its destruction is collective if
-/// a grid exchange ran on it (it frees the grid communicator); all ranks drop
-/// their graphs at the same point of the driver, so this is safe.
+/// The graphs of a run (input, oriented, global ids) use the same handles: each
+/// graph holds its layer by value, and each step consumes its input graph and
+/// moves the layer on to the graph it builds, so a layer has one owner at a
+/// time and is never copied (moving it moves its vectors). Load balancing
+/// replaces the input graph together with its layer. A layer's destruction is
+/// collective if a grid exchange ran on it (it frees the grid communicator);
+/// all ranks drop their graphs at the same point of the driver, so this is
+/// safe.
 class VertexLayer {
 public:
   /// Collective (builds the partition table). `range` is this rank's half-open
@@ -248,8 +247,7 @@ private:
 /// queries forward to the layer.
 class Graph {
 public:
-  Graph() = default;
-  Graph(std::shared_ptr<VertexLayer const> layer,
+  Graph(VertexLayer layer,
         AdjacencyArray<VertexHandle> local,
         std::optional<AdjacencyArray<VertexHandle>> ghost_out = std::nullopt)
       : layer_(std::move(layer)),
@@ -257,46 +255,43 @@ public:
         has_ghost_out_edges_(ghost_out.has_value()),
         ghost_out_(
             std::move(ghost_out).value_or(AdjacencyArray<VertexHandle>{})) {
-    KASSERT(local_.num_vertices() == layer_->num_local_vertices());
+    KASSERT(local_.num_vertices() == layer_.num_local_vertices());
     KASSERT(!has_ghost_out_edges_ ||
-            ghost_out_.num_vertices() == layer_->num_ghosts());
+            ghost_out_.num_vertices() == layer_.num_ghosts());
   }
 
-  [[nodiscard]] auto layer() const
-      -> std::shared_ptr<VertexLayer const> const& {
-    return layer_;
-  }
+  [[nodiscard]] auto layer() const -> VertexLayer const& { return layer_; }
   [[nodiscard]] auto comm() const -> kamping::v2::comm_view {
-    return layer_->comm();
+    return layer_.comm();
   }
 
   [[nodiscard]] auto num_local_vertices() const -> std::size_t {
-    return layer_->num_local_vertices();
+    return layer_.num_local_vertices();
   }
   [[nodiscard]] auto num_ghosts() const -> std::size_t {
-    return layer_->num_ghosts();
+    return layer_.num_ghosts();
   }
   /// The number of edges of the local vertices.
   [[nodiscard]] auto num_local_edges() const -> std::size_t {
     return local_.num_edges();
   }
-  [[nodiscard]] auto local_vertices() const { return layer_->local_vertices(); }
-  [[nodiscard]] auto ghosts() const { return layer_->ghosts(); }
+  [[nodiscard]] auto local_vertices() const { return layer_.local_vertices(); }
+  [[nodiscard]] auto ghosts() const { return layer_.ghosts(); }
 
   [[nodiscard]] auto is_local(VertexHandle vertex) const -> bool {
-    return layer_->is_local(vertex);
+    return layer_.is_local(vertex);
   }
   [[nodiscard]] auto is_ghost(VertexHandle vertex) const -> bool {
-    return layer_->is_ghost(vertex);
+    return layer_.is_ghost(vertex);
   }
   [[nodiscard]] auto owner(VertexHandle vertex) const -> PEID {
-    return layer_->owner(vertex);
+    return layer_.owner(vertex);
   }
   [[nodiscard]] auto global_id(VertexHandle vertex) const -> VertexId {
-    return layer_->global_id(vertex);
+    return layer_.global_id(vertex);
   }
   [[nodiscard]] auto to_local_index(VertexHandle vertex) const -> std::size_t {
-    return layer_->to_local_index(vertex);
+    return layer_.to_local_index(vertex);
   }
 
   /// The neighbors of local vertex `vertex`.
@@ -315,11 +310,11 @@ public:
   [[nodiscard]] auto ghost_out_neighbors(VertexHandle ghost) const
       -> std::span<VertexHandle const> {
     KASSERT(has_ghost_out_edges());
-    return ghost_out_.neighbors(layer_->to_ghost_index(ghost));
+    return ghost_out_.neighbors(layer_.to_ghost_index(ghost));
   }
   [[nodiscard]] auto ghost_out_degree(VertexHandle ghost) const -> Degree {
     KASSERT(has_ghost_out_edges());
-    return ghost_out_.degree(layer_->to_ghost_index(ghost));
+    return ghost_out_.degree(layer_.to_ghost_index(ghost));
   }
 
   /// Building step: sorts the neighbors of every local vertex by handle (local
@@ -330,13 +325,12 @@ public:
   /// Hands over the vertex layer and the neighborhoods of the local vertices
   /// (for a conversion that reuses them); the ghosts' out-edges are dropped.
   [[nodiscard]] auto
-  release() && -> std::pair<std::shared_ptr<VertexLayer const>,
-                            AdjacencyArray<VertexHandle>> {
+  release() && -> std::pair<VertexLayer, AdjacencyArray<VertexHandle>> {
     return {std::move(layer_), std::move(local_)};
   }
 
 private:
-  std::shared_ptr<VertexLayer const> layer_;
+  VertexLayer layer_;
   AdjacencyArray<VertexHandle> local_;
   bool has_ghost_out_edges_ = false;
   AdjacencyArray<VertexHandle> ghost_out_;  // empty without
@@ -350,34 +344,29 @@ private:
 /// these directly.
 class GlobalIdGraph {
 public:
-  GlobalIdGraph() = default;
   /// Every local vertex is part of the graph (DiTriC).
-  GlobalIdGraph(std::shared_ptr<VertexLayer const> layer,
-                AdjacencyArray<VertexId> local)
+  GlobalIdGraph(VertexLayer layer, AdjacencyArray<VertexId> local)
       : layer_(std::move(layer)), local_(std::move(local)) {
-    KASSERT(local_.num_vertices() == layer_->num_local_vertices());
+    KASSERT(local_.num_vertices() == layer_.num_local_vertices());
   }
   /// Contracted: only the local vertices `kept` (ascending) are part of the
   /// graph; the others have no neighbors.
-  GlobalIdGraph(std::shared_ptr<VertexLayer const> layer,
+  GlobalIdGraph(VertexLayer layer,
                 AdjacencyArray<VertexId> local,
                 std::vector<VertexHandle> kept)
       : GlobalIdGraph(std::move(layer), std::move(local)) {
     KASSERT(std::ranges::is_sorted(kept));
     contracted_ = true;
     kept_ = std::move(kept);
-    is_kept_.assign(layer_->num_local_vertices(), false);
+    is_kept_.assign(layer_.num_local_vertices(), false);
     for (VertexHandle const vertex : kept_) {
-      is_kept_[layer_->to_local_index(vertex)] = true;
+      is_kept_[layer_.to_local_index(vertex)] = true;
     }
   }
 
-  [[nodiscard]] auto layer() const
-      -> std::shared_ptr<VertexLayer const> const& {
-    return layer_;
-  }
+  [[nodiscard]] auto layer() const -> VertexLayer const& { return layer_; }
   [[nodiscard]] auto comm() const -> kamping::v2::comm_view {
-    return layer_->comm();
+    return layer_.comm();
   }
   /// The number of edges of the local vertices.
   [[nodiscard]] auto num_local_edges() const -> std::size_t {
@@ -386,7 +375,7 @@ public:
   /// Whether local vertex `vertex` is part of the graph (contracted: it had cut
   /// edges).
   [[nodiscard]] auto is_kept(VertexHandle vertex) const -> bool {
-    return !contracted_ || is_kept_[layer_->to_local_index(vertex)];
+    return !contracted_ || is_kept_[layer_.to_local_index(vertex)];
   }
   /// The kept local vertices, ascending (contracted graphs only).
   [[nodiscard]] auto kept() const -> std::span<VertexHandle const> {
@@ -395,11 +384,11 @@ public:
   /// The out-neighbors of local vertex `vertex` as global ids, ascending.
   [[nodiscard]] auto neighbors(VertexHandle vertex) const
       -> std::span<VertexId const> {
-    return local_.neighbors(layer_->to_local_index(vertex));
+    return local_.neighbors(layer_.to_local_index(vertex));
   }
 
 private:
-  std::shared_ptr<VertexLayer const> layer_;
+  VertexLayer layer_;
   AdjacencyArray<VertexId> local_;
   bool contracted_ = false;
   std::vector<VertexHandle> kept_;

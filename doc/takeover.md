@@ -42,7 +42,9 @@ Changes made during the review (all on `chore/modernize`, not pushed):
 Decisions taken (with reasons, so they are not re-opened by accident):
 
 - graphs do **not** inherit from `kagen::Graph` (our `adjncy` holds handles, oriented, contracted, 32-bit handles later)
-- `VertexLayer` stays a `shared_ptr` (graphs of a run share it, lifetimes do not nest)
+- `VertexLayer` was a `shared_ptr` (graphs of a run shared it); since 2026-11-19 each graph holds it by value and
+  each step consumes its input graph and moves the layer on (`orient` takes `Graph&&`): the only overlap of two graphs
+  was the orientation, and nothing holds the layer's address
 - `GlobalIdGraph` stays a separate type (its neighbors are a different number space than `Graph`'s)
 - no concat view for translating during the merge (the per-entry ghost-id lookup was the measured 1.65x cost);
   in-place conversion instead
