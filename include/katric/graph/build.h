@@ -7,9 +7,9 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <memory>
 #include <ranges>
-#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -72,7 +72,7 @@ inline auto build_input_graph(kagen::Graph const& input,
     xadj.push_back(0);
   }
   KASSERT(xadj.size() == num_local + 1);
-  return {std::move(layer), std::move(xadj), std::move(adjncy)};
+  return {std::move(layer), {std::move(xadj), std::move(adjncy)}};
 }
 
 /// `G` in KaGen's CSR representation (global ids).
@@ -160,74 +160,77 @@ auto orient(Graph const& G, Key const& key, bool ghost_out_edges) -> Graph {
       }
     }
   }
-  return {G.layer(), std::move(xadj), std::move(adjncy), std::move(ghost_xadj),
-          std::move(ghost_adjncy)};
+  if (!ghost_out_edges) {
+    return {G.layer(), {std::move(xadj), std::move(adjncy)}};
+  }
+  return {G.layer(),
+          {std::move(xadj), std::move(adjncy)},
+          AdjacencyArray<VertexHandle>{std::move(ghost_xadj),
+                                       std::move(ghost_adjncy)}};
 }
 
 /// DiTriC: the out-neighborhoods of `G` (sorted by handle) as global ids. A
 /// neighborhood sorted by handle is [local vertices][ghosts below the local
-/// range][ghosts above]; translated in the order [ghosts below][local vertices]
-/// [ghosts above] it is ascending. A new array: the handles cannot be reused
-/// for global ids.
+/// range][ghosts above]; translated in the order [ghosts below][local
+/// vertices][ghosts above] it is ascending. A new array: the handles cannot be
+/// reused for global ids.
 inline auto to_global_ids(Graph&& G) -> GlobalIdGraph {
-  auto [layer_ptr, xadj, adjncy] = std::move(G).release();
+  auto [layer_ptr, local] = std::move(G).release();
   auto const& layer = *layer_ptr;
-  std::vector<VertexId> global(adjncy.size());
-  auto const translate = [&](auto first, auto last, auto out) -> auto {
-    return std::transform(first, last, out, [&](VertexHandle u) -> VertexId {
-      return layer.global_id(u);
-    });
+  std::vector<VertexId> global;
+  global.reserve(local.num_edges());
+  auto const translate = [&](auto first, auto last) -> void {
+    std::transform(
+        first, last, std::back_inserter(global),
+        [&](VertexHandle u) -> VertexId { return layer.global_id(u); });
   };
-  for (std::size_t index = 0; index < layer.num_local_vertices(); ++index) {
-    auto const first =
-        adjncy.begin() + static_cast<std::ptrdiff_t>(xadj[index]);
-    auto const last =
-        adjncy.begin() + static_cast<std::ptrdiff_t>(xadj[index + 1]);
-    auto const local_end = std::lower_bound(first, last, layer.first_ghost());
+  for (std::size_t index = 0; index < local.num_vertices(); ++index) {
+    auto const neighbors = local.neighbors(index);
+    auto const local_end =
+        std::ranges::lower_bound(neighbors, layer.first_ghost());
     auto const below_end =
-        std::lower_bound(local_end, last, layer.first_ghost_above());
-    auto out = global.begin() + static_cast<std::ptrdiff_t>(xadj[index]);
-    out = translate(local_end, below_end, out);
-    out = translate(first, local_end, out);
-    translate(below_end, last, out);
+        std::lower_bound(local_end, neighbors.end(), layer.first_ghost_above());
+    translate(local_end, below_end);
+    translate(neighbors.begin(), local_end);
+    translate(below_end, neighbors.end());
   }
-  return {std::move(layer_ptr), std::move(xadj), std::move(global)};
+  auto xadj = std::move(local).release().first;
+  return {std::move(layer_ptr), {std::move(xadj), std::move(global)}};
 }
 
 /// Contracts `G` (neighborhoods sorted by handle) to its cut edges: of each
-/// neighborhood only the ghost part is kept
-/// ([ghosts below][ghosts above], already in global order), as global ids. The
-/// kept vertices are those with a cut out-edge.
+/// neighborhood only the ghost part is kept ([ghosts below][ghosts above],
+/// already in global order), as global ids. The kept vertices are those with a
+/// cut out-edge.
 inline auto contract_to_global_ids(Graph&& G) -> GlobalIdGraph {
-  auto [layer_ptr, xadj, adjncy] = std::move(G).release();
+  auto [layer_ptr, local] = std::move(G).release();
   auto const& layer = *layer_ptr;
-  auto const ghost_part = [&](std::size_t index) -> auto {
-    auto const first =
-        adjncy.begin() + static_cast<std::ptrdiff_t>(xadj[index]);
-    auto const last =
-        adjncy.begin() + static_cast<std::ptrdiff_t>(xadj[index + 1]);
+  auto const cut_neighbors = [&](std::size_t index) -> auto {
+    auto const neighbors = local.neighbors(index);
     return std::ranges::subrange(
-        std::lower_bound(first, last, layer.first_ghost()), last);
+        std::ranges::lower_bound(neighbors, layer.first_ghost()),
+        neighbors.end());
   };
   std::size_t num_cut_edges = 0;
-  for (std::size_t index = 0; index < layer.num_local_vertices(); ++index) {
-    num_cut_edges += ghost_part(index).size();
+  for (std::size_t index = 0; index < local.num_vertices(); ++index) {
+    num_cut_edges += cut_neighbors(index).size();
   }
   std::vector<VertexHandle> kept;
+  std::vector<std::size_t> xadj(local.num_vertices() + 1, 0);
   std::vector<VertexId> global;
   global.reserve(num_cut_edges);
-  std::vector<std::size_t> contracted_xadj(xadj.size(), 0);
-  for (std::size_t index = 0; index < layer.num_local_vertices(); ++index) {
-    auto const ghosts = ghost_part(index);
-    if (!ghosts.empty()) {
+  for (std::size_t index = 0; index < local.num_vertices(); ++index) {
+    auto const cut = cut_neighbors(index);
+    if (!cut.empty()) {
       kept.push_back(VertexLayer::local_handle(index));
     }
-    for (VertexHandle const u : ghosts) {
+    for (VertexHandle const u : cut) {
       global.push_back(layer.global_id(u));
     }
-    contracted_xadj[index + 1] = global.size();
+    xadj[index + 1] = global.size();
   }
-  return {std::move(layer_ptr), std::move(contracted_xadj), std::move(global),
+  return {std::move(layer_ptr),
+          {std::move(xadj), std::move(global)},
           std::move(kept)};
 }
 

@@ -15,7 +15,6 @@
 #include <optional>
 #include <ranges>
 #include <span>
-#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -194,27 +193,73 @@ private:
   mutable std::optional<dstl::grid_comm<dstl::execution_policy::seq>> grid_;
 };
 
-/// A rank's graph on handles: the neighbors of the local vertices (CSR: xadj,
-/// adjncy) and, optionally (CETRIC), each ghost's out-edges to local vertices
-/// (a second CSR over the ghosts). The vertex queries forward to the layer.
+/// The neighborhoods of the vertices 0..n-1 (by index), stored as offsets
+/// `xadj` (n + 1 entries) and the concatenated neighborhoods `adjncy`. The
+/// graphs below use it for each set of neighborhoods they hold; `Neighbor` is
+/// what a neighborhood lists (handles or global ids).
+template <typename Neighbor>
+class AdjacencyArray {
+public:
+  AdjacencyArray() : xadj_(1, 0) {}
+  AdjacencyArray(std::vector<std::size_t> xadj, std::vector<Neighbor> adjncy)
+      : xadj_(std::move(xadj)), adjncy_(std::move(adjncy)) {
+    KASSERT(!xadj_.empty());
+    KASSERT(xadj_.front() == 0U);
+    KASSERT(xadj_.back() == adjncy_.size());
+  }
+
+  [[nodiscard]] auto num_vertices() const -> std::size_t {
+    return xadj_.size() - 1;
+  }
+  [[nodiscard]] auto num_edges() const -> std::size_t { return adjncy_.size(); }
+  /// The neighbors of the vertex with index `index`.
+  [[nodiscard]] auto neighbors(std::size_t index) const
+      -> std::span<Neighbor const> {
+    KASSERT(index < num_vertices());
+    return std::span(adjncy_).subspan(xadj_[index], degree(index));
+  }
+  [[nodiscard]] auto degree(std::size_t index) const -> Degree {
+    KASSERT(index < num_vertices());
+    return xadj_[index + 1] - xadj_[index];
+  }
+
+  /// Sorts every neighborhood ascending.
+  void sort_neighborhoods() {
+    for (std::size_t index = 0; index < num_vertices(); ++index) {
+      std::sort(
+          adjncy_.begin() + static_cast<std::ptrdiff_t>(xadj_[index]),
+          adjncy_.begin() + static_cast<std::ptrdiff_t>(xadj_[index + 1]));
+    }
+  }
+
+  /// Hands over the arrays (for a conversion that reuses them).
+  [[nodiscard]] auto
+  release() && -> std::pair<std::vector<std::size_t>, std::vector<Neighbor>> {
+    return {std::move(xadj_), std::move(adjncy_)};
+  }
+
+private:
+  std::vector<std::size_t> xadj_;
+  std::vector<Neighbor> adjncy_;
+};
+
+/// A rank's graph on handles: the neighbors of the local vertices and,
+/// optionally (CETRIC), each ghost's out-edges to local vertices. The vertex
+/// queries forward to the layer.
 class Graph {
 public:
   Graph() = default;
   Graph(std::shared_ptr<VertexLayer const> layer,
-        std::vector<std::size_t> xadj,
-        std::vector<VertexHandle> adjncy,
-        std::vector<std::size_t> ghost_xadj = {},
-        std::vector<VertexHandle> ghost_adjncy = {})
+        AdjacencyArray<VertexHandle> local,
+        std::optional<AdjacencyArray<VertexHandle>> ghost_out = std::nullopt)
       : layer_(std::move(layer)),
-        xadj_(std::move(xadj)),
-        adjncy_(std::move(adjncy)),
-        ghost_xadj_(std::move(ghost_xadj)),
-        ghost_adjncy_(std::move(ghost_adjncy)) {
-    KASSERT(xadj_.size() == layer_->num_local_vertices() + 1);
-    KASSERT(xadj_.back() == adjncy_.size());
-    KASSERT(ghost_xadj_.empty() ||
-            ghost_xadj_.size() == layer_->num_ghosts() + 1);
-    KASSERT(ghost_xadj_.empty() || ghost_xadj_.back() == ghost_adjncy_.size());
+        local_(std::move(local)),
+        has_ghost_out_edges_(ghost_out.has_value()),
+        ghost_out_(
+            std::move(ghost_out).value_or(AdjacencyArray<VertexHandle>{})) {
+    KASSERT(local_.num_vertices() == layer_->num_local_vertices());
+    KASSERT(!has_ghost_out_edges_ ||
+            ghost_out_.num_vertices() == layer_->num_ghosts());
   }
 
   [[nodiscard]] auto layer() const
@@ -233,7 +278,7 @@ public:
   }
   /// The number of edges of the local vertices.
   [[nodiscard]] auto num_local_edges() const -> std::size_t {
-    return adjncy_.size();
+    return local_.num_edges();
   }
   [[nodiscard]] auto local_vertices() const { return layer_->local_vertices(); }
   [[nodiscard]] auto ghosts() const { return layer_->ghosts(); }
@@ -257,57 +302,44 @@ public:
   /// The neighbors of local vertex `vertex`.
   [[nodiscard]] auto neighbors(VertexHandle vertex) const
       -> std::span<VertexHandle const> {
-    auto const index = to_local_index(vertex);
-    return std::span(adjncy_).subspan(xadj_[index],
-                                      xadj_[index + 1] - xadj_[index]);
+    return local_.neighbors(to_local_index(vertex));
   }
   [[nodiscard]] auto degree(VertexHandle vertex) const -> Degree {
-    auto const index = to_local_index(vertex);
-    return xadj_[index + 1] - xadj_[index];
+    return local_.degree(to_local_index(vertex));
   }
 
   [[nodiscard]] auto has_ghost_out_edges() const -> bool {
-    return !ghost_xadj_.empty();
+    return has_ghost_out_edges_;
   }
   /// The out-neighbors of ghost `ghost`: local vertices, ascending.
   [[nodiscard]] auto ghost_out_neighbors(VertexHandle ghost) const
       -> std::span<VertexHandle const> {
     KASSERT(has_ghost_out_edges());
-    auto const index = layer_->to_ghost_index(ghost);
-    return std::span(ghost_adjncy_)
-        .subspan(ghost_xadj_[index],
-                 ghost_xadj_[index + 1] - ghost_xadj_[index]);
+    return ghost_out_.neighbors(layer_->to_ghost_index(ghost));
   }
   [[nodiscard]] auto ghost_out_degree(VertexHandle ghost) const -> Degree {
-    return ghost_out_neighbors(ghost).size();
+    KASSERT(has_ghost_out_edges());
+    return ghost_out_.degree(layer_->to_ghost_index(ghost));
   }
 
   /// Building step: sorts the neighbors of every local vertex by handle (local
   /// vertices first, then ghosts, each by global id). The ghosts' out-neighbors
   /// need no sorting: `orient` writes them in ascending order.
-  void sort_neighborhoods() {
-    for (std::size_t index = 0; index + 1 < xadj_.size(); ++index) {
-      std::sort(
-          adjncy_.begin() + static_cast<std::ptrdiff_t>(xadj_[index]),
-          adjncy_.begin() + static_cast<std::ptrdiff_t>(xadj_[index + 1]));
-    }
-  }
+  void sort_neighborhoods() { local_.sort_neighborhoods(); }
 
-  /// Hands over the vertex layer and the arrays of the local vertices (for a
-  /// conversion that reuses them); the ghosts' out-edges are dropped.
+  /// Hands over the vertex layer and the neighborhoods of the local vertices
+  /// (for a conversion that reuses them); the ghosts' out-edges are dropped.
   [[nodiscard]] auto
-  release() && -> std::tuple<std::shared_ptr<VertexLayer const>,
-                             std::vector<std::size_t>,
-                             std::vector<VertexHandle>> {
-    return {std::move(layer_), std::move(xadj_), std::move(adjncy_)};
+  release() && -> std::pair<std::shared_ptr<VertexLayer const>,
+                            AdjacencyArray<VertexHandle>> {
+    return {std::move(layer_), std::move(local_)};
   }
 
 private:
   std::shared_ptr<VertexLayer const> layer_;
-  std::vector<std::size_t> xadj_;
-  std::vector<VertexHandle> adjncy_;
-  std::vector<std::size_t> ghost_xadj_;
-  std::vector<VertexHandle> ghost_adjncy_;
+  AdjacencyArray<VertexHandle> local_;
+  bool has_ghost_out_edges_ = false;
+  AdjacencyArray<VertexHandle> ghost_out_;  // empty without
 };
 
 /// The graph of the global phase: the out-neighbors of the local vertices as
@@ -321,21 +353,16 @@ public:
   GlobalIdGraph() = default;
   /// Every local vertex is part of the graph (DiTriC).
   GlobalIdGraph(std::shared_ptr<VertexLayer const> layer,
-                std::vector<std::size_t> xadj,
-                std::vector<VertexId> adjncy)
-      : layer_(std::move(layer)),
-        xadj_(std::move(xadj)),
-        adjncy_(std::move(adjncy)) {
-    KASSERT(xadj_.size() == layer_->num_local_vertices() + 1);
-    KASSERT(xadj_.back() == adjncy_.size());
+                AdjacencyArray<VertexId> local)
+      : layer_(std::move(layer)), local_(std::move(local)) {
+    KASSERT(local_.num_vertices() == layer_->num_local_vertices());
   }
   /// Contracted: only the local vertices `kept` (ascending) are part of the
   /// graph; the others have no neighbors.
   GlobalIdGraph(std::shared_ptr<VertexLayer const> layer,
-                std::vector<std::size_t> xadj,
-                std::vector<VertexId> adjncy,
+                AdjacencyArray<VertexId> local,
                 std::vector<VertexHandle> kept)
-      : GlobalIdGraph(std::move(layer), std::move(xadj), std::move(adjncy)) {
+      : GlobalIdGraph(std::move(layer), std::move(local)) {
     KASSERT(std::ranges::is_sorted(kept));
     contracted_ = true;
     kept_ = std::move(kept);
@@ -354,7 +381,7 @@ public:
   }
   /// The number of edges of the local vertices.
   [[nodiscard]] auto num_local_edges() const -> std::size_t {
-    return adjncy_.size();
+    return local_.num_edges();
   }
   /// Whether local vertex `vertex` is part of the graph (contracted: it had cut
   /// edges).
@@ -368,15 +395,12 @@ public:
   /// The out-neighbors of local vertex `vertex` as global ids, ascending.
   [[nodiscard]] auto neighbors(VertexHandle vertex) const
       -> std::span<VertexId const> {
-    auto const index = layer_->to_local_index(vertex);
-    return std::span(adjncy_).subspan(xadj_[index],
-                                      xadj_[index + 1] - xadj_[index]);
+    return local_.neighbors(layer_->to_local_index(vertex));
   }
 
 private:
   std::shared_ptr<VertexLayer const> layer_;
-  std::vector<std::size_t> xadj_;
-  std::vector<VertexId> adjncy_;
+  AdjacencyArray<VertexId> local_;
   bool contracted_ = false;
   std::vector<VertexHandle> kept_;
   std::vector<bool> is_kept_;
