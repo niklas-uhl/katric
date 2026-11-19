@@ -31,11 +31,11 @@ namespace katric {
 inline auto degree_key(graph::Graph const& G,
                        std::vector<std::uint64_t> const& ghost_degree) {
   return [&G, &ghost_degree](graph::VertexHandle vertex) {
-    auto const& layer = G.layer();
-    return std::pair(layer.is_local(vertex)
+    auto const& numbering = G.numbering();
+    return std::pair(numbering.is_local(vertex)
                          ? G.degree(vertex)
-                         : ghost_degree[layer.to_ghost_index(vertex)],
-                     layer.global_id(vertex));
+                         : ghost_degree[numbering.to_ghost_index(vertex)],
+                     numbering.global_id(vertex));
   };
 }
 
@@ -55,15 +55,15 @@ inline auto vertex_costs(graph::Graph const& G, Config const& conf)
   if (name != "DPD" && name != "IDPD") {
     throw std::runtime_error("Unsupported cost function");
   }
-  auto const& layer = G.layer();
+  auto const& numbering = G.numbering();
   std::vector<std::uint64_t> ghost_degree;
   std::vector<std::uint64_t> local_out_degree(G.num_local_vertices());
   std::vector<std::uint64_t> ghost_out_degree;
   auto const key = degree_key(G, ghost_degree);
   auto const out_degree = [&](VertexHandle vertex) -> std::uint64_t {
-    return layer.is_local(vertex)
-               ? local_out_degree[layer.to_local_index(vertex)]
-               : ghost_out_degree[layer.to_ghost_index(vertex)];
+    return numbering.is_local(vertex)
+               ? local_out_degree[numbering.to_local_index(vertex)]
+               : ghost_out_degree[numbering.to_ghost_index(vertex)];
   };
   {
     CALI_CXX_MARK_SCOPE("cost_function_communication");
@@ -71,14 +71,14 @@ inline auto vertex_costs(graph::Graph const& G, Config const& conf)
         G, [&](VertexHandle v) { return G.degree(v); }, conf.degree_exchange,
         MessageTag::CostFunction);
     for (VertexHandle const v : G.local_vertices()) {
-      local_out_degree[layer.to_local_index(v)] =
+      local_out_degree[numbering.to_local_index(v)] =
           static_cast<std::uint64_t>(std::ranges::count_if(
               G.neighbors(v), [&](VertexHandle u) { return key(u) > key(v); }));
     }
     ghost_out_degree = graph::exchange_ghost_values(
         G,
         [&](VertexHandle v) {
-          return local_out_degree[layer.to_local_index(v)];
+          return local_out_degree[numbering.to_local_index(v)];
         },
         conf.degree_exchange, MessageTag::CostFunctionOutDegree);
   }
@@ -88,7 +88,7 @@ inline auto vertex_costs(graph::Graph const& G, Config const& conf)
   for (VertexHandle const v : G.local_vertices()) {
     for (VertexHandle const u : G.neighbors(v)) {
       if ((key(u) > key(v)) == out_edges) {
-        cost[layer.to_local_index(v)] += out_degree(v) + out_degree(u);
+        cost[numbering.to_local_index(v)] += out_degree(v) + out_degree(u);
       }
     }
   }
@@ -172,7 +172,7 @@ inline Degree cut_out_degree(graph::Graph const& G, graph::VertexHandle v) {
   auto const neighbors = G.neighbors(v);
   return static_cast<Degree>(
       neighbors.end() - std::lower_bound(neighbors.begin(), neighbors.end(),
-                                         G.layer().first_ghost()));
+                                         G.numbering().first_ghost()));
 }
 
 /// The contraction's counters: the vertices with cut edges (compact_nodes) and

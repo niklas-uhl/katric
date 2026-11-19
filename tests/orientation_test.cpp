@@ -85,14 +85,14 @@ TEST_P(Orientation, GlobalDegree) {
         );
         ASSERT_EQ(received[mode].size(), G.num_ghosts());
         for (VertexHandle const g: G.ghosts()) {
-            EXPECT_EQ(received[mode][G.layer().to_ghost_index(g)], G_full[G.global_id(g)].size());
+            EXPECT_EQ(received[mode][G.numbering().to_ghost_index(g)], G_full[G.global_id(g)].size());
         }
     }
     auto const& ghost_degree = received[katric::GhostExchangeMode::sparse];
     auto const  G_oriented   = katric::graph::orient(
         std::move(G),
         [&](VertexHandle c) {
-            Degree const degree = G.is_local(c) ? G.degree(c) : ghost_degree[G.layer().to_ghost_index(c)];
+            Degree const degree = G.is_local(c) ? G.degree(c) : ghost_degree[G.numbering().to_ghost_index(c)];
             return std::pair(degree, G.global_id(c));
         },
         true
@@ -113,7 +113,7 @@ TEST_P(Orientation, GlobalDegree) {
         VertexId const        g_global = G_oriented.global_id(g);
         std::vector<VertexId> expected;
         for (auto const& e: G_full[g_global]) {
-            if (G_oriented.layer().is_local_id(e.head) && key(g_global) < key(e.head)) {
+            if (G_oriented.numbering().is_local_id(e.head) && key(g_global) < key(e.head)) {
                 expected.push_back(e.head);
             }
         }
@@ -138,7 +138,7 @@ TEST_P(Orientation, LocalDegreeOutward) {
         VertexId const        v_global = G_oriented.global_id(v);
         std::vector<VertexId> expected;
         for (auto const& e: G_full[v_global]) {
-            if (!G_oriented.layer().is_local_id(e.head) || key(v_global) < key(e.head)) {
+            if (!G_oriented.numbering().is_local_id(e.head) || key(v_global) < key(e.head)) {
                 expected.push_back(e.head);
             }
         }

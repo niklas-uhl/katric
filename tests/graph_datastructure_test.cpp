@@ -41,7 +41,7 @@ TEST(InputGraphTest, neighbors_ghosts_and_handles) {
     auto const G_full = katric::testing::read_full_graph(input);
     auto const local  = katric::testing::read_local_graph(input);
     auto const G      = katric::graph::build_input_graph(local, MPI_COMM_WORLD);
-    auto const& layer = G.layer();
+    auto const& numbering = G.numbering();
 
     // every local vertex has its full neighborhood, in global ids
     for (VertexHandle const v: G.local_vertices()) {
@@ -49,17 +49,17 @@ TEST(InputGraphTest, neighbors_ghosts_and_handles) {
         std::vector<Edge> edges;
         for (VertexHandle const u: G.neighbors(v)) {
             edges.emplace_back(v_global, G.global_id(u));
-            EXPECT_EQ(layer.handle(G.global_id(u)), u);
+            EXPECT_EQ(numbering.handle(G.global_id(u)), u);
         }
         EXPECT_THAT(edges, testing::UnorderedElementsAreArray(G_full[v_global]));
     }
     // the ghosts are sorted by global id, owned elsewhere, and their owners' ranges contain them
     for (VertexHandle const g: G.ghosts()) {
         EXPECT_FALSE(G.is_local(g));
-        EXPECT_TRUE(layer.distribution().is_local(G.global_id(g), G.owner(g)));
+        EXPECT_TRUE(numbering.distribution().is_local(G.global_id(g), G.owner(g)));
     }
     for (std::size_t i = 1; i < G.num_ghosts(); ++i) {
-        EXPECT_LT(G.global_id(layer.ghost_handle(i - 1)), G.global_id(layer.ghost_handle(i)));
+        EXPECT_LT(G.global_id(numbering.ghost_handle(i - 1)), G.global_id(numbering.ghost_handle(i)));
     }
     // every vertex is local on exactly one rank
     std::size_t const local_count = G.num_local_vertices();

@@ -70,16 +70,16 @@ template <typename It, typename TriangleFunc>
 void process_message(
     graph::GlobalIdGraph const& G, Config const& conf, It begin, It end, GlobalPhaseCounters& counters, TriangleFunc& emit
 ) {
-    auto const&         layer   = G.layer();
+    auto const&         numbering = G.numbering();
     graph::VertexId const v       = *begin;
     auto const          entries = std::span<graph::VertexId const>(std::to_address(std::next(begin)), std::to_address(end));
-    KASSERT(!layer.is_local_id(v));
+    KASSERT(!numbering.is_local_id(v));
     KASSERT(std::ranges::is_sorted(entries));
     for (graph::VertexId const u_global: entries) {
-        if (!layer.is_local_id(u_global)) {
+        if (!numbering.is_local_id(u_global)) {
             continue;
         }
-        graph::VertexHandle const u = layer.handle(u_global);
+        graph::VertexHandle const u = numbering.handle(u_global);
         // CETRIC: u may have had no cut edges and was removed by the contraction
         if (!G.is_kept(u)) {
             continue;
@@ -108,7 +108,7 @@ inline std::vector<graph::VertexId> make_message(graph::GlobalIdGraph const& G, 
     auto const                 neighbors = G.neighbors(v);
     std::vector<graph::VertexId> message;
     message.reserve(1 + neighbors.size());
-    message.push_back(G.layer().global_id(v));
+    message.push_back(G.numbering().global_id(v));
     message.insert(message.end(), neighbors.begin(), neighbors.end());
     return message;
 }
@@ -143,8 +143,8 @@ void run(
     }();
     queue.set_threshold(threshold);
     GlobalPhaseCounters counters;
-    auto const&         layer     = G.layer();
-    auto const&         distribution = layer.distribution();
+    auto const&         numbering    = G.numbering();
+    auto const&         distribution = numbering.distribution();
     // Time spent building and posting messages and handling received ones (the intersections), accumulated per call
     // because a Caliper region per message would cost more than the work it measures. `poll_time` is the time in
     // `poll` outside the handler (the queue's own work); `handle_time` includes messages handled during termination,
@@ -168,7 +168,7 @@ void run(
             PEID          owner     = 0;
             graph::VertexId owner_end = 0; // end of `owner`'s range; entries below it go to the same rank
             for (graph::VertexId const w: G.neighbors(v)) {
-                if (layer.is_local_id(w) || w < owner_end) {
+                if (numbering.is_local_id(w) || w < owner_end) {
                     continue;
                 }
                 owner     = owner_from(distribution, w, owner);

@@ -152,7 +152,7 @@ template <typename Graph, typename Sources, typename VertexToMessage>
                 break;
             }
             case GhostExchangeMode::grid: {
-                auto const& grid = G.layer().grid();
+                auto const& grid = G.numbering().grid();
                 dstl::grid_alltoallv(
                     send_buf | views::with_auto_pool(pool) | views::with_counts(send_counts)
                         | views::with_displs(send_displs),
