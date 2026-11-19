@@ -15,10 +15,8 @@
 #include <kagen.h>
 #include <mpi.h>
 #include <dstl/distribution.hpp>
-#include <kamping/v2/types/std/unsafe/utility.hpp>
 #include <kassert/kassert.hpp>
 
-#include "katric/ghost_exchange.h"
 #include "katric/graph/graph.h"
 
 namespace katric::graph {
@@ -90,30 +88,6 @@ inline auto to_kagen_graph(Graph&& G) -> kagen::Graph {
     input.xadj.push_back(input.adjncy.size());
   }
   return input;
-}
-
-/// Sends `value(v)` of every local vertex v to the ranks holding v as a ghost
-/// and returns the received values, indexed by ghost index. Message counters as
-/// push_to_ghosts(), two words per entry (vertex and value).
-template <typename ValueFunc>
-auto exchange_ghost_values(Graph const& G,
-                           ValueFunc const& value,
-                           GhostExchangeMode mode,
-                           MessageTag tag) -> std::vector<std::uint64_t> {
-  // (vertex, value)
-  auto const received = push_to_ghosts(
-      G, G.local_vertices(),
-      [&](VertexHandle v) -> std::pair<VertexId, std::uint64_t> {
-        return std::pair<VertexId, std::uint64_t>{
-            G.global_id(v), static_cast<std::uint64_t>(value(v))};
-      },
-      mode, tag, 2);
-  auto const& numbering = G.numbering();
-  std::vector<std::uint64_t> values(numbering.num_ghosts());
-  for (auto const& [vertex, data] : received) {
-    values[numbering.to_ghost_index(numbering.handle(vertex))] = data;
-  }
-  return values;
 }
 
 /// Orients the edges of the undirected graph `G` from the smaller to the larger

@@ -77,7 +77,7 @@ TEST_P(Orientation, GlobalDegree) {
     // every transport of the degree exchange delivers the true degree of every ghost
     std::map<katric::GhostExchangeMode, std::vector<std::uint64_t>> received;
     for (auto mode: {katric::GhostExchangeMode::sparse, katric::GhostExchangeMode::dense, katric::GhostExchangeMode::grid}) {
-        received[mode] = katric::graph::exchange_ghost_values(
+        received[mode] = katric::push_to_ghosts(
             G,
             [&](VertexHandle v) { return G.degree(v); },
             mode,

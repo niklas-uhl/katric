@@ -58,7 +58,7 @@ inline auto vertex_costs(graph::Graph const& G, Config const& conf)
   std::vector<std::uint64_t> ghost_degree;
   {
     CALI_CXX_MARK_SCOPE("cost_function_communication");
-    ghost_degree = graph::exchange_ghost_values(
+    ghost_degree = push_to_ghosts(
         G, [&](VertexHandle v) { return G.degree(v); }, conf.degree_exchange,
         MessageTag::CostFunction);
   }
@@ -85,7 +85,7 @@ inline auto vertex_costs(graph::Graph const& G, Config const& conf)
   std::vector<std::uint64_t> ghost_out_degree;
   {
     CALI_CXX_MARK_SCOPE("cost_function_communication");
-    ghost_out_degree = graph::exchange_ghost_values(
+    ghost_out_degree = push_to_ghosts(
         G,
         [&](VertexHandle v) {
           return local_out_degree[numbering.to_local_index(v)];
@@ -137,12 +137,12 @@ inline auto primary_load_balancing(graph::Graph&& G, Config const& conf)
       comm);
 }
 
-/// The degrees of the ghosts of `G`, indexed by ghost slot (region
+/// The degrees of the ghosts of `G`, indexed by ghost index (region
 /// `degree_exchange`).
 inline std::vector<std::uint64_t> ghost_degrees(graph::Graph const& G,
                                                 Config const& conf) {
   CALI_CXX_MARK_SCOPE("degree_exchange");
-  return graph::exchange_ghost_values(
+  return push_to_ghosts(
       G, [&](graph::VertexHandle v) { return G.degree(v); },
       conf.degree_exchange, MessageTag::Orientation);
 }
