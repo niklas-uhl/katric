@@ -8,13 +8,13 @@
 #include <span>
 #include <vector>
 
-#include "cetric/config.h"
-#include "cetric/intersection.h"
-#include "cetric/datastructures/graph_definitions.h"
-#include "cetric/graph/graph.h"
-#include "cetric/phase_counters.h"
+#include "katric/config.h"
+#include "katric/intersection.h"
+#include "katric/datastructures/graph_definitions.h"
+#include "katric/graph/graph.h"
+#include "katric/phase_counters.h"
 
-namespace cetric::local {
+namespace katric::local {
 
 /// N+(c) for a local vertex, and for a ghost (CETRIC) its out-edges to local vertices.
 inline std::span<graph::Handle const> neighbors_with_ghosts(graph::CsrGraph const& G, graph::Handle c) {
@@ -48,7 +48,7 @@ void intersect_edge(
     // for the edge (v, u) we check the open wedges (v, u, w) for w in N+(u)
     counters.wedge_checks += u_last - u_first;
     counters.intersection_size_local += (v_last - v_first) + (u_last - u_first);
-    cetric::intersection(
+    katric::intersection(
         v_first,
         v_last,
         u_first,
@@ -101,4 +101,4 @@ std::vector<graph::Handle> run(graph::CsrGraph const& G, Config const& conf, Tri
     return interface_nodes;
 }
 
-} // namespace cetric::local
+} // namespace katric::local

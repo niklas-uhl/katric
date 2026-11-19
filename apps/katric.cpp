@@ -49,10 +49,10 @@
 #include "./build_info.h"
 #include "./parse_config.h"
 #include "./verify.h"
-#include "cetric/caliper.h"
-#include "cetric/config.h"
-#include "cetric/ghost_exchange.h"
-#include "cetric/input.h"
+#include "katric/caliper.h"
+#include "katric/config.h"
+#include "katric/ghost_exchange.h"
+#include "katric/input.h"
 
 int main(int argc, char* argv[]) {
     int thread_support_level;
@@ -63,8 +63,8 @@ int main(int argc, char* argv[]) {
         SPDLOG_CRITICAL("The MPI implementation must support MPI_THREAD_FUNNELED");
         std::exit(1);
     }
-    cetric::PEID rank;
-    cetric::PEID size;
+    katric::PEID rank;
+    katric::PEID size;
     int          exit_code = 0;
     // the communicator katric runs on (the global phase's legacy message queue is fixed to MPI_COMM_WORLD)
     MPI_Comm const comm = MPI_COMM_WORLD;
@@ -72,7 +72,7 @@ int main(int argc, char* argv[]) {
         MPI_Comm_rank(comm, &rank);
         MPI_Comm_size(comm, &size);
         DEBUG_BARRIER(rank);
-        cetric::Config      conf = parse_config(argc, argv, rank, size);
+        katric::Config      conf = parse_config(argc, argv, rank, size);
         size_t              expected_triangles = 0;
         tbb::global_control global_limit(tbb::global_control::max_allowed_parallelism, conf.num_threads);
 
@@ -80,7 +80,7 @@ int main(int argc, char* argv[]) {
         // run metadata
         cali::ConfigManager caliper;
         if (!conf.caliper_config.empty()) {
-            cetric::profiling::add_katric_configs(caliper, conf.caliper_output);
+            katric::profiling::add_katric_configs(caliper, conf.caliper_output);
             caliper.add(conf.caliper_config.c_str());
             if (caliper.error()) {
                 SPDLOG_CRITICAL("Invalid Caliper config: {}", caliper.error_msg());
@@ -93,21 +93,21 @@ int main(int argc, char* argv[]) {
             }
             adiak::value("git_commit", conf.git_commit);
             // How the binary was built (apps/build_info.cpp.in)
-            adiak::value("build.type", std::string(cetric::build_info::build_type));
-            adiak::value("build.compiler", std::string(cetric::build_info::cxx_compiler));
-            adiak::value("build.cxx_flags", std::string(cetric::build_info::cxx_flags));
-            adiak::value("build.cxx_definitions", std::string(cetric::build_info::cxx_definitions));
+            adiak::value("build.type", std::string(katric::build_info::build_type));
+            adiak::value("build.compiler", std::string(katric::build_info::cxx_compiler));
+            adiak::value("build.cxx_flags", std::string(katric::build_info::cxx_flags));
+            adiak::value("build.cxx_definitions", std::string(katric::build_info::cxx_definitions));
             adiak::collect_all(); // user, launch date, command line, hosts, job size, MPI version, ...
             caliper.start();
         }
 
         // The input is generated (or read) once and ingested; every iteration resets the algorithm to that state.
-        auto const   algorithm = cetric::make_algorithm(conf, comm);
+        auto const   algorithm = katric::make_algorithm(conf, comm);
         kagen::Graph graph;
         {
             CALI_CXX_MARK_SCOPE("input");
             try {
-                graph = cetric::generate_input(conf.kagen_option_string, comm);
+                graph = katric::generate_input(conf.kagen_option_string, comm);
             } catch (std::exception const& e) {
                 SPDLOG_CRITICAL("KaGen failed for --kagen_option_string '{}': {}", conf.kagen_option_string, e.what());
                 MPI_Abort(MPI_COMM_WORLD, 1);
@@ -115,7 +115,7 @@ int main(int argc, char* argv[]) {
         }
         if (conf.verify) {
             CALI_CXX_MARK_SCOPE("verify");
-            expected_triangles = cetric::reference_triangle_count(graph, comm);
+            expected_triangles = katric::reference_triangle_count(graph, comm);
             if (rank == 0) {
                 SPDLOG_INFO("reference: {} triangles", expected_triangles);
             }

@@ -10,7 +10,7 @@
 #include <kagen.h>
 #include <mpi.h>
 
-namespace cetric {
+namespace katric {
 
 /// Gathers `graph` (KaGen's CSR representation, contiguous vertex ranges in rank order) to rank 0 and counts its
 /// triangles sequentially. Self-loops and parallel edges are ignored and the edges are treated as undirected. The
@@ -122,4 +122,4 @@ std::size_t reference_triangle_count(kagen::Graph const& graph, MPI_Comm comm) {
     return triangles;
 }
 
-} // namespace cetric
+} // namespace katric

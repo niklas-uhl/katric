@@ -1,5 +1,5 @@
 // The algorithm on compact ids as a sequence of phases (phases/preprocessing.h and below). Each phase is a Caliper
-// region; counters (cetric::profiling::counter_add) go to the region that is open. The returned triangle count is only
+// region; counters (katric::profiling::counter_add) go to the region that is open. The returned triangle count is only
 // valid on rank 0.
 #pragma once
 
@@ -9,16 +9,16 @@
 
 #include <caliper/cali.h>
 
-#include "cetric/config.h"
+#include "katric/config.h"
 #include <kagen.h>
-#include "cetric/graph/graph.h"
-#include "cetric/phases/global.h"
-#include "cetric/phases/local.h"
-#include "cetric/phases/preprocessing.h"
-#include "cetric/triangle_counter.h"
-#include "cetric/util.h"
+#include "katric/graph/graph.h"
+#include "katric/phases/global.h"
+#include "katric/phases/local.h"
+#include "katric/phases/preprocessing.h"
+#include "katric/triangle_counter.h"
+#include "katric/util.h"
 
-namespace cetric {
+namespace katric {
 namespace phases {
 
 /// The intersections that need no communication (CETRIC also through the ghosts' out-edges). Returns the interface vertices,
@@ -64,4 +64,4 @@ std::size_t count_triangles(kagen::Graph const& input, Config const& conf, MPI_C
     return phases::reduce(triangles, comm);
 }
 
-} // namespace cetric
+} // namespace katric

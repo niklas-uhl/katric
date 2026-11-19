@@ -29,25 +29,25 @@
 #include <gtest/gtest.h>
 #include <mpi.h>
 
-#include "cetric/message_tags.h"
-#include "cetric/config.h"
-#include "cetric/datastructures/graph_definitions.h"
-#include "cetric/ghost_exchange.h"
-#include "cetric/graph/build.h"
-#include "cetric/graph/graph.h"
+#include "katric/message_tags.h"
+#include "katric/config.h"
+#include "katric/datastructures/graph_definitions.h"
+#include "katric/ghost_exchange.h"
+#include "katric/graph/build.h"
+#include "katric/graph/graph.h"
 #include "test_graphs.h"
 
 namespace {
-using cetric::graph::Degree;
-using cetric::graph::Handle;
-using cetric::graph::NodeId;
+using katric::graph::Degree;
+using katric::graph::Handle;
+using katric::graph::NodeId;
 
 class Orientation : public ::testing::TestWithParam<const char*> {
 protected:
     void SetUp() override {
-        G_full     = cetric::testing::read_full_graph(GetParam());
-        auto local = cetric::testing::read_local_graph(GetParam());
-        G          = cetric::graph::build_input_graph(std::move(local), MPI_COMM_WORLD);
+        G_full     = katric::testing::read_full_graph(GetParam());
+        auto local = katric::testing::read_local_graph(GetParam());
+        G          = katric::graph::build_input_graph(std::move(local), MPI_COMM_WORLD);
     }
 
     [[nodiscard]] std::pair<Degree, NodeId> key(NodeId v) const {
@@ -64,27 +64,27 @@ protected:
         return ids;
     }
 
-    std::vector<std::vector<cetric::graph::Edge>> G_full;
-    cetric::graph::CsrGraph                       G;
+    std::vector<std::vector<katric::graph::Edge>> G_full;
+    katric::graph::CsrGraph                       G;
 };
 
 TEST_P(Orientation, GlobalDegree) {
     // every transport of the degree exchange delivers the true degree of every ghost
-    std::map<cetric::GhostExchangeMode, std::vector<std::uint64_t>> received;
-    for (auto mode: {cetric::GhostExchangeMode::sparse, cetric::GhostExchangeMode::dense, cetric::GhostExchangeMode::grid}) {
-        received[mode] = cetric::graph::exchange_ghost_values(
+    std::map<katric::GhostExchangeMode, std::vector<std::uint64_t>> received;
+    for (auto mode: {katric::GhostExchangeMode::sparse, katric::GhostExchangeMode::dense, katric::GhostExchangeMode::grid}) {
+        received[mode] = katric::graph::exchange_ghost_values(
             G,
             [&](Handle v) { return G.degree(v); },
             mode,
-            cetric::MessageTag::Orientation
+            katric::MessageTag::Orientation
         );
         ASSERT_EQ(received[mode].size(), G.ghost_count());
         for (Handle const g: G.ghosts()) {
             EXPECT_EQ(received[mode][g - G.local_node_count()], G_full[G.global_id(g)].size());
         }
     }
-    auto const& ghost_degree = received[cetric::GhostExchangeMode::sparse];
-    auto const  G_oriented   = cetric::graph::orient(
+    auto const& ghost_degree = received[katric::GhostExchangeMode::sparse];
+    auto const  G_oriented   = katric::graph::orient(
         G,
         [&](Handle c) {
             Degree const degree = G.is_owned(c) ? G.degree(c) : ghost_degree[c - G.local_node_count()];
@@ -120,7 +120,7 @@ TEST_P(Orientation, GlobalDegree) {
 
 TEST_P(Orientation, LocalDegreeOutward) {
     // pre-CETRIC: cut edges outward, local edges by (degree, id), no exchange
-    auto const G_oriented = cetric::graph::orient(
+    auto const G_oriented = katric::graph::orient(
         G,
         [&](Handle c) {
             Degree const degree = G.is_owned(c) ? G.degree(c) : std::numeric_limits<Degree>::max();

@@ -12,12 +12,12 @@
 
 #include <kagen.h>
 
-#include "cetric/algorithms.h"
-#include "cetric/caliper.h"
-#include "cetric/config.h"
-#include "cetric/input.h"
+#include "katric/algorithms.h"
+#include "katric/caliper.h"
+#include "katric/config.h"
+#include "katric/input.h"
 
-namespace cetric {
+namespace katric {
 
 /// KaTric (DiTriC, or CETRIC with --contraction) with either communication policy. ingest() keeps the input;
 /// every run only reads it to build its graphs, so nothing is copied per iteration.
@@ -95,4 +95,4 @@ std::unique_ptr<AbstractAlgorithm> make_algorithm(Config const& conf, MPI_Comm c
     throw std::invalid_argument("unknown communication policy " + conf.communication_policy);
 }
 
-} // namespace cetric
+} // namespace katric

@@ -6,15 +6,15 @@
 
 #include <mpi.h>
 
-#include "cetric/communication_policy.h"
-#include "cetric/config.h"
+#include "katric/communication_policy.h"
+#include "katric/config.h"
 #include <kagen.h>
 
-namespace cetric {
+namespace katric {
 // Builds its graphs from `input` (KaGen's CSR representation, only read). The returned triangle count is only valid on
 // rank 0.
 
-/// KaTric: DiTriC, or CETRIC with `--contraction` (cetric/phases/drivers.h)
+/// KaTric: DiTriC, or CETRIC with `--contraction` (katric/phases/drivers.h)
 std::size_t count_triangles(kagen::Graph const& input, Config const& conf, MPI_Comm comm, MessageQueuePolicy policy);
 std::size_t count_triangles(kagen::Graph const& input, Config const& conf, MPI_Comm comm, GridPolicy policy);
-} // namespace cetric
+} // namespace katric

@@ -4,10 +4,10 @@
 #include <cstddef>
 #include <limits>
 
-#include "cetric/caliper.h"
-#include "cetric/config.h"
+#include "katric/caliper.h"
+#include "katric/config.h"
 
-namespace cetric {
+namespace katric {
 
 /// Work counters of the local phase.
 struct LocalPhaseCounters {
@@ -62,4 +62,4 @@ struct GlobalPhaseCounters {
     }
 };
 
-} // namespace cetric
+} // namespace katric

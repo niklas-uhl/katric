@@ -34,7 +34,7 @@
 #include <fmt/core.h>
 #include <fmt/ostream.h>
 
-namespace cetric {
+namespace katric {
 namespace graph {
 
 using NodeId                      = std::uint64_t;
@@ -88,10 +88,10 @@ inline std::ostream& operator<<(std::ostream& out, const Triangle<NodeIdType>& t
     return out;
 }
 } // namespace graph
-} // namespace cetric
+} // namespace katric
 
 // fmt >= 9 requires an explicit opt-in to use operator<<
 template <typename NodeIdType>
-struct fmt::formatter<cetric::graph::Triangle<NodeIdType>> : fmt::ostream_formatter {};
+struct fmt::formatter<katric::graph::Triangle<NodeIdType>> : fmt::ostream_formatter {};
 
 #endif /* end of include guard: GRAPH_DEFINITIONS_H_8XAL43DH */

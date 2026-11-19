@@ -36,7 +36,7 @@
 #include <mpi.h>
 #include <unistd.h>
 
-namespace cetric {
+namespace katric {
 using PEID = int;
 
 #ifndef DEBUG_BARRIER
@@ -87,7 +87,7 @@ constexpr unsigned long long log2(unsigned long long x) {
 #endif
 }
 
-} // namespace cetric
+} // namespace katric
 
 
 #endif // PARALLEL_TRIANGLE_COUNTER_UTIL_H

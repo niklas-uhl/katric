@@ -10,7 +10,7 @@ Checks:
   - '-misc-include-*'
   # false positive on every KASSERT(a <op> b): kassert's expression decomposition chains the comparison
   - '-bugprone-chained-comparison'
-HeaderFilterRegex: 'include/cetric/'
+HeaderFilterRegex: 'include/katric/'
 CheckOptions:
   readability-identifier-length.IgnoredVariableNames: '^([Guv]|it|kv)$'
   readability-identifier-length.IgnoredParameterNames: '^([Guv]|it|kv)$'

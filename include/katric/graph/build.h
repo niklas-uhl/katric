@@ -18,10 +18,10 @@
 #include <mpi.h>
 #include <tlx/vector_free.hpp>
 
-#include "cetric/ghost_exchange.h"
-#include "cetric/graph/graph.h"
+#include "katric/ghost_exchange.h"
+#include "katric/graph/graph.h"
 
-namespace cetric::graph {
+namespace katric::graph {
 
 /// The undirected graph of a rank's part of the input (KaGen's CSR: vertex range, xadj, adjncy in global ids), with
 /// ghosts. Collective. Neighborhoods keep the input's order. The cut edges are sorted once by (head, position): that
@@ -195,4 +195,4 @@ inline GlobalIdGraph contract_to_global_ids(CsrGraph&& G) {
     return GlobalIdGraph(std::move(layer_ptr), std::move(xadj), std::move(adjncy), std::move(kept));
 }
 
-} // namespace cetric::graph
+} // namespace katric::graph

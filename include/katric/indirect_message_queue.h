@@ -31,7 +31,7 @@
 #include "datastructures/span.h"
 #include "message-queue/buffered_queue.h"
 
-namespace cetric {
+namespace katric {
 template <typename T>
 T PEID_to_datatype(PEID rank) {
     return rank;
@@ -207,4 +207,4 @@ private:
 // auto make_indirect_queue(Merger&& merger, Splitter&& splitter) {
 //     return IndirectMessageQueue<QueueType>(std::forward<Merger>(merger), std::forward<Splitter>(splitter));
 // }
-} // namespace cetric
+} // namespace katric

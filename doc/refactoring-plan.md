@@ -51,7 +51,8 @@ default).
 | local phase | intersections over the local rows | also through the ghost rows: every triangle with >= 2 local vertices |
 | global phase | `global_ids`: whole graph in place; sends the full N+(v) of the interface vertices | `contraction`: only the cut out-edges; sends the contracted N+(v) |
 
-Ghost rows and contraction come only together: contraction without ghost rows loses the triangles g < v < w (g remote,
+The code namespace, include directory, CMake targets and options are `katric` too (`katric::`, `include/katric/`,
+`KATRIC_*`; before: `cetric`). Ghost rows and contraction come only together: contraction without ghost rows loses the triangles g < v < w (g remote,
 v->w local); ghost rows without contraction count them twice. Both variants push (surrogate); computing at the tail
 (idea 1) would be a different algorithm.
 

@@ -31,10 +31,10 @@
 #include <fmt/ranges.h>
 #include <kassert/kassert.hpp>
 
-#include "cetric/config.h"
-#include "cetric/util.h"
+#include "katric/config.h"
+#include "katric/util.h"
 
-namespace cetric {
+namespace katric {
 
 template <class InputIt1, class InputIt2, class OnIntersection, class Compare>
 void merge_intersection(
@@ -84,7 +84,7 @@ void binary_intersection(
     Compare          comp,
     size_t           recursion_threshold = 1000
 ) {
-#if !defined(CETRIC_BINARY_INTERSECTION_RECURSIVE)
+#if !defined(KATRIC_BINARY_INTERSECTION_RECURSIVE)
     struct Task {
         size_t first1 = 0, last1 = 0, first2 = 0, last2 = 0;
         size_t dist1() const {
@@ -253,4 +253,4 @@ void intersection(
     }
 }
 
-} // namespace cetric
+} // namespace katric

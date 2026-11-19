@@ -44,11 +44,11 @@
 #include <kassert/kassert.hpp>
 #include <mpi.h>
 
-#include "cetric/message_tags.h"
-#include "cetric/message_statistics.h"
-#include "cetric/util.h"
+#include "katric/message_tags.h"
+#include "katric/message_statistics.h"
+#include "katric/util.h"
 
-namespace cetric::load_balancing {
+namespace katric::load_balancing {
 
 /// Moves the vertices of `G` (KaGen's CSR, with their adjacency lists) so that each rank gets a contiguous range of
 /// about C/p of the total cost C: vertex v goes to the rank whose share [r C/p, (r+1) C/p) contains the cost before v
@@ -121,4 +121,4 @@ inline kagen::Graph run(kagen::Graph&& G, std::span<std::size_t const> cost, kam
     return balanced;
 }
 
-} // namespace cetric::load_balancing
+} // namespace katric::load_balancing

@@ -10,6 +10,14 @@ note is the short version plus the state of the code review.
 - `feat/message-trimming` (pushed, `de243d7` = `8f66911` + merge of `chore/modernize` up to `d86687d`): idea 2,
   `--message-trimming`. **Needs adapting before the next merge** (see below).
 
+## Since this note (2026-11-19)
+
+- `1ae4a5f`: one algorithm, KaTric, `--contraction` (CETRIC) instead of `--algorithm`; pre-CETRIC removed (plan,
+  section "Variants")
+- the commit after it: namespace, include directory, CMake targets and options renamed `cetric` -> `katric`
+  (`KATRIC_CXX_FLAGS` etc.; build directories configured with the old `CETRIC_*` options need them set again, e.g.
+  by configuring with the preset)
+
 ## Review state
 
 Reviewed and approved:
@@ -42,13 +50,13 @@ Decisions taken (with reasons, so they are not re-opened by accident):
 
 Still to review in stage 2 (current files, in data-flow order):
 
-1. `include/cetric/graph/graph.h`: `CsrGraph` (`release()`, ghost out-edges), `GlobalIdGraph` (new: `is_kept`,
+1. `include/katric/graph/graph.h`: `CsrGraph` (`release()`, ghost out-edges), `GlobalIdGraph` (new: `is_kept`,
    contracted vs. full)
-2. `include/cetric/graph/build.h`: `build_input_graph` (cut-edge sort), `exchange_ghost_values`, `orient`,
-   `to_global_ids` (translate + rotate), `contract_to_global_ids` (in-place compaction, `keep` filter)
-3. `include/cetric/phases/preprocessing.h`: `vertex_costs`, per-algorithm preprocessing, `contraction`,
-   `contraction_and_preprocessing_global` (pre-CETRIC: degree exchange on the oriented graph, then filter)
-4. `include/cetric/phases/local.h`, `phases/global.h` (owner runs in the send loop), `phases/drivers.h`
+2. `include/katric/graph/build.h`: `build_input_graph` (cut-edge sort), `exchange_ghost_values`, `orient`,
+   `to_global_ids` (translate + rotate), `contract_to_global_ids` (in-place compaction)
+3. `include/katric/phases/preprocessing.h`: `vertex_costs`, `preprocessing` (ghost rows with `--contraction`),
+   `contraction`
+4. `include/katric/phases/local.h`, `phases/global.h` (owner runs in the send loop), `phases/drivers.h`
 5. small: `phase_counters.h`, `triangle_counter.h`, `intersection.h`
 
 ## Open items

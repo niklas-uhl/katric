@@ -16,19 +16,19 @@
 
 #include <message-queue/buffered_queue.h>
 
-#include "cetric/caliper.h"
-#include "cetric/communication_policy.h"
-#include "cetric/config.h"
-#include "cetric/intersection.h"
-#include "cetric/datastructures/graph_definitions.h"
-#include "cetric/datastructures/span.h"
-#include "cetric/graph/graph.h"
-#include "cetric/indirect_message_queue.h"
-#include "cetric/phase_counters.h"
-#include "cetric/util.h"
+#include "katric/caliper.h"
+#include "katric/communication_policy.h"
+#include "katric/config.h"
+#include "katric/intersection.h"
+#include "katric/datastructures/graph_definitions.h"
+#include "katric/datastructures/span.h"
+#include "katric/graph/graph.h"
+#include "katric/indirect_message_queue.h"
+#include "katric/phase_counters.h"
+#include "katric/util.h"
 #include "kassert/kassert.hpp"
 
-namespace cetric::global {
+namespace katric::global {
 
 /// Separates the messages in the queue's buffers.
 constexpr graph::NodeId sentinel = std::numeric_limits<graph::NodeId>::max();
@@ -87,7 +87,7 @@ void process_message(
         // for the edge (v, u) we check the open wedges (v, u, w) for w in N+(u)
         counters.wedge_checks += u_neighbors.size();
         counters.intersection_size_global += entries.size() + u_neighbors.size();
-        cetric::intersection(
+        katric::intersection(
             u_neighbors.begin(),
             u_neighbors.end(),
             entries.begin(),
@@ -187,4 +187,4 @@ void run(
     profiling::counter_add("termination_handle_ns", ns(termination_handle_time));
 }
 
-} // namespace cetric::global
+} // namespace katric::global

@@ -30,17 +30,17 @@
 #include <CLI/CLI.hpp>
 #include <CLI/Validators.hpp>
 
-#include "cetric/config.h"
+#include "katric/config.h"
 #include "magic_enum/magic_enum.hpp"
 
-/// Adds an option for an enum. Its values are spelled as cetric::cli_name() (case-insensitive, `_` for `-` works as
+/// Adds an option for an enum. Its values are spelled as katric::cli_name() (case-insensitive, `_` for `-` works as
 /// well), `aliases` are accepted in addition. The help text and option_values() show the value by name.
 template <typename Enum>
 CLI::Option*
 add_enum_option(CLI::App& app, std::string const& name, Enum& variable, std::map<std::string, Enum> aliases = {}) {
     std::map<std::string, Enum> values;
     for (Enum value: magic_enum::enum_values<Enum>()) {
-        values.emplace(cetric::cli_name(value), value);
+        values.emplace(katric::cli_name(value), value);
     }
     values.merge(aliases);
     std::vector<std::string> names;
@@ -56,7 +56,7 @@ add_enum_option(CLI::App& app, std::string const& name, Enum& variable, std::map
     return app.add_option(name, variable)
         ->transform(CLI::Transformer(values, CLI::ignore_case, underscores_as_hyphens).description(""))
         ->transform(CLI::IsMember(names, CLI::ignore_case, underscores_as_hyphens))
-        ->default_function([&variable] { return cetric::cli_name(variable); })
+        ->default_function([&variable] { return katric::cli_name(variable); })
         ->capture_default_str();
 }
 

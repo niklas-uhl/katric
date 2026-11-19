@@ -23,6 +23,6 @@
 
 #include <string>
 
-namespace cetric {
+namespace katric {
 extern const std::string git_hash;
 }

@@ -26,7 +26,7 @@
 #include <caliper/ConfigManager.h>
 #include <caliper/cali.h>
 
-namespace cetric::profiling {
+namespace katric::profiling {
 
 /// Adds `value` to the counter `name` in the currently open Caliper region, the equivalent of kamping's
 /// `counter().add(name, value)`. Counters need no declaration; the `katric-counters` config reports them per region
@@ -96,4 +96,4 @@ inline void add_katric_configs(cali::ConfigManager& manager, std::string const& 
     }
 }
 
-} // namespace cetric::profiling
+} // namespace katric::profiling

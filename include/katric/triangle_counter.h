@@ -14,9 +14,9 @@
 #include <tbb/combinable.h>
 #include <tbb/concurrent_vector.h>
 
-#include "cetric/datastructures/graph_definitions.h"
+#include "katric/datastructures/graph_definitions.h"
 
-namespace cetric {
+namespace katric {
 
 /// Counts the triangles of a rank and, with assertions enabled, records them to check for duplicates (verify()).
 class TriangleCounter {
@@ -76,4 +76,4 @@ inline std::size_t reduce(TriangleCounter& triangles, MPI_Comm comm) {
 }
 
 } // namespace phases
-} // namespace cetric
+} // namespace katric

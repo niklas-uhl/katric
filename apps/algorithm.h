@@ -7,9 +7,9 @@
 
 #include <kagen.h>
 
-#include "cetric/config.h"
+#include "katric/config.h"
 
-namespace cetric {
+namespace katric {
 
 class AbstractAlgorithm {
 public:
@@ -33,4 +33,4 @@ public:
 /// `comm` must outlive it.
 std::unique_ptr<AbstractAlgorithm> make_algorithm(Config const& conf, MPI_Comm comm);
 
-} // namespace cetric
+} // namespace katric

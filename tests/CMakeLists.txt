@@ -3,25 +3,25 @@ include(GoogleTest)
 # MPI tests: KaTestrophe::main initializes MPI and aggregates GoogleTest output across ranks. Rank counts above
 # KATESTROPHE_MAX_CORES (set in extern/) are skipped.
 add_executable(graph_datastructure_test graph_datastructure_test.cpp)
-target_link_libraries(graph_datastructure_test PRIVATE KaTestrophe::main cetric-lib cetric_cxx_flags)
+target_link_libraries(graph_datastructure_test PRIVATE KaTestrophe::main katric-lib katric_cxx_flags)
 katestrophe_add_mpi_test(graph_datastructure_test CORES 2 4 8 16)
 
 add_executable(load_balancing_test load_balancing_test.cpp)
-target_link_libraries(load_balancing_test PRIVATE KaTestrophe::main cetric-lib cetric_cxx_flags)
+target_link_libraries(load_balancing_test PRIVATE KaTestrophe::main katric-lib katric_cxx_flags)
 katestrophe_add_mpi_test(load_balancing_test CORES 2 4 8 16)
 
 add_executable(orientation_test orientation_test.cpp)
-target_link_libraries(orientation_test PRIVATE KaTestrophe::main cetric-lib cetric_cxx_flags)
+target_link_libraries(orientation_test PRIVATE KaTestrophe::main katric-lib katric_cxx_flags)
 katestrophe_add_mpi_test(orientation_test CORES 4)
 
 # Sequential tests. The first launch of a freshly linked binary can take seconds on macOS (more than gtest's default
 # discovery timeout of 5 s during a parallel build).
 add_executable(intersection_test intersection_test.cpp)
-target_link_libraries(intersection_test PRIVATE GTest::gmock GTest::gtest_main cetric-lib cetric_cxx_flags)
+target_link_libraries(intersection_test PRIVATE GTest::gmock GTest::gtest_main katric-lib katric_cxx_flags)
 gtest_discover_tests(intersection_test DISCOVERY_TIMEOUT 60)
 
 set_target_properties(
-  graph_datastructure_test load_balancing_test orientation_test intersection_test PROPERTIES CXX_CLANG_TIDY "${CETRIC_CLANG_TIDY_COMMAND}")
+  graph_datastructure_test load_balancing_test orientation_test intersection_test PROPERTIES CXX_CLANG_TIDY "${KATRIC_CLANG_TIDY_COMMAND}")
 
 # End-to-end tests: run katric on the example graphs with each algorithm configuration and check the triangle count
 # (against the expected value here and, via --verify, against the sequential reference count).

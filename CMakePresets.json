@@ -10,10 +10,10 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "CETRIC_CXX_FLAGS": "-Wall;-Wextra;-pedantic",
+        "KATRIC_CXX_FLAGS": "-Wall;-Wextra;-pedantic",
         "KASSERT_ASSERTION_LEVEL": "30",
-        "CETRIC_ACTIVE_LOG_LEVEL": "DEBUG",
-        "CETRIC_BUILD_TESTS": "ON"
+        "KATRIC_ACTIVE_LOG_LEVEL": "DEBUG",
+        "KATRIC_BUILD_TESTS": "ON"
       }
     },
     {
@@ -23,11 +23,11 @@
       "binaryDir": "${sourceDir}/build",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "CETRIC_CXX_FLAGS": "-march=native",
+        "KATRIC_CXX_FLAGS": "-march=native",
         "KASSERT_ASSERTION_LEVEL": "0",
         "KAMPING_ASSERTION_LEVEL": "none",
-        "CETRIC_ACTIVE_LOG_LEVEL": "INFO",
-        "CETRIC_BUILD_TESTS": "OFF"
+        "KATRIC_ACTIVE_LOG_LEVEL": "INFO",
+        "KATRIC_BUILD_TESTS": "OFF"
       }
     }
   ],

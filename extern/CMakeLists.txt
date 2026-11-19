@@ -89,9 +89,9 @@ FetchContent_Declare(
 
 
 # oneTBB comes from the system (module, package manager); on a cluster, load the TBB module before configuring.
-# CETRIC_FETCH_TBB builds the pinned version from source instead, as a shared library (static builds are unsupported
+# KATRIC_FETCH_TBB builds the pinned version from source instead, as a shared library (static builds are unsupported
 # upstream). Declared here, made available below.
-if(CETRIC_FETCH_TBB)
+if(KATRIC_FETCH_TBB)
   set(TBB_TEST OFF)
   set(TBB_EXAMPLES OFF)
   set(TBB_STRICT OFF) # do not build TBB itself with -Werror
@@ -198,7 +198,7 @@ endblock()
 target_include_directories(caliper SYSTEM INTERFACE $<BUILD_INTERFACE:${caliper_SOURCE_DIR}/include> $<BUILD_INTERFACE:${caliper_BINARY_DIR}/include>)
 
 FetchContent_MakeAvailable(cli11 fmt spdlog)
-if(CETRIC_FETCH_TBB)
+if(KATRIC_FETCH_TBB)
   block()
     set(BUILD_SHARED_LIBS ON) # see the declaration of TBB
     FetchContent_MakeAvailable(TBB)
@@ -207,7 +207,7 @@ else()
   find_package(TBB 2021.5 CONFIG GLOBAL)
   if(NOT TBB_FOUND)
     message(FATAL_ERROR "oneTBB (>= 2021.5) not found: load the TBB module or install it (or point TBB_DIR at its CMake "
-                        "config), or configure with -DCETRIC_FETCH_TBB=ON to build it from source")
+                        "config), or configure with -DKATRIC_FETCH_TBB=ON to build it from source")
   endif()
   message(STATUS "TBB: ${TBB_VERSION} (${TBB_DIR})")
 endif()
@@ -221,7 +221,7 @@ endif()
 
 
 # Tooling and app/test-only dependencies.
-if(CETRIC_ENABLE_FORMAT_CMAKE)
+if(KATRIC_ENABLE_FORMAT_CMAKE)
   FetchContent_Declare(
     Format.cmake
     GIT_REPOSITORY https://github.com/TheLartians/Format.cmake
@@ -229,7 +229,7 @@ if(CETRIC_ENABLE_FORMAT_CMAKE)
   FetchContent_MakeAvailable(Format.cmake)
 endif()
 
-if(CETRIC_BUILD_APPS)
+if(KATRIC_BUILD_APPS)
   # Commit hash and dirty state of the working tree, embedded into the executables (git.h).
   FetchContent_Declare(
     cmake_git_version_tracking
@@ -240,7 +240,7 @@ if(CETRIC_BUILD_APPS)
   FetchContent_MakeAvailable(cmake_git_version_tracking)
 endif()
 
-if(CETRIC_BUILD_TESTS)
+if(KATRIC_BUILD_TESTS)
   # Only register MPI tests with rank counts this machine can run, instead of oversubscribing. A cache entry, so that
   # tests/ sees it (a normal variable would only live in this directory scope).
   set(KATESTROPHE_MAX_CORES ${MPIEXEC_MAX_NUMPROCS} CACHE STRING "Skip MPI tests with more ranks than this")

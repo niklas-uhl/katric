@@ -48,7 +48,7 @@ state of the art.
 To compile this project you need:
 - A C++20 compiler (tested with `g++` 16).
 - [OpenMPI](https://www.open-mpi.org/) or [Intel MPI](https://www.intel.com/content/www/us/en/developer/tools/oneapi/mpi-library.html#gs.pr0oht)
-- oneTBB: from the system (load the module on a cluster); `-DCETRIC_FETCH_TBB=ON` builds the pinned version from source
+- oneTBB: from the system (load the module on a cluster); `-DKATRIC_FETCH_TBB=ON` builds the pinned version from source
 - CMake 3.25 or higher and network access during configuration: all other dependencies (Abseil, fmt, Caliper, KaGen, tlx, ...) are fetched via `FetchContent`, pinned to a release or commit.
 
 ### Compiling
@@ -69,9 +69,10 @@ For machine-specific settings (compiler, local checkouts of dependencies), copy 
 ## Running
 For reproducing our experiments with kaval, see [experiments/README.md](./experiments/README.md).
 
-We provide two base configurations of our algorithm:
-- DiTriC, which uses the asynchronous buffered messaging approach from our publication 
-- CeTriC, which employs our communication reduction technique
+KaTric has two variants, selected by `--contraction`:
+- DiTriC (default), which uses the asynchronous buffered messaging approach from our publication
+- CeTriC (`--contraction`), which employs our communication reduction technique: the local phase also finds the
+  triangles with two local vertices, and only the cut edges are communicated
 
 While we provide many command-line parameters to tune our algorithms' behavior, we provide the variants from the publication as config presets:
 ```shell

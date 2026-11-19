@@ -1,7 +1,7 @@
 // The tags of katric's point-to-point exchanges.
 #pragma once
 
-namespace cetric {
+namespace katric {
 
 /// Tags of the point-to-point exchanges (kamping-v2 and dSTL take scoped enums as tags). Consecutive sparse (NBX)
 /// exchanges need distinct tags: a rank that has left one may already send for the next while another rank still
@@ -13,4 +13,4 @@ enum class MessageTag {
     Orientation           = 31,
 };
 
-} // namespace cetric
+} // namespace katric

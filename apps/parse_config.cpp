@@ -30,10 +30,10 @@
 #include <unistd.h>
 
 #include "./parse_parameters.h"
-#include "cetric/config.h"
+#include "katric/config.h"
 #include "git_hash.h"
 
-cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::PEID size) {
+katric::Config parse_config(int argc, char* argv[], katric::PEID rank, katric::PEID size) {
     (void)size;
 
     CLI::App app("Parallel Triangle Counter");
@@ -42,8 +42,8 @@ cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::P
     // unknown keys in a --config file are errors instead of being ignored (e.g. options that were removed)
     app.allow_config_extras(CLI::config_extras_mode::error);
 
-    cetric::Config conf;
-    conf.git_commit = cetric::git_hash;
+    katric::Config conf;
+    conf.git_commit = katric::git_hash;
 
     // conf.hostname = std::getenv("HOST");
     char hostname[256];

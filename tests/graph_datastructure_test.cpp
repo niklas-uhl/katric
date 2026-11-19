@@ -27,21 +27,21 @@
 #include <gtest/gtest.h>
 #include <mpi.h>
 
-#include "cetric/datastructures/graph_definitions.h"
-#include "cetric/graph/build.h"
-#include "cetric/graph/graph.h"
+#include "katric/datastructures/graph_definitions.h"
+#include "katric/graph/build.h"
+#include "katric/graph/graph.h"
 #include "test_graphs.h"
 
 namespace {
-using cetric::graph::Edge;
-using cetric::graph::Handle;
-using cetric::graph::NodeId;
+using katric::graph::Edge;
+using katric::graph::Handle;
+using katric::graph::NodeId;
 
 TEST(InputGraphTest, neighbors_ghosts_and_handles) {
     auto const input  = "examples/hiv.metis";
-    auto const G_full = cetric::testing::read_full_graph(input);
-    auto       local  = cetric::testing::read_local_graph(input);
-    auto const G      = cetric::graph::build_input_graph(std::move(local), MPI_COMM_WORLD);
+    auto const G_full = katric::testing::read_full_graph(input);
+    auto       local  = katric::testing::read_local_graph(input);
+    auto const G      = katric::graph::build_input_graph(std::move(local), MPI_COMM_WORLD);
     auto const& layer = *G.layer();
 
     // every local vertex has its full neighborhood, in global ids

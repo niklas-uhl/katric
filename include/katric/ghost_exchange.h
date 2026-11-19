@@ -28,13 +28,13 @@
 #include <kamping/v2/views/with_displs_view.hpp>
 #include <mpi.h>
 
-#include "cetric/caliper.h"
-#include "cetric/config.h"
-#include "cetric/message_statistics.h"
-#include "cetric/message_tags.h"
-#include "cetric/util.h"
+#include "katric/caliper.h"
+#include "katric/config.h"
+#include "katric/message_statistics.h"
+#include "katric/message_tags.h"
+#include "katric/util.h"
 
-namespace cetric {
+namespace katric {
 
 /// Sends `vertex_to_message(u)` once to every rank that owns a neighbor of `u`, for each `u` in `sources` (local
 /// vertices), and returns the messages this rank received. Since the graph is undirected, the receiver gets the
@@ -175,4 +175,4 @@ template <typename Graph, typename Sources, typename VertexToMessage>
     return recv_buf;
 }
 
-} // namespace cetric
+} // namespace katric

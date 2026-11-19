@@ -7,10 +7,10 @@
 #include <kagen.h>
 #include <mpi.h>
 
-#include "cetric/datastructures/graph_definitions.h"
-#include "cetric/input.h"
+#include "katric/datastructures/graph_definitions.h"
+#include "katric/input.h"
 
-namespace cetric::testing {
+namespace katric::testing {
 
 inline std::string metis_option_string(std::string const& metis_file) {
     return "file;filename=" + metis_file + ";input_format=metis";
@@ -35,4 +35,4 @@ inline kagen::Graph read_local_graph(std::string const& metis_file) {
     return generate_input(metis_option_string(metis_file), MPI_COMM_WORLD);
 }
 
-} // namespace cetric::testing
+} // namespace katric::testing

@@ -11,18 +11,18 @@
 
 #include <caliper/cali.h>
 
-#include "cetric/caliper.h"
-#include "cetric/message_tags.h"
-#include "cetric/config.h"
+#include "katric/caliper.h"
+#include "katric/message_tags.h"
+#include "katric/config.h"
 #include <kagen.h>
-#include "cetric/ghost_exchange.h"
-#include "cetric/graph/build.h"
-#include "cetric/graph/graph.h"
-#include "cetric/load_balancing.h"
-#include "cetric/phase_counters.h"
-#include "cetric/util.h"
+#include "katric/ghost_exchange.h"
+#include "katric/graph/build.h"
+#include "katric/graph/graph.h"
+#include "katric/load_balancing.h"
+#include "katric/phase_counters.h"
+#include "katric/util.h"
 
-namespace cetric {
+namespace katric {
 
 /// The primary load balancing's cost of every local vertex (`--primary-cost-function`, PATRIC's cost functions):
 /// N = 1; DPD = Σ over out-neighbors u of d+(v) + d+(u) (the tail-compute work), IDPD = the same over in-neighbors
@@ -170,4 +170,4 @@ inline graph::GlobalIdGraph contraction(graph::CsrGraph&& G) {
 }
 
 } // namespace phases
-} // namespace cetric
+} // namespace katric

@@ -15,7 +15,7 @@
 #include <kassert/kassert.hpp>
 #include <mpi.h>
 
-namespace cetric::graph {
+namespace katric::graph {
 
 template <typename V>
 class VertexPartition {
@@ -93,4 +93,4 @@ private:
     int              comm_rank_ = 0;
 };
 
-} // namespace cetric::graph
+} // namespace katric::graph

@@ -37,16 +37,16 @@
 
 #include <magic_enum/magic_enum.hpp>
 
-#include "cetric/datastructures/graph_definitions.h"
-#include "cetric/util.h"
+#include "katric/datastructures/graph_definitions.h"
+#include "katric/util.h"
 
-namespace cetric {
+namespace katric {
 
 // Enum values are named after their command line spelling: `_` is written as `-` (both are accepted).
 enum class Threshold { local_nodes, local_edges, none };
 enum class IntersectionMethod { merge, binary_search, binary, hybrid };
 enum class TaskPoolType { std_thread, task_group };
-/// How push_to_ghosts() (cetric/ghost_exchange.h) moves its messages, `--degree-exchange`.
+/// How push_to_ghosts() (katric/ghost_exchange.h) moves its messages, `--degree-exchange`.
 enum class GhostExchangeMode {
     sparse, ///< dSTL's sparse all-to-all (NBX): point-to-point messages to the ranks with data only
     dense,  ///< one MPI_Alltoallv (after an MPI_Alltoall of the counts)
@@ -103,6 +103,6 @@ std::string cli_name(Enum value) {
     return name;
 }
 
-} // namespace cetric
+} // namespace katric
 
 #endif // PARALLEL_TRIANGLE_COUNTER_CONFIG_H

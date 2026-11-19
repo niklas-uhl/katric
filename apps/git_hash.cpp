@@ -34,4 +34,4 @@ std::string make_git_hash() {
 }
 } // namespace
 
-const std::string cetric::git_hash = make_git_hash();
+const std::string katric::git_hash = make_git_hash();

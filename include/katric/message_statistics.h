@@ -19,44 +19,32 @@
  * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#pragma once
+#ifndef MESSAGE_STATISTICS_H
+#define MESSAGE_STATISTICS_H
 
-#include <memory>
-#include <vector>
+#include <cstddef>
 
-#include <kassert/kassert.hpp>
+#include "katric/caliper.h"
 
-namespace cetric {
-template <typename T>
-class SharedVectorSpan {
-public:
-    using iterator = typename std::vector<T>::iterator;
-    SharedVectorSpan() : SharedVectorSpan(std::make_shared<std::vector<T>>(), 0, 0) {}
-    SharedVectorSpan(std::shared_ptr<std::vector<T>> ptr, size_t begin, size_t end)
-        : ptr_(std::move(ptr)),
-          begin_(begin),
-          end_(end) {
-        KASSERT(begin <= end);
+namespace katric {
+namespace profiling {
+
+/// Messages and volume (in elements) of one communication step, counted locally and reported once at its end.
+struct MessageStatistics {
+    size_t sent_messages     = 0;
+    size_t received_messages = 0;
+    size_t send_volume       = 0;
+    size_t receive_volume    = 0;
+
+    /// Adds the counts to the open Caliper region (see counter_add()); call it from the thread that opened it.
+    void report() const {
+        counter_add("sent_messages", sent_messages);
+        counter_add("send_volume", send_volume);
+        counter_add("received_messages", received_messages);
+        counter_add("receive_volume", receive_volume);
     }
-
-    SharedVectorSpan<T> subspan(size_t begin, size_t end) {
-        return SharedVectorSpan<T>(ptr_, begin_ + begin, begin_ + end);
-    }
-    size_t size() const {
-        return end_ - begin_;
-    }
-
-    iterator begin() const {
-        return ptr_->begin() + begin_;
-    }
-
-    iterator end() const {
-        return ptr_->begin() + end_;
-    }
-
-private:
-    std::shared_ptr<std::vector<T>> ptr_;
-    size_t                          begin_;
-    size_t                          end_;
 };
-} // namespace cetric
+} // namespace profiling
+} // namespace katric
+
+#endif /* MESSAGE_STATISTICS_H */

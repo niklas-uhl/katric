@@ -28,7 +28,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-#include "cetric/intersection.h"
+#include "katric/intersection.h"
 
 namespace {
 
@@ -64,13 +64,13 @@ void check_all_intersections(Vec v1, Vec v2, Vec const& expected) {
             return result;
         };
         auto merge = [](auto&&... args) {
-            cetric::merge_intersection(std::forward<decltype(args)>(args)...);
+            katric::merge_intersection(std::forward<decltype(args)>(args)...);
         };
         auto binary_search = [](auto&&... args) {
-            cetric::binary_search_intersection(std::forward<decltype(args)>(args)...);
+            katric::binary_search_intersection(std::forward<decltype(args)>(args)...);
         };
         auto binary = [](auto&&... args) {
-            cetric::binary_intersection(std::forward<decltype(args)>(args)...);
+            katric::binary_intersection(std::forward<decltype(args)>(args)...);
         };
         EXPECT_THAT(run(merge), ElementsAreArray(expected)) << "merge_intersection";
         EXPECT_THAT(run(binary_search), ElementsAreArray(expected)) << "binary_search_intersection";

@@ -22,12 +22,12 @@
 #include <kassert/kassert.hpp>
 #include <mpi.h>
 
-#include "cetric/caliper.h"
-#include "cetric/datastructures/distributed/vertex_partition.h"
-#include "cetric/datastructures/graph_definitions.h"
-#include "cetric/util.h"
+#include "katric/caliper.h"
+#include "katric/datastructures/distributed/vertex_partition.h"
+#include "katric/datastructures/graph_definitions.h"
+#include "katric/util.h"
 
-namespace cetric::graph {
+namespace katric::graph {
 
 /// A vertex as seen by one rank: [0, n) a local vertex, [n, n + g) a ghost.
 using Handle = std::uint64_t;
@@ -309,4 +309,4 @@ private:
     std::vector<bool>                  is_kept_;
 };
 
-} // namespace cetric::graph
+} // namespace katric::graph

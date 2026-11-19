@@ -26,20 +26,20 @@
 #include <kagen.h>
 #include <mpi.h>
 
-#include "cetric/datastructures/graph_definitions.h"
-#include "cetric/load_balancing.h"
+#include "katric/datastructures/graph_definitions.h"
+#include "katric/load_balancing.h"
 #include "test_graphs.h"
 
 namespace {
-using cetric::graph::NodeId;
+using katric::graph::NodeId;
 
 class LoadBalancing : public ::testing::TestWithParam<const char*> {
 protected:
     void SetUp() override {
         MPI_Comm_rank(MPI_COMM_WORLD, &rank);
         MPI_Comm_size(MPI_COMM_WORLD, &size);
-        G_full = cetric::testing::read_full_graph(GetParam());
-        G      = cetric::testing::read_local_graph(GetParam());
+        G_full = katric::testing::read_full_graph(GetParam());
+        G      = katric::testing::read_local_graph(GetParam());
     }
 
     /// Balances `G` by `cost_of(global id)` and checks that every vertex arrives once, with all its edges, on the rank
@@ -58,7 +58,7 @@ protected:
         }
         std::size_t const per_pe_cost = std::max<std::size_t>((total + size - 1) / size, 1);
 
-        G = cetric::load_balancing::run(std::move(G), cost, MPI_COMM_WORLD);
+        G = katric::load_balancing::run(std::move(G), cost, MPI_COMM_WORLD);
         auto const [first, last] = G.vertex_range;
         ASSERT_EQ(G.xadj.size(), last - first + 1);
         ASSERT_EQ(G.xadj.back(), G.adjncy.size());
@@ -76,7 +76,7 @@ protected:
         EXPECT_EQ(global, G_full.size());
     }
 
-    std::vector<std::vector<cetric::graph::Edge>> G_full;
+    std::vector<std::vector<katric::graph::Edge>> G_full;
     kagen::Graph                                  G;
     int                                           rank = 0, size = 0;
 };
