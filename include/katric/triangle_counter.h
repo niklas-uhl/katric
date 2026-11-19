@@ -2,19 +2,18 @@
 #pragma once
 
 #include <algorithm>
+#include <compare>
 #include <cstddef>
-#include <functional>
 #include <ostream>
 #include <ranges>
-#include <tuple>
+#include <string>
 #include <utility>
+#include <vector>
 
 #include <caliper/cali.h>
-#include <fmt/ostream.h>
+#include <fmt/format.h>
 #include <mpi.h>
 #include <spdlog/spdlog.h>
-#include <tbb/combinable.h>
-#include <tbb/concurrent_vector.h>
 #include <kamping/v2/collectives/reduce.hpp>
 #include <kamping/v2/comm.hpp>
 #include <kamping/v2/views/ref_single_view.hpp>
@@ -44,6 +43,8 @@ struct Triangle {
   }
 
   friend auto operator==(Triangle const&, Triangle const&) -> bool = default;
+  /// Lexicographic by (x, y, z).
+  friend auto operator<=>(Triangle const&, Triangle const&) = default;
   friend auto operator<<(std::ostream& out, Triangle const& triangle)
       -> std::ostream& {
     return out << "(" << triangle.x << ", " << triangle.y << ", " << triangle.z
@@ -51,8 +52,13 @@ struct Triangle {
   }
 };
 
+/// For fmt (log messages): "(x, y, z)".
+inline auto format_as(Triangle const& triangle) -> std::string {
+  return fmt::format("({}, {}, {})", triangle.x, triangle.y, triangle.z);
+}
+
 /// Counts the triangles of a rank and, with assertions enabled, records them to
-/// check for duplicates (verify()).
+/// check for duplicates on this rank (verify()).
 class TriangleCounter {
 public:
   /// Calls `find(emit)` and adds the number of triangles it returns. `find`
@@ -63,7 +69,7 @@ public:
   void operator()(Find&& find) {
     count_ += find([this](Triangle triangle) -> void {
       SPDLOG_DEBUG("{}", triangle);
-      if constexpr (KASSERT_ASSERTION_LEVEL >= kassert::assert::normal) {
+      if constexpr (KASSERT_ENABLED(kassert::assert::normal)) {
         triangle.normalize();
         triangles_.push_back(triangle);
       } else {
@@ -75,15 +81,14 @@ public:
   /// The triangles found on this rank.
   [[nodiscard]] auto count() const -> std::size_t { return count_; }
 
-  /// Checks that no triangle was emitted twice (only with assertions enabled).
+  /// Checks, with assertions enabled, that the phases' counts match the emitted
+  /// triangles and that no triangle was emitted twice on this rank. A triangle
+  /// found on two ranks goes unnoticed here; `--verify` compares the total
+  /// with a sequential count.
   void verify() {
     if constexpr (KASSERT_ENABLED(kassert::assert::normal)) {
       KASSERT(triangles_.size() == count_);
-      std::ranges::sort(triangles_,
-                        [](auto const& lhs, auto const& rhs) -> bool {
-                          return std::tuple(lhs.x, lhs.y, lhs.z) <
-                                 std::tuple(rhs.x, rhs.y, rhs.z);
-                        });
+      std::ranges::sort(triangles_);
       auto duplicate = std::ranges::adjacent_find(triangles_);
       KASSERT(duplicate == triangles_.end(),
               "Duplicate triangle " << *duplicate);
@@ -92,7 +97,7 @@ public:
 
 private:
   std::size_t count_ = 0;
-  tbb::concurrent_vector<Triangle> triangles_;
+  std::vector<Triangle> triangles_;  // with assertions enabled
 };
 
 namespace phases {
@@ -113,7 +118,3 @@ inline auto reduce(TriangleCounter& triangles, kamping::v2::comm_view comm)
 
 }  // namespace phases
 }  // namespace katric
-
-// fmt >= 9 requires an explicit opt-in to use operator<<
-template <>
-struct fmt::formatter<katric::Triangle> : fmt::ostream_formatter {};
