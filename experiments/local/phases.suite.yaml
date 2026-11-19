@@ -1,3 +1,5 @@
+# Since the rename of 2026-11-19, the pre-CETRIC configurations (`algorithm: cetric`) fail: pre-CETRIC was removed
+# (doc/refactoring-plan.md, "Variants"); run them from the tag pre-refactor.
 # Laptop version of ../phases.suite.yaml (see there): 1 core is the sequential baseline (no global phase).
 name: phases
 executable: apps/katric

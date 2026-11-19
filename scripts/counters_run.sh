@@ -21,8 +21,6 @@ C=(
   ditric-grid "--config $R/configs/ditric.toml --config $R/configs/2d-grid.toml"
   cetric "--config $R/configs/cetric.toml"
   cetric-grid "--config $R/configs/cetric.toml --config $R/configs/2d-grid.toml"
-  pre "--config $R/configs/cetric.toml --algorithm cetric"
-  pre-grid "--config $R/configs/cetric.toml --config $R/configs/2d-grid.toml --algorithm cetric"
   ditric-dpd "--config $R/configs/ditric.toml --primary-cost-function DPD"
 )
 for g in ${(k)G}; do for c in ${(k)C}; do for p in 2 4; do

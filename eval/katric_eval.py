@@ -6,7 +6,8 @@ reads the profiles; this module flattens them into three tables, joined on `run`
 file name without extension>, so the same suite run on several machines can be loaded together):
 
   runs      one row per run: every CLI option (Adiak's `config.<option>`, under its option name), `triangles`,
-            `ranks`, `threads`, `cores`, `graph` and the KaGen options split into `kagen.<key>` columns, `git_commit`,
+            `ranks`, `threads`, `cores`, `variant` (DiTriC / CETRIC / pre-CETRIC, from --contraction or the old
+            --algorithm), `graph` and the KaGen options split into `kagen.<key>` columns, `git_commit`,
             `launchdate`, `cluster` (Adiak's cluster name, e.g. hkn = HoreKa, ircs = SuperMUC-NG), `dir` (the
             experiment directory), and how the binary was built (`build.type`, `build.compiler`, `build.cxx_flags`,
             `build.cxx_definitions`, e.g. KASSERT_ASSERTION_LEVEL; missing before 2026-11-13)
@@ -19,7 +20,7 @@ The run time of an iteration is the maximum across ranks of the region "total", 
 
     r = load("eval/data/supermuc/paper-weak-scaling_26_11_12")
     t = r.timers.filter(region="total").join(r.runs, on="run")
-    t.group_by("graph", "algorithm", "communication-policy", "cores").agg(pl.col("max").mean())
+    t.group_by("graph", "variant", "communication-policy", "cores").agg(pl.col("max").mean())
 
 altair takes these DataFrames directly (see the marimo notebook eval/explore.py). `load_thicket` gives the Thicket
 itself, e.g. for its tree view.
@@ -147,7 +148,21 @@ def _runs(tk, run_of_profile, dir_of_profile):
         pl.Series("graph", [graph_label(o, c) for o, c in zip(kagen, runs["cores"])]),
         *[pl.Series(f"kagen.{k}", [o.get(k) for o in kagen]) for k in keys],
     )
-    return runs.drop("profile")
+    return runs.with_columns(_variant(runs)).drop("profile")
+
+
+# --algorithm before the rename of 2026-11-19 (still accepted, it then overrides --contraction)
+ALGORITHMS = {"patric": "DiTriC", "cetric-x": "CETRIC", "cetric_x": "CETRIC", "cetric": "pre-CETRIC"}
+
+
+def _variant(runs):
+    """`variant`: DiTriC, CETRIC (--contraction) or pre-CETRIC (only before the rename), from either spelling."""
+    names = [None] * len(runs)
+    if "algorithm" in runs.columns:
+        names = [ALGORITHMS.get(a) for a in runs["algorithm"]]
+    if "contraction" in runs.columns:
+        names = [n or ("CETRIC" if c in ("true", "1") else "DiTriC") for n, c in zip(names, runs["contraction"])]
+    return pl.Series("variant", names, dtype=pl.String)
 
 
 def _timers(tk, run_of_profile):

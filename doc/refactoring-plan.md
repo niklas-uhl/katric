@@ -37,6 +37,43 @@ anyway:
   keep running and produce the same counts. Everything else is up for removal.
 - No algorithmic change in this plan. The ideas come afterwards, on the cleaned-up code.
 
+## Variants
+
+Decided 2026-11-19: one algorithm, KaTric, with one option. The old `--algorithm` names were misleading (`patric` is
+not Arifuzzaman's PATRIC but his surrogate approach, Arifuzzaman 2015; `cetric` was not the paper's CETRIC and was the
+default).
+
+| | DiTriC (default) | CETRIC (`--contraction`) |
+|---|---|---|
+| old name | `--algorithm patric` (still accepted) | `--algorithm cetric-x` (still accepted) |
+| preprocessing | degree exchange, orientation by (degree, global id) | the same, plus the ghost rows: the ghosts' out-edges to local vertices |
+| stored | local rows N+(v), including the cut out-edges | the same plus the ghost rows; every cut edge is stored on both of its ranks (as in the input) |
+| local phase | intersections over the local rows | also through the ghost rows: every triangle with >= 2 local vertices |
+| global phase | `global_ids`: whole graph in place; sends the full N+(v) of the interface vertices | `contraction`: only the cut out-edges; sends the contracted N+(v) |
+
+Ghost rows and contraction come only together: contraction without ghost rows loses the triangles g < v < w (g remote,
+v->w local); ghost rows without contraction count them twice. Both variants push (surrogate); computing at the tail
+(idea 1) would be a different algorithm.
+
+pre-CETRIC (`--algorithm cetric`, local orientation with cut edges outward, reorientation by the contracted degree
+after the contraction) is removed: it loses the out-degree bound at hubs (RHG at 1536: local phase 3.8-4.6 s, wedge
+checks 508 G vs DiTriC's 130 G, max/avg 246) and never beats DiTriC. `--algorithm cetric` now fails; the code is at the
+tag `pre-refactor`. Its one useful idea, reorienting the contracted graph, carries over to CETRIC (below).
+
+Load balancing per variant (open, after the review):
+
+- DiTriC: exchange the degrees once, orient, compute the cost (IDPD needs the in-neighbors, so before dropping them),
+  then move only N+(v) (at most sqrt(2m) entries per vertex instead of d(v)); no second degree exchange. Today the
+  primary load balancing moves the undirected neighborhoods before orientation (historical)
+- CETRIC: moving N+(v) alone does not deliver v's ghost rows (its in-edges from remote tails), so the primary load
+  balancing stays on the undirected input. The full-graph IDPD prices the wrong work (DiTriC's receive work); the
+  global phase's cost is the contracted IDPD (sum over cut in-edges w->v of d+_cut(w) + d+_cut(v)), known only after
+  the first partition. Option: at the contraction, exchange the cut degree, reorient the cut-edge graph by (cut degree,
+  global id) taking each edge from whichever side keeps it (local row or ghost row; bounds d+_cut by sqrt(2 m_cut)),
+  exchange the cut out-degree, compute the contracted IDPD, and rebalance the contracted graph if its max/avg exceeds a
+  threshold. After such a move the global phase must also intersect rank-local pairs (`global.h` skips them today).
+  First step: the contracted IDPD's max/avg as a counter
+
 ## Steps
 
 Step 1 validation (2026-11-12): 70 reference runs (RGG/RHG, each also permuted, com-amazon x DiTriC/CETRIC/pre-CETRIC
@@ -231,7 +268,7 @@ Options that are dead or only used in old exploration suites (`experiments/legac
 - [x] `--flag-intersection`: dead today. `pre_intersection` / `post_intersection` / `intersect` are never called,
       `is_v_neighbor_` is never sized and would be indexed by global ID. Remove it; it comes back on compact IDs
       (idea 4, after step 4)
-- Keep `--algorithm cetric` (pre-CETRIC, `run_cetric`). Not in the paper suites, but it orients cut edges outward
+- Superseded 2026-11-19 (see "Variants"): pre-CETRIC removed. Was: keep `--algorithm cetric` (pre-CETRIC, `run_cetric`). Not in the paper suites, but it orients cut edges outward
   in the local phase: no degree exchange before it (only on the contracted graph) and no ghost expansion, while
   triangles with two local vertices are still found locally and the contraction stays correct. The price: the
   √(2m) bound on out-degrees does not hold for vertices with many cut edges. Old real-world data: same

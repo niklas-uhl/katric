@@ -1,3 +1,5 @@
+# Since the rename of 2026-11-19, the pre-CETRIC configurations (`algorithm: cetric`) fail: pre-CETRIC was removed
+# (doc/refactoring-plan.md, "Variants"); run them from the tag pre-refactor.
 # Where the time goes: DiTriC (patric), CETRIC (cetric-x) and pre-CETRIC (cetric), with direct and grid communication,
 # one thread per rank, on locality x skew inputs (phases.instances.yaml). Power-of-two multiples of a node up to 3072 cores (SuperMUC-NG: 48, 96, ..., 1536, 3072);
 # `--cores` overrides them.

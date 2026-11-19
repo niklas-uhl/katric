@@ -43,7 +43,6 @@
 namespace cetric {
 
 // Enum values are named after their command line spelling: `_` is written as `-` (both are accepted).
-enum class Algorithm { patric, cetric, cetric_x };
 enum class Threshold { local_nodes, local_edges, none };
 enum class IntersectionMethod { merge, binary_search, binary, hybrid };
 enum class TaskPoolType { std_thread, task_group };
@@ -60,7 +59,8 @@ struct Config {
     size_t                iterations                        = 1;
     bool                  verify                            = false;
     std::string           primary_cost_function             = "N";
-    Algorithm             algorithm                         = Algorithm::cetric;
+    /// CETRIC instead of DiTriC: ghost rows in the local phase, only the cut edges in the global phase
+    bool                  contraction                       = false;
     Threshold             threshold                         = Threshold::local_nodes;
     double                threshold_scale                   = 1.0;
     std::string           communication_policy              = "new";

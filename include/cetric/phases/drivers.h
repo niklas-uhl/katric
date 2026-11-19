@@ -1,4 +1,4 @@
-// The algorithms on compact ids as sequences of phases (phases/preprocessing.h and below). Each phase is a Caliper
+// The algorithm on compact ids as a sequence of phases (phases/preprocessing.h and below). Each phase is a Caliper
 // region; counters (cetric::profiling::counter_add) go to the region that is open. The returned triangle count is only
 // valid on rank 0.
 #pragma once
@@ -44,45 +44,23 @@ void global_phase(
 
 } // namespace phases
 
-/// DiTriC
+/// KaTric: DiTriC, or CETRIC with `--contraction` (the local phase also covers the triangles with two local vertices,
+/// through the ghost rows; the global phase sends only the cut edges).
 template <class CommunicationPolicy>
-std::size_t run_patric(kagen::Graph const& input, Config const& conf, MPI_Comm comm) {
+std::size_t count_triangles(kagen::Graph const& input, Config const& conf, MPI_Comm comm) {
     TriangleCounter triangles;
     auto [G, threshold] = phases::input_graph(input, conf, comm);
     phases::primary_load_balancing(G, conf);
-    auto G_oriented = phases::preprocessing_patric(G, conf);
+    auto G_oriented = phases::preprocessing(G, conf);
     G               = {};
-    auto const interface_nodes = phases::local_phase(G_oriented, conf, false, triangles);
-    auto const G_global        = phases::global_ids(std::move(G_oriented));
-    phases::global_phase<CommunicationPolicy>(G_global, conf, threshold, interface_nodes, triangles);
-    return phases::reduce(triangles, comm);
-}
-
-/// pre-CETRIC: outward orientation of cut edges, degree exchange only on the contracted graph
-template <class CommunicationPolicy>
-std::size_t run_cetric(kagen::Graph const& input, Config const& conf, MPI_Comm comm) {
-    TriangleCounter triangles;
-    auto [G, threshold] = phases::input_graph(input, conf, comm);
-    phases::primary_load_balancing(G, conf);
-    auto G_oriented = phases::preprocessing_cetric(G, conf);
-    G               = {};
-    phases::local_phase(G_oriented, conf, false, triangles);
-    auto const G_contracted = phases::contraction_and_preprocessing_global(std::move(G_oriented), conf);
-    phases::global_phase<CommunicationPolicy>(G_contracted, conf, threshold, G_contracted.kept(), triangles);
-    return phases::reduce(triangles, comm);
-}
-
-/// CETRIC (with the ghosts' out-edges)
-template <class CommunicationPolicy>
-std::size_t run_cetric_x(kagen::Graph const& input, Config const& conf, MPI_Comm comm) {
-    TriangleCounter triangles;
-    auto [G, threshold] = phases::input_graph(input, conf, comm);
-    phases::primary_load_balancing(G, conf);
-    auto G_oriented = phases::preprocessing_cetric_x(G, conf);
-    G               = {};
-    phases::local_phase(G_oriented, conf, true, triangles);
-    auto const G_contracted = phases::contraction(std::move(G_oriented));
-    phases::global_phase<CommunicationPolicy>(G_contracted, conf, threshold, G_contracted.kept(), triangles);
+    auto const interface_nodes = phases::local_phase(G_oriented, conf, conf.contraction, triangles);
+    if (conf.contraction) {
+        auto const G_contracted = phases::contraction(std::move(G_oriented));
+        phases::global_phase<CommunicationPolicy>(G_contracted, conf, threshold, G_contracted.kept(), triangles);
+    } else {
+        auto const G_global = phases::global_ids(std::move(G_oriented));
+        phases::global_phase<CommunicationPolicy>(G_global, conf, threshold, interface_nodes, triangles);
+    }
     return phases::reduce(triangles, comm);
 }
 

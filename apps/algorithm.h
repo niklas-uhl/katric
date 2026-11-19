@@ -29,8 +29,8 @@ public:
     [[nodiscard]] virtual std::size_t triangle_count() const = 0;
 };
 
-/// Builds the algorithm selected by --algorithm and --communication-policy. `conf` must outlive the algorithm.
-/// The algorithm selected by `conf`, running on the ranks of `comm` (which must outlive it).
+/// KaTric as configured by `conf` (--contraction, --communication-policy), running on the ranks of `comm`. `conf` and
+/// `comm` must outlive it.
 std::unique_ptr<AbstractAlgorithm> make_algorithm(Config const& conf, MPI_Comm comm);
 
 } // namespace cetric

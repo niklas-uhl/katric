@@ -19,7 +19,7 @@
 
 namespace cetric {
 
-/// katric's own algorithms (cetric, patric, cetric-x with either communication policy). ingest() keeps the input;
+/// KaTric (DiTriC, or CETRIC with --contraction) with either communication policy. ingest() keeps the input;
 /// every run only reads it to build its graphs, so nothing is copied per iteration.
 namespace {
 class KatricAlgorithm final : public AbstractAlgorithm {
@@ -79,32 +79,18 @@ private:
     std::size_t               triangle_count_ = 0;
 };
 
-template <typename CommunicationPolicy>
-KatricAlgorithm::RunFunction select_run(Algorithm algorithm) {
-    switch (algorithm) {
-        case Algorithm::cetric:
-            return [](kagen::Graph const& input, Config const& conf, MPI_Comm comm) {
-                return run_cetric(input, conf, comm, CommunicationPolicy{});
-            };
-        case Algorithm::patric:
-            return [](kagen::Graph const& input, Config const& conf, MPI_Comm comm) {
-                return run_patric(input, conf, comm, CommunicationPolicy{});
-            };
-        case Algorithm::cetric_x:
-            return [](kagen::Graph const& input, Config const& conf, MPI_Comm comm) {
-                return run_cetric_x(input, conf, comm, CommunicationPolicy{});
-            };
-    }
-    throw std::invalid_argument("unknown algorithm");
-}
 } // namespace
 
 std::unique_ptr<AbstractAlgorithm> make_algorithm(Config const& conf, MPI_Comm comm) {
     if (conf.communication_policy == "new") {
-        return std::make_unique<KatricAlgorithm>(conf, comm, select_run<MessageQueuePolicy>(conf.algorithm));
+        return std::make_unique<KatricAlgorithm>(conf, comm, [](kagen::Graph const& input, Config const& run_conf, MPI_Comm run_comm) {
+            return count_triangles(input, run_conf, run_comm, MessageQueuePolicy{});
+        });
     }
     if (conf.communication_policy == "grid") {
-        return std::make_unique<KatricAlgorithm>(conf, comm, select_run<GridPolicy>(conf.algorithm));
+        return std::make_unique<KatricAlgorithm>(conf, comm, [](kagen::Graph const& input, Config const& run_conf, MPI_Comm run_comm) {
+            return count_triangles(input, run_conf, run_comm, GridPolicy{});
+        });
     }
     throw std::invalid_argument("unknown communication policy " + conf.communication_policy);
 }

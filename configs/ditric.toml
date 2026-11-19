@@ -1,5 +1,5 @@
 # Ditric
-algorithm = "patric"
+contraction = false
 pseudo2core = false
 threshold = "local-nodes"
 threshold-scale = 1.0

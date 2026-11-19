@@ -26,6 +26,11 @@ further notebooks next to it (`just notebook <name>`). `uv sync --group eval` in
 
 ## Suites
 
+The variants: DiTriC (default) and CETRIC (`--contraction`). The suites below were written before the rename of
+2026-11-19 and still use `--algorithm patric` (DiTriC) / `cetric-x` (CETRIC), which stay accepted; `--algorithm
+cetric` (pre-CETRIC) was removed and now fails, run it from the tag `pre-refactor`. `eval/katric_eval.py` gives every
+run a `variant` column from either spelling.
+
 | Suite | What |
 | --- | --- |
 | `paper-real-world` | Strong scaling of DiTriC (`patric`) and CETRIC (`cetric-x`), 512 to 32768 cores |

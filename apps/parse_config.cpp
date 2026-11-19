@@ -94,7 +94,17 @@ cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::P
     // files generated before still run. Remove once they have.
     app.add_flag("--global-synchronization", "Ignored (deprecated)");
 
-    add_enum_option(app, "--algorithm", conf.algorithm);
+    app.add_flag(
+        "--contraction",
+        conf.contraction,
+        "CETRIC: the local phase also finds the triangles with two local vertices (through the ghosts' out-edges to "
+        "local vertices), the global phase sends only the cut edges. Without: DiTriC"
+    );
+    // Before the rename (2026-11-19) the variants were --algorithm patric (DiTriC), cetric-x (CETRIC) and cetric
+    // (pre-CETRIC, removed). Still accepted so that job files generated before still run; remove once they have.
+    std::string algorithm;
+    app.add_option("--algorithm", algorithm, "Deprecated: patric = DiTriC, cetric-x = --contraction")
+        ->transform(CLI::IsMember({"patric", "cetric-x", "cetric", "cetric_x"}, CLI::ignore_case));
 
     app.add_option("--communication-policy", conf.communication_policy)->transform(CLI::IsMember({"new", "grid"}));
 
@@ -115,6 +125,17 @@ cetric::Config parse_config(int argc, char* argv[], cetric::PEID rank, cetric::P
     app.add_option("--hybrid-cutoff-scale", conf.hybrid_cutoff_scale);
 
     CLI11_PARSE_MPI(app, argc, argv, rank, size);
+    if (!algorithm.empty()) {
+        if (algorithm == "cetric") {
+            if (rank == 0) {
+                std::cerr << "--algorithm cetric (pre-CETRIC) was removed; run it from the tag pre-refactor. CETRIC is "
+                             "--contraction (formerly --algorithm cetric-x)\n";
+            }
+            MPI_Finalize();
+            std::exit(1);
+        }
+        conf.contraction = algorithm != "patric";
+    }
     if (conf.num_threads == 0) {
         conf.num_threads = tbb::this_task_arena::max_concurrency();
     }

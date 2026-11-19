@@ -168,12 +168,10 @@ inline GlobalIdGraph to_global_ids(CsrGraph&& G) {
     return GlobalIdGraph(std::move(layer_ptr), std::move(xadj), std::move(adjncy));
 }
 
-/// CETRIC and pre-CETRIC: contracts `G` (neighborhoods sorted by handle) to its cut edges, in place: of each
-/// neighborhood only the ghost part is kept ([ghosts below][ghosts above], already in global order), as global ids, and
-/// of that only the ghosts w with `keep(v, d, w)`, where d is the size of v's ghost part (pre-CETRIC orients the
-/// contracted graph so). The kept vertices are those with a ghost out-neighbor before filtering.
-template <typename Keep>
-GlobalIdGraph contract_to_global_ids(CsrGraph&& G, Keep&& keep) {
+/// Contracts `G` (neighborhoods sorted by handle) to its cut edges, in place: of each neighborhood only the ghost part
+/// is kept ([ghosts below][ghosts above], already in global order), as global ids. The kept vertices are those with a
+/// cut out-edge.
+inline GlobalIdGraph contract_to_global_ids(CsrGraph&& G) {
     auto [layer_ptr, xadj, adjncy] = std::move(G).release();
     auto const&         layer      = *layer_ptr;
     auto const          n          = static_cast<Handle>(layer.n());
@@ -184,14 +182,11 @@ GlobalIdGraph contract_to_global_ids(CsrGraph&& G, Keep&& keep) {
         EdgeId const end        = xadj[v + 1];
         auto const   last       = adjncy.begin() + static_cast<std::ptrdiff_t>(end);
         auto const   ghost_part = std::lower_bound(adjncy.begin() + static_cast<std::ptrdiff_t>(begin), last, n);
-        auto const   degree     = static_cast<Degree>(last - ghost_part);
-        if (degree > 0) {
+        if (ghost_part != last) {
             kept.push_back(v);
         }
         for (auto it = ghost_part; it != last; ++it) {
-            if (keep(v, degree, *it)) {
-                adjncy[out++] = layer.global_id(*it); // out <= it: writes never overtake reads
-            }
+            adjncy[out++] = layer.global_id(*it); // out <= it: writes never overtake reads
         }
         xadj[v + 1] = out;
         begin       = end;

@@ -1,5 +1,5 @@
 # Cetric
-algorithm = "cetric-x"
+contraction = true
 pseudo2core = false
 threshold = "local-nodes"
 threshold-scale = 1.0
