@@ -54,7 +54,7 @@ namespace katric::load_balancing {
 /// about C/p of the total cost C: vertex v goes to the rank whose share [r C/p, (r+1) C/p) contains the cost before v
 /// (`cost[i]` is the cost of vertex first + i). The vertices stay in global-id order, so the move is a
 /// dstl::redistribute of the degrees and of the heads. Region `redistribution`.
-inline kagen::Graph run(kagen::Graph&& G, std::span<std::size_t const> cost, kamping::v2::comm_view comm) {
+inline auto run(kagen::Graph&& G, std::span<std::size_t const> cost, kamping::v2::comm_view comm) -> kagen::Graph {
     CALI_CXX_MARK_SCOPE("redistribution");
     auto const        size = static_cast<std::size_t>(comm.size());
     auto const        rank = static_cast<std::size_t>(comm.rank());

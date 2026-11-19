@@ -95,7 +95,7 @@ Still to review in stage 2, in the order of the algorithm's flow (decided 2026-1
 - **Timings before `441c4d1` include the per-triangle counting overhead** (laptop: local phase -35 to -48%, total -26 to
   -40%). All cluster data so far (and probably `pre-refactor`) has it; rerun before comparing against new runs
 
-- **Push** `chore/modernize` (11 commits) and merge it into `feat/message-trimming`. The trimming code uses
+- **Push** `chore/modernize` (48 commits as of 2026-11-19 evening) and merge it into `feat/message-trimming`. The trimming code uses
   handle-based keys (`Orientation::degree(handle)`, `neighbors_as_global_ids`) that no longer exist after `9c64803`:
   it must compute the keys before the in-place conversion (e.g. keep each entry's degree next to it on the trimming
   path) — expect merge conflicts in `global.h`, `graph.h`, `preprocessing.h`
