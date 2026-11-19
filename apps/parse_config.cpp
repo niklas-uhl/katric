@@ -66,8 +66,7 @@ katric::Config parse_config(int argc, char* argv[], katric::PEID rank, katric::P
         "(small inputs only); exit with 1 on a mismatch"
     );
 
-    app.add_option("--primary-cost-function", conf.primary_cost_function)
-        ->transform(CLI::IsMember({"none", "N", "DPD", "IDPD"}));
+    add_enum_option(app, "--primary-cost-function", conf.primary_cost_function);
 
     app.add_option(
         "--caliper-config",

@@ -45,6 +45,9 @@ namespace katric {
 enum class Threshold { local_nodes, local_edges, none };
 enum class IntersectionMethod { merge, binary_search, binary, hybrid };
 enum class TaskPoolType { std_thread, task_group };
+/// The cost of a vertex for the primary load balancing, `--primary-cost-function` (PATRIC's cost functions; `none`
+/// turns the load balancing off). See vertex_costs() (katric/phases/preprocessing.h).
+enum class CostFunction { none, N, DPD, IDPD };
 /// How push_to_ghosts() (katric/ghost_exchange.h) moves its messages, `--degree-exchange`.
 enum class GhostExchangeMode {
     sparse, ///< dSTL's sparse all-to-all (NBX): point-to-point messages to the ranks with data only
@@ -57,7 +60,7 @@ struct Config {
     std::string           kagen_option_string;
     size_t                iterations                        = 1;
     bool                  verify                            = false;
-    std::string           primary_cost_function             = "N";
+    CostFunction          primary_cost_function             = CostFunction::N;
     /// CETRIC instead of DiTriC: the ghosts' out-edges in the local phase, only the cut edges in the global phase
     bool                  contraction                       = false;
     Threshold             threshold                         = Threshold::local_nodes;

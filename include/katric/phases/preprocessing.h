@@ -6,13 +6,13 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <stdexcept>
 #include <utility>
 #include <vector>
 
 #include <caliper/cali.h>
 #include <kagen.h>
 #include <kamping/v2/comm.hpp>
+#include <kassert/kassert.hpp>
 
 #include "katric/caliper.h"
 #include "katric/config.h"
@@ -43,38 +43,44 @@ inline auto degree_key(graph::Graph const& G,
 /// (`--primary-cost-function`, PATRIC's cost functions): N = 1; DPD = Σ over
 /// out-neighbors u of d+(v) + d+(u) (the tail-compute work), IDPD = the same
 /// over in-neighbors (push), both with the orientation by (degree, global id).
-/// Region `cost_function_communication` for the ghosts' degrees and
-/// out-degrees, `cost_function_evaluation` for the costs.
+/// Regions: `cost_function_communication` for the exchanges of the ghosts'
+/// degrees and out-degrees, `cost_function_evaluation` for the out-degrees and
+/// the costs (each entered twice).
 inline auto vertex_costs(graph::Graph const& G, Config const& conf)
     -> std::vector<std::size_t> {
   using graph::VertexHandle;
-  std::string const& name = conf.primary_cost_function;
-  if (name == "N") {
+  if (conf.primary_cost_function == CostFunction::N) {
     return std::vector<std::size_t>(G.num_local_vertices(), 1);
   }
-  if (name != "DPD" && name != "IDPD") {
-    throw std::runtime_error("Unsupported cost function");
-  }
+  KASSERT(conf.primary_cost_function == CostFunction::DPD ||
+          conf.primary_cost_function == CostFunction::IDPD);
   auto const& numbering = G.numbering();
   std::vector<std::uint64_t> ghost_degree;
-  std::vector<std::uint64_t> local_out_degree(G.num_local_vertices());
-  std::vector<std::uint64_t> ghost_out_degree;
-  auto const key = degree_key(G, ghost_degree);
-  auto const out_degree = [&](VertexHandle vertex) -> std::uint64_t {
-    return numbering.is_local(vertex)
-               ? local_out_degree[numbering.to_local_index(vertex)]
-               : ghost_out_degree[numbering.to_ghost_index(vertex)];
-  };
   {
     CALI_CXX_MARK_SCOPE("cost_function_communication");
     ghost_degree = graph::exchange_ghost_values(
         G, [&](VertexHandle v) { return G.degree(v); }, conf.degree_exchange,
         MessageTag::CostFunction);
+  }
+  // the orientation of every edge (in adjacency order), decided once
+  std::vector<bool> is_out_edge(G.num_local_edges());
+  std::vector<std::uint64_t> local_out_degree(G.num_local_vertices(), 0);
+  {
+    CALI_CXX_MARK_SCOPE("cost_function_evaluation");
+    auto const key = degree_key(G, ghost_degree);
+    std::size_t edge = 0;
     for (VertexHandle const v : G.local_vertices()) {
-      local_out_degree[numbering.to_local_index(v)] =
-          static_cast<std::uint64_t>(std::ranges::count_if(
-              G.neighbors(v), [&](VertexHandle u) { return key(u) > key(v); }));
+      auto const key_v = key(v);
+      for (VertexHandle const u : G.neighbors(v)) {
+        bool const out = key(u) > key_v;
+        is_out_edge[edge++] = out;
+        local_out_degree[numbering.to_local_index(v)] += out ? 1 : 0;
+      }
     }
+  }
+  std::vector<std::uint64_t> ghost_out_degree;
+  {
+    CALI_CXX_MARK_SCOPE("cost_function_communication");
     ghost_out_degree = graph::exchange_ghost_values(
         G,
         [&](VertexHandle v) {
@@ -83,12 +89,19 @@ inline auto vertex_costs(graph::Graph const& G, Config const& conf)
         conf.degree_exchange, MessageTag::CostFunctionOutDegree);
   }
   CALI_CXX_MARK_SCOPE("cost_function_evaluation");
-  bool const out_edges = name == "DPD";
+  auto const out_degree = [&](VertexHandle vertex) -> std::uint64_t {
+    return numbering.is_local(vertex)
+               ? local_out_degree[numbering.to_local_index(vertex)]
+               : ghost_out_degree[numbering.to_ghost_index(vertex)];
+  };
+  bool const over_out_edges = conf.primary_cost_function == CostFunction::DPD;
   std::vector<std::size_t> cost(G.num_local_vertices(), 0);
+  std::size_t edge = 0;
   for (VertexHandle const v : G.local_vertices()) {
+    std::size_t& cost_v = cost[numbering.to_local_index(v)];
     for (VertexHandle const u : G.neighbors(v)) {
-      if ((key(u) > key(v)) == out_edges) {
-        cost[numbering.to_local_index(v)] += out_degree(v) + out_degree(u);
+      if (is_out_edge[edge++] == over_out_edges) {
+        cost_v += out_degree(v) + out_degree(u);
       }
     }
   }
@@ -98,27 +111,26 @@ inline auto vertex_costs(graph::Graph const& G, Config const& conf)
 namespace phases {
 
 /// The input graph with compact ids (ghosts found, their owners looked up).
-/// Returns it and the message queue's threshold (from the input graph).
-inline auto input_graph(kagen::Graph const& input,
-                        Config const& conf,
-                        kamping::v2::comm_view comm)
-    -> std::pair<graph::Graph, std::size_t> {
+inline auto input_graph(kagen::Graph const& input, kamping::v2::comm_view comm)
+    -> graph::Graph {
   CALI_CXX_MARK_SCOPE("input_graph");
-  auto G = graph::build_input_graph(input, comm);
-  std::size_t const threshold = get_threshold(G, conf);
-  return {std::move(G), threshold};
+  return graph::build_input_graph(input, comm);
 }
 
 /// Repartitions `G` into contiguous vertex ranges of equal cost
-/// (`--primary-cost-function`, off with "none").
-inline void primary_load_balancing(graph::Graph& G, Config const& conf) {
+/// (`--primary-cost-function`; with `none`, returns `G`). Consumes `G`: it is
+/// freed before the vertices move.
+inline auto primary_load_balancing(graph::Graph&& G, Config const& conf)
+    -> graph::Graph {
   CALI_CXX_MARK_SCOPE("primary_load_balancing");
-  auto const comm = G.comm();
-  if (conf.primary_cost_function != "none") {
-    auto const cost = vertex_costs(G, conf);
-    G = graph::build_input_graph(
-        load_balancing::run(graph::to_kagen_graph(G), cost, comm), comm);
+  if (conf.primary_cost_function == CostFunction::none) {
+    return std::move(G);
   }
+  auto const comm = G.comm();
+  auto const cost = vertex_costs(G, conf);
+  return graph::build_input_graph(
+      load_balancing::run(graph::to_kagen_graph(std::move(G)), cost, comm),
+      comm);
 }
 
 /// The degrees of the ghosts of `G`, indexed by ghost slot (region

@@ -73,17 +73,19 @@ inline auto build_input_graph(kagen::Graph const& input,
   return {std::move(numbering), {std::move(xadj), std::move(adjncy)}};
 }
 
-/// `G` in KaGen's CSR representation (global ids).
-inline auto to_kagen_graph(Graph const& G) -> kagen::Graph {
+/// `G` in KaGen's CSR representation (global ids). Consumes `G`: its arrays
+/// are freed on return.
+inline auto to_kagen_graph(Graph&& G) -> kagen::Graph {
+  auto const [numbering, local] = std::move(G).release();
   kagen::Graph input;
   input.representation = kagen::GraphRepresentation::CSR;
-  input.vertex_range = G.numbering().local_range();
-  input.xadj.reserve(G.num_local_vertices() + 1);
-  input.adjncy.reserve(G.num_local_edges());
+  input.vertex_range = numbering.local_range();
+  input.xadj.reserve(local.num_vertices() + 1);
+  input.adjncy.reserve(local.num_edges());
   input.xadj.push_back(0);
-  for (VertexHandle const v : G.local_vertices()) {
-    for (VertexHandle const u : G.neighbors(v)) {
-      input.adjncy.push_back(G.global_id(u));
+  for (std::size_t index = 0; index < local.num_vertices(); ++index) {
+    for (VertexHandle const u : local.neighbors(index)) {
+      input.adjncy.push_back(numbering.global_id(u));
     }
     input.xadj.push_back(input.adjncy.size());
   }

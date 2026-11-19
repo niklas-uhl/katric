@@ -62,8 +62,10 @@ auto count_triangles(kagen::Graph const& input,
                      Config const& conf,
                      kamping::v2::comm_view comm) -> std::size_t {
   TriangleCounter triangles;
-  auto [G, threshold] = phases::input_graph(input, conf, comm);
-  phases::primary_load_balancing(G, conf);
+  auto G =
+      phases::primary_load_balancing(phases::input_graph(input, comm), conf);
+  // from the graph the phases run on (after the load balancing)
+  std::size_t const threshold = get_threshold(G, conf);
   auto G_oriented = phases::preprocessing(std::move(G), conf);
   auto const interface_nodes =
       phases::local_phase(G_oriented, conf, conf.contraction, triangles);
