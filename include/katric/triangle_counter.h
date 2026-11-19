@@ -55,12 +55,13 @@ struct Triangle {
 /// check for duplicates (verify()).
 class TriangleCounter {
 public:
-  /// Calls `find(emit)`, where `emit(Triangle)` reports one triangle by global
-  /// ids (thread-safe), and adds them to the count.
+  /// Calls `find(emit)` and adds the number of triangles it returns. `find`
+  /// calls `emit(Triangle)` for every triangle it finds (by global ids); `emit`
+  /// only records it with assertions enabled (it does nothing otherwise), so
+  /// the phases count their triangles themselves.
   template <typename Find>
   void operator()(Find&& find) {
-    tbb::combinable<std::size_t> found{0};
-    find([this, &found](Triangle triangle) -> void {
+    count_ += find([this](Triangle triangle) -> void {
       SPDLOG_DEBUG("{}", triangle);
       if constexpr (KASSERT_ASSERTION_LEVEL >= kassert::assert::normal) {
         triangle.normalize();
@@ -68,9 +69,7 @@ public:
       } else {
         (void)triangle;
       }
-      found.local()++;
     });
-    count_ += found.combine(std::plus<>{});
   }
 
   /// The triangles found on this rank.

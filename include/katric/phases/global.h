@@ -124,15 +124,16 @@ inline auto owner_from(dstl::distribution const& distribution, graph::VertexId w
 }
 
 /// The global phase: sends the message of every vertex v of `senders` once to each rank holding the head of a cut
-/// out-edge of v, and handles the received messages. `threshold` is the message queue's buffer size.
+/// out-edge of v, and handles the received messages. `threshold` is the message queue's buffer size. Returns the
+/// number of triangles found on this rank.
 ///
 /// A neighborhood is ascending and the vertex ranges are contiguous in rank order, so the heads on one rank form a run:
 /// an entry beyond the current owner's range starts the next run, whose owner is found by a binary search over the
 /// partition table from the current owner on. Per neighborhood: a comparison per entry and a search per destination.
 template <class CommunicationPolicy, typename Senders, typename TriangleFunc>
-void run(
+auto run(
     graph::GlobalIdGraph const& G, Config const& conf, std::size_t threshold, Senders const& senders, TriangleFunc emit
-) {
+) -> std::size_t {
     auto base_queue = message_queue::make_buffered_queue<graph::VertexId>(Merger{}, Splitter{});
     auto queue      = [&]() {
         if constexpr (std::is_same_v<CommunicationPolicy, GridPolicy>) {
@@ -196,6 +197,7 @@ void run(
     profiling::counter_add("handle_ns", ns(handle_time));
     profiling::counter_add("poll_ns", ns(poll_time));
     profiling::counter_add("termination_handle_ns", ns(termination_handle_time));
+    return static_cast<std::size_t>(counters.type3_triangles);
 }
 
 } // namespace katric::global

@@ -33,8 +33,10 @@ inline auto local_phase(graph::Graph const& G,
   CALI_CXX_MARK_SCOPE("local_phase");
   std::vector<graph::VertexHandle> interface_nodes;
   triangles([&](auto emit) {
-    interface_nodes = with_ghosts ? local::run<true>(G, conf, emit)
-                                  : local::run<false>(G, conf, emit);
+    auto result = with_ghosts ? local::run<true>(G, conf, emit)
+                              : local::run<false>(G, conf, emit);
+    interface_nodes = std::move(result.interface_nodes);
+    return result.triangles;
   });
   return interface_nodes;
 }
@@ -48,7 +50,7 @@ void global_phase(graph::GlobalIdGraph const& G,
                   TriangleCounter& triangles) {
   CALI_CXX_MARK_SCOPE("global_phase");
   triangles([&](auto emit) {
-    global::run<CommunicationPolicy>(G, conf, threshold, senders, emit);
+    return global::run<CommunicationPolicy>(G, conf, threshold, senders, emit);
   });
 }
 

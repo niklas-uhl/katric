@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <functional>
 #include <span>
+#include <utility>
 #include <vector>
 
 #include "katric/config.h"
@@ -62,11 +63,17 @@ void intersect_edge(
     );
 }
 
+/// What the local phase hands on: the interface vertices (local vertices with a cut out-edge, ascending) and the number
+/// of triangles it found.
+struct Result {
+    std::vector<graph::VertexHandle> interface_nodes;
+    std::size_t                      triangles = 0;
+};
+
 /// The local phase: the intersection for every edge v -> u with both ends local and, `with_ghosts` (CETRIC), also for
-/// the edges with a ghost end, through the ghosts' out-edges. Returns the interface vertices (local vertices with a cut
-/// out-edge), ascending.
+/// the edges with a ghost end, through the ghosts' out-edges.
 template <bool with_ghosts, typename TriangleFunc>
-std::vector<graph::VertexHandle> run(graph::Graph const& G, Config const& conf, TriangleFunc emit) {
+auto run(graph::Graph const& G, Config const& conf, TriangleFunc emit) -> Result {
     std::vector<graph::VertexHandle> interface_nodes;
     LocalPhaseCounters         counters;
     auto                       for_each_out_edge = [&](graph::VertexHandle v, graph::Degree degree) {
@@ -98,7 +105,7 @@ std::vector<graph::VertexHandle> run(graph::Graph const& G, Config const& conf, 
         }
     }
     counters.report();
-    return interface_nodes;
+    return {std::move(interface_nodes), static_cast<std::size_t>(counters.local_triangles)};
 }
 
 } // namespace katric::local
