@@ -67,8 +67,8 @@ Still to review in stage 2, in the order of the algorithm's flow (decided 2026-1
    tlx dropped. `to_global_ids` / `contract_to_global_ids` now write a new array (a handle array cannot hold global
    ids): `global_ids` 0.6-1.8 ms per iteration on the laptop either way, +8 B per out-edge transiently
 2. Primary load balancing, `preprocessing.h` `primary_load_balancing` (approved 2026-11-19, with `get_threshold` after it and
-   `to_kagen_graph`; open: `exchange_ghost_values`): `vertex_costs` (approved 2026-11-19; N / DPD / IDPD, two ghost
-   exchanges), `build.h` `exchange_ghost_values` -> `ghost_exchange.h` `push_to_ghosts` (reviewed), `build.h`
+   `to_kagen_graph`; open: `push_to_ghosts` as reworked in `9953a2e`: one value per vertex, no ids, each sender's part received into its block of the ghosts; `exchange_ghost_values` merged into it): `vertex_costs` (approved 2026-11-19; N / DPD / IDPD, two ghost
+   exchanges), `ghost_exchange.h` `push_to_ghosts`, `build.h`
    `to_kagen_graph` -> `load_balancing.h` `run` (reviewed) -> `build_input_graph` again. Moves undirected
    neighborhoods (open point, plan section "Variants"). Changed in review (`53fef74`): threshold computed after
    the load balancing (only the global phase's message counts of load-balanced runs differ from `refcheck/ref`), step
@@ -117,7 +117,7 @@ communication overhead (polling/progress, trimming, grid) waits for BriefKAsten.
 `termination_handle_ns` to the global phase.
 
 Next steps after the review (plan, step 0 "Next steps"): (1) rebalance only when the IDPD cost's max/avg exceeds a
-threshold, (2) bucketed input-graph build + linear-merge ghost-value deposit, (3) idea 1 vs. DiTriC + IDPD on RMAT;
+threshold, (2) bucketed input-graph build (the ghost-value deposit is done: no ids since `9953a2e`), (3) idea 1 vs. DiTriC + IDPD on RMAT;
 then stage 3 (32-bit handles).
 
 ## Checking a change
