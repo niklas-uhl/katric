@@ -135,11 +135,14 @@ void run(
     auto const&         layer     = *G.layer();
     auto const&         partition = layer.partition();
     // Time spent building and posting messages and handling received ones (the intersections), accumulated per call
-    // because a Caliper region per message would cost more than the work it measures. The rest of the phase's
-    // exclusive time is polling; the region `termination` is the wait for the other ranks.
+    // because a Caliper region per message would cost more than the work it measures. `poll_time` is the time in
+    // `poll` outside the handler (the queue's own work); `handle_time` includes messages handled during termination,
+    // which is also counted separately, so the region `termination` minus that part is the wait for the other ranks.
     using clock = std::chrono::steady_clock;
     clock::duration send_time{};
     clock::duration handle_time{};
+    clock::duration poll_time{};
+    clock::duration termination_handle_time{};
     auto            on_message = [&](SharedVectorSpan<graph::NodeId> span, PEID /*sender*/) {
         auto const start = clock::now();
         process_message(G, conf, span.begin(), span.end(), counters, emit);
@@ -163,15 +166,25 @@ void run(
             }
             send_time += clock::now() - start;
         }
+        auto const poll_start    = clock::now();
+        auto const handle_before = handle_time;
         queue.poll(on_message);
+        poll_time += (clock::now() - poll_start) - (handle_time - handle_before);
     }
     {
         CALI_CXX_MARK_SCOPE("termination");
+        auto const handle_before = handle_time;
         queue.terminate(on_message);
+        termination_handle_time = handle_time - handle_before;
     }
     counters.report(queue.stats());
-    profiling::counter_add("send_ns", std::chrono::duration_cast<std::chrono::nanoseconds>(send_time).count());
-    profiling::counter_add("handle_ns", std::chrono::duration_cast<std::chrono::nanoseconds>(handle_time).count());
+    auto const ns = [](clock::duration d) {
+        return std::chrono::duration_cast<std::chrono::nanoseconds>(d).count();
+    };
+    profiling::counter_add("send_ns", ns(send_time));
+    profiling::counter_add("handle_ns", ns(handle_time));
+    profiling::counter_add("poll_ns", ns(poll_time));
+    profiling::counter_add("termination_handle_ns", ns(termination_handle_time));
 }
 
 } // namespace cetric::global
