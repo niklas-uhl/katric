@@ -37,7 +37,6 @@
 
 #include <magic_enum/magic_enum.hpp>
 
-#include "katric/datastructures/graph_definitions.h"
 #include "katric/util.h"
 
 namespace katric {

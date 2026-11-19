@@ -56,8 +56,14 @@ Still to review in stage 2, in the order of the algorithm's flow (decided 2026-1
    `count_triangles`. Kept: `count_triangles` takes the input by `const&` (by value would cost a copy per iteration
    in the harness; KaGen's `SInt` vs. our `EdgeId`/`Handle` rules out reusing its buffers)
 1. Input graph, `phases/preprocessing.h` `input_graph` (reviewed 2026-11-19, as is `get_threshold`): `graph/graph.h` `VertexLayer` (reviewed) and `Graph`
-   (`release()`, `local_nodes`/`ghosts`); `graph/build.h` `build_input_graph` (cut-edge sort, handles);
-   `phase_counters.h` `get_threshold`
+   (`release()`, `local_vertices`/`ghosts`); `graph/build.h` `build_input_graph` (cut-edge sort, handles);
+   `phase_counters.h` `get_threshold`. Changed during the review of `Graph` (2026-11-19): `VertexHandle` is an
+   `enum class` without arithmetic (the layer converts: `to_local_index` / `to_ghost_index`, `local_handle` /
+   `ghost_handle`, `first_ghost`), consistent member names (`num_local_vertices`, `num_ghosts`, `num_local_edges`,
+   `local_vertices`, `is_local` / `is_ghost`, `is_local_id`, `local_range`), `NodeId` -> `VertexId` in `graph.h`,
+   `EdgeId` -> `std::size_t`, `graph_definitions.h` gone (`Triangle` in `triangle_counter.h`, `Edge` in the tests),
+   tlx dropped. `to_global_ids` / `contract_to_global_ids` now write a new array (a handle array cannot hold global
+   ids): `global_ids` 0.6-1.8 ms per iteration on the laptop either way, +8 B per out-edge transiently
 2. Primary load balancing, `preprocessing.h` `primary_load_balancing`: `vertex_costs` (N / DPD / IDPD, two ghost
    exchanges), `build.h` `exchange_ghost_values` -> `ghost_exchange.h` `push_to_ghosts` (reviewed), `build.h`
    `to_kagen_graph` -> `load_balancing.h` `run` (reviewed) -> `build_input_graph` again. Moves undirected

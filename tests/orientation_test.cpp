@@ -31,7 +31,6 @@
 
 #include "katric/message_tags.h"
 #include "katric/config.h"
-#include "katric/datastructures/graph_definitions.h"
 #include "katric/ghost_exchange.h"
 #include "katric/graph/build.h"
 #include "katric/graph/graph.h"
@@ -39,8 +38,8 @@
 
 namespace {
 using katric::graph::Degree;
-using katric::graph::Handle;
-using katric::graph::NodeId;
+using katric::graph::VertexHandle;
+using katric::graph::VertexId;
 
 class Orientation : public ::testing::TestWithParam<const char*> {
 protected:
@@ -50,21 +49,21 @@ protected:
         G          = katric::graph::build_input_graph(std::move(local), MPI_COMM_WORLD);
     }
 
-    [[nodiscard]] std::pair<Degree, NodeId> key(NodeId v) const {
+    [[nodiscard]] std::pair<Degree, VertexId> key(VertexId v) const {
         return {G_full[v].size(), v};
     }
 
     /// The global ids of a neighborhood, sorted.
-    [[nodiscard]] std::vector<NodeId> globals(std::span<Handle const> neighbors) const {
-        std::vector<NodeId> ids;
-        for (Handle const u: neighbors) {
+    [[nodiscard]] std::vector<VertexId> globals(std::span<VertexHandle const> neighbors) const {
+        std::vector<VertexId> ids;
+        for (VertexHandle const u: neighbors) {
             ids.push_back(G.global_id(u));
         }
         std::ranges::sort(ids);
         return ids;
     }
 
-    std::vector<std::vector<katric::graph::Edge>> G_full;
+    std::vector<std::vector<katric::testing::Edge>> G_full;
     katric::graph::Graph                       G;
 };
 
@@ -74,28 +73,28 @@ TEST_P(Orientation, GlobalDegree) {
     for (auto mode: {katric::GhostExchangeMode::sparse, katric::GhostExchangeMode::dense, katric::GhostExchangeMode::grid}) {
         received[mode] = katric::graph::exchange_ghost_values(
             G,
-            [&](Handle v) { return G.degree(v); },
+            [&](VertexHandle v) { return G.degree(v); },
             mode,
             katric::MessageTag::Orientation
         );
-        ASSERT_EQ(received[mode].size(), G.ghost_count());
-        for (Handle const g: G.ghosts()) {
-            EXPECT_EQ(received[mode][g - G.local_node_count()], G_full[G.global_id(g)].size());
+        ASSERT_EQ(received[mode].size(), G.num_ghosts());
+        for (VertexHandle const g: G.ghosts()) {
+            EXPECT_EQ(received[mode][G.layer()->to_ghost_index(g)], G_full[G.global_id(g)].size());
         }
     }
     auto const& ghost_degree = received[katric::GhostExchangeMode::sparse];
     auto const  G_oriented   = katric::graph::orient(
         G,
-        [&](Handle c) {
-            Degree const degree = G.is_owned(c) ? G.degree(c) : ghost_degree[c - G.local_node_count()];
+        [&](VertexHandle c) {
+            Degree const degree = G.is_local(c) ? G.degree(c) : ghost_degree[G.layer()->to_ghost_index(c)];
             return std::pair(degree, G.global_id(c));
         },
         true
     );
     // out-neighbors: the neighbors with a larger (degree, id); a ghost's out-neighbors: its local neighbors with a larger key
-    for (Handle const v: G.local_nodes()) {
-        NodeId const        v_global = G.global_id(v);
-        std::vector<NodeId> expected;
+    for (VertexHandle const v: G.local_vertices()) {
+        VertexId const        v_global = G.global_id(v);
+        std::vector<VertexId> expected;
         for (auto const& e: G_full[v_global]) {
             if (key(v_global) < key(e.head)) {
                 expected.push_back(e.head);
@@ -104,11 +103,11 @@ TEST_P(Orientation, GlobalDegree) {
         std::ranges::sort(expected);
         EXPECT_EQ(globals(G_oriented.neighbors(v)), expected);
     }
-    for (Handle const g: G.ghosts()) {
-        NodeId const        g_global = G.global_id(g);
-        std::vector<NodeId> expected;
+    for (VertexHandle const g: G.ghosts()) {
+        VertexId const        g_global = G.global_id(g);
+        std::vector<VertexId> expected;
         for (auto const& e: G_full[g_global]) {
-            if (G.layer()->owns_global(e.head) && key(g_global) < key(e.head)) {
+            if (G.layer()->is_local_id(e.head) && key(g_global) < key(e.head)) {
                 expected.push_back(e.head);
             }
         }
@@ -122,17 +121,17 @@ TEST_P(Orientation, LocalDegreeOutward) {
     // an arbitrary key: cut edges outward, local edges by (degree, id), no exchange
     auto const G_oriented = katric::graph::orient(
         G,
-        [&](Handle c) {
-            Degree const degree = G.is_owned(c) ? G.degree(c) : std::numeric_limits<Degree>::max();
+        [&](VertexHandle c) {
+            Degree const degree = G.is_local(c) ? G.degree(c) : std::numeric_limits<Degree>::max();
             return std::pair(degree, G.global_id(c));
         },
         false
     );
-    for (Handle const v: G.local_nodes()) {
-        NodeId const        v_global = G.global_id(v);
-        std::vector<NodeId> expected;
+    for (VertexHandle const v: G.local_vertices()) {
+        VertexId const        v_global = G.global_id(v);
+        std::vector<VertexId> expected;
         for (auto const& e: G_full[v_global]) {
-            if (!G.layer()->owns_global(e.head) || key(v_global) < key(e.head)) {
+            if (!G.layer()->is_local_id(e.head) || key(v_global) < key(e.head)) {
                 expected.push_back(e.head);
             }
         }

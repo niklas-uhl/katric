@@ -27,7 +27,6 @@
 #include <mpi.h>
 #include <spdlog/spdlog.h>
 
-#include "datastructures/graph_definitions.h"
 #include "datastructures/span.h"
 #include "message-queue/buffered_queue.h"
 

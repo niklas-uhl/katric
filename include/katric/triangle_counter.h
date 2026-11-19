@@ -4,10 +4,13 @@
 #include <algorithm>
 #include <cstddef>
 #include <functional>
+#include <ostream>
 #include <ranges>
 #include <tuple>
+#include <utility>
 
 #include <caliper/cali.h>
+#include <fmt/ostream.h>
 #include <mpi.h>
 #include <spdlog/spdlog.h>
 #include <tbb/combinable.h>
@@ -17,9 +20,36 @@
 #include <kamping/v2/views/ref_single_view.hpp>
 #include <kassert/kassert.hpp>
 
-#include "katric/datastructures/graph_definitions.h"
+#include "katric/graph/graph.h"
 
 namespace katric {
+
+/// A triangle by the global ids of its vertices.
+struct Triangle {
+  graph::VertexId x;
+  graph::VertexId y;
+  graph::VertexId z;
+
+  /// Sorts the vertices ascending.
+  void normalize() {
+    if (x > y) {
+      std::swap(x, y);
+    }
+    if (y > z) {
+      std::swap(y, z);
+    }
+    if (x > y) {
+      std::swap(x, y);
+    }
+  }
+
+  friend auto operator==(Triangle const&, Triangle const&) -> bool = default;
+  friend auto operator<<(std::ostream& out, Triangle const& triangle)
+      -> std::ostream& {
+    return out << "(" << triangle.x << ", " << triangle.y << ", " << triangle.z
+               << ")";
+  }
+};
 
 /// Counts the triangles of a rank and, with assertions enabled, records them to
 /// check for duplicates (verify()).
@@ -30,7 +60,7 @@ public:
   template <typename Find>
   void operator()(Find&& find) {
     tbb::combinable<std::size_t> found{0};
-    find([this, &found](graph::Triangle<graph::NodeId> triangle) -> void {
+    find([this, &found](Triangle triangle) -> void {
       SPDLOG_DEBUG("{}", triangle);
       if constexpr (KASSERT_ASSERTION_LEVEL >= kassert::assert::normal) {
         triangle.normalize();
@@ -63,7 +93,7 @@ public:
 
 private:
   std::size_t count_ = 0;
-  tbb::concurrent_vector<graph::Triangle<graph::NodeId>> triangles_;
+  tbb::concurrent_vector<Triangle> triangles_;
 };
 
 namespace phases {
@@ -84,3 +114,7 @@ inline auto reduce(TriangleCounter& triangles, kamping::v2::comm_view comm)
 
 }  // namespace phases
 }  // namespace katric
+
+// fmt >= 9 requires an explicit opt-in to use operator<<
+template <>
+struct fmt::formatter<katric::Triangle> : fmt::ostream_formatter {};

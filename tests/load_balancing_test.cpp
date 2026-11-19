@@ -26,12 +26,11 @@
 #include <kagen.h>
 #include <mpi.h>
 
-#include "katric/datastructures/graph_definitions.h"
 #include "katric/load_balancing.h"
 #include "test_graphs.h"
 
 namespace {
-using katric::graph::NodeId;
+using katric::graph::VertexId;
 
 class LoadBalancing : public ::testing::TestWithParam<const char*> {
 protected:
@@ -52,7 +51,7 @@ protected:
         }
         std::vector<std::size_t> cost_before(G_full.size());
         std::size_t              total = 0;
-        for (NodeId v = 0; v < G_full.size(); ++v) {
+        for (VertexId v = 0; v < G_full.size(); ++v) {
             cost_before[v] = total;
             total += cost_of(v);
         }
@@ -76,17 +75,17 @@ protected:
         EXPECT_EQ(global, G_full.size());
     }
 
-    std::vector<std::vector<katric::graph::Edge>> G_full;
+    std::vector<std::vector<katric::testing::Edge>> G_full;
     kagen::Graph                                  G;
     int                                           rank = 0, size = 0;
 };
 
 TEST_P(LoadBalancing, BalancingWithConstCost) {
-    balance_and_check([](NodeId) { return std::size_t{1}; });
+    balance_and_check([](VertexId) { return std::size_t{1}; });
 }
 
 TEST_P(LoadBalancing, BalancingWithDegree) {
-    balance_and_check([&](NodeId v) { return G_full[v].size(); });
+    balance_and_check([&](VertexId v) { return G_full[v].size(); });
 }
 
 const char* graphs[] = {"examples/metis-sample.metis", "examples/triangle.metis", "examples/com-amazon.metis"};

@@ -26,53 +26,69 @@
 
 namespace katric {
 
+/// The orientation key of DiTriC and CETRIC: (degree, global id), the ghosts'
+/// degrees from `ghost_degree`.
+inline auto degree_key(graph::Graph const& G,
+                       std::vector<std::uint64_t> const& ghost_degree) {
+  return [&G, &ghost_degree](graph::VertexHandle vertex) {
+    auto const& layer = *G.layer();
+    return std::pair(layer.is_local(vertex)
+                         ? G.degree(vertex)
+                         : ghost_degree[layer.to_ghost_index(vertex)],
+                     layer.global_id(vertex));
+  };
+}
+
 /// The primary load balancing's cost of every local vertex
 /// (`--primary-cost-function`, PATRIC's cost functions): N = 1; DPD = Σ over
 /// out-neighbors u of d+(v) + d+(u) (the tail-compute work), IDPD = the same
 /// over in-neighbors (push), both with the orientation by (degree, global id).
 /// Region `cost_function_communication` for the ghosts' degrees and
 /// out-degrees, `cost_function_evaluation` for the costs.
-inline std::vector<std::size_t> vertex_costs(graph::Graph const& G,
-                                             Config const& conf) {
-  using graph::Handle;
+inline auto vertex_costs(graph::Graph const& G, Config const& conf)
+    -> std::vector<std::size_t> {
+  using graph::VertexHandle;
   std::string const& name = conf.primary_cost_function;
   if (name == "N") {
-    return std::vector<std::size_t>(G.local_node_count(), 1);
+    return std::vector<std::size_t>(G.num_local_vertices(), 1);
   }
   if (name != "DPD" && name != "IDPD") {
     throw std::runtime_error("Unsupported cost function");
   }
   auto const& layer = *G.layer();
   std::vector<std::uint64_t> ghost_degree;
-  std::vector<std::uint64_t> out_degree(G.local_node_count() + G.ghost_count());
-  auto const key = [&](Handle c) {
-    return std::pair(
-        layer.is_owned(c) ? G.degree(c) : ghost_degree[c - layer.n()],
-        layer.global_id(c));
+  std::vector<std::uint64_t> local_out_degree(G.num_local_vertices());
+  std::vector<std::uint64_t> ghost_out_degree;
+  auto const key = degree_key(G, ghost_degree);
+  auto const out_degree = [&](VertexHandle vertex) -> std::uint64_t {
+    return layer.is_local(vertex)
+               ? local_out_degree[layer.to_local_index(vertex)]
+               : ghost_out_degree[layer.to_ghost_index(vertex)];
   };
   {
     CALI_CXX_MARK_SCOPE("cost_function_communication");
     ghost_degree = graph::exchange_ghost_values(
-        G, [&](Handle v) { return G.degree(v); }, conf.degree_exchange,
+        G, [&](VertexHandle v) { return G.degree(v); }, conf.degree_exchange,
         MessageTag::CostFunction);
-    for (Handle const v : G.local_nodes()) {
-      out_degree[v] = std::ranges::count_if(
-          G.neighbors(v), [&](Handle u) { return key(u) > key(v); });
+    for (VertexHandle const v : G.local_vertices()) {
+      local_out_degree[layer.to_local_index(v)] =
+          static_cast<std::uint64_t>(std::ranges::count_if(
+              G.neighbors(v), [&](VertexHandle u) { return key(u) > key(v); }));
     }
-    auto const ghost_out_degree = graph::exchange_ghost_values(
-        G, [&](Handle v) { return out_degree[v]; }, conf.degree_exchange,
-        MessageTag::CostFunctionOutDegree);
-    std::ranges::copy(
-        ghost_out_degree,
-        out_degree.begin() + static_cast<std::ptrdiff_t>(layer.n()));
+    ghost_out_degree = graph::exchange_ghost_values(
+        G,
+        [&](VertexHandle v) {
+          return local_out_degree[layer.to_local_index(v)];
+        },
+        conf.degree_exchange, MessageTag::CostFunctionOutDegree);
   }
   CALI_CXX_MARK_SCOPE("cost_function_evaluation");
   bool const out_edges = name == "DPD";
-  std::vector<std::size_t> cost(G.local_node_count(), 0);
-  for (Handle const v : G.local_nodes()) {
-    for (Handle const u : G.neighbors(v)) {
+  std::vector<std::size_t> cost(G.num_local_vertices(), 0);
+  for (VertexHandle const v : G.local_vertices()) {
+    for (VertexHandle const u : G.neighbors(v)) {
       if ((key(u) > key(v)) == out_edges) {
-        cost[v] += out_degree[v] + out_degree[u];
+        cost[layer.to_local_index(v)] += out_degree(v) + out_degree(u);
       }
     }
   }
@@ -111,8 +127,8 @@ inline std::vector<std::uint64_t> ghost_degrees(graph::Graph const& G,
                                                 Config const& conf) {
   CALI_CXX_MARK_SCOPE("degree_exchange");
   return graph::exchange_ghost_values(
-      G, [&](graph::Handle v) { return G.degree(v); }, conf.degree_exchange,
-      MessageTag::Orientation);
+      G, [&](graph::VertexHandle v) { return G.degree(v); },
+      conf.degree_exchange, MessageTag::Orientation);
 }
 
 /// Orients the edges of `G` from the smaller to the larger `key` (region
@@ -120,8 +136,8 @@ inline std::vector<std::uint64_t> ghost_degrees(graph::Graph const& G,
 /// `ghost_out_edges`, also the ghosts' out-edges to local vertices.
 template <typename Key>
 graph::Graph orient_and_sort(graph::Graph const& G,
-                                Key&& key,
-                                bool ghost_out_edges) {
+                             Key const& key,
+                             bool ghost_out_edges) {
   graph::Graph G_oriented;
   {
     CALI_CXX_MARK_SCOPE("orientation");
@@ -132,23 +148,10 @@ graph::Graph orient_and_sort(graph::Graph const& G,
   return G_oriented;
 }
 
-/// The orientation key of DiTriC and CETRIC: (degree, global id), the ghosts'
-/// degrees from `ghost_degree`.
-inline auto degree_key(graph::Graph const& G,
-                       std::vector<std::uint64_t> const& ghost_degree) {
-  return [&G, &ghost_degree](graph::Handle c) {
-    auto const& layer = *G.layer();
-    return std::pair(
-        layer.is_owned(c) ? G.degree(c) : ghost_degree[c - layer.n()],
-        layer.global_id(c));
-  };
-}
-
 /// Degree exchange and orientation by (degree, global id). With
 /// `--contraction`, also the ghosts' out-edges to local vertices, so that the
 /// local phase finds every triangle with two local vertices.
-inline graph::Graph preprocessing(graph::Graph const& G,
-                                     Config const& conf) {
+inline graph::Graph preprocessing(graph::Graph const& G, Config const& conf) {
   CALI_CXX_MARK_SCOPE("preprocessing");
   auto const ghost_degree = ghost_degrees(G, conf);
   return orient_and_sort(G, degree_key(G, ghost_degree), conf.contraction);
@@ -163,11 +166,11 @@ inline graph::GlobalIdGraph global_ids(graph::Graph&& G) {
 
 /// The number of cut out-edges of local vertex `v` (its neighborhood sorted by
 /// handle ends with them).
-inline Degree cut_out_degree(graph::Graph const& G, graph::Handle v) {
+inline Degree cut_out_degree(graph::Graph const& G, graph::VertexHandle v) {
   auto const neighbors = G.neighbors(v);
   return static_cast<Degree>(
       neighbors.end() - std::lower_bound(neighbors.begin(), neighbors.end(),
-                                         graph::Handle{G.local_node_count()}));
+                                         G.layer()->first_ghost()));
 }
 
 /// The contraction's counters: the vertices with cut edges (compact_nodes) and
@@ -175,7 +178,7 @@ inline Degree cut_out_degree(graph::Graph const& G, graph::Handle v) {
 inline void report_contraction(graph::Graph const& G) {
   std::int64_t nodes = 0;
   std::int64_t edges = 0;
-  for (graph::Handle const v : G.local_nodes()) {
+  for (graph::VertexHandle const v : G.local_vertices()) {
     auto const degree = static_cast<std::int64_t>(cut_out_degree(G, v));
     nodes += degree > 0 ? 1 : 0;
     edges += degree;

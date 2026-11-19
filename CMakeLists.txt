@@ -43,7 +43,6 @@ target_link_libraries(
   INTERFACE absl::flat_hash_map
             absl::flat_hash_set
             absl::hash
-            tlx
             magic_enum::magic_enum
             fmt::fmt
             spdlog::spdlog

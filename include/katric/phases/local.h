@@ -10,15 +10,15 @@
 
 #include "katric/config.h"
 #include "katric/intersection.h"
-#include "katric/datastructures/graph_definitions.h"
 #include "katric/graph/graph.h"
 #include "katric/phase_counters.h"
+#include "katric/triangle_counter.h"
 
 namespace katric::local {
 
 /// N+(c) for a local vertex, and for a ghost (CETRIC) its out-edges to local vertices.
-inline std::span<graph::Handle const> neighbors_with_ghosts(graph::Graph const& G, graph::Handle c) {
-    return G.is_owned(c) ? G.neighbors(c) : G.ghost_out_neighbors(c);
+inline std::span<graph::VertexHandle const> neighbors_with_ghosts(graph::Graph const& G, graph::VertexHandle c) {
+    return G.is_local(c) ? G.neighbors(c) : G.ghost_out_neighbors(c);
 }
 
 /// The work for one edge v -> u: emits the triangles (v, u, w) for w in N+(v) ∩ N+(u), where a ghost's neighborhood is
@@ -28,8 +28,8 @@ template <typename TriangleFunc>
 void intersect_edge(
     graph::Graph const& G,
     Config const&          conf,
-    graph::Handle          v,
-    graph::Handle          u,
+    graph::VertexHandle          v,
+    graph::VertexHandle          u,
     LocalPhaseCounters&    counters,
     TriangleFunc&          emit
 ) {
@@ -39,10 +39,10 @@ void intersect_edge(
     auto         v_last  = v_neighbors.end();
     auto         u_first = u_neighbors.begin();
     auto         u_last  = u_neighbors.end();
-    auto const   n       = static_cast<graph::Handle>(G.local_node_count());
-    if (!G.is_owned(u)) {
+    auto const   n       = static_cast<graph::VertexHandle>(G.num_local_vertices());
+    if (!G.is_local(u)) {
         v_last = std::lower_bound(v_first, v_last, n);
-    } else if (!G.is_owned(v)) {
+    } else if (!G.is_local(v)) {
         u_last = std::lower_bound(u_first, u_last, n);
     }
     // for the edge (v, u) we check the open wedges (v, u, w) for w in N+(u)
@@ -53,9 +53,9 @@ void intersect_edge(
         v_last,
         u_first,
         u_last,
-        [&](graph::Handle w) {
+        [&](graph::VertexHandle w) {
             counters.local_triangles++;
-            emit(graph::Triangle<graph::NodeId>{G.global_id(v), G.global_id(u), G.global_id(w)});
+            emit(Triangle{G.global_id(v), G.global_id(u), G.global_id(w)});
         },
         std::less<>{},
         conf
@@ -66,18 +66,18 @@ void intersect_edge(
 /// the edges with a ghost end, through the ghosts' out-edges. Returns the interface vertices (local vertices with a cut
 /// out-edge), ascending.
 template <bool with_ghosts, typename TriangleFunc>
-std::vector<graph::Handle> run(graph::Graph const& G, Config const& conf, TriangleFunc emit) {
-    std::vector<graph::Handle> interface_nodes;
+std::vector<graph::VertexHandle> run(graph::Graph const& G, Config const& conf, TriangleFunc emit) {
+    std::vector<graph::VertexHandle> interface_nodes;
     LocalPhaseCounters         counters;
-    auto                       for_each_out_edge = [&](graph::Handle v, graph::Degree degree) {
+    auto                       for_each_out_edge = [&](graph::VertexHandle v, graph::Degree degree) {
         if (conf.pseudo2core && degree < 2) {
             counters.skipped_nodes++;
             return;
         }
         bool is_interface = false;
-        for (graph::Handle const u: neighbors_with_ghosts(G, v)) {
-            if (!G.is_owned(u)) {
-                if (G.is_owned(v) && !is_interface) {
+        for (graph::VertexHandle const u: neighbors_with_ghosts(G, v)) {
+            if (!G.is_local(u)) {
+                if (G.is_local(v) && !is_interface) {
                     interface_nodes.push_back(v);
                     is_interface = true;
                 }
@@ -89,11 +89,11 @@ std::vector<graph::Handle> run(graph::Graph const& G, Config const& conf, Triang
             intersect_edge(G, conf, v, u, counters, emit);
         }
     };
-    for (graph::Handle const v: G.local_nodes()) {
+    for (graph::VertexHandle const v: G.local_vertices()) {
         for_each_out_edge(v, G.degree(v));
     }
     if constexpr (with_ghosts) {
-        for (graph::Handle const v: G.ghosts()) {
+        for (graph::VertexHandle const v: G.ghosts()) {
             for_each_out_edge(v, G.ghost_out_degree(v));
         }
     }

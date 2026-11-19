@@ -8,7 +8,6 @@
 #include <kagen.h>
 #include <mpi.h>
 
-#include "katric/datastructures/graph_definitions.h"
 
 namespace katric {
 

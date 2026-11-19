@@ -29,9 +29,9 @@ inline auto local_phase(graph::Graph const& G,
                         Config const& conf,
                         bool with_ghosts,
                         TriangleCounter& triangles)
-    -> std::vector<graph::Handle> {
+    -> std::vector<graph::VertexHandle> {
   CALI_CXX_MARK_SCOPE("local_phase");
-  std::vector<graph::Handle> interface_nodes;
+  std::vector<graph::VertexHandle> interface_nodes;
   triangles([&](auto emit) {
     interface_nodes = with_ghosts ? local::run<true>(G, conf, emit)
                                   : local::run<false>(G, conf, emit);

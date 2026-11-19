@@ -20,22 +20,22 @@
 #include "katric/communication_policy.h"
 #include "katric/config.h"
 #include "katric/intersection.h"
-#include "katric/datastructures/graph_definitions.h"
 #include "katric/datastructures/span.h"
 #include "katric/graph/graph.h"
 #include "katric/indirect_message_queue.h"
 #include "katric/phase_counters.h"
+#include "katric/triangle_counter.h"
 #include "katric/util.h"
 #include "kassert/kassert.hpp"
 
 namespace katric::global {
 
 /// Separates the messages in the queue's buffers.
-constexpr graph::NodeId sentinel = std::numeric_limits<graph::NodeId>::max();
+constexpr graph::VertexId sentinel = std::numeric_limits<graph::VertexId>::max();
 
 /// Appends a message to the queue's buffer for one rank, terminated by a sentinel.
 struct Merger {
-    std::size_t operator()(std::vector<graph::NodeId>& buffer, std::vector<graph::NodeId> msg, int /*tag*/) const {
+    std::size_t operator()(std::vector<graph::VertexId>& buffer, std::vector<graph::VertexId> msg, int /*tag*/) const {
         buffer.insert(buffer.end(), msg.begin(), msg.end());
         buffer.push_back(sentinel);
         return msg.size() + 1;
@@ -45,8 +45,8 @@ struct Merger {
 /// Splits a received buffer into its messages at the sentinels.
 struct Splitter {
     template <typename MessageFunc>
-    void operator()(std::vector<graph::NodeId> buffer, MessageFunc&& on_message, PEID sender) const {
-        auto const buffer_ptr  = std::make_shared<std::vector<graph::NodeId>>(std::move(buffer));
+    void operator()(std::vector<graph::VertexId> buffer, MessageFunc&& on_message, PEID sender) const {
+        auto const buffer_ptr  = std::make_shared<std::vector<graph::VertexId>>(std::move(buffer));
         auto       slice_begin = buffer_ptr->begin();
         while (slice_begin != buffer_ptr->end()) {
             auto const slice_end = std::find(slice_begin, buffer_ptr->end(), sentinel);
@@ -70,15 +70,15 @@ void process_message(
     graph::GlobalIdGraph const& G, Config const& conf, It begin, It end, GlobalPhaseCounters& counters, TriangleFunc& emit
 ) {
     auto const&         layer   = *G.layer();
-    graph::NodeId const v       = *begin;
-    auto const          entries = std::span<graph::NodeId const>(std::to_address(std::next(begin)), std::to_address(end));
-    KASSERT(!layer.owns_global(v));
+    graph::VertexId const v       = *begin;
+    auto const          entries = std::span<graph::VertexId const>(std::to_address(std::next(begin)), std::to_address(end));
+    KASSERT(!layer.is_local_id(v));
     KASSERT(std::ranges::is_sorted(entries));
-    for (graph::NodeId const u_global: entries) {
-        if (!layer.owns_global(u_global)) {
+    for (graph::VertexId const u_global: entries) {
+        if (!layer.is_local_id(u_global)) {
             continue;
         }
-        graph::Handle const u = u_global - layer.first();
+        graph::VertexHandle const u = layer.handle(u_global);
         // CETRIC: u may have had no cut edges and was removed by the contraction
         if (!G.is_kept(u)) {
             continue;
@@ -92,9 +92,9 @@ void process_message(
             u_neighbors.end(),
             entries.begin(),
             entries.end(),
-            [&](graph::NodeId w) {
+            [&](graph::VertexId w) {
                 counters.type3_triangles++;
-                emit(graph::Triangle<graph::NodeId>{v, u_global, w});
+                emit(Triangle{v, u_global, w});
             },
             std::less<>{},
             conf
@@ -103,9 +103,9 @@ void process_message(
 }
 
 /// The message of `v`: [v, N+(v)...] in global ids, ascending.
-inline std::vector<graph::NodeId> make_message(graph::GlobalIdGraph const& G, graph::Handle v) {
+inline std::vector<graph::VertexId> make_message(graph::GlobalIdGraph const& G, graph::VertexHandle v) {
     auto const                 neighbors = G.neighbors(v);
-    std::vector<graph::NodeId> message;
+    std::vector<graph::VertexId> message;
     message.reserve(1 + neighbors.size());
     message.push_back(G.layer()->global_id(v));
     message.insert(message.end(), neighbors.begin(), neighbors.end());
@@ -122,7 +122,7 @@ template <class CommunicationPolicy, typename Senders, typename TriangleFunc>
 void run(
     graph::GlobalIdGraph const& G, Config const& conf, std::size_t threshold, Senders const& senders, TriangleFunc emit
 ) {
-    auto base_queue = message_queue::make_buffered_queue<graph::NodeId>(Merger{}, Splitter{});
+    auto base_queue = message_queue::make_buffered_queue<graph::VertexId>(Merger{}, Splitter{});
     auto queue      = [&]() {
         if constexpr (std::is_same_v<CommunicationPolicy, GridPolicy>) {
             return IndirectMessageQueueAdaptor(base_queue);
@@ -143,21 +143,21 @@ void run(
     clock::duration handle_time{};
     clock::duration poll_time{};
     clock::duration termination_handle_time{};
-    auto            on_message = [&](SharedVectorSpan<graph::NodeId> span, PEID /*sender*/) {
+    auto            on_message = [&](SharedVectorSpan<graph::VertexId> span, PEID /*sender*/) {
         auto const start = clock::now();
         process_message(G, conf, span.begin(), span.end(), counters, emit);
         handle_time += clock::now() - start;
     };
-    for (graph::Handle const v: senders) {
+    for (graph::VertexHandle const v: senders) {
         counters.interface_nodes++;
         if (conf.pseudo2core && G.neighbors(v).size() < 2) {
             counters.skipped_nodes++;
         } else {
             auto const    start     = clock::now();
             PEID          owner     = 0;
-            graph::NodeId owner_end = 0; // end of `owner`'s range; entries below it go to the same rank
-            for (graph::NodeId const w: G.neighbors(v)) {
-                if (layer.owns_global(w) || w < owner_end) {
+            graph::VertexId owner_end = 0; // end of `owner`'s range; entries below it go to the same rank
+            for (graph::VertexId const w: G.neighbors(v)) {
+                if (layer.is_local_id(w) || w < owner_end) {
                     continue;
                 }
                 owner     = partition.get_rank_from(w, owner);

@@ -71,7 +71,7 @@ template <typename Graph, typename Sources, typename VertexToMessage>
         std::vector<std::pair<Message, int>> outgoing;
         std::vector<std::size_t>             last_source_sent_to(size, never);
         for (auto u: sources) {
-            auto const           u_local = G.to_local_idx(u);
+            auto const           u_local = G.to_local_index(u);
             std::optional<Message> message;
             for (auto v: G.neighbors(u)) {
                 PEID const v_rank = G.owner(v);

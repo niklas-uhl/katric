@@ -27,15 +27,14 @@
 #include <gtest/gtest.h>
 #include <mpi.h>
 
-#include "katric/datastructures/graph_definitions.h"
 #include "katric/graph/build.h"
 #include "katric/graph/graph.h"
 #include "test_graphs.h"
 
 namespace {
-using katric::graph::Edge;
-using katric::graph::Handle;
-using katric::graph::NodeId;
+using katric::testing::Edge;
+using katric::graph::VertexHandle;
+using katric::graph::VertexId;
 
 TEST(InputGraphTest, neighbors_ghosts_and_handles) {
     auto const input  = "examples/hiv.metis";
@@ -45,27 +44,27 @@ TEST(InputGraphTest, neighbors_ghosts_and_handles) {
     auto const& layer = *G.layer();
 
     // every local vertex has its full neighborhood, in global ids
-    for (Handle const v: G.local_nodes()) {
-        NodeId const      v_global = G.global_id(v);
+    for (VertexHandle const v: G.local_vertices()) {
+        VertexId const      v_global = G.global_id(v);
         std::vector<Edge> edges;
-        for (Handle const u: G.neighbors(v)) {
+        for (VertexHandle const u: G.neighbors(v)) {
             edges.emplace_back(v_global, G.global_id(u));
             EXPECT_EQ(layer.handle(G.global_id(u)), u);
         }
         EXPECT_THAT(edges, testing::UnorderedElementsAreArray(G_full[v_global]));
     }
     // the ghosts are sorted by global id, owned elsewhere, and their owners' ranges contain them
-    for (Handle const g: G.ghosts()) {
-        EXPECT_FALSE(G.is_owned(g));
+    for (VertexHandle const g: G.ghosts()) {
+        EXPECT_FALSE(G.is_local(g));
         auto const [first, last] = layer.partition().partition_range(G.owner(g));
         EXPECT_LE(first, G.global_id(g));
         EXPECT_LT(G.global_id(g), last);
-        if (g > layer.n()) {
-            EXPECT_LT(G.global_id(g - 1), G.global_id(g));
-        }
+    }
+    for (std::size_t i = 1; i < G.num_ghosts(); ++i) {
+        EXPECT_LT(G.global_id(layer.ghost_handle(i - 1)), G.global_id(layer.ghost_handle(i)));
     }
     // every vertex is local on exactly one rank
-    std::size_t const local_count = G.local_node_count();
+    std::size_t const local_count = G.num_local_vertices();
     std::size_t       total       = 0;
     MPI_Allreduce(&local_count, &total, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
     EXPECT_EQ(total, G_full.size());

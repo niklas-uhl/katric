@@ -66,13 +66,6 @@ FetchContent_Declare(
   GIT_SHALLOW ON
   SYSTEM EXCLUDE_FROM_ALL)
 
-FetchContent_Declare(
-  tlx
-  GIT_REPOSITORY https://github.com/tlx/tlx
-  # newer than v0.6.1: raises the too-old cmake_minimum_required (needed for CMake >= 4)
-  GIT_TAG 2dd63ab839909f0b43cd02108a1869c4670b2c8e
-  SYSTEM EXCLUDE_FROM_ALL)
-
 # Hash tables.
 set(ABSL_PROPAGATE_CXX_STD ON)
 set(ABSL_BUILD_TESTING OFF)
@@ -211,7 +204,7 @@ else()
   endif()
   message(STATUS "TBB: ${TBB_VERSION} (${TBB_DIR})")
 endif()
-FetchContent_MakeAvailable(absl magic_enum tlx kamping kamping-spdlog-adapter kamping-v2 kagen message-queue)
+FetchContent_MakeAvailable(absl magic_enum kamping kamping-spdlog-adapter kamping-v2 kagen message-queue)
 
 # GCC on AArch64 emits a -Wpsabi note for every function passing std::pair<double, double> (ABI change in GCC 10.1).
 # It is irrelevant as long as nothing is mixed with objects from GCC < 10.1, and it floods the KaGen build.

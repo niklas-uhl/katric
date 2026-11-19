@@ -10,6 +10,8 @@ Checks:
   - '-misc-include-*'
   # false positive on every KASSERT(a <op> b): kassert's expression decomposition chains the comparison
   - '-bugprone-chained-comparison'
+  # every operator[] (LLVM >= 21); the hot loops index on purpose, the indices are covered by KASSERTs
+  - '-cppcoreguidelines-pro-bounds-avoid-unchecked-container-access'
 HeaderFilterRegex: 'include/katric/'
 CheckOptions:
   readability-identifier-length.IgnoredVariableNames: '^([Guvw]|it|kv)$'

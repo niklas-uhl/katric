@@ -31,9 +31,9 @@ template <typename Graph>
 auto get_threshold(Graph const& G, Config const& conf) -> std::size_t {
   switch (conf.threshold) {
     case Threshold::local_nodes:
-      return conf.threshold_scale * G.local_node_count();
+      return conf.threshold_scale * G.num_local_vertices();
     case Threshold::local_edges:
-      return conf.threshold_scale * G.local_edge_count();
+      return conf.threshold_scale * G.num_local_edges();
     case Threshold::none:
       return std::numeric_limits<std::size_t>::max();
   }
