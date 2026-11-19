@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
+#include <optional>
 #include <ranges>
 #include <utility>
 #include <vector>
@@ -91,57 +92,58 @@ inline auto to_kagen_graph(Graph&& G) -> kagen::Graph {
 }
 
 /// Orients the edges of the undirected graph `G` from the smaller to the larger
-/// `key` and returns the out-edges, neighborhoods unsorted (in `G`'s order).
-/// Consumes `G`: the oriented graph takes over its vertex numbering (`key` may
-/// read `G` while the orientation runs). With `ghost_out_edges`, also the
+/// `key` and returns the out-edges, neighborhoods in no particular order.
+/// Consumes `G`: each neighborhood is partitioned in place (out-neighbors
+/// first) and cut to its out-neighbors, so the oriented graph keeps `G`'s
+/// arrays (their capacity too) and numbering. `key` is evaluated once per
+/// vertex and once per edge; it may read `G`'s degrees and numbering while the
+/// orientation runs, not its neighborhoods. With `ghost_out_edges`, also the
 /// ghosts' out-edges to local vertices (CETRIC), sorted.
 template <typename Key>
 auto orient(Graph&& G, Key const& key, bool ghost_out_edges) -> Graph {
-  auto const& numbering = G.numbering();
-  std::size_t const num_local = numbering.num_local_vertices();
-  auto const out = [&](VertexHandle v, VertexHandle u) -> bool {
-    return key(v) < key(u);
-  };
-  std::vector<std::size_t> xadj(num_local + 1, 0);
-  std::vector<std::size_t> ghost_xadj(
-      ghost_out_edges ? numbering.num_ghosts() + 1 : 0, 0);
+  std::vector<std::size_t> out_degree(G.num_local_vertices());
   for (VertexHandle const v : G.local_vertices()) {
-    for (VertexHandle const u : G.neighbors(v)) {
-      if (out(v, u)) {
-        xadj[numbering.to_local_index(v) + 1]++;
-      } else if (ghost_out_edges && numbering.is_ghost(u)) {
-        ghost_xadj[numbering.to_ghost_index(u) + 1]++;
+    auto const key_v = key(v);
+    auto const neighbors = G.mutable_neighbors(v);
+    auto const in_begin =
+        std::partition(neighbors.begin(), neighbors.end(),
+                       [&](VertexHandle u) -> bool { return key_v < key(u); });
+    out_degree[G.to_local_index(v)] =
+        static_cast<std::size_t>(in_begin - neighbors.begin());
+  }
+  // the ghosts' out-edges: a local vertex's in-neighbors that are ghosts
+  std::optional<AdjacencyArray<VertexHandle>> ghost_out;
+  if (ghost_out_edges) {
+    auto const& numbering = G.numbering();
+    auto const in_neighbors = [&](VertexHandle v) {
+      return G.neighbors(v).subspan(out_degree[G.to_local_index(v)]);
+    };
+    std::vector<std::size_t> ghost_xadj(numbering.num_ghosts() + 1, 0);
+    for (VertexHandle const v : G.local_vertices()) {
+      for (VertexHandle const u : in_neighbors(v)) {
+        if (numbering.is_ghost(u)) {
+          ghost_xadj[numbering.to_ghost_index(u) + 1]++;
+        }
       }
     }
-  }
-  for (std::size_t index = 0; index < num_local; ++index) {
-    xadj[index + 1] += xadj[index];
-  }
-  for (std::size_t index = 0; index + 1 < ghost_xadj.size(); ++index) {
-    ghost_xadj[index + 1] += ghost_xadj[index];
-  }
-  std::vector<VertexHandle> adjncy(xadj.back());
-  std::vector<VertexHandle> ghost_adjncy(ghost_out_edges ? ghost_xadj.back()
-                                                         : 0);
-  std::vector<std::size_t> ghost_next(ghost_xadj);
-  for (VertexHandle const v : G.local_vertices()) {
-    std::size_t next = xadj[numbering.to_local_index(v)];
-    for (VertexHandle const u : G.neighbors(v)) {
-      if (out(v, u)) {
-        adjncy[next++] = u;
-      } else if (ghost_out_edges && numbering.is_ghost(u)) {
-        // v ascending: each ghost's neighborhood comes out sorted
-        ghost_adjncy[ghost_next[numbering.to_ghost_index(u)]++] = v;
+    for (std::size_t index = 0; index + 1 < ghost_xadj.size(); ++index) {
+      ghost_xadj[index + 1] += ghost_xadj[index];
+    }
+    std::vector<VertexHandle> ghost_adjncy(ghost_xadj.back());
+    std::vector<std::size_t> next(ghost_xadj.begin(), ghost_xadj.end() - 1);
+    for (VertexHandle const v : G.local_vertices()) {
+      for (VertexHandle const u : in_neighbors(v)) {
+        if (numbering.is_ghost(u)) {
+          // v ascending: each ghost's neighborhood comes out sorted
+          ghost_adjncy[next[numbering.to_ghost_index(u)]++] = v;
+        }
       }
     }
+    ghost_out.emplace(std::move(ghost_xadj), std::move(ghost_adjncy));
   }
-  if (!ghost_out_edges) {
-    return {std::move(G).release().first, {std::move(xadj), std::move(adjncy)}};
-  }
-  return {std::move(G).release().first,
-          {std::move(xadj), std::move(adjncy)},
-          AdjacencyArray<VertexHandle>{std::move(ghost_xadj),
-                                       std::move(ghost_adjncy)}};
+  auto [numbering, local] = std::move(G).release();
+  local.truncate_neighborhoods(out_degree);
+  return {std::move(numbering), std::move(local), std::move(ghost_out)};
 }
 
 /// DiTriC: the out-neighborhoods of `G` (sorted by handle) as global ids. A

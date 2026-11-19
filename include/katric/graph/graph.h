@@ -255,6 +255,34 @@ public:
     return xadj_[index + 1] - xadj_[index];
   }
 
+  /// Building step: the neighbors of the vertex with index `index`, to reorder
+  /// in place.
+  [[nodiscard]] auto mutable_neighbors(std::size_t index)
+      -> std::span<Neighbor> {
+    KASSERT(index < num_vertices());
+    return std::span(adjncy_).subspan(xadj_[index], degree(index));
+  }
+  /// Building step: keeps the first `counts[index]` neighbors of every vertex
+  /// and drops the rest, in place (the capacity stays).
+  void truncate_neighborhoods(std::span<std::size_t const> counts) {
+    KASSERT(counts.size() == num_vertices());
+    std::size_t write = 0;
+    for (std::size_t index = 0; index < num_vertices(); ++index) {
+      KASSERT(counts[index] <= degree(index));
+      std::size_t const read = xadj_[index];
+      if (read != write) {
+        // moves left: std::copy allows it (the target starts before the source)
+        auto const source = adjncy_.begin() + static_cast<std::ptrdiff_t>(read);
+        std::copy(source, source + static_cast<std::ptrdiff_t>(counts[index]),
+                  adjncy_.begin() + static_cast<std::ptrdiff_t>(write));
+      }
+      xadj_[index] = write;
+      write += counts[index];
+    }
+    xadj_.back() = write;
+    adjncy_.resize(write);
+  }
+
   /// Sorts every neighborhood ascending.
   void sort_neighborhoods() {
     for (std::size_t index = 0; index < num_vertices(); ++index) {
@@ -354,6 +382,12 @@ public:
     return ghost_out_.degree(numbering_.to_ghost_index(ghost));
   }
 
+  /// Building step (graph/build.h `orient`): the neighbors of local vertex
+  /// `vertex`, to reorder in place.
+  [[nodiscard]] auto mutable_neighbors(VertexHandle vertex)
+      -> std::span<VertexHandle> {
+    return local_.mutable_neighbors(to_local_index(vertex));
+  }
   /// Building step: sorts the neighbors of every local vertex by handle (local
   /// vertices first, then ghosts, each by global id). The ghosts' out-neighbors
   /// need no sorting: `orient` writes them in ascending order.
