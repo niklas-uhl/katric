@@ -69,7 +69,9 @@ Still to review in stage 2, in the order of the algorithm's flow (decided 2026-1
 2. Primary load balancing, `preprocessing.h` `primary_load_balancing`: `vertex_costs` (N / DPD / IDPD, two ghost
    exchanges), `build.h` `exchange_ghost_values` -> `ghost_exchange.h` `push_to_ghosts` (reviewed), `build.h`
    `to_kagen_graph` -> `load_balancing.h` `run` (reviewed) -> `build_input_graph` again. Moves undirected
-   neighborhoods (open point, plan section "Variants")
+   neighborhoods (open point, plan section "Variants"). Changed in review (`53fef74`): threshold computed after
+   the load balancing (only the global phase's message counts of load-balanced runs differ from `refcheck/ref`), step
+   consumes its graph, orientation decided once per edge, regions split, `CostFunction` enum
 3. Preprocessing, `preprocessing.h` `preprocessing`: `ghost_degrees`, `degree_key`, `orient_and_sort` -> `build.h`
    `orient` (the ghosts' out-edges with `--contraction`); `Graph::sort_neighborhoods`, `ghost_neighbors` / `ghost_degree`
 4. Local phase, `drivers.h` `local_phase`: `phases/local.h` `run<with_ghosts>`, `neighbors_with_ghosts`, the edge
