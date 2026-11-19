@@ -52,8 +52,9 @@ Still to review in stage 2, in the order of the algorithm's flow (decided 2026-1
 `count_triangles` (`phases/drivers.h`), and each step reads what the previous one produced. Paths below
 `include/katric/`; "(reviewed)" marks what was approved already.
 
-0. Entry: `apps/algorithm.cpp` (`make_algorithm`, `ingest`, `run`; the harness is reviewed, the dispatch on the
-   communication policy is new), then `phases/drivers.h` `count_triangles` as the table of contents
+0. (reviewed 2026-11-19) Entry: `apps/algorithm.cpp` (`make_algorithm`, `ingest`, `run`), `phases/drivers.h`
+   `count_triangles`. Kept: `count_triangles` takes the input by `const&` (by value would cost a copy per iteration
+   in the harness; KaGen's `SInt` vs. our `EdgeId`/`Handle` rules out reusing its buffers)
 1. Input graph, `phases/preprocessing.h` `input_graph`: `graph/graph.h` `VertexLayer` (reviewed) and `CsrGraph`
    (`release()`, `local_nodes`/`ghosts`); `graph/build.h` `build_input_graph` (cut-edge sort, handles);
    `phase_counters.h` `get_threshold`
