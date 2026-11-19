@@ -58,7 +58,7 @@ Still to review in stage 2, in the order of the algorithm's flow (decided 2026-1
    `count_triangles`. Kept: `count_triangles` takes the input by `const&` (by value would cost a copy per iteration
    in the harness; KaGen's `SInt` vs. our `EdgeId`/`Handle` rules out reusing its buffers)
 1. Input graph, `phases/preprocessing.h` `input_graph` (reviewed 2026-11-19, as is `get_threshold`): `graph/graph.h` (reviewed 2026-11-19, all of it: `VertexLayer`, `Graph`,
-   `AdjacencyArray` from `2bfa430`, layer by value from `ee075c2`); `graph/build.h` `build_input_graph` (cut-edge sort, handles; reworked in `489746b`: partition table is `dstl::distribution`, `VertexPartition` gone, handles written through the layer);
+   `AdjacencyArray` from `2bfa430`, layer by value from `ee075c2`); `graph/build.h` `build_input_graph` (cut-edge sort, handles; reworked in `489746b`: partition table is `dstl::distribution`, `VertexPartition` gone, handles written through the layer; `VertexLayer` split into `LocalNumbering` (distribution, local handles; exists before the ghosts) and `VertexNumbering` (built from it + ghost ids), `G.layer()` -> `G.numbering()`, one pass again);
    `phase_counters.h` `get_threshold`. Changed during the review of `Graph` (2026-11-19): `VertexHandle` is an
    `enum class` without arithmetic (the layer converts: `to_local_index` / `to_ghost_index`, `local_handle` /
    `ghost_handle`, `first_ghost`), consistent member names (`num_local_vertices`, `num_ghosts`, `num_local_edges`,
@@ -107,7 +107,7 @@ Still to review in stage 2, in the order of the algorithm's flow (decided 2026-1
   still pass `--global-synchronization` (accepted and ignored since `8d1eca2`) — remove the flag once they have run;
   use `--copy-binary` for new submissions
 - **kamping-v2 PR #126** (dstl::redistribute fixes): katric pinned to `7634a78`; re-pin to `main` once merged
-- follow-up: `VertexLayer::owners_` could go too (the run trick works for `push_to_ghosts` as well)
+- follow-up: `VertexNumbering::owners_` could go too (the run trick works for `push_to_ghosts` as well)
 
 Results of 2026-11-18's runs are analyzed in the plan ("Results 2026-11-19"). They confirm the order below;
 communication overhead (polling/progress, trimming, grid) waits for BriefKAsten. `5618dc5` adds `poll_ns` and
