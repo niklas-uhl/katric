@@ -74,7 +74,10 @@ Still to review in stage 2, in the order of the algorithm's flow (decided 2026-1
    the load balancing (only the global phase's message counts of load-balanced runs differ from `refcheck/ref`), step
    consumes its graph, orientation decided once per edge, regions split, `CostFunction` enum
 3. Preprocessing, `preprocessing.h` `preprocessing`: `ghost_degrees`, `degree_key`, `orient_and_sort` -> `build.h`
-   `orient` (the ghosts' out-edges with `--contraction`); `Graph::sort_neighborhoods`, `ghost_neighbors` / `ghost_degree`
+   `orient` (the ghosts' out-edges with `--contraction`); `Graph::sort_neighborhoods`, `ghost_neighbors` / `ghost_degree`.
+   Changed in review (`077c9a3`): `orient` partitions the input graph's neighborhoods in place and truncates them (one key
+   per vertex and edge, `mutable_neighbors` / `truncate_neighborhoods` as building steps); the sort stays (no sortedness
+   assumed for KaGen graphs, fair to competitors)
 4. Local phase, `drivers.h` `local_phase`: `phases/local.h` `run<with_ghosts>`, `neighbors_with_ghosts`, the edge
    kernel; `intersection.h`, `triangle_counter.h`, `phase_counters.h`
 5. Into global ids, one of two: without contraction `preprocessing.h` `global_ids` -> `build.h` `to_global_ids`
