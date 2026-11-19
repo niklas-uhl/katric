@@ -66,7 +66,7 @@ Still to review in stage 2, in the order of the algorithm's flow (decided 2026-1
    `EdgeId` -> `std::size_t`, `graph_definitions.h` gone (`Triangle` in `triangle_counter.h`, `Edge` in the tests),
    tlx dropped. `to_global_ids` / `contract_to_global_ids` now write a new array (a handle array cannot hold global
    ids): `global_ids` 0.6-1.8 ms per iteration on the laptop either way, +8 B per out-edge transiently
-2. Primary load balancing, `preprocessing.h` `primary_load_balancing`: `vertex_costs` (N / DPD / IDPD, two ghost
+2. Primary load balancing, `preprocessing.h` `primary_load_balancing`: `vertex_costs` (approved 2026-11-19; N / DPD / IDPD, two ghost
    exchanges), `build.h` `exchange_ghost_values` -> `ghost_exchange.h` `push_to_ghosts` (reviewed), `build.h`
    `to_kagen_graph` -> `load_balancing.h` `run` (reviewed) -> `build_input_graph` again. Moves undirected
    neighborhoods (open point, plan section "Variants"). Changed in review (`53fef74`): threshold computed after
