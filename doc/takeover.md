@@ -86,9 +86,14 @@ Still to review in stage 2, in the order of the algorithm's flow (decided 2026-1
    neighbors in global ids)
 6. Global phase, `drivers.h` `global_phase`: `phases/global.h` `run` (send loop: owner runs via `owner_from` over `dstl::distribution`),
    `make_message`, the handler (`Merger` / `Splitter`); `communication_policy.h`, `message_tags.h`
-7. `triangle_counter.h` `reduce`
+7. (reviewed 2026-11-19, ahead of 4) `triangle_counter.h` (`Triangle`, `TriangleCounter`, `reduce`). Changed: the phases return
+   their kernels' triangle counts and `emit` only records triangles with assertions on (`441c4d1`; the per-triangle
+   `tbb::combinable` cost a third of the local phase); cleanup in `1a99665`
 
 ## Open items
+
+- **Timings before `441c4d1` include the per-triangle counting overhead** (laptop: local phase -35 to -48%, total -26 to
+  -40%). All cluster data so far (and probably `pre-refactor`) has it; rerun before comparing against new runs
 
 - **Push** `chore/modernize` (11 commits) and merge it into `feat/message-trimming`. The trimming code uses
   handle-based keys (`Orientation::degree(handle)`, `neighbors_as_global_ids`) that no longer exist after `9c64803`:
