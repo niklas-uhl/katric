@@ -191,6 +191,33 @@ by those `.cpp` files):
     3. Idea 1 (compute at the tail, balanced by DPD) against DiTriC + IDPD on RMAT, the bar to beat
   - Message trimming (idea 2) is on branch `feat/message-trimming` (see idea 2 below); suite `trimming` submitted
 
+- Results 2026-11-19 (`trimming_26_11_18` 48 / 192 / 1536, binary `8f66911-dirty`; `lb-cost_rerun2_26_11_18` 192 /
+  768; `phases_26_11_18` 1536; `degree-exchange_rerun_26_11_18` GNM 768; trimming 768 still outstanding)
+  - Next step 1 (threshold on the IDPD max/avg) confirmed and stays first: on RHG, DPD / IDPD are ~2x slower at every
+    scale (none / DPD / IDPD: 1.73 / 3.26 / 3.35 s at 192, 2.04 / 3.73 / 3.66 s at 768). Repartitioning alone costs
+    1.0-1.3 s, more than the whole global phase without it, and global wedge checks grow ~100x (210 M -> 22-26 G at
+    768). The 768 runs no longer die (64-bit displacements of PR #126 work)
+  - Global phase without locality, per rank (avg), split with the counters: intersection work hardly grows with p
+    (DiTriC permuted RGG handle 2.7 -> 2.9 s from 48 to 1536), the rest (phase - send - handle: polling, MPI progress,
+    buffers) does: 1.1 -> 3.6 s, 44-64% of the phase at 1536 (GNM 1.8 of 2.8 s). On RHG handling is ~1 ms, so its
+    `termination` region really is waiting (for the local phase's imbalance). Since `5618dc5` the counters `poll_ns`
+    (in `poll`, outside the handler) and `termination_handle_ns` (handling inside `terminate`; ~40% of handling on the
+    laptop) split this exactly
+  - Message trimming: send volume x0.56-0.60, messages -37%; global phase of DiTriC on permuted RGG -8 / -9 / -18% at
+    48 / 192 / 1536 (GNM -3 / -10 / -15%), CETRIC up to -24% (RGG) / -36% (GNM) at 1536; total -3 to -11%. Sending
+    costs +27% (48) to +5% (1536), handling -15-18%; at 1536 most of the gain is the rest (-1 s), not handling
+    (-0.5 s). Wedge checks -1-2%. On RHG volume -86-93% but no time effect
+  - `phases` at 1536: the new graph is faster than the old everywhere (x0.56-0.99). Without locality DiTriC stays best
+    (permuted RGG 15.3 vs CETRIC 17.7, pre-CETRIC 16.9 s); about 7 s of it is before counting (input graph 2.5 s,
+    preprocessing 4.5 s of which degree exchange 3.5 s): next step 2. Pre-CETRIC on RHG breaks: local phase 3.8 s,
+    508 G wedge checks (DiTriC 130 G) with max/avg 246 (one rank 81.6 G); likely its local orientation before the
+    global degrees are known (not checked in the code)
+  - Degree exchange at 3072: grid beats dense for the first time on GNM (exchange 0.44 vs 0.50 s), not yet on permuted
+    RGG (1.73 vs 1.53 s); RHG is dominated by the hub (6.8 s either way). Expected to pay off beyond ~3k cores; needs
+    runs at >= 6144
+  - Communication overhead (the rest above, trimming's gain, grid in the global phase) is deferred until the BriefKAsten
+    migration, which may change it; measure again then rather than tuning the legacy queue now
+
 ### 1. Prune
 
 Options that are dead or only used in old exploration suites (`experiments/legacy`), never in the paper suites.

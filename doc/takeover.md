@@ -78,6 +78,10 @@ Still to review in stage 2 (current files, in data-flow order):
 - **kamping-v2 PR #126** (dstl::redistribute fixes): katric pinned to `7634a78`; re-pin to `main` once merged
 - follow-up: `VertexLayer::owners_` could go too (the run trick works for `push_to_ghosts` as well)
 
+Results of 2026-11-18's runs are analyzed in the plan ("Results 2026-11-19"). They confirm the order below;
+communication overhead (polling/progress, trimming, grid) waits for BriefKAsten. `5618dc5` adds `poll_ns` and
+`termination_handle_ns` to the global phase.
+
 Next steps after the review (plan, step 0 "Next steps"): (1) rebalance only when the IDPD cost's max/avg exceeds a
 threshold, (2) bucketed input-graph build + linear-merge ghost-value deposit, (3) idea 1 vs. DiTriC + IDPD on RMAT;
 then stage 3 (32-bit handles).
