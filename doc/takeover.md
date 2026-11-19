@@ -73,7 +73,7 @@ Still to review in stage 2, in the order of the algorithm's flow (decided 2026-1
    neighborhoods (open point, plan section "Variants"). Changed in review (`53fef74`): threshold computed after
    the load balancing (only the global phase's message counts of load-balanced runs differ from `refcheck/ref`), step
    consumes its graph, orientation decided once per edge, regions split, `CostFunction` enum
-3. Preprocessing (`build.h` `orient` approved 2026-11-19), `preprocessing.h` `preprocessing`: `ghost_degrees`, `degree_key`, `orient_and_sort` -> `build.h`
+3. (reviewed 2026-11-19) Preprocessing, `preprocessing.h` `preprocessing` (`orient_and_sort` inlined into it): `ghost_degrees`, `degree_key` -> `build.h`
    `orient` (the ghosts' out-edges with `--contraction`); `Graph::sort_neighborhoods`, `ghost_neighbors` / `ghost_degree`.
    Changed in review (`077c9a3`): `orient` partitions the input graph's neighborhoods in place and truncates them (one key
    per vertex and edge, `mutable_neighbors` / `truncate_neighborhoods` as building steps); the sort stays (no sortedness
