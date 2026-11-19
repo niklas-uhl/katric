@@ -8,11 +8,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
-#include <memory>
 #include <ranges>
 #include <utility>
 #include <vector>
 
+#include <dstl/distribution.hpp>
 #include <kagen.h>
 #include <mpi.h>
 #include <kamping/v2/types/std/unsafe/utility.hpp>
@@ -24,43 +24,46 @@
 namespace katric::graph {
 
 /// The undirected graph of a rank's part of the input (KaGen's CSR: vertex
-/// range, xadj, adjncy in global ids), with ghosts. Collective. Neighborhoods
-/// keep the input's order. The cut edges are sorted once by (head, position):
-/// that gives the ghosts in global-id order and their handles without a lookup
-/// per edge.
+/// range, xadj, adjncy in global ids), with ghosts. Collective (builds the
+/// partition table). Neighborhoods keep the input's order. The cut edges are
+/// sorted once by (head, position): that gives the ghosts in global-id order,
+/// and each run of equal heads one ghost, so their handles need no lookup per
+/// edge.
 inline auto build_input_graph(kagen::Graph const& input,
                               kamping::v2::comm_view comm) -> Graph {
   KASSERT(input.representation == kagen::GraphRepresentation::CSR);
-  std::pair<VertexId, VertexId> const range{input.vertex_range.first,
-                                            input.vertex_range.second};
-  auto const [first, last] = range;
-  std::size_t const num_local = first < last ? last - first : 0;
-  auto const owned = [first, num_local](VertexId gid) -> bool {
-    return gid >= first && gid - first < num_local;
-  };
-  std::vector<VertexHandle> adjncy(input.adjncy.size());
+  auto const [first, last] = input.vertex_range;
+  // an empty range may have any first and last
+  dstl::distribution distribution(first < last ? last - first : 0, comm);
+  int const rank = comm.rank();
+  KASSERT(first >= last || distribution.index_range_begin(rank) == first,
+          "the vertex ranges are not contiguous in rank order");
   std::vector<std::pair<VertexId, std::size_t>>
       cut;  // (head, position in adjncy), sorted
   for (std::size_t position = 0; position < input.adjncy.size(); ++position) {
     VertexId const gid = input.adjncy[position];
-    if (owned(gid)) {
-      adjncy[position] = VertexLayer::local_handle(gid - first);
-    } else {
+    if (!distribution.is_local(gid, rank)) {
       cut.emplace_back(gid, position);
     }
   }
   std::ranges::sort(cut);
   std::vector<VertexId> ghost_ids;
-  for (auto& [head, position] : cut) {
-    if (ghost_ids.empty() || ghost_ids.back() != head) {
-      ghost_ids.push_back(head);
+  std::ranges::unique_copy(cut | std::views::keys,
+                           std::back_inserter(ghost_ids));
+  VertexLayer layer(std::move(distribution), std::move(ghost_ids), comm);
+  std::vector<VertexHandle> adjncy(input.adjncy.size());
+  for (std::size_t position = 0; position < input.adjncy.size(); ++position) {
+    VertexId const gid = input.adjncy[position];
+    if (layer.is_local_id(gid)) {
+      adjncy[position] = layer.handle(gid);
     }
-    head = ghost_ids.size() - 1;  // from here on: the head's ghost index
   }
-  VertexLayer layer(range, std::move(ghost_ids), comm);
-  KASSERT(layer.num_local_vertices() == num_local);
-  for (auto const& [ghost_index, position] : cut) {
-    adjncy[position] = layer.ghost_handle(ghost_index);
+  std::size_t ghost_index = 0;
+  for (std::size_t i = 0; i < cut.size(); ++i) {
+    if (i > 0 && cut[i].first != cut[i - 1].first) {
+      ++ghost_index;  // the next run: the next ghost
+    }
+    adjncy[cut[i].second] = layer.ghost_handle(ghost_index);
   }
   decltype(cut){}.swap(cut);  // frees the cut pairs before the copy of xadj
   // copied: the input is only read (the harness reuses it for every iteration),
@@ -70,7 +73,7 @@ inline auto build_input_graph(kagen::Graph const& input,
   if (xadj.empty()) {
     xadj.push_back(0);
   }
-  KASSERT(xadj.size() == num_local + 1);
+  KASSERT(xadj.size() == layer.num_local_vertices() + 1);
   return {std::move(layer), {std::move(xadj), std::move(adjncy)}};
 }
 
@@ -221,7 +224,7 @@ inline auto contract_to_global_ids(Graph&& G) -> GlobalIdGraph {
   for (std::size_t index = 0; index < local.num_vertices(); ++index) {
     auto const cut = cut_neighbors(index);
     if (!cut.empty()) {
-      kept.push_back(VertexLayer::local_handle(index));
+      kept.push_back(layer.local_handle(index));
     }
     for (VertexHandle const u : cut) {
       global.push_back(layer.global_id(u));

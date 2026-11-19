@@ -18,11 +18,11 @@
 #include <vector>
 
 #include <caliper/cali.h>
+#include <dstl/distribution.hpp>
 #include <dstl/grid_comm.hpp>
 #include <kamping/v2/comm.hpp>
 #include <kassert/kassert.hpp>
 
-#include "katric/datastructures/distributed/vertex_partition.h"
 #include "katric/util.h"
 
 namespace katric::graph {
@@ -56,33 +56,32 @@ inline auto format_as(VertexHandle vertex) -> std::uint64_t {
 /// safe.
 class VertexLayer {
 public:
-  /// Collective (builds the partition table). `range` is this rank's half-open
-  /// range of global ids, `ghost_ids` the sorted, distinct global ids of the
-  /// ghosts.
-  VertexLayer(std::pair<VertexId, VertexId> range,
+  /// `distribution` is the partition table over `comm` (this rank's local
+  /// vertices are its range there), `ghost_ids` the sorted, distinct global ids
+  /// of the ghosts.
+  VertexLayer(dstl::distribution distribution,
               std::vector<VertexId> ghost_ids,
               kamping::v2::comm_view comm)
-      : partition_(range, kamping::v2::handle(comm)),
+      : distribution_(std::move(distribution)),
         comm_(comm),
         rank_(comm.rank()),
-        first_(partition_.vertex_range().first),
-        num_local_vertices_(partition_.vertex_range().second -
-                            partition_.vertex_range().first),
+        first_(distribution_.index_range_begin(rank_)),
+        num_local_vertices_(distribution_.local_size(rank_)),
         ghost_ids_(std::move(ghost_ids)) {
     KASSERT(std::ranges::is_sorted(ghost_ids_));
     KASSERT(std::ranges::adjacent_find(ghost_ids_) == ghost_ids_.end());
     owners_.reserve(ghost_ids_.size());
     for (VertexId const gid : ghost_ids_) {
       KASSERT(!is_local_id(gid));
-      owners_.push_back(partition_.get_rank(gid));
+      owners_.push_back(distribution_.get_owner(gid));
     }
     num_ghosts_below_ = static_cast<std::size_t>(
         std::ranges::lower_bound(ghost_ids_, first_) - ghost_ids_.begin());
   }
 
-  /// The handle of the local vertex with local index `index` (needs no layer:
-  /// local handles do not depend on the number of local vertices).
-  [[nodiscard]] static auto local_handle(std::size_t index) -> VertexHandle {
+  /// The handle of the local vertex with local index `index`.
+  [[nodiscard]] auto local_handle(std::size_t index) const -> VertexHandle {
+    KASSERT(index < num_local_vertices_);
     return VertexHandle{index};
   }
   /// The handle of the ghost with ghost index `index`.
@@ -110,7 +109,9 @@ public:
   /// The local vertices, ascending.
   [[nodiscard]] auto local_vertices() const {
     return std::views::iota(std::size_t{0}, num_local_vertices_) |
-           std::views::transform(&VertexLayer::local_handle);
+           std::views::transform([this](std::size_t index) -> VertexHandle {
+             return local_handle(index);
+           });
   }
   /// The ghosts, ascending.
   [[nodiscard]] auto ghosts() const {
@@ -164,8 +165,9 @@ public:
   }
 
   [[nodiscard]] auto comm() const -> kamping::v2::comm_view { return comm_; }
-  [[nodiscard]] auto partition() const -> VertexPartition<VertexId> const& {
-    return partition_;
+  /// The partition table: the vertex range of every rank.
+  [[nodiscard]] auto distribution() const -> dstl::distribution const& {
+    return distribution_;
   }
   /// The 2D grid over the communicator's ranks for the grid exchange, built on
   /// first use (a collective split: the first call must be made by all ranks
@@ -181,7 +183,7 @@ public:
   }
 
 private:
-  VertexPartition<VertexId> partition_;
+  dstl::distribution distribution_;
   kamping::v2::comm_view comm_;
   PEID rank_;  // for owner()
   VertexId first_;

@@ -56,9 +56,7 @@ TEST(InputGraphTest, neighbors_ghosts_and_handles) {
     // the ghosts are sorted by global id, owned elsewhere, and their owners' ranges contain them
     for (VertexHandle const g: G.ghosts()) {
         EXPECT_FALSE(G.is_local(g));
-        auto const [first, last] = layer.partition().partition_range(G.owner(g));
-        EXPECT_LE(first, G.global_id(g));
-        EXPECT_LT(G.global_id(g), last);
+        EXPECT_TRUE(layer.distribution().is_local(G.global_id(g), G.owner(g)));
     }
     for (std::size_t i = 1; i < G.num_ghosts(); ++i) {
         EXPECT_LT(G.global_id(layer.ghost_handle(i - 1)), G.global_id(layer.ghost_handle(i)));

@@ -14,6 +14,7 @@
 #include <type_traits>
 #include <vector>
 
+#include <dstl/distribution.hpp>
 #include <message-queue/buffered_queue.h>
 
 #include "katric/caliper.h"
@@ -112,6 +113,16 @@ inline std::vector<graph::VertexId> make_message(graph::GlobalIdGraph const& G, 
     return message;
 }
 
+/// The rank owning global id `w`, searching the partition table only from rank `from` on (`w` must not lie before
+/// rank `from`'s range): for ascending lookups along a sorted neighborhood.
+inline auto owner_from(dstl::distribution const& distribution, graph::VertexId w, PEID from) -> PEID {
+    auto const begins = distribution.displs();
+    KASSERT(from >= 0 && from < distribution.size() && begins[from] <= w);
+    // the last rank whose range starts at or before w (an empty rank starts where its successor does)
+    auto const it = std::ranges::upper_bound(begins.begin() + from, begins.end(), w);
+    return static_cast<PEID>(it - begins.begin()) - 1;
+}
+
 /// The global phase: sends the message of every vertex v of `senders` once to each rank holding the head of a cut
 /// out-edge of v, and handles the received messages. `threshold` is the message queue's buffer size.
 ///
@@ -133,7 +144,7 @@ void run(
     queue.set_threshold(threshold);
     GlobalPhaseCounters counters;
     auto const&         layer     = G.layer();
-    auto const&         partition = layer.partition();
+    auto const&         distribution = layer.distribution();
     // Time spent building and posting messages and handling received ones (the intersections), accumulated per call
     // because a Caliper region per message would cost more than the work it measures. `poll_time` is the time in
     // `poll` outside the handler (the queue's own work); `handle_time` includes messages handled during termination,
@@ -160,8 +171,8 @@ void run(
                 if (layer.is_local_id(w) || w < owner_end) {
                     continue;
                 }
-                owner     = partition.get_rank_from(w, owner);
-                owner_end = partition.partition_range(owner).second;
+                owner     = owner_from(distribution, w, owner);
+                owner_end = distribution.index_range_end(owner);
                 queue.post_message(make_message(G, v), owner);
             }
             send_time += clock::now() - start;
