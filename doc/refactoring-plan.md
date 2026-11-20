@@ -612,7 +612,22 @@ graph on top of the shared partition/indexer layer.
 The algorithm ideas (models in [model/](model/)):
 
 1. Compute at the tail + one rebalancing step (cost-based, DPD/IDPD): the growing imbalance on skewed inputs
-2. Forward-style message trimming: send volume of the global phase
+2. Forward-style message trimming: send volume of the global phase. Implemented on `feat/message-trimming`
+   (2026-11-18), `--message-trimming` (off by default): for each destination rank r of N+(v), the message holds only
+   the entries from r's first receiver on in orientation order (key = (degree, global id), kept with the oriented
+   graph as `Orientation`); no message if nothing follows that receiver. The keys of a row are computed once per sender
+   and the message is a filtered copy of the row in global ids. Verified on 216 runs (all algorithms, direct / grid /
+   DPD, 2-8 ranks); identical counters with the option off. Laptop, 8 ranks: global-phase send volume x0.75 on GNM and
+   permuted RGG, x0.85 on RMAT, x0.62 on com-amazon, x0.23 (DiTriC) / x0.57 (CETRIC) on RHG; messages x0.64-0.85;
+   sending 1.1-1.5x slower (a filtered copy per destination instead of a memcpy), handling unchanged or slightly
+   faster. Shared memory hides the saving; suite `trimming` (48-1536 cores) measures it on SuperMUC-NG. The model
+   ([model/trim.py](model/trim.py)) said -64% on com-amazon counting only neighbor entries; the measured volume also
+   counts the sender id and separator per message. Merged into `chore/modernize` 2026-11-20 (port `5a7b664`): the keys come from
+   `Graph::undirected_degree`, kept next to the global ids by `to_global_ids(…, with_degrees)` (only with the flag,
+   8 B per entry); each destination's message is built in one reused buffer and posted as a span. Same triangle counts
+   with and without on 144 configurations; flag off: identical counters. Laptop, 8 ranks: send volume as above (RHG
+   x0.13 / x0.36 at 2^18 / 2^22), `send_ns` x1.2-3.5 (one filtered scan of N+(v) per destination). Suites still use the
+   old option names (`algorithm`, `communication-policy: new`), to be switched with the compatibility options
 3. Compact-forward skip in the local phase: for an edge v→u every common out-neighbor w comes after u in
    orientation order, so with N+(v) in orientation order the intersection can start after u. Today's degree order
    is slow because of its comparator (degree lookups per comparison, hash map for ghosts), not the order. Ways to
