@@ -4,6 +4,7 @@
 // includes waiting for other ranks inside the next phase's first collective.
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <utility>
@@ -17,7 +18,6 @@
 #include "katric/caliper.h"
 #include "katric/config.h"
 #include "katric/ghost_exchange.h"
-#include "katric/graph/build.h"
 #include "katric/graph/graph.h"
 #include "katric/load_balancing.h"
 #include "katric/message_tags.h"
@@ -148,29 +148,25 @@ inline void preprocessing(graph::Graph& G, Config const& conf) {
   }
 }
 
-/// Without contraction, after the local phase: the oriented graph converted to
-/// global ids (a new array) for the global phase (region `global_ids`).
-inline auto global_ids(graph::Graph&& G) -> graph::GlobalIdGraph {
-  CALI_CXX_MARK_SCOPE("global_ids");
-  return graph::to_global_ids(std::move(G));
-}
-
-/// With contraction, after the local phase: the edges the local phase did not
-/// handle (the cut out-edges), as global ids (region `contraction`). Counters:
-/// the vertices with cut edges (compact_nodes) and their cut out-edges
-/// (compact_edges).
-inline auto contraction(graph::Graph&& G) -> graph::GlobalIdGraph {
+/// After the local phase: the neighborhoods as global ids for the global phase
+/// (region `global_ids`); with contraction only the cut edges (region
+/// `contraction`, counters: the vertices with cut edges (compact_nodes) and
+/// their cut out-edges (compact_edges)).
+inline void global_ids(graph::Graph& G, Config const& conf) {
+  if (!conf.contraction) {
+    CALI_CXX_MARK_SCOPE("global_ids");
+    G.to_global_ids(false);
+    return;
+  }
   CALI_CXX_MARK_SCOPE("contraction");
-  auto G_contracted = graph::contract_to_global_ids(std::move(G));
+  G.to_global_ids(true);
   profiling::counter_add(
       "compact_nodes",
       static_cast<std::int64_t>(std::ranges::count_if(
-          G_contracted.local_vertices(), [&](graph::VertexHandle v) -> bool {
-            return G_contracted.has_cut_edges(v);
-          })));
-  profiling::counter_add(
-      "compact_edges", static_cast<std::int64_t>(G_contracted.num_local_edges()));
-  return G_contracted;
+          G.local_vertices(),
+          [&](graph::VertexHandle v) -> bool { return G.has_cut_edges(v); })));
+  profiling::counter_add("compact_edges",
+                         static_cast<std::int64_t>(G.num_global_neighbors()));
 }
 
 }  // namespace phases

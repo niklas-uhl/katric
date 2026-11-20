@@ -24,9 +24,8 @@ auto count_triangles(kagen::Graph const& input,
   std::size_t const threshold = get_threshold(G, conf);
   phases::preprocessing(G, conf);
   phases::local_phase(G, conf, triangles);
-  auto const G_global = conf.contraction ? phases::contraction(std::move(G))
-                                         : phases::global_ids(std::move(G));
-  phases::global_phase(G_global, conf, threshold, triangles);
+  phases::global_ids(G, conf);
+  phases::global_phase(G, conf, threshold, triangles);
   return phases::reduce(triangles, comm);
 }
 

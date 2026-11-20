@@ -313,12 +313,6 @@ public:
     }
   }
 
-  /// Hands over the arrays (for a conversion that reuses them).
-  [[nodiscard]] auto
-  release() && -> std::pair<std::vector<std::size_t>, std::vector<Neighbor>> {
-    return {std::move(xadj_), std::move(adjncy_)};
-  }
-
 private:
   std::vector<std::size_t> xadj_;
   std::vector<Neighbor> adjncy_;
@@ -431,15 +425,17 @@ public:
     return numbering_.to_local_index(vertex);
   }
 
-  /// The neighbors of local vertex `vertex`.
+  /// The neighbors of local vertex `vertex` (before to_global_ids()).
   [[nodiscard]] auto local_neighbors(VertexHandle vertex) const
       -> std::span<VertexHandle const> {
+    KASSERT(!has_global_neighbors_, "converted to global ids");
     return local_.neighbors(to_local_index(vertex));
   }
 
   /// The number of neighbors of local vertex `vertex` in this graph: after
-  /// orient() its out-degree.
+  /// orient() its out-degree (before to_global_ids()).
   [[nodiscard]] auto degree(VertexHandle vertex) const -> Degree {
+    KASSERT(!has_global_neighbors_, "converted to global ids");
     return local_.degree(to_local_index(vertex));
   }
 
@@ -584,12 +580,68 @@ public:
     }
   }
 
-  /// Hands over the vertex numbering and the neighborhoods of the local
-  /// vertices (for a conversion that reuses them); the ghosts' out-edges are
-  /// dropped.
-  [[nodiscard]] auto
-  release() && -> std::pair<VertexNumbering, AdjacencyArray<VertexHandle>> {
-    return {std::move(numbering_), std::move(local_)};
+  /// Building step after the local phase: replaces the neighborhoods of the
+  /// local vertices by their global ids, for the global phase, which compares
+  /// them with received global ids; with `cut_edges_only` (CETRIC) only the
+  /// ghost heads are kept. Each neighborhood comes out ascending: a sorted
+  /// neighborhood is [local heads][ghosts below the local range][ghosts above]
+  /// and is translated as [ghosts below][local heads][ghosts above]. The handle
+  /// neighborhoods and the ghosts' out-edges are freed: afterwards only
+  /// global_neighbors() and the vertex queries are available.
+  void to_global_ids(bool cut_edges_only) {
+    KASSERT(!has_global_neighbors_);
+    std::vector<std::size_t> xadj(num_local_vertices() + 1, 0);
+    std::size_t num_entries = 0;
+    for (VertexHandle const v : local_vertices()) {
+      num_entries += cut_edges_only ? ghost_heads(v).size() : degree(v);
+    }
+    std::vector<VertexId> ids;
+    ids.reserve(num_entries);
+    auto const translate = [&](std::span<VertexHandle const> heads) {
+      for (VertexHandle const u : heads) {
+        ids.push_back(global_id(u));
+      }
+    };
+    for (VertexHandle const v : local_vertices()) {
+      auto const ghosts = ghost_heads(v);
+      if (cut_edges_only) {
+        translate(ghosts);  // [ghosts below][ghosts above]: already ascending
+      } else {
+        auto const above = static_cast<std::size_t>(
+            std::ranges::lower_bound(ghosts, numbering_.first_ghost_above()) -
+            ghosts.begin());
+        translate(ghosts.first(above));
+        translate(local_heads(v));
+        translate(ghosts.subspan(above));
+      }
+      xadj[to_local_index(v) + 1] = ids.size();
+    }
+    global_neighbors_ = {std::move(xadj), std::move(ids)};
+    has_global_neighbors_ = true;
+    local_ = {};
+    ghost_out_ = {};
+    has_ghost_out_edges_ = false;
+    num_local_heads_ = {};
+  }
+  /// After to_global_ids(): the neighbors of local vertex `vertex` (all, or
+  /// only the cut edges) as global ids, ascending.
+  [[nodiscard]] auto global_neighbors(VertexHandle vertex) const
+      -> std::span<VertexId const> {
+    KASSERT(has_global_neighbors_, "not converted to global ids");
+    return global_neighbors_.neighbors(to_local_index(vertex));
+  }
+  /// After to_global_ids(): the number of entries of all global neighborhoods.
+  [[nodiscard]] auto num_global_neighbors() const -> std::size_t {
+    KASSERT(has_global_neighbors_, "not converted to global ids");
+    return global_neighbors_.num_edges();
+  }
+  /// After to_global_ids(): whether local vertex `vertex` has a cut out-edge:
+  /// its neighborhood (ascending) starts below or ends above this rank's range.
+  [[nodiscard]] auto has_cut_edges(VertexHandle vertex) const -> bool {
+    auto const neighbors_v = global_neighbors(vertex);
+    auto const [first, last] = numbering_.local_range();
+    return !neighbors_v.empty() &&
+           (neighbors_v.front() < first || neighbors_v.back() >= last);
   }
 
 private:
@@ -608,6 +660,8 @@ private:
   bool has_ghost_out_edges_ = false;
   AdjacencyArray<VertexHandle> ghost_out_;  // empty without
   std::vector<std::size_t> num_local_heads_;  // per local vertex, once sorted
+  bool has_global_neighbors_ = false;
+  AdjacencyArray<VertexId> global_neighbors_;  // empty before to_global_ids()
 };
 
 /// `G` in KaGen's CSR representation (global ids), for the load balancing.
@@ -628,50 +682,5 @@ inline auto to_kagen_graph(Graph&& G) -> kagen::Graph {
   }
   return input;
 }
-
-/// The graph of the global phase: the out-neighbors of the local vertices as
-/// global ids, each neighborhood ascending. Converted from an oriented Graph
-/// after the local phase (graph/build.h): without contraction every
-/// neighborhood is kept, with contraction (CETRIC) only the cut edges of the
-/// vertices with any. Messages carry global ids, so the global phase works on
-/// these directly.
-class GlobalIdGraph {
-public:
-  GlobalIdGraph(VertexNumbering numbering, AdjacencyArray<VertexId> local)
-      : numbering_(std::move(numbering)), local_(std::move(local)) {
-    KASSERT(local_.num_vertices() == numbering_.num_local_vertices());
-  }
-
-  [[nodiscard]] auto numbering() const -> VertexNumbering const& {
-    return numbering_;
-  }
-  [[nodiscard]] auto comm() const -> kamping::v2::comm_view {
-    return numbering_.comm();
-  }
-  /// The number of edges of the local vertices.
-  [[nodiscard]] auto num_local_edges() const -> std::size_t {
-    return local_.num_edges();
-  }
-  [[nodiscard]] auto local_vertices() const {
-    return numbering_.local_vertices();
-  }
-  /// The out-neighbors of local vertex `vertex` as global ids, ascending.
-  [[nodiscard]] auto neighbors(VertexHandle vertex) const
-      -> std::span<VertexId const> {
-    return local_.neighbors(numbering_.to_local_index(vertex));
-  }
-  /// Whether local vertex `vertex` has a cut out-edge: its neighborhood
-  /// (ascending) starts below or ends above this rank's range.
-  [[nodiscard]] auto has_cut_edges(VertexHandle vertex) const -> bool {
-    auto const neighbors_v = neighbors(vertex);
-    auto const [first, last] = numbering_.local_range();
-    return !neighbors_v.empty() &&
-           (neighbors_v.front() < first || neighbors_v.back() >= last);
-  }
-
-private:
-  VertexNumbering numbering_;
-  AdjacencyArray<VertexId> local_;
-};
 
 }  // namespace katric::graph

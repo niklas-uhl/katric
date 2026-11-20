@@ -36,7 +36,7 @@ inline void local_phase(graph::Graph const& G,
 }
 
 /// The global phase: sends the neighborhoods of the vertices with cut edges.
-inline void global_phase(graph::GlobalIdGraph const& G,
+inline void global_phase(graph::Graph const& G,
                          Config const& conf,
                          std::size_t threshold,
                          TriangleCounter& triangles) {

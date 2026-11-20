@@ -69,48 +69,47 @@ struct Splitter {
   }
 };
 
-/// Handles a received message [v, N+(v)...] (global ids, ascending): for every
-/// local vertex u in it, records the triangles (v, u, w) for w in N+(v) ∩
-/// N+(u).
-template <typename It>
-void process_message(graph::GlobalIdGraph const& G,
-                     Config const& conf,
-                     It begin,
-                     It end,
-                     GlobalPhaseCounters& counters,
-                     TriangleCounter& triangles) {
+/// Handles a received message [v, N+(v)...] (global ids, ascending; with
+/// contraction only v's cut out-edges): for every local vertex u in it, records
+/// the triangles (v, u, w) for w in N+(v) ∩ N+(u).
+inline void process_message(graph::Graph const& G,
+                            Config const& conf,
+                            std::span<graph::VertexId const> message,
+                            GlobalPhaseCounters& counters,
+                            TriangleCounter& triangles) {
   auto const& numbering = G.numbering();
-  graph::VertexId const v = *begin;
-  auto const entries = std::span<graph::VertexId const>(
-      std::to_address(std::next(begin)), std::to_address(end));
+  graph::VertexId const v = message.front();
+  auto const entries = message.subspan(1);
   KASSERT(!numbering.is_local_id(v));
   KASSERT(std::ranges::is_sorted(entries));
   for (graph::VertexId const u_global : entries) {
     if (!numbering.is_local_id(u_global)) {
       continue;
     }
-    auto const u_neighbors = G.neighbors(numbering.handle(u_global));
-    // nothing to intersect (CETRIC: u had no cut edges and was contracted away)
+    auto const u_neighbors =
+        G.global_neighbors(numbering.handle(u_global));
+    // nothing to intersect (CETRIC: u has no cut edges)
     if (u_neighbors.empty()) {
       continue;
     }
     // for the edge (v, u) we check the open wedges (v, u, w) for w in N+(u)
     counters.wedge_checks += u_neighbors.size();
     counters.intersection_size_global += entries.size() + u_neighbors.size();
-    katric::intersection(
+    intersection(
         u_neighbors, entries,
         [&](graph::VertexId w) { triangles.record(Triangle{v, u_global, w}); },
         conf);
   }
 }
 
-/// The message of `v`: [v, N+(v)...] in global ids, ascending.
-inline std::vector<graph::VertexId> make_message(graph::GlobalIdGraph const& G,
-                                                 graph::VertexHandle v) {
-  auto const neighbors = G.neighbors(v);
+/// The message of `v`: [v, N+(v)...] in global ids, ascending (with
+/// contraction only v's cut out-edges).
+inline auto make_message(graph::Graph const& G, graph::VertexHandle v)
+    -> std::vector<graph::VertexId> {
+  auto const neighbors = G.global_neighbors(v);
   std::vector<graph::VertexId> message;
   message.reserve(1 + neighbors.size());
-  message.push_back(G.numbering().global_id(v));
+  message.push_back(G.global_id(v));
   message.insert(message.end(), neighbors.begin(), neighbors.end());
   return message;
 }
@@ -139,7 +138,7 @@ inline auto owner_from(dstl::distribution const& distribution,
 /// owner's range starts the next run, whose owner is found by a binary search
 /// over the partition table from the current owner on. Per neighborhood: a
 /// comparison per entry and a search per destination.
-void run(graph::GlobalIdGraph const& G,
+void run(graph::Graph const& G,
          Config const& conf,
          std::size_t threshold,
          TriangleCounter& triangles) {
@@ -181,7 +180,10 @@ void run(graph::GlobalIdGraph const& G,
   auto on_message = [&](SharedVectorSpan<graph::VertexId> span,
                         int /*sender*/) {
     auto const start = clock::now();
-    process_message(G, conf, span.begin(), span.end(), counters, triangles);
+    process_message(G, conf,
+                    std::span<graph::VertexId const>(std::to_address(span.begin()),
+                                                     span.size()),
+                    counters, triangles);
     handle_time += clock::now() - start;
   };
   with_queue([&](auto& queue) -> void {
@@ -191,20 +193,22 @@ void run(graph::GlobalIdGraph const& G,
         continue;
       }
       counters.interface_nodes++;
-      if (conf.pseudo2core && G.neighbors(v).size() < 2) {
+      auto const neighbors = G.global_neighbors(v);
+      if (conf.pseudo2core && neighbors.size() < 2) {
         counters.skipped_nodes++;
       } else {
         auto const start = clock::now();
+        auto const message = make_message(G, v);
         int owner = 0;
-        // end of `owner`'s range; entries below it go to the same rank
+        // end of `owner`'s range; heads below it go to the same rank
         graph::VertexId owner_end = 0;
-        for (graph::VertexId const w : G.neighbors(v)) {
+        for (graph::VertexId const w : neighbors) {
           if (numbering.is_local_id(w) || w < owner_end) {
             continue;
           }
           owner = owner_from(distribution, w, owner);
           owner_end = distribution.index_range_end(owner);
-          queue.post_message(make_message(G, v), owner);
+          queue.post_message(std::vector(message), owner);
         }
         send_time += clock::now() - start;
       }
