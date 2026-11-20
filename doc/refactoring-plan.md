@@ -504,6 +504,38 @@ Compact IDs fit 32 bits per rank (n + g < 2^32), which would halve the adjacency
       - laptop, 8 ranks, 2^18 / 2^22, per iteration: CETRIC permuted RGG 0.76 -> 0.52 s (preprocessing 0.25 -> 0.08,
         local phase 0.20 -> 0.10), RHG 0.111 -> 0.081 s; pre-CETRIC permuted RGG 0.57 -> 0.46 s
         (`preprocessing_global` 0.16 -> 0.04)
+- [ ] Stage 2b (decided 2026-11-20, implement after the step-6 review): one `Graph` from orientation through the
+      global phase; global ids only for the ghost heads.
+      - Why: since `6e75890` every local vertex's sorted neighborhood is split into `local_heads` / `ghost_heads`.
+        The global phase needs global ids only where a merge would otherwise look up a ghost id per step (the measured
+        1.65x): the receiver's ghost heads. Everything else is cheap from handles: a sender writes its message as
+        [ghosts below][local heads as first + index][ghosts above] (ascending); a received entry inside the rank's
+        range compares with a local head by arithmetic (`local_heads(u) | transform(to global id)`, which the range
+        interface of `intersection` takes, `2f5a95a`)
+      - Graph: a third optional part next to the ghosts' out-edges and the sorted split, the ghost heads as global ids
+        (`AdjacencyArray<VertexId>`: n + 1 offsets, one entry per cut edge; what `contract_to_global_ids` builds today),
+        accessor `ghost_head_ids(v)` with a `KASSERT` that it is built. Building it needs the sorted split (ghost heads
+        are already in ascending global-id order: one `ghost_ids_` read per cut edge) and drops the ghosts' out-edges
+      - Replaces `GlobalIdGraph`, `to_global_ids` and `contract_to_global_ids`; the `global_ids` / `contraction`
+        regions become one. DiTriC no longer allocates 8 B per out-edge (now 8 B per cut edge); fits stage 3 (only cut
+        edges as 64-bit ids)
+      - Global phase on `Graph const&`: the sender iterates only the ghost heads for destinations (no `is_local_id` per
+        entry). The receiver splits each message once against the rank's range (two binary searches), then per local
+        u: outside part against `ghost_head_ids(u)` (both variants), inside part against `local_heads(u)` (DiTriC
+        only). DiTriC vs. CETRIC differ only in sending the local heads and intersecting the inside part, decided by
+        `conf.contraction` (an algorithm choice; the graph no longer says once the ghosts' out-edges are dropped)
+      - The steps that change the graph become in-place member functions of `Graph`: `orient(key, ghost_out_edges)`,
+        `sort_neighborhoods()`, the ghost-head-ids step. The hooks that exist only for `build.h` (`mutable_neighbors`,
+        `truncate_neighborhoods`, `release`) become private, so "neighborhoods do not change after the sort" is
+        enforced by the class. The key, load balancing and the variant stay outside (`orient` takes the key).
+        `build_input_graph` can become a constructor / `from_kagen`; `to_kagen_graph` stays free. Everything stays
+        in `graph.h` (user, 2026-11-20)
+      - Accepted: which optional parts are built is checked by assertions only (one type, not one per stage; the
+        driver shows the order); the oriented graph lives through the global phase (still less memory for DiTriC)
+      - Check: identical messages and triangle counts; `intersection_size_global` changes by design (counted per
+        part). Measure DiTriC's conversion region vs. `global_ids`, `handle_ns` (split per message, transform per
+        u), peak memory on RMAT. `feat/message-trimming` gets easier (degrees and handles available in the global
+        phase)
 - [ ] Stage 3: 32-bit compact IDs (n + g < 2^32 per rank) — measure the local phase
 - Fixed by stage 2 (pre-existing issue): DPD load balancing on a graph with fewer vertices than ranks
   (`examples/triangle.metis` on 4 ranks) hung
