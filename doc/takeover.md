@@ -150,11 +150,8 @@ Still to review in stage 2, in the order of the algorithm's flow (decided 2026-1
 - **Timings before `441c4d1` include the per-triangle counting overhead** (laptop: local phase -35 to -48%, total -26 to
   -40%). All cluster data so far (and probably `pre-refactor`) has it; rerun before comparing against new runs
 
-- `chore/modernize` pushed through `2ec55c1` (2026-11-20). Merge it into
-  `feat/message-trimming`. The trimming code uses
-  handle-based keys (`Orientation::degree(handle)`, `neighbors_as_global_ids`) that no longer exist after `9c64803`:
-  it must compute the keys before the in-place conversion (e.g. keep each entry's degree next to it on the trimming
-  path) — expect merge conflicts in `global.h`, `graph.h`, `preprocessing.h`
+- `feat/message-trimming` merged into `chore/modernize` (2026-11-20): ported in `5a7b664`, merge commit after it;
+  `--message-trimming` off by default. The branch itself is no longer needed
 - **Memory** (measured 2026-11-18 evening, laptop, 4 ranks, 2^18 vertices / 2^22 edges in total, max RSS after each
   phase via a temporary getrusage patch; Caliper's memory services need GOTCHA or /proc, i.e. Linux): the peak is set
   by KaGen's generation, not by katric. Baseline 20 MB, graph 17 MB per rank; after generation + ingest the busiest
