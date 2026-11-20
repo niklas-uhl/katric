@@ -168,15 +168,14 @@ inline void global_phase(graph::Graph const& G,
   }
   auto base_queue =
       message_queue::make_buffered_queue<graph::VertexId>(Merger{}, Splitter{});
-  // `--communication-policy`: calls `f` with the queue adaptor, direct or
-  // through the 2D grid
+  // `--communication-policy`: calls `f` with the queue, direct or through the
+  // 2D grid adaptor
   auto const with_queue = [&](auto&& f) -> void {
     if (conf.communication_policy == CommunicationPolicy::grid) {
       IndirectMessageQueueAdaptor queue(base_queue);
       f(queue);
     } else {
-      DirectMessageQueueAdaptor queue(base_queue);
-      f(queue);
+      f(base_queue);
     }
   };
   GlobalPhaseCounters counters;

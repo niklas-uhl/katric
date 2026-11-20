@@ -22,128 +22,101 @@
 #pragma once
 
 #include <cmath>
+#include <cstddef>
 #include <ranges>
 #include <span>
 #include <vector>
-#include <type_traits>
 
+#include <kassert/kassert.hpp>
 #include <mpi.h>
 #include <spdlog/spdlog.h>
 
 #include "message-queue/buffered_queue.h"
 
 namespace katric {
-template <typename T>
-T rank_to_value(int rank) {
-    return rank;
-}
-template <typename T>
-int value_to_rank(T const& rank) {
-    return rank;
-}
 
+/// `--communication-policy grid`: routes every message through at most one
+/// proxy on a 2D grid of the ranks (rows of round(sqrt(p)) ranks, the last row
+/// possibly shorter), so a rank exchanges messages with O(sqrt(p)) others. A
+/// message from `from` to `to` goes to the rank in from's row and to's column;
+/// if from is in the short last row and that position does not exist, to the
+/// rank in from's column-th row and to's column (a full row, since there are at
+/// least round(sqrt(p)) rows). The proxy is in to's column, so it sends on
+/// directly. Each message carries its original sender and its receiver as two
+/// trailing words. To be replaced by BriefKAsten's grid adapter.
 template <typename QueueType>
 class IndirectMessageQueueAdaptor {
 public:
     using value_type = typename QueueType::value_type;
-    IndirectMessageQueueAdaptor(QueueType& queue) : rank_(), size_(), queue_(queue) {
+
+    explicit IndirectMessageQueueAdaptor(QueueType& queue) : queue_(queue) {
         // the grid is laid over the ranks of the queue's communicator, which is MPI_COMM_WORLD (legacy message-queue)
         MPI_Comm_rank(MPI_COMM_WORLD, &rank_);
         MPI_Comm_size(MPI_COMM_WORLD, &size_);
-        grid_size_ = std::round(std::sqrt(size_));
-    };
-    /// Copies `message` (any range of values) once, to append the original sender and the receiver for the proxies.
-    template <typename Message>
-    void post_message(Message const& message, int receiver, bool direct_send = false) {
-        std::vector<value_type> routed(std::ranges::begin(message), std::ranges::end(message));
-        routed.push_back(rank_to_value<value_type>(rank_));
-        routed.push_back(rank_to_value<value_type>(receiver));
-        int proxy;
-        if (direct_send) {
-            proxy = receiver;
-        } else {
-            proxy = get_proxy(rank_, receiver);
-        }
-        SPDLOG_DEBUG("Redirecting message to {} via {}", receiver, proxy);
-        queue_.post_message(std::move(routed), proxy);
+        grid_size_ = static_cast<int>(std::round(std::sqrt(size_)));
     }
 
-    void set_threshold(size_t threshold) {
+    /// Copies `message` (any range of values) once, to append the routing words.
+    template <typename Message>
+    void post_message(Message const& message, int receiver) {
+        std::vector<value_type> routed(std::ranges::begin(message), std::ranges::end(message));
+        routed.push_back(static_cast<value_type>(rank_));
+        routed.push_back(static_cast<value_type>(receiver));
+        queue_.post_message(std::move(routed), get_proxy(rank_, receiver));
+    }
+
+    void set_threshold(std::size_t threshold) {
         queue_.set_threshold(threshold);
     }
 
     template <typename MessageHandler>
     void poll(MessageHandler&& on_message) {
-        // static_assert(std::is_invocable_v<MessageHandler, typename std::vector<T>::iterator,
-        //                                   typename std::vector<T>::iterator, int>);
-        queue_.poll([&](std::span<value_type const> span, int /*sender*/) {
-            auto end             = span.end();
-            int receiver        = value_to_rank(*(end - 1));
-            int original_sender = value_to_rank(*(end - 2));
-            if (receiver == rank_) {
-                auto received_message = span.subspan(0, span.size() - 2);
-                on_message(received_message, original_sender);
-            } else {
-                auto              proxy = get_proxy(rank_, receiver);
-                SPDLOG_DEBUG("Redirecting message to {} via {}", receiver, proxy);
-                queue_.post_message(span, proxy);  // forwarded as received, with its routing words
-            }
-        });
+        queue_.poll(route(on_message));
     }
 
     template <typename MessageHandler>
     void terminate(MessageHandler&& on_message) {
-        // static_assert(std::is_invocable_v<MessageHandler, typename std::vector<T>::iterator,
-        //                                   typename std::vector<T>::iterator, int>);
-        queue_.terminate([&](std::span<value_type const> span, int /*sender*/) {
-            auto end             = span.end();
-            int receiver        = value_to_rank(*(end - 1));
-            int original_sender = value_to_rank(*(end - 2));
-            if (receiver == rank_) {
-                auto received_message = span.subspan(0, span.size() - 2);
-                on_message(received_message, original_sender);
-            } else {
-                auto              proxy = get_proxy(rank_, receiver);
-                SPDLOG_DEBUG("Redirecting message to {} via {}", receiver, proxy);
-                queue_.post_message(span, proxy);  // forwarded as received, with its routing words
-            }
-        });
+        queue_.terminate(route(on_message));
     }
 
-    size_t overflows() const {
-        return queue_.overflows();
-    }
-
-    void check_for_overflow_and_flush() {
-        queue_.check_for_overflow_and_flush();
-    }
-
-    const message_queue::MessageStatistics& stats() {
+    auto stats() -> message_queue::MessageStatistics const& {
         return queue_.stats();
     }
 
-    void reset() {
-        queue_.reset();
+private:
+    /// The handler for the underlying queue: delivers a message addressed to this rank to `on_message` (without the
+    /// routing words, with its original sender), forwards any other as received.
+    template <typename MessageHandler>
+    auto route(MessageHandler& on_message) {
+        return [this, &on_message](std::span<value_type const> message, int /*sender*/) {
+            KASSERT(message.size() >= 2);
+            auto const receiver        = static_cast<int>(message[message.size() - 1]);
+            auto const original_sender = static_cast<int>(message[message.size() - 2]);
+            if (receiver == rank_) {
+                on_message(message.first(message.size() - 2), original_sender);
+            } else {
+                auto const proxy = get_proxy(rank_, receiver);
+                SPDLOG_DEBUG("Redirecting message to {} via {}", receiver, proxy);
+                queue_.post_message(message, proxy);
+            }
+        };
     }
 
-private:
     struct GridPosition {
         int  row;
         int  column;
-        bool operator==(const GridPosition& rhs) const {
-            return row == rhs.row && column == rhs.column;
-        }
+        auto operator==(GridPosition const&) const -> bool = default;
     };
 
-    GridPosition get_grid_position(int rank) {
+    [[nodiscard]] auto get_grid_position(int rank) const -> GridPosition {
         return GridPosition{rank / grid_size_, rank % grid_size_};
     }
-    int get_rank(GridPosition grid_position) {
+    [[nodiscard]] auto get_rank(GridPosition grid_position) const -> int {
         return grid_position.row * grid_size_ + grid_position.column;
     }
-    int get_proxy(int from, int to) {
-        auto         from_pos = get_grid_position(from);
-        auto         to_pos   = get_grid_position(to);
+    [[nodiscard]] auto get_proxy(int from, int to) const -> int {
+        auto const   from_pos = get_grid_position(from);
+        auto const   to_pos   = get_grid_position(to);
         GridPosition proxy    = {from_pos.row, to_pos.column};
         if (get_rank(proxy) >= size_) {
             proxy = {from_pos.column, to_pos.column};
@@ -151,62 +124,14 @@ private:
         if (proxy == from_pos) {
             proxy = to_pos;
         }
-        assert(get_rank(proxy) < size_);
+        KASSERT(get_rank(proxy) < size_);
         return get_rank(proxy);
     }
-    int       rank_;
-    int       size_;
-    int       grid_size_;
+
+    int        rank_      = 0;
+    int        size_      = 0;
+    int        grid_size_ = 0;
     QueueType& queue_;
 };
 
-template <typename QueueType>
-class DirectMessageQueueAdaptor {
-public:
-    using value_type = typename QueueType::value_type;
-    DirectMessageQueueAdaptor(QueueType& queue) : queue_(queue){};
-    template <typename Message>
-    void post_message(Message const& message, int receiver, bool direct_send [[maybe_unused]] = false) {
-        queue_.post_message(message, receiver);
-    }
-
-    void set_threshold(size_t threshold) {
-        queue_.set_threshold(threshold);
-    }
-
-    template <typename MessageHandler>
-    void poll(MessageHandler&& on_message) {
-        // static_assert(std::is_invocable_v<MessageHandler, typename std::vector<T>::iterator,
-        //                                   typename std::vector<T>::iterator, int>);
-        queue_.poll(on_message);
-    }
-
-    template <typename MessageHandler>
-    void terminate(MessageHandler&& on_message) {
-        queue_.terminate(on_message);
-    }
-
-    size_t overflows() const {
-        return queue_.overflows();
-    }
-
-    void check_for_overflow_and_flush() {
-        queue_.check_for_overflow_and_flush();
-    }
-
-    const message_queue::MessageStatistics& stats() {
-        return queue_.stats();
-    }
-
-    void reset() {
-        queue_.reset();
-    }
-
-private:
-    QueueType& queue_;
-};
-// template <class QueueType, class T, typename Merger, typename Splitter>
-// auto make_indirect_queue(Merger&& merger, Splitter&& splitter) {
-//     return IndirectMessageQueue<QueueType>(std::forward<Merger>(merger), std::forward<Splitter>(splitter));
-// }
 } // namespace katric
