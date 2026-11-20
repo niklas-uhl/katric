@@ -16,7 +16,6 @@
 #include <vector>
 
 #include <message-queue/buffered_queue.h>
-#include <dstl/distribution.hpp>
 #include <mpi.h>
 
 #include "kassert/kassert.hpp"
@@ -111,17 +110,16 @@ inline void process_message(graph::Graph const& G,
                             std::span<graph::VertexId const> message,
                             GlobalPhaseCounters& counters,
                             TriangleCounter& triangles) {
-  auto const& numbering = G.numbering();
   graph::VertexId const v = message.front();
   auto const entries = message.subspan(1);
-  KASSERT(!numbering.is_local_id(v));
+  KASSERT(!G.is_local_id(v));
   KASSERT(std::ranges::is_sorted(entries));
   for (graph::VertexId const u_global : entries) {
-    if (!numbering.is_local_id(u_global)) {
+    if (!G.is_local_id(u_global)) {
       continue;
     }
     auto const u_neighbors =
-        G.global_neighbors(numbering.handle(u_global));
+        G.global_neighbors(G.handle(u_global));
     // nothing to intersect (CETRIC: u has no cut edges)
     if (u_neighbors.empty()) {
       continue;
@@ -146,21 +144,6 @@ inline auto make_message(graph::Graph const& G, graph::VertexHandle v)
   message.push_back(G.global_id(v));
   message.insert(message.end(), neighbors.begin(), neighbors.end());
   return message;
-}
-
-/// The rank owning global id `w`, searching the partition table only from rank
-/// `from` on (`w` must not lie before rank `from`'s range): for ascending
-/// lookups along a sorted neighborhood.
-inline auto owner_from(dstl::distribution const& distribution,
-                       graph::VertexId w,
-                       int from) -> int {
-  auto const begins = distribution.displs();
-  KASSERT(from >= 0 && from < distribution.size() && begins[from] <= w);
-  // the last rank whose range starts at or before w (an empty rank starts where
-  // its successor does)
-  auto const it =
-      std::ranges::upper_bound(begins.begin() + from, begins.end(), w);
-  return static_cast<int>(it - begins.begin()) - 1;
 }
 
 /// The global phase: sends the message of every local vertex v with cut edges
@@ -200,8 +183,6 @@ inline void global_phase(graph::Graph const& G,
     }
   };
   GlobalPhaseCounters counters;
-  auto const& numbering = G.numbering();
-  auto const& distribution = numbering.distribution();
   // Time spent building and posting messages and handling received ones (the
   // intersections), accumulated per call because a Caliper region per message
   // would cost more than the work it measures. `send_time` is the loop outside
@@ -238,16 +219,18 @@ inline void global_phase(graph::Graph const& G,
         counters.skipped_nodes++;
       } else {
         auto const message = make_message(G, v);
-        int owner = 0;
-        // end of `owner`'s range; heads below it go to the same rank
-        graph::VertexId owner_end = 0;
+        // Once to each rank owning a head. The heads are ascending and the
+        // ranks' ranges contiguous, so the heads of one rank are consecutive:
+        // a head before the end of the last destination's range belongs to it
+        // (legacy's last_proc, without looking up every head's owner).
+        graph::VertexId destination_end = 0;
         for (graph::VertexId const w : neighbors) {
-          if (numbering.is_local_id(w) || w < owner_end) {
+          if (G.is_local_id(w) || w < destination_end) {
             continue;
           }
-          owner = owner_from(distribution, w, owner);
-          owner_end = distribution.index_range_end(owner);
-          queue.post_message(std::vector(message), owner);
+          int const destination = G.owner_of_id(w);
+          destination_end = G.range_of(destination).second;
+          queue.post_message(std::vector(message), destination);
         }
       }
       auto const poll_start = clock::now();

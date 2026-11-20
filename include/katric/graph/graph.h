@@ -125,6 +125,16 @@ public:
   [[nodiscard]] auto distribution() const -> dstl::distribution const& {
     return distribution_;
   }
+  /// The rank whose range contains global id `gid` (binary search over the
+  /// partition table; O(1) for equal ranges).
+  [[nodiscard]] auto owner_of_id(VertexId gid) const -> int {
+    return distribution_.get_owner(gid);
+  }
+  /// Rank `rank`'s half-open range of global ids.
+  [[nodiscard]] auto range_of(int rank) const -> std::pair<VertexId, VertexId> {
+    return {distribution_.index_range_begin(rank),
+            distribution_.index_range_end(rank)};
+  }
   [[nodiscard]] auto comm() const -> kamping::v2::comm_view { return comm_; }
 
 protected:
@@ -423,6 +433,22 @@ public:
   }
   [[nodiscard]] auto to_local_index(VertexHandle vertex) const -> std::size_t {
     return numbering_.to_local_index(vertex);
+  }
+  /// Whether global id `gid` is one of this rank's vertices.
+  [[nodiscard]] auto is_local_id(VertexId gid) const -> bool {
+    return numbering_.is_local_id(gid);
+  }
+  /// The handle of global id `gid` (a local vertex or a ghost).
+  [[nodiscard]] auto handle(VertexId gid) const -> VertexHandle {
+    return numbering_.handle(gid);
+  }
+  /// The rank owning global id `gid`.
+  [[nodiscard]] auto owner_of_id(VertexId gid) const -> int {
+    return numbering_.owner_of_id(gid);
+  }
+  /// Rank `rank`'s half-open range of global ids.
+  [[nodiscard]] auto range_of(int rank) const -> std::pair<VertexId, VertexId> {
+    return numbering_.range_of(rank);
   }
 
   /// The neighbors of local vertex `vertex` (before to_global_ids()).
