@@ -26,13 +26,15 @@ further notebooks next to it (`just notebook <name>`). `uv sync --group eval` in
 
 ## Suites
 
-The variants: DiTriC (default) and CETRIC (`--contraction`). The suites below were written before the rename of
-2026-11-19 and still use `--algorithm patric` (DiTriC) / `cetric-x` (CETRIC), which stay accepted; `--algorithm
+The variants: DiTriC (default) and CETRIC (`--contraction`). The suites below, except `baseline` and `baseline-rmat`, were written
+before the rename of 2026-11-19 and still use `--algorithm patric` (DiTriC) / `cetric-x` (CETRIC), which stay accepted; `--algorithm
 cetric` (pre-CETRIC) was removed and now fails, run it from the tag `pre-refactor`. `eval/katric_eval.py` gives every
 run a `variant` column from either spelling.
 
 | Suite | What |
 | --- | --- |
+| `baseline` | The current code before the next steps (2026-11-20): DiTriC / CETRIC x direct / grid x load balancing none / IDPD x message trimming off / on, on the `phases` inputs and GNM, 48 to 1536 cores. New option names |
+| `baseline-rmat` | `baseline` on RMAT with IDPD only, 48 to 768 cores |
 | `paper-real-world` | Strong scaling of DiTriC (`patric`) and CETRIC (`cetric-x`), 512 to 32768 cores |
 | `paper-weak-scaling` | Weak scaling on RGG 2D, RHG and GNM, 512 to 32768 cores |
 | `paper-hybrid-real-world` | Hybrid CETRIC (MPI + TBB), 1 to 48 threads per rank |

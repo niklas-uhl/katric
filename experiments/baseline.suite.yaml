@@ -1,0 +1,35 @@
+# Baseline of the current code (2026-11-20, after the refactoring of doc/refactoring-plan.md, step 4 stage 2b, and the
+# merge of message trimming), before adaptive rebalancing and the BriefKAsten migration: every sensible combination of
+# the variant (DiTriC / CETRIC = --contraction), the global phase's communication (direct / 2D grid), the primary
+# load balancing (none / IDPD; DPD is dominated by IDPD in lb-cost) and message trimming (off / on), on locality x skew
+# (the inputs of `phases`) and GNM. RMAT is in baseline-rmat (it needs load balancing and does not fit at 1536 cores).
+# Earlier timings are not comparable: they include the per-triangle counting overhead removed in 441c4d1.
+# Uses the option names of 2026-11-19 on (--contraction, --communication-policy direct); the other suites still use
+# the old ones. Fixed: dense degree exchange (as the earlier suites), threshold local-nodes, merge intersection.
+# Build with the experiments preset (assertions off) and submit with --copy-binary. 16 configurations per input and
+# core count; `--config-filter`, `--input-filter` and `--cores` select parts.
+name: baseline
+executable: apps/katric
+output_path_option_name: caliper-output
+threads_option_name: num-threads
+ncores: [48, 192, 768, 1536]
+max_cores: 1536
+threads_per_rank: [1]
+time_limit: 10
+graphs:
+  - import: phases
+  - generator: kagen
+    type: gnm-undirected
+    N: 16
+    M: 20
+    seed: 28475421
+    scale_weak: true
+config:
+  - contraction: [false, true]
+    communication-policy: [direct, grid]
+    primary-cost-function: [none, IDPD]
+    message-trimming: [false, true]
+    threshold: local-nodes
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 3
