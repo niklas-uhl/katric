@@ -92,8 +92,6 @@ private:
   std::vector<Triangle> triangles_;  // with assertions enabled
 };
 
-namespace phases {
-
 /// The sum of the ranks' triangle counts, on rank 0.
 inline auto reduce(TriangleCounter& triangles, kamping::v2::comm_view comm)
     -> std::size_t {
@@ -108,5 +106,4 @@ inline auto reduce(TriangleCounter& triangles, kamping::v2::comm_view comm)
   return total;
 }
 
-}  // namespace phases
 }  // namespace katric

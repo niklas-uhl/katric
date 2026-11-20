@@ -12,7 +12,7 @@
 #include <kagen.h>
 #include <kamping/v2/comm.hpp>
 
-#include "katric/algorithms.h"
+#include "katric/katric.h"
 #include "katric/caliper.h"
 #include "katric/config.h"
 

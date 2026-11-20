@@ -19,7 +19,8 @@
  * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-// Primary load balancing: repartitions the graph into contiguous vertex ranges of about equal cost.
+// Primary load balancing: repartitions the graph into contiguous vertex ranges of about equal cost
+// (`--primary-cost-function`). Region `primary_load_balancing`.
 #pragma once
 
 #include <algorithm>
@@ -44,16 +45,20 @@
 #include <kassert/kassert.hpp>
 #include <mpi.h>
 
+#include "katric/config.h"
+#include "katric/ghost_exchange.h"
+#include "katric/graph/graph.h"
 #include "katric/message_tags.h"
+#include "katric/phases/preprocessing.h"
 #include "katric/message_statistics.h"
 
-namespace katric::load_balancing {
+namespace katric {
 
 /// Moves the vertices of `G` (KaGen's CSR, with their adjacency lists) so that each rank gets a contiguous range of
 /// about C/p of the total cost C: vertex v goes to the rank whose share [r C/p, (r+1) C/p) contains the cost before v
 /// (`cost[i]` is the cost of vertex first + i). The vertices stay in global-id order, so the move is a
 /// dstl::redistribute of the degrees and of the heads. Region `redistribution`.
-inline auto run(kagen::Graph&& G, std::span<std::size_t const> cost, kamping::v2::comm_view comm) -> kagen::Graph {
+inline auto redistribute(kagen::Graph&& G, std::span<std::size_t const> cost, kamping::v2::comm_view comm) -> kagen::Graph {
     CALI_CXX_MARK_SCOPE("redistribution");
     auto const        size = static_cast<std::size_t>(comm.size());
     auto const        rank = static_cast<std::size_t>(comm.rank());
@@ -120,4 +125,90 @@ inline auto run(kagen::Graph&& G, std::span<std::size_t const> cost, kamping::v2
     return balanced;
 }
 
-} // namespace katric::load_balancing
+/// The primary load balancing's cost of every local vertex
+/// (`--primary-cost-function`, PATRIC's cost functions): N = 1; DPD = Σ over
+/// out-neighbors u of d+(v) + d+(u) (the tail-compute work), IDPD = the same
+/// over in-neighbors (push), both with the orientation by (degree, global id).
+/// Regions: `cost_function_communication` for the exchanges of the ghosts'
+/// degrees and out-degrees, `cost_function_evaluation` for the out-degrees and
+/// the costs (each entered twice).
+inline auto vertex_costs(graph::Graph& G, Config const& conf)
+    -> std::vector<std::size_t> {
+  using graph::VertexHandle;
+  if (conf.primary_cost_function == CostFunction::N) {
+    return std::vector<std::size_t>(G.num_local_vertices(), 1);
+  }
+  KASSERT(conf.primary_cost_function == CostFunction::DPD ||
+          conf.primary_cost_function == CostFunction::IDPD);
+  auto const& numbering = G.numbering();
+  {
+    CALI_CXX_MARK_SCOPE("cost_function_communication");
+    G.exchange_ghost_degrees(conf.degree_exchange, MessageTag::CostFunction);
+  }
+  // the orientation of every edge (in adjacency order), decided once
+  std::vector<bool> is_out_edge(G.num_local_edges());
+  std::vector<std::uint64_t> local_out_degree(G.num_local_vertices(), 0);
+  {
+    CALI_CXX_MARK_SCOPE("cost_function_evaluation");
+    auto const key = degree_key(G);
+    std::size_t edge = 0;
+    for (VertexHandle const v : G.local_vertices()) {
+      auto const key_v = key(v);
+      std::uint64_t out_degree_v = 0;
+      for (VertexHandle const u : G.local_neighbors(v)) {
+        bool const out = key_v < key(u);
+        is_out_edge[edge++] = out;
+        if (out) {
+          ++out_degree_v;
+        }
+      }
+      local_out_degree[numbering.to_local_index(v)] = out_degree_v;
+    }
+  }
+  std::vector<std::uint64_t> ghost_out_degree;
+  {
+    CALI_CXX_MARK_SCOPE("cost_function_communication");
+    ghost_out_degree = push_to_ghosts(
+        G,
+        [&](VertexHandle v) {
+          return local_out_degree[numbering.to_local_index(v)];
+        },
+        conf.degree_exchange, MessageTag::CostFunctionOutDegree);
+  }
+  CALI_CXX_MARK_SCOPE("cost_function_evaluation");
+  auto const out_degree = [&](VertexHandle vertex) -> std::uint64_t {
+    return numbering.is_local(vertex)
+               ? local_out_degree[numbering.to_local_index(vertex)]
+               : ghost_out_degree[numbering.to_ghost_index(vertex)];
+  };
+  bool const over_out_edges = conf.primary_cost_function == CostFunction::DPD;
+  std::vector<std::size_t> cost(G.num_local_vertices(), 0);
+  std::size_t edge = 0;
+  for (VertexHandle const v : G.local_vertices()) {
+    std::size_t& cost_v = cost[numbering.to_local_index(v)];
+    for (VertexHandle const u : G.local_neighbors(v)) {
+      if (is_out_edge[edge++] == over_out_edges) {
+        cost_v += out_degree(v) + out_degree(u);
+      }
+    }
+  }
+  return cost;
+}
+
+/// Repartitions `G` into contiguous vertex ranges of equal cost
+/// (`--primary-cost-function`; with `none`, returns `G`). Consumes `G`: it is
+/// freed before the vertices move.
+inline auto primary_load_balancing(graph::Graph&& G, Config const& conf)
+    -> graph::Graph {
+  CALI_CXX_MARK_SCOPE("primary_load_balancing");
+  if (conf.primary_cost_function == CostFunction::none) {
+    return std::move(G);
+  }
+  auto const comm = G.comm();
+  auto const cost = vertex_costs(G, conf);
+  return graph::Graph::from_kagen(
+      redistribute(graph::to_kagen_graph(std::move(G)), cost, comm),
+      comm);
+}
+
+}  // namespace katric

@@ -26,7 +26,7 @@
 #include <kagen.h>
 #include <mpi.h>
 
-#include "katric/load_balancing.h"
+#include "katric/phases/load_balancing.h"
 #include "test_graphs.h"
 
 namespace {
@@ -57,7 +57,7 @@ protected:
         }
         std::size_t const per_pe_cost = std::max<std::size_t>((total + size - 1) / size, 1);
 
-        G = katric::load_balancing::run(std::move(G), cost, MPI_COMM_WORLD);
+        G = katric::redistribute(std::move(G), cost, MPI_COMM_WORLD);
         auto const [first, last] = G.vertex_range;
         ASSERT_EQ(G.xadj.size(), last - first + 1);
         ASSERT_EQ(G.xadj.back(), G.adjncy.size());

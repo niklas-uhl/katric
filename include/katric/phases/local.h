@@ -11,10 +11,25 @@
 #include "katric/config.h"
 #include "katric/graph/graph.h"
 #include "katric/intersection.h"
-#include "katric/phase_counters.h"
+#include "katric/caliper.h"
 #include "katric/triangle_counter.h"
 
-namespace katric::local {
+namespace katric {
+
+/// Work counters of the local phase.
+struct LocalPhaseCounters {
+  std::int64_t skipped_nodes = 0;
+  std::int64_t wedge_checks = 0;
+  std::int64_t intersection_size_local = 0;
+
+  /// Adds the counts to the open Caliper region.
+  void report() const {
+    profiling::counter_add("skipped_nodes", skipped_nodes);
+    profiling::counter_add("wedge_checks", wedge_checks);
+    profiling::counter_add("intersection_size_local", intersection_size_local);
+  }
+};
+
 
 /// The work for one edge v -> u: records the triangles (v, u, w) for w in N+(v)
 /// ∩ N+(u), where a ghost's neighborhood is its out-edges to local vertices. A
@@ -42,12 +57,15 @@ inline void intersect_edge(graph::Graph const& G,
       conf);
 }
 
-/// The local phase: the intersection for every edge v -> u with both ends local
-/// and, if the graph has the ghosts' out-edges (CETRIC), also for the edges
-/// with a ghost end, through the ghosts' out-edges.
-inline void run(graph::Graph const& G,
-                Config const& conf,
-                TriangleCounter& triangles) {
+/// The local phase (region `local_phase`): the intersection for every edge
+/// v -> u with both ends local and, if the graph has the ghosts' out-edges
+/// (CETRIC), also for the edges with a ghost end, through the ghosts'
+/// out-edges.
+inline void local_phase(graph::Graph const& G,
+                        Config const& conf,
+                        TriangleCounter& triangles) {
+  CALI_CXX_MARK_SCOPE("local_phase");
+  auto const triangles_before = triangles.count();
   LocalPhaseCounters counters;
   bool const with_ghosts = G.has_ghost_out_edges();
   for (graph::VertexHandle const v :
@@ -74,6 +92,9 @@ inline void run(graph::Graph const& G,
     }
   }
   counters.report();
+  profiling::counter_add(
+      "local_triangles",
+      static_cast<std::int64_t>(triangles.count() - triangles_before));
 }
 
-}  // namespace katric::local
+}  // namespace katric

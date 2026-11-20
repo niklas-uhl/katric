@@ -26,28 +26,62 @@
 #include "katric/graph/graph.h"
 #include "katric/indirect_message_queue.h"
 #include "katric/intersection.h"
-#include "katric/phase_counters.h"
+#include "katric/message_statistics.h"
 #include "katric/triangle_counter.h"
 
-namespace katric::global {
+namespace katric {
+
+/// The message queue's buffer threshold (`--threshold`, `--threshold-scale`).
+/// Taken from the load-balanced graph before the orientation (`local-edges`
+/// counts the undirected edges).
+inline auto get_threshold(graph::Graph const& G, Config const& conf)
+    -> std::size_t {
+  switch (conf.threshold) {
+    case Threshold::local_nodes:
+      return conf.threshold_scale * G.num_local_vertices();
+    case Threshold::local_edges:
+      return conf.threshold_scale * G.num_local_edges();
+    case Threshold::none:
+      return std::numeric_limits<std::size_t>::max();
+  }
+  return 0;
+}
+
+/// Work counters of the global phase.
+struct GlobalPhaseCounters {
+  std::int64_t skipped_nodes = 0;
+  std::int64_t interface_nodes = 0;
+  std::int64_t wedge_checks = 0;
+  std::int64_t intersection_size_global = 0;
+
+  /// Adds the counts to the open Caliper region.
+  void report() const {
+    profiling::counter_add("skipped_nodes", skipped_nodes);
+    profiling::counter_add("interface_nodes", interface_nodes);
+    profiling::counter_add("wedge_checks", wedge_checks);
+    profiling::counter_add("intersection_size_global",
+                           intersection_size_global);
+  }
+};
+
 
 /// Separates the messages in the queue's buffers.
-constexpr graph::VertexId sentinel =
+constexpr graph::VertexId message_end =
     std::numeric_limits<graph::VertexId>::max();
 
-/// Appends a message to the queue's buffer for one rank, terminated by a
-/// sentinel.
+/// Appends a message to the queue's buffer for one rank, terminated by
+/// `message_end`.
 struct Merger {
   std::size_t operator()(std::vector<graph::VertexId>& buffer,
                          std::vector<graph::VertexId> msg,
                          int /*tag*/) const {
     buffer.insert(buffer.end(), msg.begin(), msg.end());
-    buffer.push_back(sentinel);
+    buffer.push_back(message_end);
     return msg.size() + 1;
   }
 };
 
-/// Splits a received buffer into its messages at the sentinels.
+/// Splits a received buffer into its messages at `message_end`.
 struct Splitter {
   template <typename MessageFunc>
   void operator()(std::vector<graph::VertexId> buffer,
@@ -58,7 +92,7 @@ struct Splitter {
     auto slice_begin = buffer_ptr->begin();
     while (slice_begin != buffer_ptr->end()) {
       auto const slice_end =
-          std::find(slice_begin, buffer_ptr->end(), sentinel);
+          std::find(slice_begin, buffer_ptr->end(), message_end);
       on_message(
           SharedVectorSpan(buffer_ptr,
                            std::distance(buffer_ptr->begin(), slice_begin),
@@ -138,10 +172,12 @@ inline auto owner_from(dstl::distribution const& distribution,
 /// owner's range starts the next run, whose owner is found by a binary search
 /// over the partition table from the current owner on. Per neighborhood: a
 /// comparison per entry and a search per destination.
-void run(graph::Graph const& G,
-         Config const& conf,
-         std::size_t threshold,
-         TriangleCounter& triangles) {
+inline void global_phase(graph::Graph const& G,
+                         Config const& conf,
+                         std::size_t threshold,
+                         TriangleCounter& triangles) {
+  CALI_CXX_MARK_SCOPE("global_phase");
+  auto const triangles_before = triangles.count();
   // the legacy message queue communicates on MPI_COMM_WORLD, whatever the
   // graph's communicator is (until BriefKAsten replaces it)
   int comparison = MPI_UNEQUAL;
@@ -168,10 +204,13 @@ void run(graph::Graph const& G,
   auto const& distribution = numbering.distribution();
   // Time spent building and posting messages and handling received ones (the
   // intersections), accumulated per call because a Caliper region per message
-  // would cost more than the work it measures. `poll_time` is the time in
-  // `poll` outside the handler (the queue's own work); `handle_time` includes
-  // messages handled during termination, which is also counted separately, so
-  // the region `termination` minus that part is the wait for the other ranks.
+  // would cost more than the work it measures. `send_time` is the loop outside
+  // `poll` (building and posting, skipping vertices without cut edges);
+  // `poll_time` is the time in `poll` outside the handler (the queue's own
+  // work); one clock reading per boundary, two per sender. `handle_time`
+  // includes messages handled during termination, which is also counted
+  // separately, so the region `termination` minus that part is the wait for
+  // the other ranks.
   using clock = std::chrono::steady_clock;
   clock::duration send_time{};
   clock::duration handle_time{};
@@ -188,6 +227,7 @@ void run(graph::Graph const& G,
   };
   with_queue([&](auto& queue) -> void {
     queue.set_threshold(threshold);
+    auto send_start = clock::now();
     for (graph::VertexHandle const v : G.local_vertices()) {
       if (!G.has_cut_edges(v)) {
         continue;
@@ -197,7 +237,6 @@ void run(graph::Graph const& G,
       if (conf.pseudo2core && neighbors.size() < 2) {
         counters.skipped_nodes++;
       } else {
-        auto const start = clock::now();
         auto const message = make_message(G, v);
         int owner = 0;
         // end of `owner`'s range; heads below it go to the same rank
@@ -210,21 +249,30 @@ void run(graph::Graph const& G,
           owner_end = distribution.index_range_end(owner);
           queue.post_message(std::vector(message), owner);
         }
-        send_time += clock::now() - start;
       }
       auto const poll_start = clock::now();
+      send_time += poll_start - send_start;
       auto const handle_before = handle_time;
       queue.poll(on_message);
-      poll_time += (clock::now() - poll_start) - (handle_time - handle_before);
+      send_start = clock::now();
+      poll_time += (send_start - poll_start) - (handle_time - handle_before);
     }
+    send_time += clock::now() - send_start;
     {
       CALI_CXX_MARK_SCOPE("termination");
       auto const handle_before = handle_time;
       queue.terminate(on_message);
       termination_handle_time = handle_time - handle_before;
     }
-    counters.report(queue.stats());
+    auto const& stats = queue.stats();
+    profiling::MessageStatistics{
+        .sent_messages = stats.sent_messages,
+        .received_messages = stats.received_messages,
+        .send_volume = stats.send_volume,
+        .receive_volume = stats.receive_volume}
+        .report();
   });
+  counters.report();
   auto const ns = [](clock::duration d) {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(d).count();
   };
@@ -232,6 +280,31 @@ void run(graph::Graph const& G,
   profiling::counter_add("handle_ns", ns(handle_time));
   profiling::counter_add("poll_ns", ns(poll_time));
   profiling::counter_add("termination_handle_ns", ns(termination_handle_time));
+  profiling::counter_add(
+      "type3_triangles",
+      static_cast<std::int64_t>(triangles.count() - triangles_before));
 }
 
-}  // namespace katric::global
+/// After the local phase: the neighborhoods as global ids for the global phase
+/// (region `global_ids`); with contraction only the cut edges (region
+/// `contraction`, counters: the vertices with cut edges (compact_nodes) and
+/// their cut out-edges (compact_edges)).
+inline void global_ids(graph::Graph& G, Config const& conf) {
+  if (!conf.contraction) {
+    CALI_CXX_MARK_SCOPE("global_ids");
+    G.to_global_ids(false);
+    return;
+  }
+  CALI_CXX_MARK_SCOPE("contraction");
+  G.to_global_ids(true);
+  profiling::counter_add(
+      "compact_nodes",
+      static_cast<std::int64_t>(std::ranges::count_if(
+          G.local_vertices(),
+          [&](graph::VertexHandle v) -> bool { return G.has_cut_edges(v); })));
+  profiling::counter_add("compact_edges",
+                         static_cast<std::int64_t>(G.num_global_neighbors()));
+}
+
+
+}  // namespace katric
