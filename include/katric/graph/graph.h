@@ -485,24 +485,9 @@ private:
 /// these directly.
 class GlobalIdGraph {
 public:
-  /// Every local vertex is part of the graph (DiTriC).
   GlobalIdGraph(VertexNumbering numbering, AdjacencyArray<VertexId> local)
       : numbering_(std::move(numbering)), local_(std::move(local)) {
     KASSERT(local_.num_vertices() == numbering_.num_local_vertices());
-  }
-  /// Contracted: only the local vertices `kept` (ascending) are part of the
-  /// graph; the others have no neighbors.
-  GlobalIdGraph(VertexNumbering numbering,
-                AdjacencyArray<VertexId> local,
-                std::vector<VertexHandle> kept)
-      : GlobalIdGraph(std::move(numbering), std::move(local)) {
-    KASSERT(std::ranges::is_sorted(kept));
-    contracted_ = true;
-    kept_ = std::move(kept);
-    is_kept_.assign(numbering_.num_local_vertices(), false);
-    for (VertexHandle const vertex : kept_) {
-      is_kept_[numbering_.to_local_index(vertex)] = true;
-    }
   }
 
   [[nodiscard]] auto numbering() const -> VertexNumbering const& {
@@ -515,27 +500,26 @@ public:
   [[nodiscard]] auto num_local_edges() const -> std::size_t {
     return local_.num_edges();
   }
-  /// Whether local vertex `vertex` is part of the graph (contracted: it had cut
-  /// edges).
-  [[nodiscard]] auto is_kept(VertexHandle vertex) const -> bool {
-    return !contracted_ || is_kept_[numbering_.to_local_index(vertex)];
-  }
-  /// The kept local vertices, ascending (contracted graphs only).
-  [[nodiscard]] auto kept() const -> std::span<VertexHandle const> {
-    return kept_;
+  [[nodiscard]] auto local_vertices() const {
+    return numbering_.local_vertices();
   }
   /// The out-neighbors of local vertex `vertex` as global ids, ascending.
   [[nodiscard]] auto neighbors(VertexHandle vertex) const
       -> std::span<VertexId const> {
     return local_.neighbors(numbering_.to_local_index(vertex));
   }
+  /// Whether local vertex `vertex` has a cut out-edge: its neighborhood
+  /// (ascending) starts below or ends above this rank's range.
+  [[nodiscard]] auto has_cut_edges(VertexHandle vertex) const -> bool {
+    auto const neighbors_v = neighbors(vertex);
+    auto const [first, last] = numbering_.local_range();
+    return !neighbors_v.empty() &&
+           (neighbors_v.front() < first || neighbors_v.back() >= last);
+  }
 
 private:
   VertexNumbering numbering_;
   AdjacencyArray<VertexId> local_;
-  bool contracted_ = false;
-  std::vector<VertexHandle> kept_;
-  std::vector<bool> is_kept_;
 };
 
 }  // namespace katric::graph

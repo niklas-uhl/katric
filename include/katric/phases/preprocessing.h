@@ -179,8 +179,12 @@ inline auto global_ids(graph::Graph&& G) -> graph::GlobalIdGraph {
 inline auto contraction(graph::Graph&& G) -> graph::GlobalIdGraph {
   CALI_CXX_MARK_SCOPE("contraction");
   auto G_contracted = graph::contract_to_global_ids(std::move(G));
-  profiling::counter_add("compact_nodes",
-                         static_cast<std::int64_t>(G_contracted.kept().size()));
+  profiling::counter_add(
+      "compact_nodes",
+      static_cast<std::int64_t>(std::ranges::count_if(
+          G_contracted.local_vertices(), [&](graph::VertexHandle v) -> bool {
+            return G_contracted.has_cut_edges(v);
+          })));
   profiling::counter_add(
       "compact_edges", static_cast<std::int64_t>(G_contracted.num_local_edges()));
   return G_contracted;

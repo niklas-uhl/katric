@@ -84,12 +84,11 @@ void process_message(
         if (!numbering.is_local_id(u_global)) {
             continue;
         }
-        graph::VertexHandle const u = numbering.handle(u_global);
-        // CETRIC: u may have had no cut edges and was removed by the contraction
-        if (!G.is_kept(u)) {
+        auto const u_neighbors = G.neighbors(numbering.handle(u_global));
+        // nothing to intersect (CETRIC: u had no cut edges and was contracted away)
+        if (u_neighbors.empty()) {
             continue;
         }
-        auto const u_neighbors = G.neighbors(u);
         // for the edge (v, u) we check the open wedges (v, u, w) for w in N+(u)
         counters.wedge_checks += u_neighbors.size();
         counters.intersection_size_global += entries.size() + u_neighbors.size();
@@ -119,20 +118,14 @@ inline auto owner_from(dstl::distribution const& distribution, graph::VertexId w
     return static_cast<PEID>(it - begins.begin()) - 1;
 }
 
-/// The global phase: sends the message of every vertex v of `senders` once to each rank holding the head of a cut
-/// out-edge of v, and handles the received messages. `threshold` is the message queue's buffer size.
+/// The global phase: sends the message of every local vertex v with cut edges once to each rank holding the head of a
+/// cut out-edge of v, and handles the received messages. `threshold` is the message queue's buffer size.
 ///
 /// A neighborhood is ascending and the vertex ranges are contiguous in rank order, so the heads on one rank form a run:
 /// an entry beyond the current owner's range starts the next run, whose owner is found by a binary search over the
 /// partition table from the current owner on. Per neighborhood: a comparison per entry and a search per destination.
-template <class CommunicationPolicy, typename Senders>
-void run(
-    graph::GlobalIdGraph const& G,
-    Config const&               conf,
-    std::size_t                 threshold,
-    Senders const&              senders,
-    TriangleCounter&            triangles
-) {
+template <class CommunicationPolicy>
+void run(graph::GlobalIdGraph const& G, Config const& conf, std::size_t threshold, TriangleCounter& triangles) {
     auto base_queue = message_queue::make_buffered_queue<graph::VertexId>(Merger{}, Splitter{});
     auto queue      = [&]() {
         if constexpr (std::is_same_v<CommunicationPolicy, GridPolicy>) {
@@ -159,7 +152,10 @@ void run(
         process_message(G, conf, span.begin(), span.end(), counters, triangles);
         handle_time += clock::now() - start;
     };
-    for (graph::VertexHandle const v: senders) {
+    for (graph::VertexHandle const v: G.local_vertices()) {
+        if (!G.has_cut_edges(v)) {
+            continue;
+        }
         counters.interface_nodes++;
         if (conf.pseudo2core && G.neighbors(v).size() < 2) {
             counters.skipped_nodes++;

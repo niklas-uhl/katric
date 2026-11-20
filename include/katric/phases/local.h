@@ -44,13 +44,10 @@ inline void intersect_edge(graph::Graph const& G,
 
 /// The local phase: the intersection for every edge v -> u with both ends local
 /// and, if the graph has the ghosts' out-edges (CETRIC), also for the edges
-/// with a ghost end, through the ghosts' out-edges. Returns the interface
-/// vertices (local vertices with a cut out-edge, ascending).
-inline auto run(graph::Graph const& G,
+/// with a ghost end, through the ghosts' out-edges.
+inline void run(graph::Graph const& G,
                 Config const& conf,
-                TriangleCounter& triangles)
-    -> std::vector<graph::VertexHandle> {
-  std::vector<graph::VertexHandle> interface_nodes;
+                TriangleCounter& triangles) {
   LocalPhaseCounters counters;
   bool const with_ghosts = G.has_ghost_out_edges();
   for (graph::VertexHandle const v :
@@ -68,21 +65,15 @@ inline auto run(graph::Graph const& G,
     for (graph::VertexHandle const u : G.local_heads(v)) {
       intersect_edge(G, conf, v, u, counters, triangles);
     }
-    // a ghost has no ghost heads
-    auto const ghost_heads = G.ghost_heads(v);
-    if (!ghost_heads.empty()) {
-      interface_nodes.push_back(v);
-    }
     // without the ghosts' out-edges, edges to ghosts are left to the global
-    // phase
+    // phase (a ghost has no ghost heads)
     if (with_ghosts) {
-      for (graph::VertexHandle const u : ghost_heads) {
+      for (graph::VertexHandle const u : G.ghost_heads(v)) {
         intersect_edge(G, conf, v, u, counters, triangles);
       }
     }
   }
   counters.report();
-  return interface_nodes;
 }
 
 }  // namespace katric::local

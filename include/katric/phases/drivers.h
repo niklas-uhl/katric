@@ -25,29 +25,25 @@ namespace katric {
 namespace phases {
 
 /// The intersections that need no communication (CETRIC also through the
-/// ghosts' out-edges, if preprocessing built them). Returns the interface vertices, the senders of DiTriC's
-/// global phase.
-inline auto local_phase(graph::Graph const& G,
+/// ghosts' out-edges, if preprocessing built them).
+inline void local_phase(graph::Graph const& G,
                         Config const& conf,
-                        TriangleCounter& triangles)
-    -> std::vector<graph::VertexHandle> {
+                        TriangleCounter& triangles) {
   CALI_CXX_MARK_SCOPE("local_phase");
   auto const before = triangles.count();
-  auto interface_nodes = local::run(G, conf, triangles);
+  local::run(G, conf, triangles);
   profiling::counter_add("local_triangles", static_cast<std::int64_t>(triangles.count() - before));
-  return interface_nodes;
 }
 
-/// The global phase: sends the neighborhoods of `senders`.
-template <class CommunicationPolicy, typename Senders>
+/// The global phase: sends the neighborhoods of the vertices with cut edges.
+template <class CommunicationPolicy>
 void global_phase(graph::GlobalIdGraph const& G,
                   Config const& conf,
                   std::size_t threshold,
-                  Senders const& senders,
                   TriangleCounter& triangles) {
   CALI_CXX_MARK_SCOPE("global_phase");
   auto const before = triangles.count();
-  global::run<CommunicationPolicy>(G, conf, threshold, senders, triangles);
+  global::run<CommunicationPolicy>(G, conf, threshold, triangles);
   profiling::counter_add("type3_triangles", static_cast<std::int64_t>(triangles.count() - before));
 }
 
@@ -66,17 +62,12 @@ auto count_triangles(kagen::Graph const& input,
   // from the graph the phases run on (after the load balancing)
   std::size_t const threshold = get_threshold(G, conf);
   auto G_oriented = phases::preprocessing(std::move(G), conf);
-  auto const interface_nodes =
-      phases::local_phase(G_oriented, conf, triangles);
-  if (conf.contraction) {
-    auto const G_contracted = phases::contraction(std::move(G_oriented));
-    phases::global_phase<CommunicationPolicy>(G_contracted, conf, threshold,
-                                              G_contracted.kept(), triangles);
-  } else {
-    auto const G_global = phases::global_ids(std::move(G_oriented));
-    phases::global_phase<CommunicationPolicy>(G_global, conf, threshold,
-                                              interface_nodes, triangles);
-  }
+  phases::local_phase(G_oriented, conf, triangles);
+  auto const G_global = conf.contraction
+                            ? phases::contraction(std::move(G_oriented))
+                            : phases::global_ids(std::move(G_oriented));
+  phases::global_phase<CommunicationPolicy>(G_global, conf, threshold,
+                                            triangles);
   return phases::reduce(triangles, comm);
 }
 

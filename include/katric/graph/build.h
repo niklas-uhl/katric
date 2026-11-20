@@ -178,31 +178,24 @@ inline auto to_global_ids(Graph&& G) -> GlobalIdGraph {
 
 /// Contracts `G` (neighborhoods sorted by handle) to its cut edges: of each
 /// neighborhood only the ghost part is kept ([ghosts below][ghosts above],
-/// already in global order), as global ids. The kept vertices are those with a
-/// cut out-edge.
+/// already in global order), as global ids; vertices without cut edges keep an
+/// empty neighborhood.
 inline auto contract_to_global_ids(Graph&& G) -> GlobalIdGraph {
   std::size_t num_cut_edges = 0;
   for (VertexHandle const v : G.local_vertices()) {
     num_cut_edges += G.ghost_heads(v).size();
   }
-  std::vector<VertexHandle> kept;
   std::vector<std::size_t> xadj(G.num_local_vertices() + 1, 0);
   std::vector<VertexId> global;
   global.reserve(num_cut_edges);
   for (VertexHandle const v : G.local_vertices()) {
-    auto const cut = G.ghost_heads(v);
-    if (!cut.empty()) {
-      kept.push_back(v);
-    }
-    for (VertexHandle const u : cut) {
+    for (VertexHandle const u : G.ghost_heads(v)) {
       global.push_back(G.global_id(u));
     }
     xadj[G.to_local_index(v) + 1] = global.size();
   }
   auto numbering = std::move(G).release().first;
-  return {std::move(numbering),
-          {std::move(xadj), std::move(global)},
-          std::move(kept)};
+  return {std::move(numbering), {std::move(xadj), std::move(global)}};
 }
 
 }  // namespace katric::graph
