@@ -545,6 +545,28 @@ Compact IDs fit 32 bits per rank (n + g < 2^32), which would halve the adjacency
         `Graph` members open no regions (regions belong to the algorithm layer, as around `orient` / `sort_neighborhoods`
         today). `drivers.h` keeps only `count_triangles`. Region paths stay as they are (eval and earlier cluster data),
         except the one region replacing `global_ids` / `contraction`
+      - Undirected degrees in the graph (user, 2026-11-20): `undirected_degree(v)` for local vertices and ghosts, valid
+        from the exchange on (assertion, like the other optional parts). Not `degree(v)`: after `orient` a local
+        vertex's `degree` is its out-degree. Local vertices: recorded by `orient` before it truncates (from `xadj`);
+        ghosts: the exchange, a member `exchange_ghost_degrees(transport)` (collective; region `degree_exchange` as a
+        block at the call site). `degree_key(G)` reads it for every vertex (no separate array, no local/ghost case);
+        `orient` keeps taking the key (other orders stay possible). Load balancing may use the same member on the input
+        graph; IDPD's out-degree exchange stays in `vertex_costs`. Gives `feat/message-trimming` the entries' keys
+        (`(undirected_degree, global id)`) in the global phase. Cost: (n + g) x 8 B for the run
+      - Header layout (one header per phase: phase function, its counters, its helpers):
+        `graph/graph.h` (`Graph`, numbering, `AdjacencyArray`, the members incl. `from_kagen`; free `to_kagen_graph`;
+        `build.h` gone), `ghost_exchange.h` (`push_to_ghosts`), `phases/load_balancing.h` (`primary_load_balancing`,
+        `vertex_costs`, the redistribution; from `load_balancing.h` and `preprocessing.h`), `phases/preprocessing.h`
+        (`preprocessing(Graph&, conf)`: degree exchange, key, orient, sort), `phases/local.h` (`local_phase`,
+        `intersect_edge`, `LocalPhaseCounters`), `phases/global.h` (`global_phase`, `process_message`, `make_message`,
+        `owner_from`, `Merger`/`Splitter`, `GlobalPhaseCounters`, `get_threshold`), `intersection.h`,
+        `triangle_counter.h`, `katric.h` (`count_triangles`, from `drivers.h`). `phase_counters.h` dissolves.
+        `get_threshold` stays called in the driver after load balancing and before orientation (`local-edges` counts
+        the undirected edges). The small messaging headers (`communication_policy.h`, `message_tags.h`,
+        `message_statistics.h`, `indirect_message_queue.h`, `comm_utils.h`) are decided in the step-6 review;
+        `algorithms.h`, `input.h`, `util.h`, `datastructures/span.h` checked then or at the end. Driver afterwards:
+        input graph (block) -> `primary_load_balancing` (returns a new graph, vertices move) -> `get_threshold` ->
+        `preprocessing(G)` -> `local_phase` -> ghost-head ids (block) -> `global_phase` -> `reduce`
 - [ ] Stage 3: 32-bit compact IDs (n + g < 2^32 per rank) — measure the local phase
 - Fixed by stage 2 (pre-existing issue): DPD load balancing on a graph with fewer vertices than ranks
   (`examples/triangle.metis` on 4 ranks) hung
