@@ -113,9 +113,10 @@ Still to review in stage 2, in the order of the algorithm's flow (decided 2026-1
    - 6.3 Message format: `[v, N+(v)...]` + sentinel (`VertexId` max); `make_message` allocates and copies N+(v) once
      per destination and `Merger` copies it again into the buffer (k + 1 copies for k destinations). Decide whether to
      build once per v (stage 2b changes the content anyway); grid appends sender and receiver (+2 words)
-     Decided 2026-11-20: the per-destination copies stay until BriefKAsten (the legacy queue's `post_message`
-     takes only `std::vector&&`; BriefKAsten takes ranges); `send_ns` (incl. the copies) is ~7% of DiTriC's global
-     phase on GNM. Send loop clarified in the commit after `3c3f8bd` (owner lookup via `Graph`, `owner_from` gone)
+     Done 2026-11-20 (`86b31bb`): legacy-message-queue `a36c73f` (branch `katric-legacy`, **not pushed**: push it
+     before building elsewhere, katric's pin needs it) takes any message type in `post_message`; the send loop posts a
+     span of one message per vertex. 6.5 done in the same commit: `Splitter` without copies (it copied every received
+     buffer), `std::span` views, `datastructures/span.h` gone. `send_ns` -12..21%, `poll_ns` -15..19%. Send loop clarified in the commit after `3c3f8bd` (owner lookup via `Graph`, `owner_from` gone)
    - 6.4 Send loop (survives in part): `pseudo2core` skip, poll after every sender, `steady_clock::now()` twice per
      sender plus per poll for `send_ns` / `poll_ns`; owner runs were approved (2026-11-19)
    - 6.5 Receive: `Splitter` makes a `shared_ptr` per buffer and a `SharedVectorSpan` (refcount) per message, sentinel
