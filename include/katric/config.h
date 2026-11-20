@@ -1,35 +1,30 @@
 /*
  * Copyright (c) 2020-2023 Tim Niklas Uhl
  *
- * Permission is hereby granted, free of charge, to any person obtaining a copy of
- * this software and associated documentation files (the "Software"), to deal in
- * the Software without restriction, including without limitation the rights to
- * use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
- * the Software, and to permit persons to whom the Software is furnished to do so,
- * subject to the following conditions:
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
  *
- * The above copyright notice and this permission notice shall be included in all
- * copies or substantial portions of the Software.
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
  *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
- * FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
- * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
- * IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
- * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 
-//
-// Created by Tim Niklas Uhl on 26.10.20.
-//
-
-#ifndef PARALLEL_TRIANGLE_COUNTER_CONFIG_H
-#define PARALLEL_TRIANGLE_COUNTER_CONFIG_H
+// The run configuration, filled from the command line (apps/parse_config.cpp).
+#pragma once
 
 #include <algorithm>
-#include <cctype>
-#include <limits>
-#include <optional>
+#include <cstddef>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -37,80 +32,81 @@
 
 #include <magic_enum/magic_enum.hpp>
 
-
 namespace katric {
 
-// Enum values are named after their command line spelling: `_` is written as `-` (both are accepted).
+// Enum values are named after their command line spelling: `_` is written as
+// `-` (both are accepted).
 enum class Threshold { local_nodes, local_edges, none };
 enum class IntersectionMethod { merge, binary_search, binary, hybrid };
 enum class TaskPoolType { std_thread, task_group };
-/// The cost of a vertex for the primary load balancing, `--primary-cost-function` (PATRIC's cost functions; `none`
-/// turns the load balancing off). See vertex_costs() (katric/phases/preprocessing.h).
+/// The cost of a vertex for the primary load balancing,
+/// `--primary-cost-function` (PATRIC's cost functions; `none` turns the load
+/// balancing off). See vertex_costs() (katric/phases/preprocessing.h).
 enum class CostFunction { none, N, DPD, IDPD };
-/// How push_to_ghosts() (katric/ghost_exchange.h) moves its messages, `--degree-exchange`.
+/// How push_to_ghosts() (katric/ghost_exchange.h) moves its messages,
+/// `--degree-exchange`.
 enum class GhostExchangeMode {
-    sparse, ///< dSTL's sparse all-to-all (NBX): point-to-point messages to the ranks with data only
-    dense,  ///< one MPI_Alltoallv (after an MPI_Alltoall of the counts)
-    grid,   ///< dSTL's two-dimensional grid all-to-all: O(sqrt p) messages per rank instead of O(p)
+  sparse,  ///< dSTL's sparse all-to-all (NBX): point-to-point messages to the
+           ///< ranks with data only
+  dense,   ///< one MPI_Alltoallv (after an MPI_Alltoall of the counts)
+  grid,    ///< dSTL's two-dimensional grid all-to-all: O(sqrt p) messages per
+           ///< rank instead of O(p)
 };
 
 /// How the global phase sends its messages, `--communication-policy` (`new` is
 /// accepted for `direct`, the spelling before 2026-11-20).
 enum class CommunicationPolicy {
-    direct, ///< through the buffered message queue to the receiver
-    grid,   ///< through a 2D grid of indirections (one proxy per message)
+  direct,  ///< through the buffered message queue to the receiver
+  grid,    ///< through a 2D grid of indirections (one proxy per message)
 };
 
 struct Config {
-    Config() = default;
-    std::string           kagen_option_string;
-    size_t                iterations                        = 1;
-    bool                  verify                            = false;
-    CostFunction          primary_cost_function             = CostFunction::N;
-    /// CETRIC instead of DiTriC: the ghosts' out-edges in the local phase, only the cut edges in the global phase
-    bool                  contraction                       = false;
-    Threshold             threshold                         = Threshold::local_nodes;
-    double                threshold_scale                   = 1.0;
-    CommunicationPolicy   communication_policy              = CommunicationPolicy::direct;
-    bool                  local_parallel                    = false;
-    bool                  global_parallel                   = false;
-    bool                  parallel_compact                  = false;
-    TaskPoolType          task_pool_type                    = TaskPoolType::std_thread;
-    bool                  task_priorities                   = false;
-    bool                  edge_partitioning                 = false;
-    size_t                local_degree_of_parallelism       = 1;
-    size_t                global_degree_of_parallelism      = 1;
-    IntersectionMethod    intersection_method               = IntersectionMethod::merge;
-    size_t                binary_intersection_cutoff        = 1000;
-    double                hybrid_cutoff_scale               = 1.0;
+  std::string kagen_option_string;
+  std::size_t iterations = 1;
+  bool verify = false;
+  CostFunction primary_cost_function = CostFunction::N;
+  /// CETRIC instead of DiTriC: the ghosts' out-edges in the local phase, only
+  /// the cut edges in the global phase
+  bool contraction = false;
+  Threshold threshold = Threshold::local_nodes;
+  double threshold_scale = 1.0;
+  CommunicationPolicy communication_policy = CommunicationPolicy::direct;
+  bool local_parallel = false;
+  bool global_parallel = false;
+  bool parallel_compact = false;
+  TaskPoolType task_pool_type = TaskPoolType::std_thread;
+  bool task_priorities = false;
+  bool edge_partitioning = false;
+  std::size_t local_degree_of_parallelism = 1;
+  std::size_t global_degree_of_parallelism = 1;
+  IntersectionMethod intersection_method = IntersectionMethod::merge;
+  std::size_t binary_intersection_cutoff = 1000;
+  double hybrid_cutoff_scale = 1.0;
 
-    GhostExchangeMode degree_exchange = GhostExchangeMode::sparse;
+  GhostExchangeMode degree_exchange = GhostExchangeMode::sparse;
 
-    bool pseudo2core             = false;
+  bool pseudo2core = false;
 
-    // Caliper ConfigManager configuration (e.g. "spot"); empty disables Caliper. Output file via caliper_output.
-    std::string caliper_config = "";
-    std::string caliper_output = "";
-    std::string hostname;
-    int        PEs;
-    int        rank;
-    size_t      num_threads = 1;
+  // Caliper ConfigManager configuration (e.g. "spot"); empty disables Caliper.
+  // Output file via caliper_output.
+  std::string caliper_config = "";
+  std::string caliper_output = "";
+  std::size_t num_threads = 1;
 
-    std::string git_commit;
+  std::string git_commit;
 
-    // name and parsed value of every command line option, recorded as run metadata
-    std::vector<std::pair<std::string, std::string>> options;
+  // name and parsed value of every command line option, recorded as run
+  // metadata
+  std::vector<std::pair<std::string, std::string>> options;
 };
 
 /// Command line spelling of an enum value: its name with `_` written as `-`.
 template <typename Enum>
-    requires std::is_enum_v<Enum>
+  requires std::is_enum_v<Enum>
 std::string cli_name(Enum value) {
-    std::string name(magic_enum::enum_name(value));
-    std::replace(name.begin(), name.end(), '_', '-');
-    return name;
+  std::string name(magic_enum::enum_name(value));
+  std::replace(name.begin(), name.end(), '_', '-');
+  return name;
 }
 
-} // namespace katric
-
-#endif // PARALLEL_TRIANGLE_COUNTER_CONFIG_H
+}  // namespace katric

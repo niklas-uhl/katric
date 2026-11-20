@@ -3,10 +3,8 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <functional>
 #include <memory>
 #include <span>
-#include <stdexcept>
 #include <utility>
 
 #include <kagen.h>

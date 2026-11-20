@@ -27,7 +27,6 @@
 #include <CLI/Validators.hpp>
 #include <mpi.h>
 #include <tbb/task_arena.h>
-#include <unistd.h>
 
 #include "./parse_parameters.h"
 #include "katric/config.h"
@@ -44,11 +43,6 @@ katric::Config parse_config(int argc, char* argv[], int rank, int size) {
 
     katric::Config conf;
     conf.git_commit = katric::git_hash;
-
-    // conf.hostname = std::getenv("HOST");
-    char hostname[256];
-    gethostname(hostname, sizeof(hostname));
-    conf.hostname = hostname;
 
     app.add_option(
            "--kagen_option_string",
@@ -154,8 +148,6 @@ katric::Config parse_config(int argc, char* argv[], int rank, int size) {
     if (conf.caliper_config.empty() && !conf.caliper_output.empty()) {
         conf.caliper_config = "spot,katric-timers,katric-counters";
     }
-    conf.rank    = rank;
-    conf.PEs     = size;
     conf.options = option_values(app);
     return conf;
 }

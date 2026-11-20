@@ -22,6 +22,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 
 #include <caliper/ConfigManager.h>
 #include <caliper/cali.h>

@@ -43,7 +43,6 @@
 
 #include <tbb/global_control.h>
 #include <tbb/task_arena.h>
-#include <unistd.h>
 
 #include "./algorithm.h"
 #include "./build_info.h"
