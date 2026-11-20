@@ -4,8 +4,9 @@
 // these handles ("neighbor handles", as in KaCCv2), not global ids. A handle is
 // a type of its own without arithmetic: the vertex numbering (VertexNumbering)
 // converts it to a local or ghost index and back, to its global id and to its
-// owner (a comparison or an array lookup). The graphs are immutable once built
-// (graph/build.h builds them).
+// owner (a comparison or an array lookup). Graph's member functions build it
+// step by step (from KaGen's CSR, ghost degrees, orientation, sorting); the
+// algorithm decides the steps and their order (katric/phases/).
 #pragma once
 
 #include <algorithm>
@@ -18,11 +19,15 @@
 #include <vector>
 
 #include <caliper/cali.h>
+#include <kagen.h>
 #include <dstl/distribution.hpp>
 #include <dstl/grid_comm.hpp>
 #include <kamping/v2/comm.hpp>
 #include <kassert/kassert.hpp>
 
+#include "katric/config.h"
+#include "katric/ghost_exchange.h"
+#include "katric/message_tags.h"
 
 namespace katric::graph {
 
@@ -319,22 +324,70 @@ private:
   std::vector<Neighbor> adjncy_;
 };
 
-/// A rank's graph on handles: the neighbors of the local vertices and,
-/// optionally (CETRIC), each ghost's out-edges to local vertices. The vertex
-/// queries forward to the numbering.
+/// A rank's graph on handles: the neighbors of the local vertices and the
+/// parts the building steps add, each available from its step on (checked by
+/// assertions): the undirected degrees (exchange_ghost_degrees()), the
+/// orientation and, optionally (CETRIC), each ghost's out-edges to local
+/// vertices (orient()), the split of each sorted neighborhood into local and
+/// ghost heads (sort_neighborhoods()). The vertex queries forward to the
+/// numbering.
 class Graph {
 public:
-  Graph(VertexNumbering numbering,
-        AdjacencyArray<VertexHandle> local,
-        std::optional<AdjacencyArray<VertexHandle>> ghost_out = std::nullopt)
-      : numbering_(std::move(numbering)),
-        local_(std::move(local)),
-        has_ghost_out_edges_(ghost_out.has_value()),
-        ghost_out_(
-            std::move(ghost_out).value_or(AdjacencyArray<VertexHandle>{})) {
+  /// An undirected graph.
+  Graph(VertexNumbering numbering, AdjacencyArray<VertexHandle> local)
+      : numbering_(std::move(numbering)), local_(std::move(local)) {
     KASSERT(local_.num_vertices() == numbering_.num_local_vertices());
-    KASSERT(!has_ghost_out_edges_ ||
-            ghost_out_.num_vertices() == numbering_.num_ghosts());
+  }
+
+  /// The undirected graph of a rank's part of the input (KaGen's CSR: vertex
+  /// range, xadj, adjncy in global ids), with ghosts. Collective (builds the
+  /// partition table). Neighborhoods keep the input's order. The cut edges are
+  /// sorted once by (head, position): that gives the ghosts in global-id order,
+  /// and each run of equal heads one ghost, so their handles need no lookup per
+  /// edge.
+  static auto from_kagen(kagen::Graph const& input, kamping::v2::comm_view comm)
+      -> Graph {
+    KASSERT(input.representation == kagen::GraphRepresentation::CSR);
+    auto const [first, last] = input.vertex_range;
+    // an empty range may have any first and last
+    LocalNumbering local(
+        dstl::distribution(first < last ? last - first : 0, comm), comm);
+    KASSERT(first >= last || local.local_range().first == first,
+            "the vertex ranges are not contiguous in rank order");
+    std::vector<VertexHandle> adjncy(input.adjncy.size());
+    // (head, position in adjncy), sorted
+    std::vector<std::pair<VertexId, std::size_t>> cut;
+    for (std::size_t position = 0; position < input.adjncy.size();
+         ++position) {
+      VertexId const gid = input.adjncy[position];
+      if (local.is_local_id(gid)) {
+        adjncy[position] = local.handle(gid);
+      } else {
+        cut.emplace_back(gid, position);
+      }
+    }
+    std::ranges::sort(cut);
+    std::vector<VertexId> ghost_ids;
+    std::ranges::unique_copy(cut | std::views::keys,
+                             std::back_inserter(ghost_ids));
+    VertexNumbering numbering(std::move(local), std::move(ghost_ids));
+    std::size_t ghost_index = 0;
+    for (std::size_t i = 0; i < cut.size(); ++i) {
+      if (i > 0 && cut[i].first != cut[i - 1].first) {
+        ++ghost_index;  // the next run: the next ghost
+      }
+      adjncy[cut[i].second] = numbering.ghost_handle(ghost_index);
+    }
+    decltype(cut){}.swap(cut);  // frees the cut pairs before the copy of xadj
+    // copied: the input is only read (the harness reuses it for every
+    // iteration), and KaGen's SInt need not be std::size_t (unsigned long long
+    // vs. unsigned long)
+    std::vector<std::size_t> xadj(input.xadj.begin(), input.xadj.end());
+    if (xadj.empty()) {
+      xadj.push_back(0);
+    }
+    KASSERT(xadj.size() == numbering.num_local_vertices() + 1);
+    return {std::move(numbering), {std::move(xadj), std::move(adjncy)}};
   }
 
   [[nodiscard]] auto numbering() const -> VertexNumbering const& {
@@ -384,8 +437,22 @@ public:
     return local_.neighbors(to_local_index(vertex));
   }
 
+  /// The number of neighbors of local vertex `vertex` in this graph: after
+  /// orient() its out-degree.
   [[nodiscard]] auto degree(VertexHandle vertex) const -> Degree {
     return local_.degree(to_local_index(vertex));
+  }
+
+  /// After exchange_ghost_degrees(): the degree of local vertex or ghost
+  /// `vertex` in the undirected graph (before the orientation).
+  [[nodiscard]] auto undirected_degree(VertexHandle vertex) const -> Degree {
+    KASSERT(has_undirected_degrees(), "ghost degrees not exchanged");
+    return is_local(vertex)
+               ? local_undirected_degrees_[to_local_index(vertex)]
+               : ghost_undirected_degrees_[numbering_.to_ghost_index(vertex)];
+  }
+  [[nodiscard]] auto has_undirected_degrees() const -> bool {
+    return degrees_exchanged_;
   }
 
   [[nodiscard]] auto has_ghost_out_edges() const -> bool {
@@ -432,11 +499,74 @@ public:
     return {};
   }
 
-  /// Building step (graph/build.h `orient`): the neighbors of local vertex
-  /// `vertex`, to reorder in place.
-  [[nodiscard]] auto mutable_neighbors(VertexHandle vertex)
-      -> std::span<VertexHandle> {
-    return local_.mutable_neighbors(to_local_index(vertex));
+  /// Building step on the undirected graph: records the degrees of the local
+  /// vertices and receives those of the ghosts (push_to_ghosts() with `mode`
+  /// and `tag`; collective). Reports the exchange's counters to the open
+  /// Caliper region.
+  void exchange_ghost_degrees(GhostExchangeMode mode, MessageTag tag) {
+    KASSERT(!oriented_, "the degree exchange needs the undirected graph");
+    local_undirected_degrees_.resize(num_local_vertices());
+    for (VertexHandle const v : local_vertices()) {
+      local_undirected_degrees_[to_local_index(v)] = degree(v);
+    }
+    auto const ghost_degrees = push_to_ghosts(
+        *this, [&](VertexHandle v) { return degree(v); }, mode, tag);
+    ghost_undirected_degrees_.assign(ghost_degrees.begin(),
+                                     ghost_degrees.end());
+    degrees_exchanged_ = true;
+  }
+
+  /// Building step: orients the edges of the undirected graph from the smaller
+  /// to the larger `key`, in place: each neighborhood is partitioned
+  /// (out-neighbors first) and cut to its out-neighbors, keeping the arrays and
+  /// their capacity; neighborhoods in no particular order afterwards. `key` is
+  /// evaluated once per vertex and once per edge; it may read the degrees and
+  /// the numbering, not the neighborhoods. With `ghost_out_edges`, also the
+  /// ghosts' out-edges to local vertices (CETRIC), sorted.
+  template <typename Key>
+  void orient(Key const& key, bool ghost_out_edges) {
+    KASSERT(!oriented_);
+    std::vector<std::size_t> out_degree(num_local_vertices());
+    for (VertexHandle const v : local_vertices()) {
+      auto const key_v = key(v);
+      auto const neighbors = local_.mutable_neighbors(to_local_index(v));
+      auto const in_begin = std::partition(
+          neighbors.begin(), neighbors.end(),
+          [&](VertexHandle u) -> bool { return key_v < key(u); });
+      out_degree[to_local_index(v)] =
+          static_cast<std::size_t>(in_begin - neighbors.begin());
+    }
+    // the ghosts' out-edges: a local vertex's in-neighbors that are ghosts
+    if (ghost_out_edges) {
+      auto const in_neighbors = [&](VertexHandle v) {
+        return local_neighbors(v).subspan(out_degree[to_local_index(v)]);
+      };
+      std::vector<std::size_t> ghost_xadj(num_ghosts() + 1, 0);
+      for (VertexHandle const v : local_vertices()) {
+        for (VertexHandle const u : in_neighbors(v)) {
+          if (is_ghost(u)) {
+            ghost_xadj[numbering_.to_ghost_index(u) + 1]++;
+          }
+        }
+      }
+      for (std::size_t index = 0; index + 1 < ghost_xadj.size(); ++index) {
+        ghost_xadj[index + 1] += ghost_xadj[index];
+      }
+      std::vector<VertexHandle> ghost_adjncy(ghost_xadj.back());
+      std::vector<std::size_t> next(ghost_xadj.begin(), ghost_xadj.end() - 1);
+      for (VertexHandle const v : local_vertices()) {
+        for (VertexHandle const u : in_neighbors(v)) {
+          if (is_ghost(u)) {
+            // v ascending: each ghost's neighborhood comes out sorted
+            ghost_adjncy[next[numbering_.to_ghost_index(u)]++] = v;
+          }
+        }
+      }
+      ghost_out_ = {std::move(ghost_xadj), std::move(ghost_adjncy)};
+      has_ghost_out_edges_ = true;
+    }
+    local_.truncate_neighborhoods(out_degree);
+    oriented_ = true;
   }
   /// Building step: sorts the neighbors of every local vertex by handle (local
   /// vertices first, then ghosts, each by global id) and records where the
@@ -471,10 +601,33 @@ private:
 
   VertexNumbering numbering_;
   AdjacencyArray<VertexHandle> local_;
+  std::vector<Degree> local_undirected_degrees_;  // once exchanged
+  std::vector<Degree> ghost_undirected_degrees_;  // once exchanged
+  bool degrees_exchanged_ = false;
+  bool oriented_ = false;
   bool has_ghost_out_edges_ = false;
   AdjacencyArray<VertexHandle> ghost_out_;  // empty without
   std::vector<std::size_t> num_local_heads_;  // per local vertex, once sorted
 };
+
+/// `G` in KaGen's CSR representation (global ids), for the load balancing.
+/// Consumes `G`: its arrays are freed on return.
+inline auto to_kagen_graph(Graph&& G) -> kagen::Graph {
+  Graph const graph = std::move(G);
+  kagen::Graph input;
+  input.representation = kagen::GraphRepresentation::CSR;
+  input.vertex_range = graph.numbering().local_range();
+  input.xadj.reserve(graph.num_local_vertices() + 1);
+  input.adjncy.reserve(graph.num_local_edges());
+  input.xadj.push_back(0);
+  for (VertexHandle const v : graph.local_vertices()) {
+    for (VertexHandle const u : graph.local_neighbors(v)) {
+      input.adjncy.push_back(graph.global_id(u));
+    }
+    input.xadj.push_back(input.adjncy.size());
+  }
+  return input;
+}
 
 /// The graph of the global phase: the out-neighbors of the local vertices as
 /// global ids, each neighborhood ascending. Converted from an oriented Graph

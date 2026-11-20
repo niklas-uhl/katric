@@ -24,16 +24,11 @@
 
 namespace katric {
 
-/// The orientation key of DiTriC and CETRIC: (degree, global id), the ghosts'
-/// degrees from `ghost_degree`.
-inline auto degree_key(graph::Graph const& G,
-                       std::vector<std::uint64_t> const& ghost_degree) {
-  return [&G, &ghost_degree](graph::VertexHandle vertex) {
-    auto const& numbering = G.numbering();
-    return std::pair(numbering.is_local(vertex)
-                         ? G.degree(vertex)
-                         : ghost_degree[numbering.to_ghost_index(vertex)],
-                     numbering.global_id(vertex));
+/// The orientation key of DiTriC and CETRIC: (undirected degree, global id),
+/// for local vertices and ghosts (after `G.exchange_ghost_degrees`).
+inline auto degree_key(graph::Graph const& G) {
+  return [&G](graph::VertexHandle vertex) {
+    return std::pair(G.undirected_degree(vertex), G.global_id(vertex));
   };
 }
 
@@ -44,7 +39,7 @@ inline auto degree_key(graph::Graph const& G,
 /// Regions: `cost_function_communication` for the exchanges of the ghosts'
 /// degrees and out-degrees, `cost_function_evaluation` for the out-degrees and
 /// the costs (each entered twice).
-inline auto vertex_costs(graph::Graph const& G, Config const& conf)
+inline auto vertex_costs(graph::Graph& G, Config const& conf)
     -> std::vector<std::size_t> {
   using graph::VertexHandle;
   if (conf.primary_cost_function == CostFunction::N) {
@@ -53,19 +48,16 @@ inline auto vertex_costs(graph::Graph const& G, Config const& conf)
   KASSERT(conf.primary_cost_function == CostFunction::DPD ||
           conf.primary_cost_function == CostFunction::IDPD);
   auto const& numbering = G.numbering();
-  std::vector<std::uint64_t> ghost_degree;
   {
     CALI_CXX_MARK_SCOPE("cost_function_communication");
-    ghost_degree = push_to_ghosts(
-        G, [&](VertexHandle v) { return G.degree(v); }, conf.degree_exchange,
-        MessageTag::CostFunction);
+    G.exchange_ghost_degrees(conf.degree_exchange, MessageTag::CostFunction);
   }
   // the orientation of every edge (in adjacency order), decided once
   std::vector<bool> is_out_edge(G.num_local_edges());
   std::vector<std::uint64_t> local_out_degree(G.num_local_vertices(), 0);
   {
     CALI_CXX_MARK_SCOPE("cost_function_evaluation");
-    auto const key = degree_key(G, ghost_degree);
+    auto const key = degree_key(G);
     std::size_t edge = 0;
     for (VertexHandle const v : G.local_vertices()) {
       auto const key_v = key(v);
@@ -116,7 +108,7 @@ namespace phases {
 inline auto input_graph(kagen::Graph const& input, kamping::v2::comm_view comm)
     -> graph::Graph {
   CALI_CXX_MARK_SCOPE("input_graph");
-  return graph::build_input_graph(input, comm);
+  return graph::Graph::from_kagen(input, comm);
 }
 
 /// Repartitions `G` into contiguous vertex ranges of equal cost
@@ -130,39 +122,30 @@ inline auto primary_load_balancing(graph::Graph&& G, Config const& conf)
   }
   auto const comm = G.comm();
   auto const cost = vertex_costs(G, conf);
-  return graph::build_input_graph(
+  return graph::Graph::from_kagen(
       load_balancing::run(graph::to_kagen_graph(std::move(G)), cost, comm),
       comm);
 }
 
-/// The degrees of the ghosts of `G`, indexed by ghost index (region
-/// `degree_exchange`).
-inline std::vector<std::uint64_t> ghost_degrees(graph::Graph const& G,
-                                                Config const& conf) {
-  CALI_CXX_MARK_SCOPE("degree_exchange");
-  return push_to_ghosts(
-      G, [&](graph::VertexHandle v) { return G.degree(v); },
-      conf.degree_exchange, MessageTag::Orientation);
-}
-
-/// Degree exchange and orientation by (degree, global id) (region
-/// `orientation`), then the neighborhoods sorted by handle (`sorting`). With
-/// `--contraction`, also the ghosts' out-edges to local vertices, so that the
-/// local phase finds every triangle with two local vertices. Consumes the input
-/// graph `G`.
-inline graph::Graph preprocessing(graph::Graph&& G, Config const& conf) {
+/// Degree exchange (region `degree_exchange`) and orientation by (degree,
+/// global id) (region `orientation`), then the neighborhoods sorted by handle
+/// (`sorting`), in place. With `--contraction`, also the ghosts' out-edges to
+/// local vertices, so that the local phase finds every triangle with two local
+/// vertices.
+inline void preprocessing(graph::Graph& G, Config const& conf) {
   CALI_CXX_MARK_SCOPE("preprocessing");
-  auto const ghost_degree = ghost_degrees(G, conf);
-  auto const key = degree_key(G, ghost_degree);
-  auto G_oriented = [&] {
+  {
+    CALI_CXX_MARK_SCOPE("degree_exchange");
+    G.exchange_ghost_degrees(conf.degree_exchange, MessageTag::Orientation);
+  }
+  {
     CALI_CXX_MARK_SCOPE("orientation");
-    return graph::orient(std::move(G), key, conf.contraction);
-  }();
+    G.orient(degree_key(G), conf.contraction);
+  }
   {
     CALI_CXX_MARK_SCOPE("sorting");
-    G_oriented.sort_neighborhoods();
+    G.sort_neighborhoods();
   }
-  return G_oriented;
 }
 
 /// Without contraction, after the local phase: the oriented graph converted to

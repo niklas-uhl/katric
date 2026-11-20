@@ -27,7 +27,6 @@
 #include <gtest/gtest.h>
 #include <mpi.h>
 
-#include "katric/graph/build.h"
 #include "katric/graph/graph.h"
 #include "test_graphs.h"
 
@@ -40,7 +39,7 @@ TEST(InputGraphTest, neighbors_ghosts_and_handles) {
     auto const input  = "examples/hiv.metis";
     auto const G_full = katric::testing::read_full_graph(input);
     auto const local  = katric::testing::read_local_graph(input);
-    auto const G      = katric::graph::build_input_graph(local, MPI_COMM_WORLD);
+    auto const G      = katric::graph::Graph::from_kagen(local, MPI_COMM_WORLD);
     auto const& numbering = G.numbering();
 
     // every local vertex has its full neighborhood, in global ids

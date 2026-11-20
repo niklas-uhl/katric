@@ -32,7 +32,6 @@
 #include "katric/message_tags.h"
 #include "katric/config.h"
 #include "katric/ghost_exchange.h"
-#include "katric/graph/build.h"
 #include "katric/graph/graph.h"
 #include "test_graphs.h"
 
@@ -50,7 +49,7 @@ protected:
 
     /// The input graph of this rank's part (each orientation consumes one).
     [[nodiscard]] katric::graph::Graph input_graph() const {
-        return katric::graph::build_input_graph(local, MPI_COMM_WORLD);
+        return katric::graph::Graph::from_kagen(local, MPI_COMM_WORLD);
     }
 
     [[nodiscard]] std::pair<Degree, VertexId> key(VertexId v) const {
@@ -88,15 +87,18 @@ TEST_P(Orientation, GlobalDegree) {
             EXPECT_EQ(received[mode][G.numbering().to_ghost_index(g)], G_full[G.global_id(g)].size());
         }
     }
-    auto const& ghost_degree = received[katric::GhostExchangeMode::sparse];
-    auto const  G_oriented   = katric::graph::orient(
-        std::move(G),
+    // the graph's own exchange stores the same degrees
+    G.exchange_ghost_degrees(katric::GhostExchangeMode::sparse, katric::MessageTag::Orientation);
+    for (VertexHandle const v: G.vertices()) {
+        EXPECT_EQ(G.undirected_degree(v), G_full[G.global_id(v)].size());
+    }
+    G.orient(
         [&](VertexHandle c) {
-            Degree const degree = G.is_local(c) ? G.degree(c) : ghost_degree[G.numbering().to_ghost_index(c)];
-            return std::pair(degree, G.global_id(c));
+            return std::pair(G.undirected_degree(c), G.global_id(c));
         },
         true
     );
+    auto const& G_oriented = G;
     // out-neighbors: the neighbors with a larger (degree, id); a ghost's out-neighbors: its local neighbors with a larger key
     for (VertexHandle const v: G_oriented.local_vertices()) {
         VertexId const        v_global = G_oriented.global_id(v);
@@ -126,14 +128,14 @@ TEST_P(Orientation, GlobalDegree) {
 TEST_P(Orientation, LocalDegreeOutward) {
     auto G = input_graph();
     // an arbitrary key: cut edges outward, local edges by (degree, id), no exchange
-    auto const G_oriented = katric::graph::orient(
-        std::move(G),
+    G.orient(
         [&](VertexHandle c) {
             Degree const degree = G.is_local(c) ? G.degree(c) : std::numeric_limits<Degree>::max();
             return std::pair(degree, G.global_id(c));
         },
         false
     );
+    auto const& G_oriented = G;
     for (VertexHandle const v: G_oriented.local_vertices()) {
         VertexId const        v_global = G_oriented.global_id(v);
         std::vector<VertexId> expected;
