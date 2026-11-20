@@ -150,7 +150,7 @@ Still to review in stage 2, in the order of the algorithm's flow (decided 2026-1
 - **Timings before `441c4d1` include the per-triangle counting overhead** (laptop: local phase -35 to -48%, total -26 to
   -40%). All cluster data so far (and probably `pre-refactor`) has it; rerun before comparing against new runs
 
-- `chore/modernize` was pushed through `7ab5008` (2026-11-19); later commits are local. Merge it into
+- `chore/modernize` pushed through `2ec55c1` (2026-11-20). Merge it into
   `feat/message-trimming`. The trimming code uses
   handle-based keys (`Orientation::degree(handle)`, `neighbors_as_global_ids`) that no longer exist after `9c64803`:
   it must compute the keys before the in-place conversion (e.g. keep each entry's degree next to it on the trimming
