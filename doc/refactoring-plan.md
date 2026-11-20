@@ -504,7 +504,17 @@ Compact IDs fit 32 bits per rank (n + g < 2^32), which would halve the adjacency
       - laptop, 8 ranks, 2^18 / 2^22, per iteration: CETRIC permuted RGG 0.76 -> 0.52 s (preprocessing 0.25 -> 0.08,
         local phase 0.20 -> 0.10), RHG 0.111 -> 0.081 s; pre-CETRIC permuted RGG 0.57 -> 0.46 s
         (`preprocessing_global` 0.16 -> 0.04)
-- [ ] Stage 2b (decided 2026-11-20, implement after the step-6 review): one `Graph` from orientation through the
+- [x] Stage 2b (decided 2026-11-20, done 2026-11-20 in `6912799`, `a3b68a2`, `d1d36e8`; identical counters, region
+      paths and triangle counts on the 124 reference runs, laptop timings within noise). How it differs from the design
+      below: the global ids are not only the ghost heads. `Graph::to_global_ids(cut_edges_only)` replaces the handle
+      neighborhoods by global ids after the local phase (DiTriC: all of N+(v), CETRIC: the cut edges) and frees the
+      handle arrays, so the memory is that of the former `GlobalIdGraph` and the receiver does one merge per u. The
+      ghost-heads-only variant (local heads compared by arithmetic) gave identical counters and CETRIC as fast, but
+      DiTriC's global phase was +36..40% slower on GNM / permuted RGG: a received u touched four per-vertex arrays and
+      two data ranges instead of one contiguous neighborhood. Regions `global_ids` / `contraction` kept. Also done:
+      `--communication-policy` as a run-time enum (`c738be1`). Not done from the layout: `ghost_exchange.h` and the
+      messaging headers unchanged (step-6 review). The original design:
+      one `Graph` from orientation through the
       global phase; global ids only for the ghost heads.
       - Why: since `6e75890` every local vertex's sorted neighborhood is split into `local_heads` / `ghost_heads`.
         The global phase needs global ids only where a merge would otherwise look up a ghost id per step (the measured

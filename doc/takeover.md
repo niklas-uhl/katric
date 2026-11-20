@@ -95,8 +95,12 @@ Still to review in stage 2, in the order of the algorithm's flow (decided 2026-1
    without out-edges)
    Decided 2026-11-20 (plan, step 4 "Stage 2b", after the step-6 review): no `GlobalIdGraph`; one `Graph` with the
    ghost heads' global ids as an optional part, graph-changing steps as in-place members, all in `graph.h`
-6. Global phase (plan 2026-11-20). Stage 2b rewrites the send loop's destination search, `make_message`'s content and
-   `process_message`; the review concentrates on what survives it, and checks the rest only for correctness.
+   Stage 2b done 2026-11-20 (`6912799`, `a3b68a2`, `d1d36e8`, plan step 4): one `Graph` through the global phase
+   (`to_global_ids` replaces the handle arrays), phases own their regions, one header per phase, `katric.h` +
+   `src/katric.cpp`. Next: review the new global phase (6.3-6.6 below; 6.1, 6.2, 6.8 done in `c738be1`, 6.7 in
+   `d1d36e8`)
+6. Global phase (plan 2026-11-20). Stage 2b rewrote the send loop, `make_message` and `process_message` (on `Graph`);
+   the review concentrates on what survives it, and checks the rest only for correctness.
    Asynchronous communication tuning (BriefKAsten) stays last: no queue optimizations here. In flow order:
    - 6.1 Policy dispatch: `--communication-policy` is a template parameter threaded through `count_triangles`
      (`algorithms.h` overloads, `communication_policy.h` tag structs, `src/katric_{queue,grid}.cpp`), so the whole
