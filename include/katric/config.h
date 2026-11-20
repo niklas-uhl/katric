@@ -86,6 +86,9 @@ struct Config {
   GhostExchangeMode degree_exchange = GhostExchangeMode::sparse;
 
   bool pseudo2core = false;
+  /// Global phase: each rank gets only the part of N+(v) from its first
+  /// receiver on (in orientation order), and no message if nothing follows it.
+  bool message_trimming = false;
 
   // Caliper ConfigManager configuration (e.g. "spot"); empty disables Caliper.
   // Output file via caliper_output.

@@ -12,6 +12,7 @@
 #include <ranges>
 #include <span>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 #include <message-queue/buffered_queue.h>
@@ -143,6 +144,60 @@ inline auto make_message(graph::Graph const& G, graph::VertexHandle v)
   return message;
 }
 
+/// Message trimming (`--message-trimming`): a triangle (v, u, w) found at rank
+/// r has u on r and w after u in orientation order (w in N+(u)), so r needs
+/// only the entries of N+(v) from its first receiver u_r (in orientation order,
+/// key (undirected degree, global id)) on; with no entry after u_r, it needs no
+/// message. Posts the message for each destination of `v` (built in `message`,
+/// reused) and counts the entries (incl. the sender id) not sent against
+/// sending N+(v) whole, and the messages not sent at all.
+template <typename Queue>
+void post_trimmed_messages(graph::Graph const& G,
+                           graph::VertexHandle v,
+                           Queue& queue,
+                           std::vector<graph::VertexId>& message,
+                           std::size_t& trimmed_entries,
+                           std::size_t& dropped_messages) {
+  auto const neighbors = G.global_neighbors(v);
+  auto const degrees = G.global_neighbor_degrees(v);
+  auto const key = [&](std::size_t i) {
+    return std::pair(degrees[i], neighbors[i]);
+  };
+  std::size_t run_begin = 0;
+  while (run_begin < neighbors.size()) {
+    if (G.is_local_id(neighbors[run_begin])) {
+      ++run_begin;
+      continue;
+    }
+    // the heads of one destination are consecutive (see global_phase)
+    int const destination = G.owner_of_id(neighbors[run_begin]);
+    graph::VertexId const destination_end = G.range_of(destination).second;
+    auto first = key(run_begin);
+    std::size_t run_end = run_begin + 1;
+    for (; run_end < neighbors.size() && neighbors[run_end] < destination_end;
+         ++run_end) {
+      first = std::min(first, key(run_end));
+    }
+    message.clear();
+    message.push_back(G.global_id(v));
+    for (std::size_t i = 0; i < neighbors.size(); ++i) {
+      if (key(i) >= first) {
+        message.push_back(neighbors[i]);
+      }
+    }
+    // u_r itself is in the message; anything more comes after it
+    if (message.size() > 2) {
+      trimmed_entries += neighbors.size() + 1 - message.size();
+      queue.post_message(std::span<graph::VertexId const>(message),
+                         destination);
+    } else {
+      trimmed_entries += neighbors.size() + 1;
+      dropped_messages++;
+    }
+    run_begin = run_end;
+  }
+}
+
 /// The global phase: sends the message of every local vertex v with cut edges
 /// once to each rank holding the head of a cut out-edge of v, and handles the
 /// received messages. `threshold` is the message queue's buffer size.
@@ -199,6 +254,10 @@ inline void global_phase(graph::Graph const& G,
     process_message(G, conf, message, counters, triangles);
     handle_time += clock::now() - start;
   };
+  // message trimming: the message being built, and what was not sent
+  std::vector<graph::VertexId> trimmed_message;
+  std::size_t trimmed_entries = 0;
+  std::size_t dropped_messages = 0;
   with_queue([&](auto& queue) -> void {
     queue.set_threshold(threshold);
     auto send_start = clock::now();
@@ -210,6 +269,9 @@ inline void global_phase(graph::Graph const& G,
       auto const neighbors = G.global_neighbors(v);
       if (conf.pseudo2core && neighbors.size() < 2) {
         counters.skipped_nodes++;
+      } else if (conf.message_trimming) {
+        post_trimmed_messages(G, v, queue, trimmed_message, trimmed_entries,
+                              dropped_messages);
       } else {
         auto const message = make_message(G, v);
         // Once to each rank owning a head. The heads are ascending and the
@@ -250,6 +312,12 @@ inline void global_phase(graph::Graph const& G,
         .report();
   });
   counters.report();
+  if (conf.message_trimming) {
+    profiling::counter_add("trimmed_entries",
+                           static_cast<std::int64_t>(trimmed_entries));
+    profiling::counter_add("dropped_messages",
+                           static_cast<std::int64_t>(dropped_messages));
+  }
   auto const ns = [](clock::duration d) {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(d).count();
   };
@@ -269,11 +337,11 @@ inline void global_phase(graph::Graph const& G,
 inline void global_ids(graph::Graph& G, Config const& conf) {
   if (!conf.contraction) {
     CALI_CXX_MARK_SCOPE("global_ids");
-    G.to_global_ids(false);
+    G.to_global_ids(false, conf.message_trimming);
     return;
   }
   CALI_CXX_MARK_SCOPE("contraction");
-  G.to_global_ids(true);
+  G.to_global_ids(true, conf.message_trimming);
   profiling::counter_add(
       "compact_nodes",
       static_cast<std::int64_t>(std::ranges::count_if(

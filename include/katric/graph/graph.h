@@ -613,8 +613,11 @@ public:
   /// neighborhood is [local heads][ghosts below the local range][ghosts above]
   /// and is translated as [ghosts below][local heads][ghosts above]. The handle
   /// neighborhoods and the ghosts' out-edges are freed: afterwards only
-  /// global_neighbors() and the vertex queries are available.
-  void to_global_ids(bool cut_edges_only) {
+  /// global_neighbors() and the vertex queries are available. With
+  /// `with_degrees` (message trimming), also each entry's undirected degree
+  /// (global_neighbor_degrees()), so that the keys (degree, global id) of the
+  /// entries stay known.
+  void to_global_ids(bool cut_edges_only, bool with_degrees = false) {
     KASSERT(!has_global_neighbors_);
     std::vector<std::size_t> xadj(num_local_vertices() + 1, 0);
     std::size_t num_entries = 0;
@@ -623,9 +626,16 @@ public:
     }
     std::vector<VertexId> ids;
     ids.reserve(num_entries);
+    std::vector<Degree> degrees;
+    if (with_degrees) {
+      degrees.reserve(num_entries);
+    }
     auto const translate = [&](std::span<VertexHandle const> heads) {
       for (VertexHandle const u : heads) {
         ids.push_back(global_id(u));
+        if (with_degrees) {
+          degrees.push_back(undirected_degree(u));
+        }
       }
     };
     for (VertexHandle const v : local_vertices()) {
@@ -642,6 +652,10 @@ public:
       }
       xadj[to_local_index(v) + 1] = ids.size();
     }
+    if (with_degrees) {
+      global_neighbor_degrees_ = {xadj, std::move(degrees)};
+      has_global_neighbor_degrees_ = true;
+    }
     global_neighbors_ = {std::move(xadj), std::move(ids)};
     has_global_neighbors_ = true;
     local_ = {};
@@ -655,6 +669,13 @@ public:
       -> std::span<VertexId const> {
     KASSERT(has_global_neighbors_, "not converted to global ids");
     return global_neighbors_.neighbors(to_local_index(vertex));
+  }
+  /// After to_global_ids(with_degrees = true): the undirected degree of each
+  /// entry of global_neighbors(vertex), aligned with it.
+  [[nodiscard]] auto global_neighbor_degrees(VertexHandle vertex) const
+      -> std::span<Degree const> {
+    KASSERT(has_global_neighbor_degrees_, "no degrees with the global ids");
+    return global_neighbor_degrees_.neighbors(to_local_index(vertex));
   }
   /// After to_global_ids(): the number of entries of all global neighborhoods.
   [[nodiscard]] auto num_global_neighbors() const -> std::size_t {
@@ -688,6 +709,8 @@ private:
   std::vector<std::size_t> num_local_heads_;  // per local vertex, once sorted
   bool has_global_neighbors_ = false;
   AdjacencyArray<VertexId> global_neighbors_;  // empty before to_global_ids()
+  bool has_global_neighbor_degrees_ = false;
+  AdjacencyArray<Degree> global_neighbor_degrees_;  // with message trimming
 };
 
 /// `G` in KaGen's CSR representation (global ids), for the load balancing.
