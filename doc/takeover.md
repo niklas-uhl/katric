@@ -86,10 +86,13 @@ Still to review in stage 2, in the order of the algorithm's flow (decided 2026-1
    with concepts, no `Compare`, `binary` recursive on subranges). Laptop timings of the methods (4 ranks, 2^18/2^22):
    `merge` fastest or tied everywhere; `binary-search` 1.5-2.6x slower, `binary` = merge at cutoff 1000, +30% on RMAT at
    cutoff 32, `hybrid` 0-9% slower (its scale 1.0 is too optimistic for a binary-search step)
-5. Into global ids, one of two: without contraction `preprocessing.h` `global_ids` -> `build.h` `to_global_ids`
+5. (in review 2026-11-20; `to_global_ids` approved) Into global ids, one of two: without contraction `preprocessing.h` `global_ids` -> `build.h` `to_global_ids`
    (translate + rotate); with contraction `preprocessing.h` `contraction` -> `report_contraction` -> `build.h`
    `contract_to_global_ids` (in-place compaction). Both give `graph.h` `GlobalIdGraph` (`kept` / `is_kept`,
-   neighbors in global ids)
+   neighbors in global ids). Changed: `065e2ae` (contraction counters from the contracted graph); `7610fa0`:
+   the global phase finds its senders (`has_cut_edges`), `kept`/`is_kept` and the local phase's interface vertices gone;
+   `intersection_size_global` of DiTriC runs now differs from `refcheck/ref` (it no longer counts entries for a `u`
+   without out-edges)
 6. Global phase, `drivers.h` `global_phase`: `phases/global.h` `run` (send loop: owner runs via `owner_from` over `dstl::distribution`),
    `make_message`, the handler (`Merger` / `Splitter`); `communication_policy.h`, `message_tags.h`
 7. (reviewed 2026-11-19, ahead of 4) `triangle_counter.h` (`Triangle`, `TriangleCounter`, `reduce`). Changed: the phases return
