@@ -536,6 +536,15 @@ Compact IDs fit 32 bits per rank (n + g < 2^32), which would halve the adjacency
         part). Measure DiTriC's conversion region vs. `global_ids`, `handle_ns` (split per message, transform per
         u), peak memory on RMAT. `feat/message-trimming` gets easier (degrees and handles available in the global
         phase)
+      - Phase functions (user, 2026-11-20: wrappers that only add a region are indirection): one function per phase,
+        named after its Caliper region, which opens the region and reports its counters itself: `local::run` ->
+        `local_phase` (`local.h`, reports `local_triangles`), `global::run` -> `global_phase` (`global.h`, reports
+        `type3_triangles`); the `local::` / `global::` namespaces with `run` go. A step that is a single call gets a
+        scoped block at its call site instead of a wrapper: `input_graph` (block in `count_triangles`),
+        `ghost_degrees` (block in `preprocessing`), the ghost-head-ids step (replacing `global_ids` / `contraction`).
+        `Graph` members open no regions (regions belong to the algorithm layer, as around `orient` / `sort_neighborhoods`
+        today). `drivers.h` keeps only `count_triangles`. Region paths stay as they are (eval and earlier cluster data),
+        except the one region replacing `global_ids` / `contraction`
 - [ ] Stage 3: 32-bit compact IDs (n + g < 2^32 per rank) — measure the local phase
 - Fixed by stage 2 (pre-existing issue): DPD load balancing on a graph with fewer vertices than ranks
   (`examples/triangle.metis` on 4 ranks) hung
