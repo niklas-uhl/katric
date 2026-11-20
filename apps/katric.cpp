@@ -47,6 +47,7 @@
 
 #include "./algorithm.h"
 #include "./build_info.h"
+#include "./debug_barrier.h"
 #include "./parse_config.h"
 #include "./verify.h"
 #include "katric/caliper.h"
@@ -63,8 +64,8 @@ int main(int argc, char* argv[]) {
         SPDLOG_CRITICAL("The MPI implementation must support MPI_THREAD_FUNNELED");
         std::exit(1);
     }
-    katric::PEID rank;
-    katric::PEID size;
+    int rank;
+    int size;
     int          exit_code = 0;
     // the communicator katric runs on (the global phase's legacy message queue is fixed to MPI_COMM_WORLD)
     MPI_Comm const comm = MPI_COMM_WORLD;

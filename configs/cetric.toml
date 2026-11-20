@@ -9,6 +9,6 @@ global-parallel = false
 local-degree-of-parallelism = 2
 global-degree-of-parallelism = 2
 degree-exchange = "dense"
-communication-policy = "new"
+communication-policy = "direct"
 primary-cost-function = "none"
 intersection-method = "merge"

@@ -33,7 +33,7 @@
 #include "katric/config.h"
 #include "git_hash.h"
 
-katric::Config parse_config(int argc, char* argv[], katric::PEID rank, katric::PEID size) {
+katric::Config parse_config(int argc, char* argv[], int rank, int size) {
     (void)size;
 
     CLI::App app("Parallel Triangle Counter");
@@ -105,7 +105,10 @@ katric::Config parse_config(int argc, char* argv[], katric::PEID rank, katric::P
     app.add_option("--algorithm", algorithm, "Deprecated: patric = DiTriC, cetric-x = --contraction")
         ->transform(CLI::IsMember({"patric", "cetric-x", "cetric", "cetric_x"}, CLI::ignore_case));
 
-    app.add_option("--communication-policy", conf.communication_policy)->transform(CLI::IsMember({"new", "grid"}));
+    // `new` was the name of `direct` until 2026-11-20 (job files and configs before); remove once they have run
+    add_enum_option(
+        app, "--communication-policy", conf.communication_policy, {{"new", katric::CommunicationPolicy::direct}}
+    );
 
     app.add_flag("--local-parallel", conf.local_parallel);
     app.add_flag("--global-parallel", conf.global_parallel);

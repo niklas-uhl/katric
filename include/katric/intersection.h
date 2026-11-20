@@ -187,7 +187,7 @@ void intersection(R1 const& left,
       break;
     case IntersectionMethod::hybrid: {
       // binary search if min · log max < scale · (min + max), the two costs
-      // above; log2 as the bit width (an integer, enough for left cutoff)
+      // above; log2 as the bit width (an integer, enough for a cutoff)
       std::size_t const size_left = std::ranges::size(left);
       std::size_t const size_right = std::ranges::size(right);
       std::size_t const smaller = std::min(size_left, size_right);

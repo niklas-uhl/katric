@@ -23,7 +23,6 @@
 #include <kamping/v2/comm.hpp>
 #include <kassert/kassert.hpp>
 
-#include "katric/util.h"
 
 namespace katric::graph {
 
@@ -112,7 +111,7 @@ public:
     return first_ + to_local_index(vertex);
   }
   /// The owner of local vertex `vertex`: this rank.
-  [[nodiscard]] auto owner(VertexHandle vertex) const -> PEID {
+  [[nodiscard]] auto owner(VertexHandle vertex) const -> int {
     KASSERT(is_local(vertex));
     return rank_;
   }
@@ -132,7 +131,7 @@ protected:
 private:
   dstl::distribution distribution_;
   kamping::v2::comm_view comm_;
-  PEID rank_;  // for owner()
+  int rank_;  // for owner()
   VertexId first_;
   std::size_t num_local_vertices_;
 };
@@ -217,7 +216,7 @@ public:
     return is_local(vertex) ? LocalNumbering::global_id(vertex)
                             : ghost_ids_[to_ghost_index(vertex)];
   }
-  [[nodiscard]] auto owner(VertexHandle vertex) const -> PEID {
+  [[nodiscard]] auto owner(VertexHandle vertex) const -> int {
     return is_local(vertex) ? LocalNumbering::owner(vertex)
                             : owners_[to_ghost_index(vertex)];
   }
@@ -237,7 +236,7 @@ public:
 
 private:
   std::vector<VertexId> ghost_ids_;
-  std::vector<PEID> owners_;
+  std::vector<int> owners_;
   std::size_t num_ghosts_below_ = 0;
   mutable std::optional<dstl::grid_comm<dstl::execution_policy::seq>> grid_;
 };
@@ -369,7 +368,7 @@ public:
   [[nodiscard]] auto is_ghost(VertexHandle vertex) const -> bool {
     return numbering_.is_ghost(vertex);
   }
-  [[nodiscard]] auto owner(VertexHandle vertex) const -> PEID {
+  [[nodiscard]] auto owner(VertexHandle vertex) const -> int {
     return numbering_.owner(vertex);
   }
   [[nodiscard]] auto global_id(VertexHandle vertex) const -> VertexId {

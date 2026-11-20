@@ -32,11 +32,11 @@
 
 namespace katric {
 template <typename T>
-T PEID_to_datatype(PEID rank) {
+T rank_to_value(int rank) {
     return rank;
 }
 template <typename T>
-PEID datatype_to_PEID(T const& rank) {
+int value_to_rank(T const& rank) {
     return rank;
 }
 
@@ -50,10 +50,10 @@ public:
         MPI_Comm_size(MPI_COMM_WORLD, &size_);
         grid_size_ = std::round(std::sqrt(size_));
     };
-    void post_message(std::vector<value_type>&& message, PEID receiver, bool direct_send = false) {
-        message.push_back(PEID_to_datatype<value_type>(rank_));
-        message.push_back(PEID_to_datatype<value_type>(receiver));
-        PEID proxy;
+    void post_message(std::vector<value_type>&& message, int receiver, bool direct_send = false) {
+        message.push_back(rank_to_value<value_type>(rank_));
+        message.push_back(rank_to_value<value_type>(receiver));
+        int proxy;
         if (direct_send) {
             proxy = receiver;
         } else {
@@ -70,12 +70,12 @@ public:
     template <typename MessageHandler>
     void poll(MessageHandler&& on_message) {
         // static_assert(std::is_invocable_v<MessageHandler, typename std::vector<T>::iterator,
-        //                                   typename std::vector<T>::iterator, PEID>);
-        queue_.poll([&](SharedVectorSpan<value_type> span, PEID /*sender*/) {
+        //                                   typename std::vector<T>::iterator, int>);
+        queue_.poll([&](SharedVectorSpan<value_type> span, int /*sender*/) {
             auto begin           = span.begin();
             auto end             = span.end();
-            PEID receiver        = datatype_to_PEID(*(end - 1));
-            PEID original_sender = datatype_to_PEID(*(end - 2));
+            int receiver        = value_to_rank(*(end - 1));
+            int original_sender = value_to_rank(*(end - 2));
             if (receiver == rank_) {
                 auto received_message = span.subspan(0, span.size() - 2);
                 on_message(received_message, original_sender);
@@ -90,12 +90,12 @@ public:
     template <typename MessageHandler>
     void terminate(MessageHandler&& on_message) {
         // static_assert(std::is_invocable_v<MessageHandler, typename std::vector<T>::iterator,
-        //                                   typename std::vector<T>::iterator, PEID>);
-        queue_.terminate([&](SharedVectorSpan<value_type> span, PEID /*sender*/) {
+        //                                   typename std::vector<T>::iterator, int>);
+        queue_.terminate([&](SharedVectorSpan<value_type> span, int /*sender*/) {
             auto begin           = span.begin();
             auto end             = span.end();
-            PEID receiver        = datatype_to_PEID(*(end - 1));
-            PEID original_sender = datatype_to_PEID(*(end - 2));
+            int receiver        = value_to_rank(*(end - 1));
+            int original_sender = value_to_rank(*(end - 2));
             if (receiver == rank_) {
                 auto received_message = span.subspan(0, span.size() - 2);
                 on_message(received_message, original_sender);
@@ -132,13 +132,13 @@ private:
         }
     };
 
-    GridPosition get_grid_position(PEID rank) {
+    GridPosition get_grid_position(int rank) {
         return GridPosition{rank / grid_size_, rank % grid_size_};
     }
-    PEID get_rank(GridPosition grid_position) {
+    int get_rank(GridPosition grid_position) {
         return grid_position.row * grid_size_ + grid_position.column;
     }
-    PEID get_proxy(PEID from, PEID to) {
+    int get_proxy(int from, int to) {
         auto         from_pos = get_grid_position(from);
         auto         to_pos   = get_grid_position(to);
         GridPosition proxy    = {from_pos.row, to_pos.column};
@@ -151,9 +151,9 @@ private:
         assert(get_rank(proxy) < size_);
         return get_rank(proxy);
     }
-    PEID       rank_;
-    PEID       size_;
-    PEID       grid_size_;
+    int       rank_;
+    int       size_;
+    int       grid_size_;
     QueueType& queue_;
 };
 
@@ -162,7 +162,7 @@ class DirectMessageQueueAdaptor {
 public:
     using value_type = typename QueueType::value_type;
     DirectMessageQueueAdaptor(QueueType& queue) : queue_(queue){};
-    void post_message(std::vector<value_type>&& message, PEID receiver, bool direct_send [[maybe_unused]] = false) {
+    void post_message(std::vector<value_type>&& message, int receiver, bool direct_send [[maybe_unused]] = false) {
         queue_.post_message(std::move(message), receiver);
     }
 
@@ -173,7 +173,7 @@ public:
     template <typename MessageHandler>
     void poll(MessageHandler&& on_message) {
         // static_assert(std::is_invocable_v<MessageHandler, typename std::vector<T>::iterator,
-        //                                   typename std::vector<T>::iterator, PEID>);
+        //                                   typename std::vector<T>::iterator, int>);
         queue_.poll(on_message);
     }
 

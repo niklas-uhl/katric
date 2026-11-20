@@ -36,39 +36,16 @@ inline void local_phase(graph::Graph const& G,
 }
 
 /// The global phase: sends the neighborhoods of the vertices with cut edges.
-template <class CommunicationPolicy>
-void global_phase(graph::GlobalIdGraph const& G,
-                  Config const& conf,
-                  std::size_t threshold,
-                  TriangleCounter& triangles) {
+inline void global_phase(graph::GlobalIdGraph const& G,
+                         Config const& conf,
+                         std::size_t threshold,
+                         TriangleCounter& triangles) {
   CALI_CXX_MARK_SCOPE("global_phase");
   auto const before = triangles.count();
-  global::run<CommunicationPolicy>(G, conf, threshold, triangles);
+  global::run(G, conf, threshold, triangles);
   profiling::counter_add("type3_triangles", static_cast<std::int64_t>(triangles.count() - before));
 }
 
 }  // namespace phases
-
-/// KaTric: DiTriC, or CETRIC with `--contraction` (the local phase also covers
-/// the triangles with two local vertices, through the ghosts' out-edges; the
-/// global phase sends only the cut edges).
-template <class CommunicationPolicy>
-auto count_triangles(kagen::Graph const& input,
-                     Config const& conf,
-                     kamping::v2::comm_view comm) -> std::size_t {
-  TriangleCounter triangles;
-  auto G =
-      phases::primary_load_balancing(phases::input_graph(input, comm), conf);
-  // from the graph the phases run on (after the load balancing)
-  std::size_t const threshold = get_threshold(G, conf);
-  auto G_oriented = phases::preprocessing(std::move(G), conf);
-  phases::local_phase(G_oriented, conf, triangles);
-  auto const G_global = conf.contraction
-                            ? phases::contraction(std::move(G_oriented))
-                            : phases::global_ids(std::move(G_oriented));
-  phases::global_phase<CommunicationPolicy>(G_global, conf, threshold,
-                                            triangles);
-  return phases::reduce(triangles, comm);
-}
 
 }  // namespace katric

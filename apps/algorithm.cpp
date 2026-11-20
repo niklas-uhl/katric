@@ -18,19 +18,14 @@
 
 namespace katric {
 
-/// KaTric (DiTriC, or CETRIC with --contraction) with either communication
-/// policy. ingest() keeps the input; every run only reads it to build its
-/// graphs, so nothing is copied per iteration.
+/// KaTric (DiTriC, or CETRIC with --contraction). ingest() keeps the input;
+/// every run only reads it to build its graphs, so nothing is copied per
+/// iteration.
 namespace {
 class KatricAlgorithm final : public AbstractAlgorithm {
 public:
-  using RunFunction = std::function<
-      std::size_t(kagen::Graph const&, Config const&, kamping::v2::comm_view)>;
-
-  KatricAlgorithm(Config const& conf,
-                  kamping::v2::comm_view comm,
-                  RunFunction run)
-      : conf_(conf), comm_(comm), run_(std::move(run)) {}
+  KatricAlgorithm(Config const& conf, kamping::v2::comm_view comm)
+      : conf_(conf), comm_(comm) {}
 
   void ingest(kagen::Graph&& graph) override {
     pristine_ = std::move(graph);
@@ -39,7 +34,9 @@ public:
 
   void reset() override { triangle_count_ = 0; }
 
-  void run() override { triangle_count_ = run_(pristine_, conf_, comm_); }
+  void run() override {
+    triangle_count_ = count_triangles(pristine_, conf_, comm_);
+  }
 
   [[nodiscard]] auto triangle_count() const -> std::size_t override {
     return triangle_count_;
@@ -81,7 +78,6 @@ private:
 
   Config const& conf_;
   kamping::v2::comm_view comm_;
-  RunFunction run_;
   kagen::Graph pristine_;
   std::size_t triangle_count_ = 0;
 };
@@ -90,25 +86,7 @@ private:
 
 auto make_algorithm(Config const& conf, kamping::v2::comm_view comm)
     -> std::unique_ptr<AbstractAlgorithm> {
-  if (conf.communication_policy == "new") {
-    return std::make_unique<KatricAlgorithm>(
-        conf, comm,
-        [](kagen::Graph const& input, Config const& run_conf,
-           kamping::v2::comm_view run_comm) {
-          return count_triangles(input, run_conf, run_comm,
-                                 MessageQueuePolicy{});
-        });
-  }
-  if (conf.communication_policy == "grid") {
-    return std::make_unique<KatricAlgorithm>(
-        conf, comm,
-        [](kagen::Graph const& input, Config const& run_conf,
-           kamping::v2::comm_view run_comm) {
-          return count_triangles(input, run_conf, run_comm, GridPolicy{});
-        });
-  }
-  throw std::invalid_argument("unknown communication policy " +
-                              conf.communication_policy);
+  return std::make_unique<KatricAlgorithm>(conf, comm);
 }
 
 }  // namespace katric

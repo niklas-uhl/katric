@@ -37,7 +37,6 @@
 
 #include <magic_enum/magic_enum.hpp>
 
-#include "katric/util.h"
 
 namespace katric {
 
@@ -55,6 +54,13 @@ enum class GhostExchangeMode {
     grid,   ///< dSTL's two-dimensional grid all-to-all: O(sqrt p) messages per rank instead of O(p)
 };
 
+/// How the global phase sends its messages, `--communication-policy` (`new` is
+/// accepted for `direct`, the spelling before 2026-11-20).
+enum class CommunicationPolicy {
+    direct, ///< through the buffered message queue to the receiver
+    grid,   ///< through a 2D grid of indirections (one proxy per message)
+};
+
 struct Config {
     Config() = default;
     std::string           kagen_option_string;
@@ -65,7 +71,7 @@ struct Config {
     bool                  contraction                       = false;
     Threshold             threshold                         = Threshold::local_nodes;
     double                threshold_scale                   = 1.0;
-    std::string           communication_policy              = "new";
+    CommunicationPolicy   communication_policy              = CommunicationPolicy::direct;
     bool                  local_parallel                    = false;
     bool                  global_parallel                   = false;
     bool                  parallel_compact                  = false;
@@ -86,8 +92,8 @@ struct Config {
     std::string caliper_config = "";
     std::string caliper_output = "";
     std::string hostname;
-    PEID        PEs;
-    PEID        rank;
+    int        PEs;
+    int        rank;
     size_t      num_threads = 1;
 
     std::string git_commit;

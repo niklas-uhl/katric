@@ -46,7 +46,6 @@
 
 #include "katric/message_tags.h"
 #include "katric/message_statistics.h"
-#include "katric/util.h"
 
 namespace katric::load_balancing {
 

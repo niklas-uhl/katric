@@ -28,7 +28,6 @@
 #include "katric/config.h"
 #include "katric/message_statistics.h"
 #include "katric/message_tags.h"
-#include "katric/util.h"
 
 namespace katric {
 
@@ -50,7 +49,7 @@ template <typename Graph, typename ValueFunc>
     -> std::vector<std::uint64_t> {
     auto const       comm  = G.comm();
     auto const       size  = static_cast<std::size_t>(comm.size());
-    PEID const       rank  = comm.rank();
+    int const       rank  = comm.rank();
     constexpr auto   never = std::numeric_limits<std::size_t>::max();
     std::vector<int> send_counts(size, 0);
     std::vector<int> send_displs(size, 0);
@@ -67,7 +66,7 @@ template <typename Graph, typename ValueFunc>
         for (auto const u: G.local_vertices()) {
             auto const u_local = G.to_local_index(u);
             for (auto const v: G.neighbors(u)) {
-                PEID const v_rank = G.owner(v);
+                int const v_rank = G.owner(v);
                 if (v_rank == rank || last_source_sent_to[static_cast<std::size_t>(v_rank)] == u_local) {
                     continue;
                 }
