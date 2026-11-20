@@ -95,8 +95,38 @@ Still to review in stage 2, in the order of the algorithm's flow (decided 2026-1
    without out-edges)
    Decided 2026-11-20 (plan, step 4 "Stage 2b", after the step-6 review): no `GlobalIdGraph`; one `Graph` with the
    ghost heads' global ids as an optional part, graph-changing steps as in-place members, all in `graph.h`
-6. Global phase, `drivers.h` `global_phase`: `phases/global.h` `run` (send loop: owner runs via `owner_from` over `dstl::distribution`),
-   `make_message`, the handler (`Merger` / `Splitter`); `communication_policy.h`, `message_tags.h`
+6. Global phase (plan 2026-11-20). Stage 2b rewrites the send loop's destination search, `make_message`'s content and
+   `process_message`; the review concentrates on what survives it, and checks the rest only for correctness.
+   Asynchronous communication tuning (BriefKAsten) stays last: no queue optimizations here. In flow order:
+   - 6.1 Policy dispatch: `--communication-policy` is a template parameter threaded through `count_triangles`
+     (`algorithms.h` overloads, `communication_policy.h` tag structs, `src/katric_{queue,grid}.cpp`), so the whole
+     driver is instantiated twice although only the queue adaptor differs. Proposal: a runtime switch inside
+     `global_phase` (one `count_triangles`, tag structs and one TU gone)
+   - 6.2 Queue setup: `make_buffered_queue<VertexId>(Merger, Splitter)` from `legacy-message-queue` communicates on
+     `MPI_COMM_WORLD`, not `G.comm()` (fine for the harness, wrong for any other communicator; note or assert
+     `comm == WORLD` until BriefKAsten); threshold = total buffered elements over all destinations (check that
+     `get_threshold`'s doc says so)
+   - 6.3 Message format: `[v, N+(v)...]` + sentinel (`VertexId` max); `make_message` allocates and copies N+(v) once
+     per destination and `Merger` copies it again into the buffer (k + 1 copies for k destinations). Decide whether to
+     build once per v (stage 2b changes the content anyway); grid appends sender and receiver (+2 words)
+   - 6.4 Send loop (survives in part): `pseudo2core` skip, poll after every sender, `steady_clock::now()` twice per
+     sender plus per poll for `send_ns` / `poll_ns`; owner runs were approved (2026-11-19)
+   - 6.5 Receive: `Splitter` makes a `shared_ptr` per buffer and a `SharedVectorSpan` (refcount) per message, sentinel
+     scan per message. The handler is synchronous and the grid adaptor copies what it forwards, so a `std::span` over
+     the buffer may suffice (then `datastructures/span.h` goes; check the queue's handler signature).
+     `process_message` (rewritten by 2b): only invariants (v not local, entries sorted; the sortedness `KASSERT` is
+     O(len) per message in Debug)
+   - 6.6 Grid adaptor (`indirect_message_queue.h`, legacy): `MPI_COMM_WORLD`, `assert` not `KASSERT`, commented-out
+     `static_assert`s and factory, trivial `PEID_to_datatype`, `std::round`/`sqrt` without `<cmath>`, proxy rule for
+     non-square rank counts; a second grid next to `dstl::grid_comm` (degree exchange). Correctness only (refcheck has
+     `*-grid` configs); replacement waits for BriefKAsten
+   - 6.7 Counters: `GlobalPhaseCounters` + the queue's `message_queue::MessageStatistics` vs. katric's
+     `profiling::MessageStatistics` (`message_statistics.h`, used by `ghost_exchange.h` / load balancing): two types
+     of the same name
+   - 6.8 Leftover headers: `comm_utils.h` is a license header only (no users: delete); `util.h` keeps `PEID`,
+     `DEBUG_BARRIER` (`apps/katric.cpp`) and an unused `builtin_clzl`; `message_tags.h` stays (degree exchanges, load
+     balancing); `communication_policy.h` goes with 6.1
+   - Checking: refcheck (incl. `ditric-grid` / `cetric-grid`), identical message counters; timing only for 6.3/6.5
 7. (reviewed 2026-11-19, ahead of 4) `triangle_counter.h` (`Triangle`, `TriangleCounter`, `reduce`). Changed: the phases return
    their kernels' triangle counts and `emit` only records triangles with assertions on (`441c4d1`; the per-triangle
    `tbb::combinable` cost a third of the local phase); cleanup in `1a99665`. Then (`408e87d`, 2026-11-20) the counter counts: kernels call
