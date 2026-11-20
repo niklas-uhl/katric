@@ -124,6 +124,9 @@ Still to review in stage 2, in the order of the algorithm's flow (decided 2026-1
      the buffer may suffice (then `datastructures/span.h` goes; check the queue's handler signature).
      `process_message` (rewritten by 2b): only invariants (v not local, entries sorted; the sortedness `KASSERT` is
      O(len) per message in Debug)
+   - 6.6 done 2026-11-20 (commit after `54535c0`): routing verified (at most one proxy, the fallback position
+     exists for every p; grid = direct counts on 2..13 ranks), adaptor cleaned up, `DirectMessageQueueAdaptor` gone.
+     Step 6 reviewed (6.4 send loop in `5254858`). Original notes:
    - 6.6 Grid adaptor (`indirect_message_queue.h`, legacy): `MPI_COMM_WORLD`, `assert` not `KASSERT`, commented-out
      `static_assert`s and factory, trivial `PEID_to_datatype`, `std::round`/`sqrt` without `<cmath>`, proxy rule for
      non-square rank counts; a second grid next to `dstl::grid_comm` (degree exchange). Correctness only (refcheck has
