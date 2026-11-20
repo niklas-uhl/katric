@@ -25,17 +25,15 @@ namespace katric {
 namespace phases {
 
 /// The intersections that need no communication (CETRIC also through the
-/// ghosts' out-edges). Returns the interface vertices, the senders of DiTriC's
+/// ghosts' out-edges, if preprocessing built them). Returns the interface vertices, the senders of DiTriC's
 /// global phase.
 inline auto local_phase(graph::Graph const& G,
                         Config const& conf,
-                        bool with_ghosts,
                         TriangleCounter& triangles)
     -> std::vector<graph::VertexHandle> {
   CALI_CXX_MARK_SCOPE("local_phase");
   auto const before = triangles.count();
-  auto interface_nodes = with_ghosts ? local::run<true>(G, conf, triangles)
-                                     : local::run<false>(G, conf, triangles);
+  auto interface_nodes = local::run(G, conf, triangles);
   profiling::counter_add("local_triangles", static_cast<std::int64_t>(triangles.count() - before));
   return interface_nodes;
 }
@@ -69,7 +67,7 @@ auto count_triangles(kagen::Graph const& input,
   std::size_t const threshold = get_threshold(G, conf);
   auto G_oriented = phases::preprocessing(std::move(G), conf);
   auto const interface_nodes =
-      phases::local_phase(G_oriented, conf, conf.contraction, triangles);
+      phases::local_phase(G_oriented, conf, triangles);
   if (conf.contraction) {
     auto const G_contracted = phases::contraction(std::move(G_oriented));
     phases::global_phase<CommunicationPolicy>(G_contracted, conf, threshold,

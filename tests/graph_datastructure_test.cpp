@@ -47,7 +47,7 @@ TEST(InputGraphTest, neighbors_ghosts_and_handles) {
     for (VertexHandle const v: G.local_vertices()) {
         VertexId const      v_global = G.global_id(v);
         std::vector<Edge> edges;
-        for (VertexHandle const u: G.neighbors(v)) {
+        for (VertexHandle const u: G.local_neighbors(v)) {
             edges.emplace_back(v_global, G.global_id(u));
             EXPECT_EQ(numbering.handle(G.global_id(u)), u);
         }

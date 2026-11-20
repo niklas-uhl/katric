@@ -42,6 +42,19 @@ inline auto format_as(VertexHandle vertex) -> std::uint64_t {
   return static_cast<std::uint64_t>(vertex);
 }
 
+/// The handle with number `index`: for the numbering's vertex ranges (a named
+/// type, so that all of them have the same type).
+struct ToHandle {
+  auto operator()(std::size_t index) const -> VertexHandle {
+    return VertexHandle{index};
+  }
+};
+
+/// A contiguous range of handles, ascending (`local_vertices()`, `ghosts()`,
+/// `vertices()`).
+using VertexRange = std::ranges::transform_view<
+    std::ranges::iota_view<std::size_t, std::size_t>, ToHandle>;
+
 /// The numbering of this rank's local vertices: the partition table over the
 /// communicator, and handles 0..n-1 for the local vertices (local index =
 /// global id - first). Known before the ghosts are (the input graph's scan
@@ -74,11 +87,8 @@ public:
     return num_local_vertices_;
   }
   /// The local vertices, ascending.
-  [[nodiscard]] auto local_vertices() const {
-    return std::views::iota(std::size_t{0}, num_local_vertices_) |
-           std::views::transform([this](std::size_t index) -> VertexHandle {
-             return local_handle(index);
-           });
+  [[nodiscard]] auto local_vertices() const -> VertexRange {
+    return handles(0, num_local_vertices_);
   }
   /// This rank's half-open range of global ids.
   [[nodiscard]] auto local_range() const -> std::pair<VertexId, VertexId> {
@@ -112,6 +122,12 @@ public:
     return distribution_;
   }
   [[nodiscard]] auto comm() const -> kamping::v2::comm_view { return comm_; }
+
+protected:
+  /// The handles [first, last).
+  static auto handles(std::size_t first, std::size_t last) -> VertexRange {
+    return std::views::iota(first, last) | std::views::transform(ToHandle{});
+  }
 
 private:
   dstl::distribution distribution_;
@@ -166,11 +182,12 @@ public:
     return ghost_ids_.size();
   }
   /// The ghosts, ascending.
-  [[nodiscard]] auto ghosts() const {
-    return std::views::iota(std::size_t{0}, num_ghosts()) |
-           std::views::transform([this](std::size_t index) -> VertexHandle {
-             return ghost_handle(index);
-           });
+  [[nodiscard]] auto ghosts() const -> VertexRange {
+    return handles(num_local_vertices(), num_local_vertices() + num_ghosts());
+  }
+  /// The local vertices, then the ghosts: all handles, ascending.
+  [[nodiscard]] auto vertices() const -> VertexRange {
+    return handles(0, num_local_vertices() + num_ghosts());
   }
   /// The first ghost: every handle below it is a local vertex.
   [[nodiscard]] auto first_ghost() const -> VertexHandle {
@@ -343,6 +360,9 @@ public:
   }
   [[nodiscard]] auto ghosts() const { return numbering_.ghosts(); }
 
+  /// The local vertices, then the ghosts: all handles, ascending.
+  [[nodiscard]] auto vertices() const { return numbering_.vertices(); }
+
   [[nodiscard]] auto is_local(VertexHandle vertex) const -> bool {
     return numbering_.is_local(vertex);
   }
@@ -360,10 +380,11 @@ public:
   }
 
   /// The neighbors of local vertex `vertex`.
-  [[nodiscard]] auto neighbors(VertexHandle vertex) const
+  [[nodiscard]] auto local_neighbors(VertexHandle vertex) const
       -> std::span<VertexHandle const> {
     return local_.neighbors(to_local_index(vertex));
   }
+
   [[nodiscard]] auto degree(VertexHandle vertex) const -> Degree {
     return local_.degree(to_local_index(vertex));
   }
@@ -371,15 +392,45 @@ public:
   [[nodiscard]] auto has_ghost_out_edges() const -> bool {
     return has_ghost_out_edges_;
   }
+
   /// The out-neighbors of ghost `ghost`: local vertices, ascending.
   [[nodiscard]] auto ghost_out_neighbors(VertexHandle ghost) const
       -> std::span<VertexHandle const> {
     KASSERT(has_ghost_out_edges());
     return ghost_out_.neighbors(numbering_.to_ghost_index(ghost));
   }
+
   [[nodiscard]] auto ghost_out_degree(VertexHandle ghost) const -> Degree {
     KASSERT(has_ghost_out_edges());
     return ghost_out_.degree(numbering_.to_ghost_index(ghost));
+  }
+
+  [[nodiscard]] auto neighbors(VertexHandle vertex) const
+      -> std::span<VertexHandle const> {
+    if (is_local(vertex)) {
+      return local_neighbors(vertex);
+    }
+    return ghost_out_neighbors(vertex);
+  }
+
+  /// After sort_neighborhoods(): the neighbors of `vertex` that are local
+  /// vertices, the prefix of its sorted neighborhood (a ghost's neighbors are
+  /// all local).
+  [[nodiscard]] auto local_heads(VertexHandle vertex) const
+      -> std::span<VertexHandle const> {
+    if (is_local(vertex)) {
+      return local_neighbors(vertex).first(num_local_heads(vertex));
+    }
+    return ghost_out_neighbors(vertex);
+  }
+  /// After sort_neighborhoods(): the neighbors of `vertex` that are ghosts
+  /// (its cut edges), the rest of its sorted neighborhood; none for a ghost.
+  [[nodiscard]] auto ghost_heads(VertexHandle vertex) const
+      -> std::span<VertexHandle const> {
+    if (is_local(vertex)) {
+      return local_neighbors(vertex).subspan(num_local_heads(vertex));
+    }
+    return {};
   }
 
   /// Building step (graph/build.h `orient`): the neighbors of local vertex
@@ -389,9 +440,20 @@ public:
     return local_.mutable_neighbors(to_local_index(vertex));
   }
   /// Building step: sorts the neighbors of every local vertex by handle (local
-  /// vertices first, then ghosts, each by global id). The ghosts' out-neighbors
-  /// need no sorting: `orient` writes them in ascending order.
-  void sort_neighborhoods() { local_.sort_neighborhoods(); }
+  /// vertices first, then ghosts, each by global id) and records where the
+  /// ghosts start (local_heads() / ghost_heads()); the neighborhoods must not
+  /// change afterwards. The ghosts' out-neighbors need no sorting: `orient`
+  /// writes them in ascending order.
+  void sort_neighborhoods() {
+    local_.sort_neighborhoods();
+    num_local_heads_.resize(num_local_vertices());
+    for (VertexHandle const v : local_vertices()) {
+      auto const neighbors = local_neighbors(v);
+      num_local_heads_[to_local_index(v)] = static_cast<std::size_t>(
+          std::ranges::lower_bound(neighbors, numbering_.first_ghost()) -
+          neighbors.begin());
+    }
+  }
 
   /// Hands over the vertex numbering and the neighborhoods of the local
   /// vertices (for a conversion that reuses them); the ghosts' out-edges are
@@ -402,10 +464,17 @@ public:
   }
 
 private:
+  [[nodiscard]] auto num_local_heads(VertexHandle vertex) const -> std::size_t {
+    KASSERT(num_local_heads_.size() == num_local_vertices(),
+            "neighborhoods not sorted");
+    return num_local_heads_[to_local_index(vertex)];
+  }
+
   VertexNumbering numbering_;
   AdjacencyArray<VertexHandle> local_;
   bool has_ghost_out_edges_ = false;
   AdjacencyArray<VertexHandle> ghost_out_;  // empty without
+  std::vector<std::size_t> num_local_heads_;  // per local vertex, once sorted
 };
 
 /// The graph of the global phase: the out-neighbors of the local vertices as

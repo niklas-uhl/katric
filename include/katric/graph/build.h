@@ -116,7 +116,7 @@ auto orient(Graph&& G, Key const& key, bool ghost_out_edges) -> Graph {
   if (ghost_out_edges) {
     auto const& numbering = G.numbering();
     auto const in_neighbors = [&](VertexHandle v) {
-      return G.neighbors(v).subspan(out_degree[G.to_local_index(v)]);
+      return G.local_neighbors(v).subspan(out_degree[G.to_local_index(v)]);
     };
     std::vector<std::size_t> ghost_xadj(numbering.num_ghosts() + 1, 0);
     for (VertexHandle const v : G.local_vertices()) {
@@ -152,24 +152,26 @@ auto orient(Graph&& G, Key const& key, bool ghost_out_edges) -> Graph {
 /// vertices][ghosts above] it is ascending. A new array: the handles cannot be
 /// reused for global ids.
 inline auto to_global_ids(Graph&& G) -> GlobalIdGraph {
-  auto [numbering, local] = std::move(G).release();
   std::vector<VertexId> global;
-  global.reserve(local.num_edges());
-  auto const translate = [&](auto first, auto last) -> void {
-    std::transform(
-        first, last, std::back_inserter(global),
-        [&](VertexHandle u) -> VertexId { return numbering.global_id(u); });
-  };
-  for (std::size_t index = 0; index < local.num_vertices(); ++index) {
-    auto const neighbors = local.neighbors(index);
-    auto const local_end =
-        std::ranges::lower_bound(neighbors, numbering.first_ghost());
-    auto const below_end = std::lower_bound(local_end, neighbors.end(),
-                                            numbering.first_ghost_above());
-    translate(local_end, below_end);
-    translate(neighbors.begin(), local_end);
-    translate(below_end, neighbors.end());
+  global.reserve(G.num_local_edges());
+  {
+    auto const& numbering = G.numbering();
+    auto const translate = [&](auto first, auto last) -> void {
+      std::transform(
+          first, last, std::back_inserter(global),
+          [&](VertexHandle u) -> VertexId { return numbering.global_id(u); });
+    };
+    for (VertexHandle const v : G.local_vertices()) {
+      auto const local_heads = G.local_heads(v);
+      auto const ghost_heads = G.ghost_heads(v);
+      auto const below_end = std::ranges::lower_bound(
+          ghost_heads, numbering.first_ghost_above());
+      translate(ghost_heads.begin(), below_end);
+      translate(local_heads.begin(), local_heads.end());
+      translate(below_end, ghost_heads.end());
+    }
   }
+  auto [numbering, local] = std::move(G).release();
   auto xadj = std::move(local).release().first;
   return {std::move(numbering), {std::move(xadj), std::move(global)}};
 }
@@ -179,31 +181,25 @@ inline auto to_global_ids(Graph&& G) -> GlobalIdGraph {
 /// already in global order), as global ids. The kept vertices are those with a
 /// cut out-edge.
 inline auto contract_to_global_ids(Graph&& G) -> GlobalIdGraph {
-  auto [numbering, local] = std::move(G).release();
-  auto const cut_neighbors = [&](std::size_t index) -> auto {
-    auto const neighbors = local.neighbors(index);
-    return std::ranges::subrange(
-        std::ranges::lower_bound(neighbors, numbering.first_ghost()),
-        neighbors.end());
-  };
   std::size_t num_cut_edges = 0;
-  for (std::size_t index = 0; index < local.num_vertices(); ++index) {
-    num_cut_edges += cut_neighbors(index).size();
+  for (VertexHandle const v : G.local_vertices()) {
+    num_cut_edges += G.ghost_heads(v).size();
   }
   std::vector<VertexHandle> kept;
-  std::vector<std::size_t> xadj(local.num_vertices() + 1, 0);
+  std::vector<std::size_t> xadj(G.num_local_vertices() + 1, 0);
   std::vector<VertexId> global;
   global.reserve(num_cut_edges);
-  for (std::size_t index = 0; index < local.num_vertices(); ++index) {
-    auto const cut = cut_neighbors(index);
+  for (VertexHandle const v : G.local_vertices()) {
+    auto const cut = G.ghost_heads(v);
     if (!cut.empty()) {
-      kept.push_back(numbering.local_handle(index));
+      kept.push_back(v);
     }
     for (VertexHandle const u : cut) {
-      global.push_back(numbering.global_id(u));
+      global.push_back(G.global_id(u));
     }
-    xadj[index + 1] = global.size();
+    xadj[G.to_local_index(v) + 1] = global.size();
   }
+  auto numbering = std::move(G).release().first;
   return {std::move(numbering),
           {std::move(xadj), std::move(global)},
           std::move(kept)};

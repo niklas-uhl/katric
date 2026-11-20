@@ -1,102 +1,89 @@
-// The local phase on compact ids: the intersections for the edges whose triangles a rank can find without
-// communication. Neighborhoods are sorted by handle, so they list their local vertices first.
+// The local phase on compact ids: the intersections for the edges whose
+// triangles a rank can find without communication. Neighborhoods are sorted by
+// handle, so they list their local vertices first.
 #pragma once
 
-#include <algorithm>
 #include <cstddef>
 #include <functional>
 #include <span>
 #include <vector>
 
 #include "katric/config.h"
-#include "katric/intersection.h"
 #include "katric/graph/graph.h"
+#include "katric/intersection.h"
 #include "katric/phase_counters.h"
 #include "katric/triangle_counter.h"
 
 namespace katric::local {
 
-/// N+(c) for a local vertex, and for a ghost (CETRIC) its out-edges to local vertices.
-inline std::span<graph::VertexHandle const> neighbors_with_ghosts(graph::Graph const& G, graph::VertexHandle c) {
-    return G.is_local(c) ? G.neighbors(c) : G.ghost_out_neighbors(c);
+/// The work for one edge v -> u: records the triangles (v, u, w) for w in N+(v)
+/// ∩ N+(u), where a ghost's neighborhood is its out-edges to local vertices. A
+/// ghost's neighbors are only local vertices, so when one end is a ghost only
+/// the other end's local heads are intersected; this bounds the merge and keeps
+/// the work counters exact.
+inline void intersect_edge(graph::Graph const& G,
+                           Config const& conf,
+                           graph::VertexHandle v,
+                           graph::VertexHandle u,
+                           LocalPhaseCounters& counters,
+                           TriangleCounter& triangles) {
+  auto const v_neighbors = G.is_ghost(u) ? G.local_heads(v) : G.neighbors(v);
+  auto const u_neighbors = G.is_ghost(v) ? G.local_heads(u) : G.neighbors(u);
+  // for the edge (v, u) we check the open wedges (v, u, w) for w in N+(u)
+  counters.wedge_checks += static_cast<std::int64_t>(u_neighbors.size());
+  counters.intersection_size_local +=
+      static_cast<std::int64_t>(v_neighbors.size() + u_neighbors.size());
+  katric::intersection(
+      v_neighbors.begin(), v_neighbors.end(), u_neighbors.begin(),
+      u_neighbors.end(),
+      [&](graph::VertexHandle w) -> void {
+        triangles.record(
+            Triangle{.x=G.global_id(v), .y=G.global_id(u), .z=G.global_id(w)});
+      },
+      std::less<>{}, conf);
 }
 
-/// The work for one edge v -> u: records the triangles (v, u, w) for w in N+(v) ∩ N+(u), where a ghost's neighborhood is
-/// its out-edges to local vertices. A ghost's neighbors are only local vertices, so when one end is a ghost the other side is clipped to its
-/// local prefix; this bounds the merge and keeps the work counters exact.
-inline void intersect_edge(
-    graph::Graph const& G,
-    Config const&          conf,
-    graph::VertexHandle          v,
-    graph::VertexHandle          u,
-    LocalPhaseCounters&    counters,
-    TriangleCounter&       triangles
-) {
-    auto const   v_neighbors   = neighbors_with_ghosts(G, v);
-    auto const   u_neighbors   = neighbors_with_ghosts(G, u);
-    auto         v_first = v_neighbors.begin();
-    auto         v_last  = v_neighbors.end();
-    auto         u_first = u_neighbors.begin();
-    auto         u_last  = u_neighbors.end();
-    auto const   n       = static_cast<graph::VertexHandle>(G.num_local_vertices());
-    if (!G.is_local(u)) {
-        v_last = std::lower_bound(v_first, v_last, n);
-    } else if (!G.is_local(v)) {
-        u_last = std::lower_bound(u_first, u_last, n);
+/// The local phase: the intersection for every edge v -> u with both ends local
+/// and, if the graph has the ghosts' out-edges (CETRIC), also for the edges
+/// with a ghost end, through the ghosts' out-edges. Returns the interface
+/// vertices (local vertices with a cut out-edge, ascending).
+inline auto run(graph::Graph const& G,
+                Config const& conf,
+                TriangleCounter& triangles)
+    -> std::vector<graph::VertexHandle> {
+  std::vector<graph::VertexHandle> interface_nodes;
+  LocalPhaseCounters counters;
+  bool const with_ghosts = G.has_ghost_out_edges();
+  for (graph::VertexHandle const v :
+       with_ghosts ? G.vertices() : G.local_vertices()) {
+    // this is even correct on the oriented graph:
+    // if a vertex has degree 0, we can skip it.
+    // if a vertex has degree 1, then degree orientation either connects it to
+    // another degree 1 vertex, or a vertex with higher degree.
+    // so in the oriented graph its degree is either 1 or 0, so the skipping
+    // works
+    if (conf.pseudo2core && G.neighbors(v).size() < 2) {
+      counters.skipped_nodes++;
+      continue;
     }
-    // for the edge (v, u) we check the open wedges (v, u, w) for w in N+(u)
-    counters.wedge_checks += u_last - u_first;
-    counters.intersection_size_local += (v_last - v_first) + (u_last - u_first);
-    katric::intersection(
-        v_first,
-        v_last,
-        u_first,
-        u_last,
-        [&](graph::VertexHandle w) {
-            triangles.record(Triangle{G.global_id(v), G.global_id(u), G.global_id(w)});
-        },
-        std::less<>{},
-        conf
-    );
+    for (graph::VertexHandle const u : G.local_heads(v)) {
+      intersect_edge(G, conf, v, u, counters, triangles);
+    }
+    // a ghost has no ghost heads
+    auto const ghost_heads = G.ghost_heads(v);
+    if (!ghost_heads.empty()) {
+      interface_nodes.push_back(v);
+    }
+    // without the ghosts' out-edges, edges to ghosts are left to the global
+    // phase
+    if (with_ghosts) {
+      for (graph::VertexHandle const u : ghost_heads) {
+        intersect_edge(G, conf, v, u, counters, triangles);
+      }
+    }
+  }
+  counters.report();
+  return interface_nodes;
 }
 
-/// The local phase: the intersection for every edge v -> u with both ends local and, `with_ghosts` (CETRIC), also for
-/// the edges with a ghost end, through the ghosts' out-edges. Returns the interface vertices (local vertices with a cut
-/// out-edge, ascending).
-template <bool with_ghosts>
-auto run(graph::Graph const& G, Config const& conf, TriangleCounter& triangles) -> std::vector<graph::VertexHandle> {
-    std::vector<graph::VertexHandle> interface_nodes;
-    LocalPhaseCounters         counters;
-    auto                       for_each_out_edge = [&](graph::VertexHandle v, graph::Degree degree) {
-        if (conf.pseudo2core && degree < 2) {
-            counters.skipped_nodes++;
-            return;
-        }
-        bool is_interface = false;
-        for (graph::VertexHandle const u: neighbors_with_ghosts(G, v)) {
-            if (!G.is_local(u)) {
-                if (G.is_local(v) && !is_interface) {
-                    interface_nodes.push_back(v);
-                    is_interface = true;
-                }
-                if constexpr (!with_ghosts) {
-                    // without the ghosts' out-edges only local heads are intersected; they come first
-                    break;
-                }
-            }
-            intersect_edge(G, conf, v, u, counters, triangles);
-        }
-    };
-    for (graph::VertexHandle const v: G.local_vertices()) {
-        for_each_out_edge(v, G.degree(v));
-    }
-    if constexpr (with_ghosts) {
-        for (graph::VertexHandle const v: G.ghosts()) {
-            for_each_out_edge(v, G.ghost_out_degree(v));
-        }
-    }
-    counters.report();
-    return interface_nodes;
-}
-
-} // namespace katric::local
+}  // namespace katric::local

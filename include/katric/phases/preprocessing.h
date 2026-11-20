@@ -21,8 +21,6 @@
 #include "katric/graph/graph.h"
 #include "katric/load_balancing.h"
 #include "katric/message_tags.h"
-#include "katric/phase_counters.h"
-#include "katric/util.h"
 
 namespace katric {
 
@@ -72,7 +70,7 @@ inline auto vertex_costs(graph::Graph const& G, Config const& conf)
     for (VertexHandle const v : G.local_vertices()) {
       auto const key_v = key(v);
       std::uint64_t out_degree_v = 0;
-      for (VertexHandle const u : G.neighbors(v)) {
+      for (VertexHandle const u : G.local_neighbors(v)) {
         bool const out = key_v < key(u);
         is_out_edge[edge++] = out;
         if (out) {
@@ -103,7 +101,7 @@ inline auto vertex_costs(graph::Graph const& G, Config const& conf)
   std::size_t edge = 0;
   for (VertexHandle const v : G.local_vertices()) {
     std::size_t& cost_v = cost[numbering.to_local_index(v)];
-    for (VertexHandle const u : G.neighbors(v)) {
+    for (VertexHandle const u : G.local_neighbors(v)) {
       if (is_out_edge[edge++] == over_out_edges) {
         cost_v += out_degree(v) + out_degree(u);
       }
@@ -174,23 +172,13 @@ inline graph::GlobalIdGraph global_ids(graph::Graph&& G) {
   return graph::to_global_ids(std::move(G));
 }
 
-/// The number of cut out-edges of local vertex `v` (its neighborhood sorted by
-/// handle ends with them).
-inline graph::Degree cut_out_degree(graph::Graph const& G,
-                                    graph::VertexHandle v) {
-  auto const neighbors = G.neighbors(v);
-  return static_cast<graph::Degree>(
-      neighbors.end() - std::lower_bound(neighbors.begin(), neighbors.end(),
-                                         G.numbering().first_ghost()));
-}
-
 /// The contraction's counters: the vertices with cut edges (compact_nodes) and
 /// their cut out-edges (compact_edges).
 inline void report_contraction(graph::Graph const& G) {
   std::int64_t nodes = 0;
   std::int64_t edges = 0;
   for (graph::VertexHandle const v : G.local_vertices()) {
-    auto const degree = static_cast<std::int64_t>(cut_out_degree(G, v));
+    auto const degree = static_cast<std::int64_t>(G.ghost_heads(v).size());
     nodes += degree > 0 ? 1 : 0;
     edges += degree;
   }

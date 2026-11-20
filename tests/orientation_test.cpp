@@ -107,7 +107,7 @@ TEST_P(Orientation, GlobalDegree) {
             }
         }
         std::ranges::sort(expected);
-        EXPECT_EQ(globals(G_oriented, G_oriented.neighbors(v)), expected);
+        EXPECT_EQ(globals(G_oriented, G_oriented.local_neighbors(v)), expected);
     }
     for (VertexHandle const g: G_oriented.ghosts()) {
         VertexId const        g_global = G_oriented.global_id(g);
@@ -143,7 +143,7 @@ TEST_P(Orientation, LocalDegreeOutward) {
             }
         }
         std::ranges::sort(expected);
-        EXPECT_EQ(globals(G_oriented, G_oriented.neighbors(v)), expected);
+        EXPECT_EQ(globals(G_oriented, G_oriented.local_neighbors(v)), expected);
     }
 }
 
