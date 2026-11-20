@@ -78,8 +78,14 @@ Still to review in stage 2, in the order of the algorithm's flow (decided 2026-1
    Changed in review (`077c9a3`): `orient` partitions the input graph's neighborhoods in place and truncates them (one key
    per vertex and edge, `mutable_neighbors` / `truncate_neighborhoods` as building steps); the sort stays (no sortedness
    assumed for KaGen graphs, fair to competitors)
-4. Local phase, `drivers.h` `local_phase`: `phases/local.h` `run<with_ghosts>`, `neighbors_with_ghosts`, the edge
-   kernel; `intersection.h`, `triangle_counter.h`, `phase_counters.h`
+4. (reviewed 2026-11-20) Local phase, `drivers.h` `local_phase`: `phases/local.h` `run`, the edge kernel;
+   `intersection.h`, `triangle_counter.h`, `phase_counters.h`. Changed in review: `408e87d` (TriangleCounter counts,
+   kernels call `record`); `6e75890` (one loop over `G.vertices()` or `G.local_vertices()`, chosen by
+   `has_ghost_out_edges()`, no template parameter; `neighbors` covers ghosts, `local_neighbors` = of a local vertex;
+   `sort_neighborhoods` stores each vertex's split, `local_heads` / `ghost_heads`); `2f5a95a` (intersections on ranges
+   with concepts, no `Compare`, `binary` recursive on subranges). Laptop timings of the methods (4 ranks, 2^18/2^22):
+   `merge` fastest or tied everywhere; `binary-search` 1.5-2.6x slower, `binary` = merge at cutoff 1000, +30% on RMAT at
+   cutoff 32, `hybrid` 0-9% slower (its scale 1.0 is too optimistic for a binary-search step)
 5. Into global ids, one of two: without contraction `preprocessing.h` `global_ids` -> `build.h` `to_global_ids`
    (translate + rotate); with contraction `preprocessing.h` `contraction` -> `report_contraction` -> `build.h`
    `contract_to_global_ids` (in-place compaction). Both give `graph.h` `GlobalIdGraph` (`kept` / `is_kept`,
