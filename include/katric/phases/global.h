@@ -94,13 +94,7 @@ void process_message(
         counters.wedge_checks += u_neighbors.size();
         counters.intersection_size_global += entries.size() + u_neighbors.size();
         katric::intersection(
-            u_neighbors.begin(),
-            u_neighbors.end(),
-            entries.begin(),
-            entries.end(),
-            [&](graph::VertexId w) { triangles.record(Triangle{v, u_global, w}); },
-            std::less<>{},
-            conf
+            u_neighbors, entries, [&](graph::VertexId w) { triangles.record(Triangle{v, u_global, w}); }, conf
         );
     }
 }

@@ -34,13 +34,12 @@ inline void intersect_edge(graph::Graph const& G,
   counters.intersection_size_local +=
       static_cast<std::int64_t>(v_neighbors.size() + u_neighbors.size());
   katric::intersection(
-      v_neighbors.begin(), v_neighbors.end(), u_neighbors.begin(),
-      u_neighbors.end(),
+      v_neighbors, u_neighbors,
       [&](graph::VertexHandle w) -> void {
         triangles.record(
             Triangle{.x=G.global_id(v), .y=G.global_id(u), .z=G.global_id(w)});
       },
-      std::less<>{}, conf);
+      conf);
 }
 
 /// The local phase: the intersection for every edge v -> u with both ends local

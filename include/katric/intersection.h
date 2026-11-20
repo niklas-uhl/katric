@@ -19,238 +19,190 @@
  * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+// Intersections of two sorted neighborhoods (ascending, no duplicates), by the
+// method of `--intersection-method`.
 #pragma once
 
 #include <algorithm>
+#include <bit>
+#include <concepts>
 #include <cstddef>
-#include <iostream>
-#include <stack>
-
+#include <functional>
 #include <ranges>
-#include <fmt/core.h>
+#include <utility>
+
 #include <fmt/ranges.h>
 #include <kassert/kassert.hpp>
 
 #include "katric/config.h"
-#include "katric/util.h"
 
 namespace katric {
 
-template <class InputIt1, class InputIt2, class OnIntersection, class Compare>
-void merge_intersection(
-    InputIt1 first1, InputIt1 last1, InputIt2 first2, InputIt2 last2, OnIntersection&& on_intersection, Compare comp
-) {
-    while (first1 != last1 && first2 != last2) {
-        if (comp(*first1, *first2)) {
-            ++first1;
-        } else if (comp(*first2, *first1)) {
-            ++first2;
-        } else {
-            on_intersection(*first1);
-            ++first1;
-            ++first2;
-        }
-    }
-}
+/// A range the intersections read (as const): random access and sized, for
+/// the binary searches and the methods' size tests. Sortedness is a
+/// precondition, checked with assertions on.
+template <typename R>
+concept IntersectableRange = std::ranges::random_access_range<R const> &&
+                             std::ranges::sized_range<R const>;
 
-template <class InputIt1, class InputIt2, class OnIntersection, class Compare>
-void binary_search_intersection(
-    InputIt1 first1, InputIt1 last1, InputIt2 first2, InputIt2 last2, OnIntersection&& on_intersection, Compare comp
-) {
-    auto dist1 = last1 - first1;
-    auto dist2 = last2 - first2;
-    if (dist1 <= dist2) {
-        for (auto current = first1; current != last1; ++current) {
-            if (std::binary_search(first2, last2, *current, comp)) {
-                on_intersection(*current);
-            }
-        }
+/// Two ranges to intersect: elements comparable with each other.
+template <typename R1, typename R2>
+concept IntersectableRanges =
+    IntersectableRange<R1> && IntersectableRange<R2> &&
+    std::totally_ordered_with<std::ranges::range_reference_t<R1 const>,
+                              std::ranges::range_reference_t<R2 const>>;
+
+/// Called with each common element, taken from either range.
+template <typename F, typename R1, typename R2>
+concept IntersectionCallback =
+    std::invocable<F&, std::ranges::range_reference_t<R1 const>> &&
+    std::invocable<F&, std::ranges::range_reference_t<R2 const>>;
+
+/// Walks both ranges once: O(|left| + |right|).
+template <typename R1, typename R2, typename F>
+  requires IntersectableRanges<R1, R2> && IntersectionCallback<F, R1, R2>
+void merge_intersection(R1 const& left, R2 const& right, F on_intersection) {
+  auto first1 = std::ranges::begin(left);
+  auto const last1 = std::ranges::end(left);
+  auto first2 = std::ranges::begin(right);
+  auto const last2 = std::ranges::end(right);
+  while (first1 != last1 && first2 != last2) {
+    if (*first1 < *first2) {
+      ++first1;
+    } else if (*first2 < *first1) {
+      ++first2;
     } else {
-        for (auto current = first2; current != last2; ++current) {
-            if (std::binary_search(first1, last1, *current, comp)) {
-                on_intersection(*current);
-            }
-        }
+      on_intersection(*first1);
+      ++first1;
+      ++first2;
     }
+  }
 }
 
-template <class InputIt1, class InputIt2, class OnIntersection, class Compare>
-void binary_intersection(
-    InputIt1         _first1,
-    InputIt1         _last1,
-    InputIt2         _first2,
-    InputIt2         _last2,
-    OnIntersection&& on_intersection,
-    Compare          comp,
-    size_t           recursion_threshold = 1000
-) {
-#if !defined(KATRIC_BINARY_INTERSECTION_RECURSIVE)
-    struct Task {
-        size_t first1 = 0, last1 = 0, first2 = 0, last2 = 0;
-        size_t dist1() const {
-            return last1 - first1;
-        }
-        size_t dist2() const {
-            return last2 - first2;
-        }
-    };
-    std::stack<Task> stack;
-    {
-        size_t dist1 = _last1 - _first1;
-        size_t dist2 = _last2 - _first2;
-        stack.emplace(Task{0, dist1, 0, dist2});
+/// Looks up each element of the smaller range in the larger one:
+/// O(min · log max).
+template <typename R1, typename R2, typename F>
+  requires IntersectableRanges<R1, R2> && IntersectionCallback<F, R1, R2>
+void binary_search_intersection(R1 const& left,
+                                R2 const& right,
+                                F on_intersection) {
+  auto const search = [&](auto&& smaller, auto&& larger) -> void {
+    for (auto&& element : smaller) {
+      if (std::ranges::binary_search(larger, element)) {
+        on_intersection(element);
+      }
     }
-
-    while (!stack.empty()) {
-        Task task = stack.top();
-        stack.pop();
-        auto first1 = _first1 + task.first1;
-        auto last1  = _first1 + task.last1;
-
-        auto first2 = _first2 + task.first2;
-        auto last2  = _first2 + task.last2;
-
-        if (task.dist1() <= recursion_threshold && task.dist2() <= recursion_threshold) {
-            merge_intersection(first1, last1, first2, last2, on_intersection, comp);
-            continue;
-        }
-        if (task.dist1() == 0 || task.dist2() == 0) {
-            continue;
-        }
-        if (task.dist1() <= task.dist2()) {
-            auto pivot1 = first1 + task.dist1() / 2;
-            auto pivot2 = std::lower_bound(first2, last2, *pivot1, comp);
-
-            // avoid endless recursion
-            if (!(pivot1 == last1 && pivot2 == last2)) {
-                stack.emplace(
-                    Task{task.first1, task.first1 + (pivot1 - first1), task.first2, task.first2 + (pivot2 - first2)}
-                );
-                /* d_first = binary_intersection(first1, pivot1, first2, pivot2, d_first, comp); */
-            }
-            if (!(pivot2 == last2) && !comp(*pivot1, *pivot2)) {
-                // duplicates may lead to undefined behavior
-                on_intersection(*pivot1);
-                pivot1++;
-                pivot2++;
-            }
-            if (!(pivot1 == first1 && pivot2 == first2)) {
-                stack.emplace(
-                    Task{task.first1 + (pivot1 - first1), task.last1, task.first2 + (pivot2 - first2), task.last2}
-                );
-                /* d_first = binary_intersection(pivot1, last1, pivot2, last2,
-                 * d_first, comp); */
-            }
-        } else {
-            auto pivot2 = first2 + task.dist2() / 2;
-            auto pivot1 = std::lower_bound(first1, last1, *pivot2, comp);
-            if (!(pivot2 == last2 && pivot1 == last1)) {
-                stack.emplace(
-                    Task{task.first1, task.first1 + (pivot1 - first1), task.first2, task.first2 + (pivot2 - first2)}
-                );
-            }
-            if (!(pivot1 == last1) && !comp(*pivot2, *pivot1)) {
-                on_intersection(*pivot2);
-                pivot1++;
-                pivot2++;
-            }
-            if (!(pivot2 == first2 && pivot1 == first1)) {
-                stack.emplace(
-                    Task{task.first1 + (pivot1 - first1), task.last1, task.first2 + (pivot2 - first2), task.last2}
-                );
-            }
-        }
-    }
-
-#else
-    size_t dist1 = _last1 - _first1;
-    size_t dist2 = _last2 - _first2;
-
-    // if both lists get too small, we use merge intersection
-    if (dist1 <= recursion_threshold && dist2 <= recursion_threshold) {
-        merge_intersection(_first1, _last1, _first2, _last2, on_intersection, comp);
-        return;
-    }
-    if (dist1 == 0 || dist2 == 0) {
-        return;
-    }
-
-    // use smaller list for splitting
-    if (dist1 <= dist2) {
-        auto pivot1 = _first1 + dist1 / 2;
-        auto pivot2 = std::lower_bound(_first2, _last2, *pivot1, comp);
-
-        // avoid endless recursion
-        if (!(pivot1 == _last1 && pivot2 == _last2)) {
-            binary_intersection(_first1, pivot1, _first2, pivot2, on_intersection, comp);
-        }
-        if (!(pivot2 == _last2) && !comp(*pivot1, *pivot2)) {
-            // duplicates may lead to undefined behavior
-            on_intersection(*pivot1);
-            pivot1++;
-            pivot2++;
-        }
-        if (!(pivot1 == _first1 && pivot2 == _first2)) {
-            binary_intersection(pivot1, _last1, pivot2, _last2, on_intersection, comp);
-        }
-    } else {
-        auto pivot2 = _first2 + dist2 / 2;
-        auto pivot1 = std::lower_bound(_first1, _last1, *pivot2, comp);
-        if (!(pivot2 == _last2 && pivot1 == _last1)) {
-            binary_intersection(_first2, pivot2, _first1, pivot1, on_intersection, comp);
-        }
-        if (!(pivot1 == _last1) && !comp(*pivot2, *pivot1)) {
-            on_intersection(*pivot2);
-            pivot1++;
-            pivot2++;
-        }
-        if (!(pivot2 == _first2 && pivot1 == _first1)) {
-            binary_intersection(pivot2, _last2, pivot1, _last1, on_intersection, comp);
-        }
-    }
-#endif
+  };
+  if (std::ranges::size(left) <= std::ranges::size(right)) {
+    search(left, right);
+  } else {
+    search(right, left);
+  }
 }
 
-/// Intersects two sorted ranges with the method of `--intersection-method`; calls `on_intersection` per common element.
-template <class InputIt1, class InputIt2, class OnIntersection, class Compare>
-void intersection(
-    InputIt1         first1,
-    InputIt1         last1,
-    InputIt2         first2,
-    InputIt2         last2,
-    OnIntersection&& on_intersection,
-    Compare          comp,
-    Config const&    conf
-) {
-    KASSERT(std::adjacent_find(first1, last1) == last1);
-    KASSERT(std::is_sorted(first1, last1, comp), fmt::format("{}", std::ranges::subrange(first1, last1)));
-    KASSERT(std::is_sorted(first1, last1, comp));
-    KASSERT(std::adjacent_find(first2, last2) == last2);
-    KASSERT(std::is_sorted(first2, last2, comp), fmt::format("{}", std::ranges::subrange(first2, last2)));
+namespace internal {
 
-    switch (conf.intersection_method) {
-        case IntersectionMethod::merge:
-            merge_intersection(first1, last1, first2, last2, on_intersection, comp);
-            break;
-        case IntersectionMethod::binary_search:
-            binary_search_intersection(first1, last1, first2, last2, on_intersection, comp);
-            break;
-        case IntersectionMethod::binary:
-            binary_intersection(first1, last1, first2, last2, on_intersection, comp, conf.binary_intersection_cutoff);
-            break;
-        case IntersectionMethod::hybrid:
-            auto dist1 = last1 - first1;
-            auto dist2 = last2 - first2;
-            if (dist2 < dist1) {
-                std::swap(dist1, dist2);
-            }
-            if (dist1 * log2(dist2) < conf.hybrid_cutoff_scale * (dist1 + dist2)) {
-                binary_search_intersection(first1, last1, first2, last2, on_intersection, comp);
-            } else {
-                merge_intersection(first1, last1, first2, last2, on_intersection, comp);
-            }
-            break;
+/// binary_intersection on subranges, so that the recursion keeps one type per
+/// side. The pivot (middle of the smaller side) is excluded from both halves,
+/// so each call shrinks a side: the depth is at most log |left| + log |right|.
+template <typename I1, typename I2, typename F>
+void binary_intersection(std::ranges::subrange<I1> left,
+                         std::ranges::subrange<I2> right,
+                         F& on_intersection,
+                         std::size_t cutoff) {
+  if (left.size() <= cutoff && right.size() <= cutoff) {
+    merge_intersection(left, right, on_intersection);
+    return;
+  }
+  if (left.empty() || right.empty()) {
+    return;
+  }
+  if (left.size() <= right.size()) {
+    auto const pivot1 = left.begin() + (left.size() / 2);
+    auto pivot2 = std::ranges::lower_bound(right, *pivot1);
+    binary_intersection(std::ranges::subrange(left.begin(), pivot1),
+                        std::ranges::subrange(right.begin(), pivot2),
+                        on_intersection, cutoff);
+    if (pivot2 != right.end() && !(*pivot1 < *pivot2)) {
+      on_intersection(*pivot1);
+      ++pivot2;
     }
+    binary_intersection(std::ranges::subrange(pivot1 + 1, left.end()),
+                        std::ranges::subrange(pivot2, right.end()),
+                        on_intersection, cutoff);
+  } else {
+    auto const pivot2 = right.begin() + (right.size() / 2);
+    auto pivot1 = std::ranges::lower_bound(left, *pivot2);
+    binary_intersection(std::ranges::subrange(left.begin(), pivot1),
+                        std::ranges::subrange(right.begin(), pivot2),
+                        on_intersection, cutoff);
+    if (pivot1 != left.end() && !(*pivot2 < *pivot1)) {
+      on_intersection(*pivot2);
+      ++pivot1;
+    }
+    binary_intersection(std::ranges::subrange(pivot1, left.end()),
+                        std::ranges::subrange(pivot2 + 1, right.end()),
+                        on_intersection, cutoff);
+  }
 }
 
-} // namespace katric
+}  // namespace internal
+
+/// Divide and conquer: splits the smaller range at its middle, finds the
+/// pivot in the larger one by binary search, and recurses on both sides; parts
+/// with both sides at most `cutoff` long are merged.
+template <typename R1, typename R2, typename F>
+  requires IntersectableRanges<R1, R2> && IntersectionCallback<F, R1, R2>
+void binary_intersection(R1 const& left,
+                         R2 const& right,
+                         F on_intersection,
+                         std::size_t cutoff) {
+  internal::binary_intersection(std::ranges::subrange(left),
+                                std::ranges::subrange(right), on_intersection,
+                                cutoff);
+}
+
+/// Intersects two sorted ranges with the method of `--intersection-method`;
+/// calls `on_intersection` per common element.
+template <typename R1, typename R2, typename F>
+  requires IntersectableRanges<R1, R2> && IntersectionCallback<F, R1, R2>
+void intersection(R1 const& left,
+                  R2 const& right,
+                  F on_intersection,
+                  Config const& conf) {
+  KASSERT(std::ranges::is_sorted(left), fmt::format("{}", left));
+  KASSERT(std::ranges::adjacent_find(left) == std::ranges::end(left));
+  KASSERT(std::ranges::is_sorted(right), fmt::format("{}", right));
+  KASSERT(std::ranges::adjacent_find(right) == std::ranges::end(right));
+
+  switch (conf.intersection_method) {
+    case IntersectionMethod::merge:
+      merge_intersection(left, right, on_intersection);
+      break;
+    case IntersectionMethod::binary_search:
+      binary_search_intersection(left, right, on_intersection);
+      break;
+    case IntersectionMethod::binary:
+      binary_intersection(left, right, on_intersection, conf.binary_intersection_cutoff);
+      break;
+    case IntersectionMethod::hybrid: {
+      // binary search if min · log max < scale · (min + max), the two costs
+      // above; log2 as the bit width (an integer, enough for left cutoff)
+      std::size_t const size_left = std::ranges::size(left);
+      std::size_t const size_right = std::ranges::size(right);
+      std::size_t const smaller = std::min(size_left, size_right);
+      std::size_t const larger = std::max(size_left, size_right);
+      auto const search_cost = static_cast<double>(
+          smaller * static_cast<std::size_t>(std::bit_width(larger)));
+      if (search_cost < conf.hybrid_cutoff_scale *
+                            static_cast<double>(smaller + larger)) {
+        binary_search_intersection(left, right, on_intersection);
+      } else {
+        merge_intersection(left, right, on_intersection);
+      }
+      break;
+    }
+  }
+}
+
+}  // namespace katric

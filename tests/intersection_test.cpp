@@ -19,7 +19,6 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <functional>
 #include <iterator>
 #include <random>
 #include <string>
@@ -45,7 +44,6 @@ std::string to_string(Vec const& v) {
 // Runs all intersection variants on (v1, v2) and (v2, v1) and compares against expected.
 void check_all_intersections(Vec v1, Vec v2, Vec const& expected) {
     using ::testing::ElementsAreArray;
-    using ::testing::UnorderedElementsAreArray;
     for (bool swap: {false, true}) {
         if (swap) {
             v1.swap(v2);
@@ -53,28 +51,25 @@ void check_all_intersections(Vec v1, Vec v2, Vec const& expected) {
         SCOPED_TRACE("v1 = " + to_string(v1) + ", v2 = " + to_string(v2));
         auto run = [&](auto&& intersect) {
             Vec result;
-            intersect(
-                v1.begin(),
-                v1.end(),
-                v2.begin(),
-                v2.end(),
-                [&result](auto const& val) { result.push_back(val); },
-                std::less<>{}
-            );
+            intersect(v1, v2, [&result](auto const& val) { result.push_back(val); });
             return result;
         };
-        auto merge = [](auto&&... args) {
-            katric::merge_intersection(std::forward<decltype(args)>(args)...);
+        auto merge = [](auto const& left, auto const& right, auto on) {
+            katric::merge_intersection(left, right, on);
         };
-        auto binary_search = [](auto&&... args) {
-            katric::binary_search_intersection(std::forward<decltype(args)>(args)...);
+        auto binary_search = [](auto const& left, auto const& right, auto on) {
+            katric::binary_search_intersection(left, right, on);
         };
-        auto binary = [](auto&&... args) {
-            katric::binary_intersection(std::forward<decltype(args)>(args)...);
+        // cutoff 0: divide and conquer down to single elements; 4: merges small parts
+        auto binary = [](std::size_t cutoff) {
+            return [cutoff](auto const& left, auto const& right, auto on) {
+                katric::binary_intersection(left, right, on, cutoff);
+            };
         };
         EXPECT_THAT(run(merge), ElementsAreArray(expected)) << "merge_intersection";
         EXPECT_THAT(run(binary_search), ElementsAreArray(expected)) << "binary_search_intersection";
-        EXPECT_THAT(run(binary), UnorderedElementsAreArray(expected)) << "binary_intersection";
+        EXPECT_THAT(run(binary(0)), ElementsAreArray(expected)) << "binary_intersection, cutoff 0";
+        EXPECT_THAT(run(binary(4)), ElementsAreArray(expected)) << "binary_intersection, cutoff 4";
     }
 }
 
