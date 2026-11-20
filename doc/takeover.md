@@ -88,14 +88,18 @@ Still to review in stage 2, in the order of the algorithm's flow (decided 2026-1
    `make_message`, the handler (`Merger` / `Splitter`); `communication_policy.h`, `message_tags.h`
 7. (reviewed 2026-11-19, ahead of 4) `triangle_counter.h` (`Triangle`, `TriangleCounter`, `reduce`). Changed: the phases return
    their kernels' triangle counts and `emit` only records triangles with assertions on (`441c4d1`; the per-triangle
-   `tbb::combinable` cost a third of the local phase); cleanup in `1a99665`
+   `tbb::combinable` cost a third of the local phase); cleanup in `1a99665`. Then (`408e87d`, 2026-11-20) the counter counts: kernels call
+   `triangles.record(t)` (count, plus the record with assertions on); no `emit` callback, no `TriangleFunc`, no
+   kernel counters `local_triangles` / `type3_triangles` (the drivers report the counter's difference per phase). Same
+   counters on refcheck; laptop timings: local phase equal or faster, global phase within noise
 
 ## Open items
 
 - **Timings before `441c4d1` include the per-triangle counting overhead** (laptop: local phase -35 to -48%, total -26 to
   -40%). All cluster data so far (and probably `pre-refactor`) has it; rerun before comparing against new runs
 
-- **Push** `chore/modernize` (48 commits as of 2026-11-19 evening) and merge it into `feat/message-trimming`. The trimming code uses
+- `chore/modernize` was pushed through `7ab5008` (2026-11-19); later commits are local. Merge it into
+  `feat/message-trimming`. The trimming code uses
   handle-based keys (`Orientation::degree(handle)`, `neighbors_as_global_ids`) that no longer exist after `9c64803`:
   it must compute the keys before the in-place conversion (e.g. keep each entry's degree next to it on the trimming
   path) — expect merge conflicts in `global.h`, `graph.h`, `preprocessing.h`
