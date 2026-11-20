@@ -153,7 +153,7 @@ set(MESSAGE_QUEUE_BLOCKING_RECEIVE ON CACHE BOOL "Receive messages blocking")
 FetchContent_Declare(
   message-queue
   GIT_REPOSITORY https://github.com/niklas-uhl/message-queue
-  GIT_TAG 57b0b8a6129a78dc277a992b04f818038c9669f8 # katric-legacy
+  GIT_TAG a36c73f84cac5a12d5137eb007adda2a0bbe10ec # katric-legacy
   SYSTEM)
 
 # katric's own kassert instance (kassert::kassert, used by no other dependency). Its default level applies to every target

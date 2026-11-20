@@ -9,7 +9,6 @@
 #include <functional>
 #include <iterator>
 #include <limits>
-#include <memory>
 #include <ranges>
 #include <span>
 #include <stdexcept>
@@ -21,7 +20,6 @@
 #include "kassert/kassert.hpp"
 #include "katric/caliper.h"
 #include "katric/config.h"
-#include "katric/datastructures/span.h"
 #include "katric/graph/graph.h"
 #include "katric/indirect_message_queue.h"
 #include "katric/intersection.h"
@@ -68,35 +66,34 @@ struct GlobalPhaseCounters {
 constexpr graph::VertexId message_end =
     std::numeric_limits<graph::VertexId>::max();
 
-/// Appends a message to the queue's buffer for one rank, terminated by
+/// Appends a message (any range of global ids, e.g. a view of a message sent
+/// to several ranks) to the queue's buffer for one rank, terminated by
 /// `message_end`.
 struct Merger {
-  std::size_t operator()(std::vector<graph::VertexId>& buffer,
-                         std::vector<graph::VertexId> msg,
-                         int /*tag*/) const {
-    buffer.insert(buffer.end(), msg.begin(), msg.end());
+  template <std::ranges::sized_range Message>
+  auto operator()(std::vector<graph::VertexId>& buffer,
+                  Message const& message,
+                  int /*tag*/) const -> std::size_t {
+    buffer.insert(buffer.end(), std::ranges::begin(message),
+                  std::ranges::end(message));
     buffer.push_back(message_end);
-    return msg.size() + 1;
+    return std::ranges::size(message) + 1;
   }
 };
 
-/// Splits a received buffer into its messages at `message_end`.
+/// Splits a received buffer into its messages at `message_end` and hands each
+/// to `on_message` as a view into the buffer, valid during the call (the
+/// handler runs synchronously).
 struct Splitter {
   template <typename MessageFunc>
-  void operator()(std::vector<graph::VertexId> buffer,
+  void operator()(std::vector<graph::VertexId> const& buffer,
                   MessageFunc&& on_message,
                   int sender) const {
-    auto const buffer_ptr =
-        std::make_shared<std::vector<graph::VertexId>>(std::move(buffer));
-    auto slice_begin = buffer_ptr->begin();
-    while (slice_begin != buffer_ptr->end()) {
-      auto const slice_end =
-          std::find(slice_begin, buffer_ptr->end(), message_end);
-      on_message(
-          SharedVectorSpan(buffer_ptr,
-                           std::distance(buffer_ptr->begin(), slice_begin),
-                           std::distance(buffer_ptr->begin(), slice_end)),
-          sender);
+    auto slice_begin = buffer.begin();
+    while (slice_begin != buffer.end()) {
+      auto const slice_end = std::find(slice_begin, buffer.end(), message_end);
+      on_message(std::span<graph::VertexId const>(slice_begin, slice_end),
+                 sender);
       slice_begin = slice_end + 1;
     }
   }
@@ -197,13 +194,10 @@ inline void global_phase(graph::Graph const& G,
   clock::duration handle_time{};
   clock::duration poll_time{};
   clock::duration termination_handle_time{};
-  auto on_message = [&](SharedVectorSpan<graph::VertexId> span,
+  auto on_message = [&](std::span<graph::VertexId const> message,
                         int /*sender*/) {
     auto const start = clock::now();
-    process_message(G, conf,
-                    std::span<graph::VertexId const>(std::to_address(span.begin()),
-                                                     span.size()),
-                    counters, triangles);
+    process_message(G, conf, message, counters, triangles);
     handle_time += clock::now() - start;
   };
   with_queue([&](auto& queue) -> void {
@@ -230,7 +224,8 @@ inline void global_phase(graph::Graph const& G,
           }
           int const destination = G.owner_of_id(w);
           destination_end = G.range_of(destination).second;
-          queue.post_message(std::vector(message), destination);
+          queue.post_message(std::span<graph::VertexId const>(message),
+                             destination);
         }
       }
       auto const poll_start = clock::now();

@@ -21,13 +21,15 @@
 
 #pragma once
 
-#include <sstream>
+#include <cmath>
+#include <ranges>
+#include <span>
+#include <vector>
 #include <type_traits>
 
 #include <mpi.h>
 #include <spdlog/spdlog.h>
 
-#include "datastructures/span.h"
 #include "message-queue/buffered_queue.h"
 
 namespace katric {
@@ -50,9 +52,12 @@ public:
         MPI_Comm_size(MPI_COMM_WORLD, &size_);
         grid_size_ = std::round(std::sqrt(size_));
     };
-    void post_message(std::vector<value_type>&& message, int receiver, bool direct_send = false) {
-        message.push_back(rank_to_value<value_type>(rank_));
-        message.push_back(rank_to_value<value_type>(receiver));
+    /// Copies `message` (any range of values) once, to append the original sender and the receiver for the proxies.
+    template <typename Message>
+    void post_message(Message const& message, int receiver, bool direct_send = false) {
+        std::vector<value_type> routed(std::ranges::begin(message), std::ranges::end(message));
+        routed.push_back(rank_to_value<value_type>(rank_));
+        routed.push_back(rank_to_value<value_type>(receiver));
         int proxy;
         if (direct_send) {
             proxy = receiver;
@@ -60,7 +65,7 @@ public:
             proxy = get_proxy(rank_, receiver);
         }
         SPDLOG_DEBUG("Redirecting message to {} via {}", receiver, proxy);
-        queue_.post_message(std::move(message), proxy);
+        queue_.post_message(std::move(routed), proxy);
     }
 
     void set_threshold(size_t threshold) {
@@ -71,8 +76,7 @@ public:
     void poll(MessageHandler&& on_message) {
         // static_assert(std::is_invocable_v<MessageHandler, typename std::vector<T>::iterator,
         //                                   typename std::vector<T>::iterator, int>);
-        queue_.poll([&](SharedVectorSpan<value_type> span, int /*sender*/) {
-            auto begin           = span.begin();
+        queue_.poll([&](std::span<value_type const> span, int /*sender*/) {
             auto end             = span.end();
             int receiver        = value_to_rank(*(end - 1));
             int original_sender = value_to_rank(*(end - 2));
@@ -82,7 +86,7 @@ public:
             } else {
                 auto              proxy = get_proxy(rank_, receiver);
                 SPDLOG_DEBUG("Redirecting message to {} via {}", receiver, proxy);
-                queue_.post_message(std::vector(begin, end), proxy);
+                queue_.post_message(span, proxy);  // forwarded as received, with its routing words
             }
         });
     }
@@ -91,8 +95,7 @@ public:
     void terminate(MessageHandler&& on_message) {
         // static_assert(std::is_invocable_v<MessageHandler, typename std::vector<T>::iterator,
         //                                   typename std::vector<T>::iterator, int>);
-        queue_.terminate([&](SharedVectorSpan<value_type> span, int /*sender*/) {
-            auto begin           = span.begin();
+        queue_.terminate([&](std::span<value_type const> span, int /*sender*/) {
             auto end             = span.end();
             int receiver        = value_to_rank(*(end - 1));
             int original_sender = value_to_rank(*(end - 2));
@@ -102,7 +105,7 @@ public:
             } else {
                 auto              proxy = get_proxy(rank_, receiver);
                 SPDLOG_DEBUG("Redirecting message to {} via {}", receiver, proxy);
-                queue_.post_message(std::vector(begin, end), proxy);
+                queue_.post_message(span, proxy);  // forwarded as received, with its routing words
             }
         });
     }
@@ -162,8 +165,9 @@ class DirectMessageQueueAdaptor {
 public:
     using value_type = typename QueueType::value_type;
     DirectMessageQueueAdaptor(QueueType& queue) : queue_(queue){};
-    void post_message(std::vector<value_type>&& message, int receiver, bool direct_send [[maybe_unused]] = false) {
-        queue_.post_message(std::move(message), receiver);
+    template <typename Message>
+    void post_message(Message const& message, int receiver, bool direct_send [[maybe_unused]] = false) {
+        queue_.post_message(message, receiver);
     }
 
     void set_threshold(size_t threshold) {
