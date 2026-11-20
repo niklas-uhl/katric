@@ -166,33 +166,24 @@ inline graph::Graph preprocessing(graph::Graph&& G, Config const& conf) {
 }
 
 /// Without contraction, after the local phase: the oriented graph converted to
-/// global ids in place for the global phase (region `global_ids`).
-inline graph::GlobalIdGraph global_ids(graph::Graph&& G) {
+/// global ids (a new array) for the global phase (region `global_ids`).
+inline auto global_ids(graph::Graph&& G) -> graph::GlobalIdGraph {
   CALI_CXX_MARK_SCOPE("global_ids");
   return graph::to_global_ids(std::move(G));
 }
 
-/// The contraction's counters: the vertices with cut edges (compact_nodes) and
-/// their cut out-edges (compact_edges).
-inline void report_contraction(graph::Graph const& G) {
-  std::int64_t nodes = 0;
-  std::int64_t edges = 0;
-  for (graph::VertexHandle const v : G.local_vertices()) {
-    auto const degree = static_cast<std::int64_t>(G.ghost_heads(v).size());
-    nodes += degree > 0 ? 1 : 0;
-    edges += degree;
-  }
-  profiling::counter_add("compact_nodes", nodes);
-  profiling::counter_add("compact_edges", edges);
-}
-
 /// With contraction, after the local phase: the edges the local phase did not
-/// handle (the cut out-edges), as global ids, contracted in place (region
-/// `contraction`).
-inline graph::GlobalIdGraph contraction(graph::Graph&& G) {
+/// handle (the cut out-edges), as global ids (region `contraction`). Counters:
+/// the vertices with cut edges (compact_nodes) and their cut out-edges
+/// (compact_edges).
+inline auto contraction(graph::Graph&& G) -> graph::GlobalIdGraph {
   CALI_CXX_MARK_SCOPE("contraction");
-  report_contraction(G);
-  return graph::contract_to_global_ids(std::move(G));
+  auto G_contracted = graph::contract_to_global_ids(std::move(G));
+  profiling::counter_add("compact_nodes",
+                         static_cast<std::int64_t>(G_contracted.kept().size()));
+  profiling::counter_add(
+      "compact_edges", static_cast<std::int64_t>(G_contracted.num_local_edges()));
+  return G_contracted;
 }
 
 }  // namespace phases
