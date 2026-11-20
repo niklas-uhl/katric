@@ -61,33 +61,25 @@ inline auto format_as(Triangle const& triangle) -> std::string {
 /// check for duplicates on this rank (verify()).
 class TriangleCounter {
 public:
-  /// Calls `find(emit)` and adds the number of triangles it returns. `find`
-  /// calls `emit(Triangle)` for every triangle it finds (by global ids); `emit`
-  /// only records it with assertions enabled (it does nothing otherwise), so
-  /// the phases count their triangles themselves.
-  template <typename Find>
-  void operator()(Find&& find) {
-    count_ += find([this](Triangle triangle) -> void {
-      SPDLOG_DEBUG("{}", triangle);
-      if constexpr (KASSERT_ENABLED(kassert::assert::normal)) {
-        triangle.normalize();
-        triangles_.push_back(triangle);
-      } else {
-        (void)triangle;
-      }
-    });
+  /// Counts a triangle (by global ids) found by a phase's kernel; with
+  /// assertions enabled, also records it.
+  void record(Triangle triangle) {
+    ++count_;
+    SPDLOG_DEBUG("{}", triangle);
+    if constexpr (KASSERT_ENABLED(kassert::assert::normal)) {
+      triangle.normalize();
+      triangles_.push_back(triangle);
+    }
   }
 
   /// The triangles found on this rank.
   [[nodiscard]] auto count() const -> std::size_t { return count_; }
 
-  /// Checks, with assertions enabled, that the phases' counts match the emitted
-  /// triangles and that no triangle was emitted twice on this rank. A triangle
-  /// found on two ranks goes unnoticed here; `--verify` compares the total
-  /// with a sequential count.
+  /// Checks, with assertions enabled, that no triangle was found twice on this
+  /// rank. A triangle found on two ranks goes unnoticed here; `--verify`
+  /// compares the total with a sequential count.
   void verify() {
     if constexpr (KASSERT_ENABLED(kassert::assert::normal)) {
-      KASSERT(triangles_.size() == count_);
       std::ranges::sort(triangles_);
       auto duplicate = std::ranges::adjacent_find(triangles_);
       KASSERT(duplicate == triangles_.end(),

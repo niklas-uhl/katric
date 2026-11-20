@@ -5,6 +5,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <utility>
 #include <vector>
 
@@ -12,6 +13,7 @@
 #include <kagen.h>
 #include <kamping/v2/comm.hpp>
 
+#include "katric/caliper.h"
 #include "katric/config.h"
 #include "katric/graph/graph.h"
 #include "katric/phases/global.h"
@@ -31,13 +33,10 @@ inline auto local_phase(graph::Graph const& G,
                         TriangleCounter& triangles)
     -> std::vector<graph::VertexHandle> {
   CALI_CXX_MARK_SCOPE("local_phase");
-  std::vector<graph::VertexHandle> interface_nodes;
-  triangles([&](auto emit) {
-    auto result = with_ghosts ? local::run<true>(G, conf, emit)
-                              : local::run<false>(G, conf, emit);
-    interface_nodes = std::move(result.interface_nodes);
-    return result.triangles;
-  });
+  auto const before = triangles.count();
+  auto interface_nodes = with_ghosts ? local::run<true>(G, conf, triangles)
+                                     : local::run<false>(G, conf, triangles);
+  profiling::counter_add("local_triangles", static_cast<std::int64_t>(triangles.count() - before));
   return interface_nodes;
 }
 
@@ -49,9 +48,9 @@ void global_phase(graph::GlobalIdGraph const& G,
                   Senders const& senders,
                   TriangleCounter& triangles) {
   CALI_CXX_MARK_SCOPE("global_phase");
-  triangles([&](auto emit) {
-    return global::run<CommunicationPolicy>(G, conf, threshold, senders, emit);
-  });
+  auto const before = triangles.count();
+  global::run<CommunicationPolicy>(G, conf, threshold, senders, triangles);
+  profiling::counter_add("type3_triangles", static_cast<std::int64_t>(triangles.count() - before));
 }
 
 }  // namespace phases

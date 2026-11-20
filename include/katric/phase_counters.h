@@ -15,14 +15,12 @@ struct LocalPhaseCounters {
   std::int64_t skipped_nodes = 0;
   std::int64_t wedge_checks = 0;
   std::int64_t intersection_size_local = 0;
-  std::int64_t local_triangles = 0;
 
   /// Adds the counts to the open Caliper region.
   void report() const {
     profiling::counter_add("skipped_nodes", skipped_nodes);
     profiling::counter_add("wedge_checks", wedge_checks);
     profiling::counter_add("intersection_size_local", intersection_size_local);
-    profiling::counter_add("local_triangles", local_triangles);
   }
 };
 
@@ -46,7 +44,6 @@ struct GlobalPhaseCounters {
   std::int64_t interface_nodes = 0;
   std::int64_t wedge_checks = 0;
   std::int64_t intersection_size_global = 0;
-  std::int64_t type3_triangles = 0;
 
   /// Adds the counts and the message statistics of the phase's queue to the
   /// open Caliper region.
@@ -57,7 +54,6 @@ struct GlobalPhaseCounters {
     profiling::counter_add("wedge_checks", wedge_checks);
     profiling::counter_add("intersection_size_global",
                            intersection_size_global);
-    profiling::counter_add("type3_triangles", type3_triangles);
     profiling::counter_add("sent_messages", messages.sent_messages);
     profiling::counter_add("send_volume", messages.send_volume);
     profiling::counter_add("received_messages", messages.received_messages);

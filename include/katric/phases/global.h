@@ -64,11 +64,16 @@ struct Splitter {
     }
 };
 
-/// Handles a received message [v, N+(v)...] (global ids, ascending): for every local vertex u in it, emits the
+/// Handles a received message [v, N+(v)...] (global ids, ascending): for every local vertex u in it, records the
 /// triangles (v, u, w) for w in N+(v) ∩ N+(u).
-template <typename It, typename TriangleFunc>
+template <typename It>
 void process_message(
-    graph::GlobalIdGraph const& G, Config const& conf, It begin, It end, GlobalPhaseCounters& counters, TriangleFunc& emit
+    graph::GlobalIdGraph const& G,
+    Config const&               conf,
+    It                          begin,
+    It                          end,
+    GlobalPhaseCounters&        counters,
+    TriangleCounter&            triangles
 ) {
     auto const&         numbering = G.numbering();
     graph::VertexId const v       = *begin;
@@ -93,10 +98,7 @@ void process_message(
             u_neighbors.end(),
             entries.begin(),
             entries.end(),
-            [&](graph::VertexId w) {
-                counters.type3_triangles++;
-                emit(Triangle{v, u_global, w});
-            },
+            [&](graph::VertexId w) { triangles.record(Triangle{v, u_global, w}); },
             std::less<>{},
             conf
         );
@@ -124,16 +126,19 @@ inline auto owner_from(dstl::distribution const& distribution, graph::VertexId w
 }
 
 /// The global phase: sends the message of every vertex v of `senders` once to each rank holding the head of a cut
-/// out-edge of v, and handles the received messages. `threshold` is the message queue's buffer size. Returns the
-/// number of triangles found on this rank.
+/// out-edge of v, and handles the received messages. `threshold` is the message queue's buffer size.
 ///
 /// A neighborhood is ascending and the vertex ranges are contiguous in rank order, so the heads on one rank form a run:
 /// an entry beyond the current owner's range starts the next run, whose owner is found by a binary search over the
 /// partition table from the current owner on. Per neighborhood: a comparison per entry and a search per destination.
-template <class CommunicationPolicy, typename Senders, typename TriangleFunc>
-auto run(
-    graph::GlobalIdGraph const& G, Config const& conf, std::size_t threshold, Senders const& senders, TriangleFunc emit
-) -> std::size_t {
+template <class CommunicationPolicy, typename Senders>
+void run(
+    graph::GlobalIdGraph const& G,
+    Config const&               conf,
+    std::size_t                 threshold,
+    Senders const&              senders,
+    TriangleCounter&            triangles
+) {
     auto base_queue = message_queue::make_buffered_queue<graph::VertexId>(Merger{}, Splitter{});
     auto queue      = [&]() {
         if constexpr (std::is_same_v<CommunicationPolicy, GridPolicy>) {
@@ -157,7 +162,7 @@ auto run(
     clock::duration termination_handle_time{};
     auto            on_message = [&](SharedVectorSpan<graph::VertexId> span, PEID /*sender*/) {
         auto const start = clock::now();
-        process_message(G, conf, span.begin(), span.end(), counters, emit);
+        process_message(G, conf, span.begin(), span.end(), counters, triangles);
         handle_time += clock::now() - start;
     };
     for (graph::VertexHandle const v: senders) {
@@ -197,7 +202,6 @@ auto run(
     profiling::counter_add("handle_ns", ns(handle_time));
     profiling::counter_add("poll_ns", ns(poll_time));
     profiling::counter_add("termination_handle_ns", ns(termination_handle_time));
-    return static_cast<std::size_t>(counters.type3_triangles);
 }
 
 } // namespace katric::global
