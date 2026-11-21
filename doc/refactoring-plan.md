@@ -294,10 +294,30 @@ by those `.cpp` files):
     - Suites (submitted 2026-11-21): `straggler` (per-rank times of the ghost exchanges at 1536 through Caliper's
       recorder, read with `eval/perrank.py`), `rebalance` (none / IDPD at 1 / IDPD and IDD at 1.5), `rebalance-rmat`
       (IDPD vs IDD at 1.5). Suites now use `ncores: node-size-pow2`, the range is set at job creation
+  - Results of `straggler` (2026-11-21, permuted RGG at 1536, 32 nodes, `eval/data/supermuc/straggler_26_11_21`):
+    - fadbd12 on the cluster: the cost function's `prepare` avg 1.17 -> 0.54 s, max 2.46 -> 1.23 s (the second exchange
+      is a gather now); cost-function communication 3.30 -> 2.28 s, IDPD total 17.4 -> 16.3 s. none unchanged (10.4 s)
+    - The straggler is not one rank but a fixed set: the pattern build (`prepare/pattern`) is bimodal, ~0.31-0.33 s on
+      most ranks and 0.9-1.0 s (3.1x) on 33 ranks (none) / 62 (IDPD, a superset of none's 33), nothing in between. The
+      same ranks in all three iterations and in both configurations (separate processes, the graph redistributed under
+      IDPD). All on nodes n21-n31 (ranks >= 1026), 1-9 per node (22 on n28 under IDPD) at scattered local indices
+    - Not the data and not a slow node: on those ranks every other region is as fast as on their nodes' other ranks
+      (sorting, orientation, `input_graph`, `global_phase`, and the gather right after the pattern, which reads the same
+      pairs: 0.063 vs 0.065 s). Everybody else waits for them in `exchange` (the slow ranks' `exchange` 0.52 vs 1.13 s),
+      so each pattern build costs ~0.7 s of max - avg per iteration (twice under IDPD)
+    - Hypothesis (unverified): TLB misses in the counting sort's scatter into `send_vertex` (~8 M u32 = 32 MiB): 1536
+      destinations are 1536 concurrent write streams, exactly the Skylake STLB size (1536 entries) on 4 KiB pages, and
+      no stream at all on 2 MiB pages; whether the buffer gets transparent huge pages depends on the node's memory
+      fragmentation, hence bimodal and node-bound. ~80 ns extra per scattered entry matches the 0.7 s. The scan's
+      `owners_` lookups (random over the ghosts) could suffer the same way. The laptop (16 KiB pages, other TLB) cannot
+      show it
+    - To check: sub-regions `scan` / `scatter` in the pattern build, and whether the buffers are huge-page backed (e.g.
+      AnonHugePages of /proc/self/smaps_rollup as a counter), or a run with madvise(MADV_HUGEPAGE) on the buffers. Fix
+      independent of the page size: a two-level counting sort (by node = dest / 48, then by rank within the node), at
+      most ~48 write streams per pass, for one extra sequential pass
   - Next steps (in this order; replace the list of 2026-11-18):
-    1. Evaluate `straggler`, `rebalance`, `rebalance-rmat`: is the slow rank fixed (same rank / node), does the
-       threshold keep the graph everywhere but RMAT and cost little, IDD vs IDPD on RMAT; then pick the defaults
-       (threshold, IDD or IDPD) and decide on making message trimming the default (wins or ties everywhere)
+    1. Evaluate `rebalance`, `rebalance-rmat` (`straggler` done, above): does the threshold keep the graph everywhere
+       but RMAT and cost little, IDD vs IDPD on RMAT; then pick the defaults (threshold, IDD or IDPD) and decide on making message trimming the default (wins or ties everywhere)
     2. The cost of `from_kagen` (was step 2): bucket the cut edges by owner rank first, then sort per bucket; check with
        a benchmark first, as for the bucketing. Matters twice per iteration with redistribution, and on hub ranks. (The
        other half of the old step 2, depositing the ghost values, is done: push_to_ghosts receives into place)
@@ -307,6 +327,9 @@ by those `.cpp` files):
        (compute at the tail, balanced by DPD) against DiTriC + IDPD / IDD on RMAT (was step 3)
     5. Cluster checks: RHG at 3072 with another seed (is the 19 M hub an outlier), more iterations or the minimum for
        GNM with direct
+    6. The pattern straggler (results of `straggler`): split the pattern build into `scan` / `scatter` and record
+       whether the buffers are huge-page backed, then (if it is the scatter) the two-level counting sort; ~0.7 s per
+       pattern build at 1536
 
 ### 1. Prune
 
