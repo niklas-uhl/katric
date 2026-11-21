@@ -3,8 +3,9 @@
 // (src/kacc/graph/ghost_exchange.hpp), a candidate for dSTL. Differences:
 // katric's graph instead of KaCCv2's graph concepts, one value per vertex and
 // no ids on the wire (each sender's values land in a block of the receiver's
-// ghosts known in advance), the messages are bucketed by destination with one
-// counting sort instead of a hash map of per-rank vectors, the transport is a
+// ghosts known in advance), the messages are bucketed by destination with a
+// counting sort instead of a hash map of per-rank vectors, and only once per
+// graph (GhostPushPattern; later exchanges gather into it), the transport is a
 // runtime choice that includes dSTL's sparse all-to-all, and the counters go to
 // Caliper.
 #pragma once
@@ -34,79 +35,127 @@
 
 namespace katric {
 
-/// Sends `value(u)` of every local vertex u once to each rank that holds u as a
-/// ghost, and returns the values of this rank's ghosts, indexed by ghost index.
-/// Collective; `G` must be undirected (both directions of every edge stored).
+/// What push_to_ghosts() sends to and receives from every rank on a graph. It
+/// depends only on the undirected graph (its cut edges and ghosts), so the
+/// graph builds it once (Graph::ghost_push_pattern()) and every exchange on
+/// that graph reuses it: an exchange is then a gather of the values plus the
+/// transfer.
+struct GhostPushPattern {
+  /// The local index of the vertex whose value goes into each slot of the send
+  /// buffer: one block per destination rank, ascending within each block.
+  std::vector<std::uint32_t> send_vertex;
+  std::vector<int> send_counts;
+  std::vector<int> send_displs;
+  /// From each rank, the number of this rank's ghosts it owns: one block of
+  /// the ghosts per owner, in rank order.
+  std::vector<int> recv_counts;
+  std::vector<int> recv_displs;
+};
+
+/// The pattern of push_to_ghosts() on `G` (undirected, both directions of every
+/// edge stored): local vertex u goes once to each rank that holds u as a ghost.
 ///
 /// No ids travel: since `G` is undirected, rank s sends rank r exactly r's
 /// ghosts owned by s (s sends u to r iff u has a neighbor on r iff u is a
-/// neighbor of one of r's vertices), in ascending order (a vertex's
-/// neighborhood is scanned at once, local vertices in order, and the counting
-/// sort below is stable). The vertex ranges are contiguous and in rank order,
-/// so r's ghosts owned by s are one block of its ghosts, ascending. So r knows
-/// the size and offset of every sender's part and receives it directly into
-/// place. Deduplication: remembering per rank the last vertex sent there
-/// suffices.
+/// neighbor of one of r's vertices), in ascending order (local vertices are
+/// scanned in order, and the counting sort below is stable).
+/// The vertex ranges are contiguous and in rank order, so r's ghosts owned by s
+/// are one block of its ghosts, ascending. So r knows the size and offset of
+/// every sender's part and receives it directly into place. Deduplication:
+/// remembering per rank the last vertex sent there suffices.
+///
+/// One pass over the adjacency appends (vertex, destination) pairs to a buffer
+/// reserved for every adjacency entry (no reallocation) and counts per
+/// destination; a counting sort then places the vertex indices into their
+/// blocks. A second pass over the adjacency instead of the buffer takes ~1.6x
+/// as long (bucketing benchmark, 2026-11-21).
+template <typename Graph>
+[[nodiscard]] auto build_ghost_push_pattern(Graph const& G)
+    -> GhostPushPattern {
+  auto const size = static_cast<std::size_t>(G.comm().size());
+  [[maybe_unused]] int const rank = G.comm().rank();
+  KASSERT(G.num_local_vertices() <= std::numeric_limits<std::uint32_t>::max(),
+          "local indices do not fit the pattern's 32 bits");
+  GhostPushPattern pattern{{},
+                           std::vector<int>(size, 0),
+                           std::vector<int>(size, 0),
+                           std::vector<int>(size, 0),
+                           std::vector<int>(size, 0)};
+  // (local index of u, destination), local vertices ascending
+  std::vector<std::pair<std::uint32_t, std::uint32_t>> outgoing;
+  outgoing.reserve(G.num_local_edges());
+  constexpr auto never = std::numeric_limits<std::size_t>::max();
+  std::vector<std::size_t> last_source_sent_to(size, never);
+  for (auto const u : G.local_vertices()) {
+    auto const u_local = G.to_local_index(u);
+    for (auto const v : G.neighbors(u)) {
+      if (G.is_local(v)) {
+        continue;
+      }
+      auto const v_rank = static_cast<std::size_t>(G.owner(v));
+      if (last_source_sent_to[v_rank] == u_local) {
+        continue;
+      }
+      last_source_sent_to[v_rank] = u_local;
+      outgoing.emplace_back(static_cast<std::uint32_t>(u_local),
+                            static_cast<std::uint32_t>(v_rank));
+      pattern.send_counts[v_rank]++;
+    }
+  }
+  for (std::size_t rk = 1; rk < size; ++rk) {
+    pattern.send_displs[rk] =
+        pattern.send_displs[rk - 1] + pattern.send_counts[rk - 1];
+  }
+  pattern.send_vertex.resize(outgoing.size());
+  std::vector<int> next = pattern.send_displs;
+  for (auto const& [u_local, dest] : outgoing) {
+    pattern.send_vertex[static_cast<std::size_t>(next[dest]++)] = u_local;
+  }
+  KASSERT(pattern.send_counts[static_cast<std::size_t>(rank)] == 0);
+  for (auto const ghost : G.ghosts()) {
+    pattern.recv_counts[static_cast<std::size_t>(G.owner(ghost))]++;
+  }
+  for (std::size_t rk = 1; rk < size; ++rk) {
+    pattern.recv_displs[rk] =
+        pattern.recv_displs[rk - 1] + pattern.recv_counts[rk - 1];
+  }
+  return pattern;
+}
+
+/// Sends `value(u)` of every local vertex u once to each rank that holds u as a
+/// ghost, and returns the values of this rank's ghosts, indexed by ghost index.
+/// Collective; `G` must be undirected (both directions of every edge stored).
+/// Uses `G`'s GhostPushPattern (built on the first exchange on `G`).
 ///
 /// `tag` must not be in use on `G.comm()` during the call (sparse mode).
 /// Reports the message counters of the exchange (sent/received messages and
 /// volume, one word per value) to the open Caliper region. Caliper regions
-/// `prepare` (bucketing) and `exchange`.
+/// `prepare` (the gather of the values; on the first exchange on `G` also the
+/// sub-region `pattern`, building the pattern) and `exchange`.
 template <typename Graph, typename ValueFunc>
-[[nodiscard]] auto push_to_ghosts(Graph const& G,
+[[nodiscard]] auto push_to_ghosts(Graph& G,
                                   ValueFunc const& value,
                                   GhostExchangeMode mode,
                                   MessageTag tag)
     -> std::vector<std::uint64_t> {
   auto const comm = G.comm();
   auto const size = static_cast<std::size_t>(comm.size());
-  int const rank = comm.rank();
-  constexpr auto never = std::numeric_limits<std::size_t>::max();
-  std::vector<int> send_counts(size, 0);
-  std::vector<int> send_displs(size, 0);
   std::vector<std::uint64_t> send_buf;
-  // what this rank receives: from each rank, the values of its ghosts owned
-  // there (one block per owner)
-  std::vector<int> recv_counts(size, 0);
-  std::vector<int> recv_displs(size, 0);
-  {
+  GhostPushPattern const& pattern = [&]() -> GhostPushPattern const& {
     CALI_CXX_MARK_SCOPE("prepare");
-    // Append (value, destination) in one pass over the adjacency, then place
-    // the values by destination with a counting sort: no per-rank containers,
-    // and no second pass over the adjacency.
-    std::vector<std::pair<std::uint64_t, int>> outgoing;
-    std::vector<std::size_t> last_source_sent_to(size, never);
-    for (auto const u : G.local_vertices()) {
-      auto const u_local = G.to_local_index(u);
-      for (auto const v : G.neighbors(u)) {
-        int const v_rank = G.owner(v);
-        if (v_rank == rank ||
-            last_source_sent_to[static_cast<std::size_t>(v_rank)] == u_local) {
-          continue;
-        }
-        outgoing.emplace_back(static_cast<std::uint64_t>(value(u)), v_rank);
-        last_source_sent_to[static_cast<std::size_t>(v_rank)] = u_local;
-      }
+    GhostPushPattern const& built = G.ghost_push_pattern();
+    send_buf.resize(built.send_vertex.size());
+    auto const& numbering = G.numbering();
+    for (std::size_t slot = 0; slot < send_buf.size(); ++slot) {
+      send_buf[slot] = static_cast<std::uint64_t>(
+          value(numbering.local_handle(built.send_vertex[slot])));
     }
-    for (auto const& [message, dest] : outgoing) {
-      send_counts[static_cast<std::size_t>(dest)]++;
-    }
-    for (std::size_t rk = 1; rk < size; ++rk) {
-      send_displs[rk] = send_displs[rk - 1] + send_counts[rk - 1];
-    }
-    send_buf.resize(outgoing.size());
-    std::vector<int> next = send_displs;
-    for (auto const& [message, dest] : outgoing) {
-      send_buf[static_cast<std::size_t>(
-          next[static_cast<std::size_t>(dest)]++)] = message;
-    }
-    for (auto const ghost : G.ghosts()) {
-      recv_counts[static_cast<std::size_t>(G.owner(ghost))]++;
-    }
-    for (std::size_t rk = 1; rk < size; ++rk) {
-      recv_displs[rk] = recv_displs[rk - 1] + recv_counts[rk - 1];
-    }
-  }
+    return built;
+  }();
+  auto const& send_counts = pattern.send_counts;
+  auto const& send_displs = pattern.send_displs;
+  auto const& recv_counts = pattern.recv_counts;
+  auto const& recv_displs = pattern.recv_displs;
   profiling::MessageStatistics stats;
   for (std::size_t rk = 0; rk < size; ++rk) {
     if (send_counts[rk] > 0) {

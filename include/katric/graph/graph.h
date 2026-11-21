@@ -524,9 +524,14 @@ public:
   /// Building step on the undirected graph: records the degrees of the local
   /// vertices and receives those of the ghosts (push_to_ghosts() with `mode`
   /// and `tag`; collective). Reports the exchange's counters to the open
-  /// Caliper region.
+  /// Caliper region. Done once per graph: when the degrees are already known
+  /// (the primary load balancing's cost function exchanged them and the graph
+  /// was not redistributed), it returns at once, on every rank alike.
   void exchange_ghost_degrees(GhostExchangeMode mode, MessageTag tag) {
     KASSERT(!oriented_, "the degree exchange needs the undirected graph");
+    if (degrees_exchanged_) {
+      return;
+    }
     local_undirected_degrees_.resize(num_local_vertices());
     for (VertexHandle const v : local_vertices()) {
       local_undirected_degrees_[to_local_index(v)] = degree(v);
@@ -536,6 +541,18 @@ public:
     ghost_undirected_degrees_.assign(ghost_degrees.begin(),
                                      ghost_degrees.end());
     degrees_exchanged_ = true;
+  }
+
+  /// The send pattern of push_to_ghosts() on this undirected graph, built on
+  /// the first call (Caliper region `pattern`) and reused by every later
+  /// exchange; freed by orient().
+  [[nodiscard]] auto ghost_push_pattern() -> GhostPushPattern const& {
+    KASSERT(!oriented_, "the ghost push pattern needs the undirected graph");
+    if (!ghost_push_pattern_) {
+      CALI_CXX_MARK_SCOPE("pattern");
+      ghost_push_pattern_ = build_ghost_push_pattern(*this);
+    }
+    return *ghost_push_pattern_;
   }
 
   /// Building step: orients the edges of the undirected graph from the smaller
@@ -548,6 +565,7 @@ public:
   template <typename Key>
   void orient(Key const& key, bool ghost_out_edges) {
     KASSERT(!oriented_);
+    ghost_push_pattern_.reset();  // the neighborhoods change
     std::vector<std::size_t> out_degree(num_local_vertices());
     for (VertexHandle const v : local_vertices()) {
       auto const key_v = key(v);
@@ -703,6 +721,7 @@ private:
   std::vector<Degree> local_undirected_degrees_;  // once exchanged
   std::vector<Degree> ghost_undirected_degrees_;  // once exchanged
   bool degrees_exchanged_ = false;
+  std::optional<GhostPushPattern> ghost_push_pattern_;  // until orient()
   bool oriented_ = false;
   bool has_ghost_out_edges_ = false;
   AdjacencyArray<VertexHandle> ghost_out_;  // empty without
