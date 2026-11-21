@@ -1,0 +1,50 @@
+# Per-rank times of the ghost exchanges at 1536 cores (2026-11-21). In `baseline`, on the permuted inputs one rank's
+# `prepare` of the cost function's and the degree exchange's push_to_ghosts takes ~2x the average (max 2.46 vs avg
+# 1.17 s at 1536), and every other rank waits for it in the exchange; it did not reproduce on the laptop. Run with the
+# code after fadbd12 (send pattern built once per graph), DiTriC, direct, trimming, permuted RGG; IDPD (two exchanges
+# on the input graph plus one after the redistribution) and none (one exchange). Compare the aggregates with
+# `baseline_26_11_20` (same input and options).
+#
+# Besides the usual output, Caliper's recorder (environment-configured, no code change) writes one profile per rank to
+# straggler-perrank/<config>/rank-<rank>.cali, relative to the directory the job was submitted from (kaval quotes the
+# values, so no $PWD). Region times are exclusive (`sum#time.duration.ns`), aggregated over the iterations by
+# nested path; with --perhost 48 the node of a rank is rank / 48 (the job log lists the nodes). Question: is the slow
+# rank the same in every iteration and configuration, or on the same node?
+name: straggler
+executable: apps/katric
+output_path_option_name: caliper-output
+threads_option_name: num-threads
+ncores: [1536]
+max_cores: 1536
+threads_per_rank: [1]
+time_limit: 10
+graphs:
+  - generator: kagen
+    type: rgg2d
+    N: 18
+    M: 22
+    permute: 1
+    seed: 28475421
+    scale_weak: true
+config:
+  - primary-cost-function: IDPD
+    message-trimming: true
+    communication-policy: direct
+    threshold: local-nodes
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 3
+    ENV: &perrank
+      CALI_SERVICES_ENABLE: aggregate,event,mpi,recorder,timer
+      CALI_AGGREGATE_KEY: prop:nested,mpi.rank
+      CALI_RECORDER_FILENAME: straggler-perrank/idpd/rank-%mpi.rank%.cali
+  - primary-cost-function: none
+    message-trimming: true
+    communication-policy: direct
+    threshold: local-nodes
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 3
+    ENV:
+      <<: *perrank
+      CALI_RECORDER_FILENAME: straggler-perrank/none/rank-%mpi.rank%.cali

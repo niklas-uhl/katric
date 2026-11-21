@@ -35,6 +35,7 @@ run a `variant` column from either spelling.
 | --- | --- |
 | `baseline` | The current code before the next steps (2026-11-20): DiTriC / CETRIC x direct / grid x load balancing none / IDPD x message trimming off / on, on the `phases` inputs and GNM, 48 to 1536 cores. New option names |
 | `baseline-rmat` | `baseline` on RMAT with IDPD only, 48 to 768 cores |
+| `straggler` | Per-rank times (Caliper recorder via environment variables) of the ghost exchanges on permuted RGG at 1536 cores, IDPD / none, after fadbd12; read with `eval/perrank.py` |
 | `paper-real-world` | Strong scaling of DiTriC (`patric`) and CETRIC (`cetric-x`), 512 to 32768 cores |
 | `paper-weak-scaling` | Weak scaling on RGG 2D, RHG and GNM, 512 to 32768 cores |
 | `paper-hybrid-real-world` | Hybrid CETRIC (MPI + TBB), 1 to 48 threads per rank |
