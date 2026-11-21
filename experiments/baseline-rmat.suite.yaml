@@ -1,13 +1,13 @@
 # `baseline` on RMAT (KaGen defaults, the paper's weak-scaling size), where only balanced runs are sensible: without
 # load balancing an iteration takes 46 s at 48 and 187 s at 192 cores (lb-cost-rmat), and jobs at 1536 cores ran out
 # of memory. So IDPD only (which fixes the work imbalance, lb-cost-rmat), up to 768 cores; the variant, the global
-# phase's communication and message trimming as in `baseline`. Two iterations.
+# phase's communication and message trimming as in `baseline`. Two iterations. `--max-cores 768` when creating the
+# job files.
 name: baseline-rmat
 executable: apps/katric
 output_path_option_name: caliper-output
 threads_option_name: num-threads
-ncores: [48, 192, 768]
-max_cores: 768
+ncores: node-size-pow2
 threads_per_rank: [1]
 time_limit: 15
 graphs:

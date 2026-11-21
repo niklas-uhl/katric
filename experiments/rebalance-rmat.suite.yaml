@@ -2,13 +2,12 @@
 # exchange of the ghosts' out-degrees, which took most of IDPD's 5 s cost-function communication at 192 cores in
 # baseline-rmat; IDD balances the work somewhat worse in the model, max/avg 1.18-1.70 vs 1.03-1.53). DiTriC, direct,
 # message trimming (the only configuration that fit in memory at 768 in baseline-rmat), threshold 1.5 (RMAT's cost
-# max/avg is far above). Two iterations.
+# max/avg is far above). Two iterations. Cores as baseline-rmat: `--max-cores 768` (1536 ran out of memory).
 name: rebalance-rmat
 executable: apps/katric
 output_path_option_name: caliper-output
 threads_option_name: num-threads
-ncores: [48, 192, 768]
-max_cores: 768
+ncores: node-size-pow2
 threads_per_rank: [1]
 time_limit: 15
 graphs:

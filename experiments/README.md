@@ -33,10 +33,10 @@ run a `variant` column from either spelling.
 
 | Suite | What |
 | --- | --- |
-| `baseline` | The current code before the next steps (2026-11-20): DiTriC / CETRIC x direct / grid x load balancing none / IDPD x message trimming off / on, on the `phases` inputs and GNM, 48 to 1536 cores. New option names |
-| `baseline-rmat` | `baseline` on RMAT with IDPD only, 48 to 768 cores |
-| `rebalance` | `--rebalance-threshold` and the cost function IDD (e13a2de): DiTriC, direct, trimming; none / IDPD at 1 (as `baseline`) / IDPD and IDD at 1.5, on the `phases` inputs and GNM, 192 to 3072 cores |
-| `rebalance-rmat` | IDPD vs IDD at threshold 1.5 on RMAT, 48 to 768 cores |
+| `baseline` | The current code before the next steps (2026-11-20): DiTriC / CETRIC x direct / grid x load balancing none / IDPD x message trimming off / on, on the `phases` inputs and GNM (run at 192 to 3072 cores). New option names |
+| `baseline-rmat` | `baseline` on RMAT with IDPD only (up to 768 cores) |
+| `rebalance` | `--rebalance-threshold` and the cost function IDD (e13a2de): DiTriC, direct, trimming; none / IDPD at 1 (as `baseline`) / IDPD and IDD at 1.5, on the `phases` inputs and GNM (run at 192 to 3072 cores, as `baseline`) |
+| `rebalance-rmat` | IDPD vs IDD at threshold 1.5 on RMAT (up to 768 cores) |
 | `straggler` | Per-rank times (Caliper recorder via environment variables) of the ghost exchanges on permuted RGG at 1536 cores, IDPD / none, after fadbd12; read with `eval/perrank.py` |
 | `paper-real-world` | Strong scaling of DiTriC (`patric`) and CETRIC (`cetric-x`), 512 to 32768 cores |
 | `paper-weak-scaling` | Weak scaling on RGG 2D, RHG and GNM, 512 to 32768 cores |

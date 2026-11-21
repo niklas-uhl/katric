@@ -1,6 +1,6 @@
 # Threshold-gated rebalancing and the cost function IDD (e13a2de) against `baseline` (2026-11-20): DiTriC, direct,
 # message trimming (the best configuration of `baseline` nearly everywhere), on the `phases` inputs and GNM at the
-# core counts `baseline` ran. none and IDPD at threshold 1 repeat `baseline`'s configurations with the new code
+# core counts `baseline` ran (`--min-cores 192 --max-cores 3072` when creating the job files). none and IDPD at threshold 1 repeat `baseline`'s configurations with the new code
 # (fadbd12: ghost push pattern built once); IDPD / IDD at threshold 1.5 should keep the graph on every input here
 # (cost max/avg 1.0-1.3 in the model; the counters `rank_cost` and `rebalanced` in primary_load_balancing tell), so
 # they should cost the cost function only, with the degree exchange reused. RMAT, which needs the rebalancing, is in
@@ -9,8 +9,7 @@ name: rebalance
 executable: apps/katric
 output_path_option_name: caliper-output
 threads_option_name: num-threads
-ncores: [192, 768, 1536, 3072]
-max_cores: 3072
+ncores: node-size-pow2
 threads_per_rank: [1]
 time_limit: 10
 graphs:

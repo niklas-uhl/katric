@@ -12,8 +12,7 @@ name: baseline
 executable: apps/katric
 output_path_option_name: caliper-output
 threads_option_name: num-threads
-ncores: [48, 192, 768, 1536]
-max_cores: 1536
+ncores: node-size-pow2
 threads_per_rank: [1]
 time_limit: 10
 graphs:
