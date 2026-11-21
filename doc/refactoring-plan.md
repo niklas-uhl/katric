@@ -256,6 +256,58 @@ by those `.cpp` files):
   - Communication overhead (the rest above, trimming's gain, grid in the global phase) is deferred until the BriefKAsten
     migration, which may change it; measure again then rather than tuning the legacy queue now
 
+- Results 2026-11-21 (`baseline_26_11_20` 192-3072, `baseline-rmat_26_11_20` 48-768, binary `30461a68-dirty`;
+  analysis scripts not kept, `eval/katric_eval.py` loads both). Where to pick up: the next steps at the end
+  - Best configuration nearly everywhere: DiTriC, direct, message trimming, no load balancing. CETRIC wins only on RGG /
+    RHG with locality, by 2-3%. Grid beats direct on GNM from 768 on (2.54 vs 3.07 s at 1536, 2.80 vs 4.10 s at 3072:
+    polling 0.6 vs 1.9 s) and on permuted RGG at 3072 (with trimming); on RMAT it is 1.5-3x slower (polling max/avg
+    4.8). GNM with direct is noisy (up to 34% spread across iterations at 768-1536)
+  - IDPD never pays off outside RMAT: +0.4-0.7 s (RGG), ~1.3 s (RHG, GNM), 5.5-7.2 s (permuted inputs), and the work
+    was balanced before (wedge checks max/avg 1.01 -> 1.03-1.05). On permuted RGG at 1536 `primary_load_balancing`
+    is 6.8 s: cost-function communication 3.4 s (two push_to_ghosts), evaluation 0.6 s, redistribution 0.24 s, and
+    ~2.5 s rebuilding the graph (`to_kagen_graph` + `from_kagen`)
+  - Of the cost-function communication, the transfer is ~0.7 s (the minimum of `exchange`, as alltoallv waits for the
+    last rank); the rest is `prepare` (bucketing, avg 1.17 s, ~70 ns per adjacency entry) and waiting for one rank
+    whose `prepare` takes ~2x the average (max 2.46 s) although its edge count is not larger. The same in the degree
+    exchange. On the laptop bucketing costs ~8 ns per entry (8 ranks, and a single-process benchmark at p = 1536) and
+    shows no fixed straggler: the cost and the straggler come from the cluster node. On RMAT it is the transfer itself
+    (`exchange` max 5.2 s, `prepare` 0.06 s avg): the unbalanced input's hub ranks
+  - RHG at 3072 (1.2 -> 5-10 s) is the input: a hub of degree 19.1 M (0.76 M at 1536), its rank holds 3.3x the average
+    edges and spends 3.7 s in `input_graph` (the cut-edge sort of `from_kagen`; the other ranks 0.09 s) while
+    everyone waits in the degree exchange; KaGen's generation 3.6 -> 66 s. Read RHG at 3072 with that in mind
+  - RMAT with IDPD: work balanced (wedge checks max/avg 1.05-1.16), send volume not (max/avg 2.3-3.0); at 768 the
+    slowest rank polls 35 s against 10.8 s of handling, global phase 52 s, nearly all `termination`. Per-rank wedge
+    checks triple from 48 to 768 (483 M -> 1.42 G). At 768 only direct + trimming fit: the six other configurations
+    (no trimming, every grid run) were killed (SIGKILL after 40-53 s, presumably memory)
+  - On permuted inputs ~4-4.5 s per iteration are before counting: `input_graph` ~2.2 s, degree exchange 1.3-2.0 s
+  - Done 2026-11-21:
+    - `fadbd12`: push_to_ghosts builds its send pattern once per graph (`GhostPushPattern`, region `prepare/pattern`),
+      later exchanges only gather; one pass into reserved (u32, u32) pairs (a two-pass build was 1.6x slower in the
+      benchmark, one pass ~15% faster than before). `exchange_ghost_degrees` returns at once when the graph has its
+      degrees. Locally the cost function's `prepare` 0.22-0.28 -> 0.08-0.12 s (8 ranks, 3 iterations)
+    - `e13a2de`: `--rebalance-threshold` (redistribute only if the cost's max/avg exceeds it; otherwise the graph is kept
+      with its degrees and pattern, so preprocessing has no degree exchange; counters `rank_cost`, `rebalanced`) and
+      `--primary-cost-function IDD` (IDPD with a ghost's out-degree replaced by its degree: no second exchange). Model
+      `doc/model/cost_proxy.py`: IDD balances RMAT's push work to 1.18-1.70 (IDPD 1.03-1.53, edges 1.48-2.30) and its
+      max/avg on the input tracks IDPD's (RMAT 4-40, RGG 1.0-1.3), so a threshold of ~1.5 separates them. Locally:
+      permuted RGG is kept, 1.54 s vs none 1.44 vs IDPD unthresholded 2.50 s; RMAT IDD 2.33 vs IDPD 2.29 vs none 5.05 s
+    - Suites (submitted 2026-11-21): `straggler` (per-rank times of the ghost exchanges at 1536 through Caliper's
+      recorder, read with `eval/perrank.py`), `rebalance` (none / IDPD at 1 / IDPD and IDD at 1.5), `rebalance-rmat`
+      (IDPD vs IDD at 1.5). Suites now use `ncores: node-size-pow2`, the range is set at job creation
+  - Next steps (in this order; replace the list of 2026-11-18):
+    1. Evaluate `straggler`, `rebalance`, `rebalance-rmat`: is the slow rank fixed (same rank / node), does the
+       threshold keep the graph everywhere but RMAT and cost little, IDD vs IDPD on RMAT; then pick the defaults
+       (threshold, IDD or IDPD) and decide on making message trimming the default (wins or ties everywhere)
+    2. The cost of `from_kagen` (was step 2): bucket the cut edges by owner rank first, then sort per bucket; check with
+       a benchmark first, as for the bucketing. Matters twice per iteration with redistribution, and on hub ranks. (The
+       other half of the old step 2, depositing the ghost values, is done: push_to_ghosts receives into place)
+    3. A peak-memory counter per phase: where RMAT runs out of memory at 768 (message buffers or the redistribution's
+       copies); needed for the BriefKAsten comparison anyway
+    4. RMAT's send-volume imbalance after balancing: a volume term in the cost (as DPD+reply in the model), or idea 1
+       (compute at the tail, balanced by DPD) against DiTriC + IDPD / IDD on RMAT (was step 3)
+    5. Cluster checks: RHG at 3072 with another seed (is the 19 M hub an outlier), more iterations or the minimum for
+       GNM with direct
+
 ### 1. Prune
 
 Options that are dead or only used in old exploration suites (`experiments/legacy`), never in the paper suites.
