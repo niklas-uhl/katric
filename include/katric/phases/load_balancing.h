@@ -30,21 +30,25 @@
 #include <functional>
 #include <limits>
 #include <numeric>
+#include <ranges>
 #include <span>
 #include <utility>
 #include <vector>
 
 #include <caliper/cali.h>
 #include <dstl/redistribute.hpp>
+#include <kamping/v2/collectives/allreduce.hpp>
 #include <kamping/v2/collectives/bcast.hpp>
 #include <kamping/v2/collectives/scan.hpp>
 #include <kamping/v2/comm.hpp>
+#include <kamping/v2/ops.hpp>
 #include <kamping/v2/sentinels.hpp>
 #include <kamping/v2/views/ref_single_view.hpp>
 #include <kagen.h>
 #include <kassert/kassert.hpp>
 #include <mpi.h>
 
+#include "katric/caliper.h"
 #include "katric/config.h"
 #include "katric/ghost_exchange.h"
 #include "katric/graph/graph.h"
@@ -129,9 +133,15 @@ inline auto redistribute(kagen::Graph&& G, std::span<std::size_t const> cost, ka
 /// (`--primary-cost-function`, PATRIC's cost functions): N = 1; DPD = Σ over
 /// out-neighbors u of d+(v) + d+(u) (the tail-compute work), IDPD = the same
 /// over in-neighbors (push), both with the orientation by (degree, global id).
+/// IDD = IDPD with a ghost's out-degree replaced by its degree (an upper
+/// bound), so that the degree exchange suffices: no second exchange for the
+/// ghosts' out-degrees. In the model (doc/model/cost_proxy.py) IDD balances
+/// RMAT's push work to max/avg 1.18-1.70 (IDPD 1.03-1.53, edges 1.48-2.30,
+/// p = 16-256), and its max/avg on the input partition tracks IDPD's (for the
+/// threshold of primary_load_balancing()).
 /// Regions: `cost_function_communication` for the exchanges of the ghosts'
-/// degrees and out-degrees, `cost_function_evaluation` for the out-degrees and
-/// the costs (each entered twice).
+/// degrees and out-degrees (IDPD and DPD only), `cost_function_evaluation`
+/// for the out-degrees and the costs (each entered twice).
 inline auto vertex_costs(graph::Graph& G, Config const& conf)
     -> std::vector<std::size_t> {
   using graph::VertexHandle;
@@ -139,7 +149,10 @@ inline auto vertex_costs(graph::Graph& G, Config const& conf)
     return std::vector<std::size_t>(G.num_local_vertices(), 1);
   }
   KASSERT(conf.primary_cost_function == CostFunction::DPD ||
-          conf.primary_cost_function == CostFunction::IDPD);
+          conf.primary_cost_function == CostFunction::IDPD ||
+          conf.primary_cost_function == CostFunction::IDD);
+  bool const exchange_out_degrees =
+      conf.primary_cost_function != CostFunction::IDD;
   auto const& numbering = G.numbering();
   {
     CALI_CXX_MARK_SCOPE("cost_function_communication");
@@ -166,7 +179,7 @@ inline auto vertex_costs(graph::Graph& G, Config const& conf)
     }
   }
   std::vector<std::uint64_t> ghost_out_degree;
-  {
+  if (exchange_out_degrees) {
     CALI_CXX_MARK_SCOPE("cost_function_communication");
     ghost_out_degree = push_to_ghosts(
         G,
@@ -177,9 +190,12 @@ inline auto vertex_costs(graph::Graph& G, Config const& conf)
   }
   CALI_CXX_MARK_SCOPE("cost_function_evaluation");
   auto const out_degree = [&](VertexHandle vertex) -> std::uint64_t {
-    return numbering.is_local(vertex)
-               ? local_out_degree[numbering.to_local_index(vertex)]
-               : ghost_out_degree[numbering.to_ghost_index(vertex)];
+    if (numbering.is_local(vertex)) {
+      return local_out_degree[numbering.to_local_index(vertex)];
+    }
+    return exchange_out_degrees
+               ? ghost_out_degree[numbering.to_ghost_index(vertex)]
+               : G.undirected_degree(vertex);  // IDD
   };
   bool const over_out_edges = conf.primary_cost_function == CostFunction::DPD;
   std::vector<std::size_t> cost(G.num_local_vertices(), 0);
@@ -195,9 +211,37 @@ inline auto vertex_costs(graph::Graph& G, Config const& conf)
   return cost;
 }
 
+/// Whether the cost's max/avg over the ranks (of each rank's sum) exceeds
+/// `threshold`; collective (two allreduces). Reports each rank's sum as the
+/// counter `rank_cost` (so its max/avg is in the counters) and `rebalanced`
+/// (1 on every rank if so).
+inline auto exceeds_threshold(std::span<std::size_t const> cost,
+                              double threshold,
+                              kamping::v2::comm_view comm) -> bool {
+  namespace views = kamping::v2::views;
+  std::uint64_t const local =
+      std::reduce(cost.begin(), cost.end(), std::uint64_t{0});
+  std::uint64_t max = 0;
+  std::uint64_t total = 0;
+  kamping::v2::allreduce(std::views::single(local), views::ref_single(max),
+                         kamping::v2::ops::max<>{}, comm);
+  kamping::v2::allreduce(std::views::single(local), views::ref_single(total),
+                         comm);
+  double const avg =
+      static_cast<double>(total) / static_cast<double>(comm.size());
+  bool const exceeds =
+      total > 0 && static_cast<double>(max) > threshold * avg;
+  profiling::counter_add("rank_cost", static_cast<std::int64_t>(local));
+  profiling::counter_add("rebalanced", exceeds ? 1 : 0);
+  return exceeds;
+}
+
 /// Repartitions `G` into contiguous vertex ranges of equal cost
-/// (`--primary-cost-function`; with `none`, returns `G`). Consumes `G`: it is
-/// freed before the vertices move.
+/// (`--primary-cost-function`; with `none`, returns `G`), if the cost's max/avg
+/// over the ranks exceeds `--rebalance-threshold`; otherwise returns `G`, with
+/// the degrees and the ghost push pattern the cost function computed, so that
+/// preprocessing does not exchange the degrees again. Consumes `G`: it is freed
+/// before the vertices move.
 inline auto primary_load_balancing(graph::Graph&& G, Config const& conf)
     -> graph::Graph {
   CALI_CXX_MARK_SCOPE("primary_load_balancing");
@@ -206,6 +250,9 @@ inline auto primary_load_balancing(graph::Graph&& G, Config const& conf)
   }
   auto const comm = G.comm();
   auto const cost = vertex_costs(G, conf);
+  if (!exceeds_threshold(cost, conf.rebalance_threshold, comm)) {
+    return std::move(G);
+  }
   return graph::Graph::from_kagen(
       redistribute(graph::to_kagen_graph(std::move(G)), cost, comm),
       comm);

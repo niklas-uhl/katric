@@ -61,6 +61,13 @@ katric::Config parse_config(int argc, char* argv[], int rank, int size) {
     );
 
     add_enum_option(app, "--primary-cost-function", conf.primary_cost_function);
+    app.add_option(
+           "--rebalance-threshold",
+           conf.rebalance_threshold,
+           "Redistribute in the primary load balancing only if the cost's max/avg over the ranks exceeds this "
+           "(1 = whenever it is not perfectly balanced); otherwise the input graph is kept, with its exchanged degrees"
+    )
+        ->capture_default_str();
 
     app.add_option(
         "--caliper-config",

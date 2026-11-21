@@ -40,9 +40,10 @@ enum class Threshold { local_nodes, local_edges, none };
 enum class IntersectionMethod { merge, binary_search, binary, hybrid };
 enum class TaskPoolType { std_thread, task_group };
 /// The cost of a vertex for the primary load balancing,
-/// `--primary-cost-function` (PATRIC's cost functions; `none` turns the load
-/// balancing off). See vertex_costs() (katric/phases/preprocessing.h).
-enum class CostFunction { none, N, DPD, IDPD };
+/// `--primary-cost-function` (PATRIC's cost functions N, DPD, IDPD, and IDD;
+/// `none` turns the load balancing off). See vertex_costs()
+/// (katric/phases/load_balancing.h).
+enum class CostFunction { none, N, DPD, IDPD, IDD };
 /// How push_to_ghosts() (katric/ghost_exchange.h) moves its messages,
 /// `--degree-exchange`.
 enum class GhostExchangeMode {
@@ -65,6 +66,10 @@ struct Config {
   std::size_t iterations = 1;
   bool verify = false;
   CostFunction primary_cost_function = CostFunction::N;
+  /// The primary load balancing redistributes only if the cost's max/avg over
+  /// the ranks exceeds this (`--rebalance-threshold`; 1 = whenever it is not
+  /// perfectly balanced)
+  double rebalance_threshold = 1.0;
   /// CETRIC instead of DiTriC: the ghosts' out-edges in the local phase, only
   /// the cut edges in the global phase
   bool contraction = false;
