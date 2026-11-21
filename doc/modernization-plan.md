@@ -152,7 +152,8 @@ instead re-reads or regenerates the input in every iteration (`--cache-input non
 - [ ] Competitors behind the same interface (later, not part of this step): TriC, HavoqGT, Tom2D and Bader's code
       run today as separate binaries via `runners.py`. Each needs a converter from `kagen::Graph` to its own input
       format and a pinned fork via FetchContent (`EXCLUDE_FROM_ALL`), like KaCCv2's ParConnect/CombBLAS/KaCCv1.
-      Decide per competitor whether hooking it in is worth it or kaval runs its binary
+      Decide per competitor whether hooking it in is worth it or kaval runs its binary. Planned 2026-11-21 in
+      [`competitors.md`](./competitors.md): all linked into `katric`, opt-in per competitor
 
 ### 4c. Static analysis: clang-tidy
 
