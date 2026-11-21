@@ -1,0 +1,29 @@
+# `rebalance` on RMAT (KaGen defaults, as baseline-rmat), where the rebalancing is needed: IDPD against IDD (no
+# exchange of the ghosts' out-degrees, which took most of IDPD's 5 s cost-function communication at 192 cores in
+# baseline-rmat; IDD balances the work somewhat worse in the model, max/avg 1.18-1.70 vs 1.03-1.53). DiTriC, direct,
+# message trimming (the only configuration that fit in memory at 768 in baseline-rmat), threshold 1.5 (RMAT's cost
+# max/avg is far above). Two iterations.
+name: rebalance-rmat
+executable: apps/katric
+output_path_option_name: caliper-output
+threads_option_name: num-threads
+ncores: [48, 192, 768]
+max_cores: 768
+threads_per_rank: [1]
+time_limit: 15
+graphs:
+  - generator: kagen
+    type: rmat
+    N: 16
+    M: 20
+    seed: 28475421
+    scale_weak: true
+config:
+  - primary-cost-function: [IDPD, IDD]
+    rebalance-threshold: 1.5
+    message-trimming: true
+    communication-policy: direct
+    threshold: local-nodes
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 2
