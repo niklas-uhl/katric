@@ -21,7 +21,7 @@ competitor, and a factory that switches on `--algorithm`. KaCCv2's weak spots, a
 
 ## Decisions
 
-1. **One binary, opt-in.** `--algorithm katric|tric|havoqgt|tripoll|tom2d|combblas|lcc`, each competitor behind
+1. **One binary, opt-in.** `--algorithm katric|tric|havoqgt|tripoll|tom2d|combblas|lcc|grape`, each competitor behind
    `AbstractAlgorithm`.
    - Each competitor has a CMake option `KATRIC_COMPETITOR_<NAME>`, default OFF. The `experiments` preset turns on the
      ones that build on SuperMUC.
@@ -36,8 +36,11 @@ competitor, and a factory that switches on `--algorithm`. KaCCv2's weak spots, a
      `counting`.
    - `counting` alone gives the paper's numbers again. HavoqGT's `total` will be much worse than in the paper, which
      left out its preprocessing.
-3. **Competitors:** TriC, HavoqGT, TriPoll/YGM, Tom2D, CombBLAS (masked SpGEMM) and LCC (Strausz et al.). Bader's
-   code is out because it is shared memory only (OpenMP, 32-bit ids).
+3. **Competitors:** TriC, HavoqGT, TriPoll/YGM, Tom2D, CombBLAS (masked SpGEMM), LCC (Strausz et al.) and GRAPE
+   (libgrape-lite's LCC) as the general-framework baseline. Bader's code is out because it is shared memory only
+   (OpenMP, 32-bit ids). Other frameworks are out too (checked 2026-11-23): Blogel and Pregel+ ship no usable TC,
+   PowerGraph is unmaintained and already beaten by TriC/Tom2D, GraphX and Giraph are JVM, DistTC is GPU, and
+   GraphBLAS/LAGraph, GBBS and Ligra are shared memory.
 4. **Forks:** a `katric` branch in each fork under niklas-uhl. The branch has a library target with a "construct from
    CSR or edge list + communicator" entry point, no `main`, and no KaGen submodule.
 5. **LCC is GPL-3.0** (`fvella/lcc` + `spcl/CLaMPI`). It is linked only with `KATRIC_COMPETITOR_LCC=ON`. Binaries
@@ -66,7 +69,8 @@ competitor, and a factory that switches on `--algorithm`. KaCCv2's weak spots, a
 - [ ] Each adapter's constructor checks its constraints and aborts with a clear message:
   - square p (Tom2D, CombBLAS)
   - equal ranks per node (HavoqGT)
-  - the MPI thread level YGM needs. `main` asks for a higher level only when TriPoll is selected
+  - the MPI thread level YGM and GRAPE (`MPI_THREAD_MULTIPLE`) need. `main` asks for a higher level only when one
+    of them is selected
 - [ ] `reset()` rule: if the competitor mutates its input or state, `reset()` rebuilds it from the converted native
       input (region `reset`, untimed). Otherwise it is a no-op, with a comment saying why
 - [ ] Communicators: pass `comm` where the fork takes one. Where a fork hard-codes `MPI_COMM_WORLD` (TriC, Tom2D, LCC),
@@ -84,6 +88,10 @@ The order follows what the dissertation chapter needs:
    indirection.
 5. **Tom2D** and 6. **CombBLAS:** the 2D / linear-algebra family. They give breadth but are not urgent: Tom2D was not
    in the paper, and the CombBLAS counter is our own code.
+7. **GRAPE:** the answer to "why not a general graph framework?". Its LCC is DiTriC's base scheme (degree
+   orientation, each ghost's out-edges sent once per rank) without contraction or indirection, well engineered, and
+   the winner of the LDBC Graphalytics 2023 competition. So it isolates what contraction, indirection and rebalancing
+   buy against an independent implementation. No build risk (CMake, MPI, Threads; Apache-2.0).
 
 LCC and TriPoll carry the build risk (autotools + CLaMPI, YGM's MPI thread level), so a blocker shows up early
 enough to decide whether to drop one.
@@ -96,6 +104,7 @@ enough to decide whether to drop one.
 | 4 | TriPoll / YGM (Steil et al., SC'21) | new fork of `LLNL/tripoll` | See below |
 | 5 | Tom2D (Tom & Karypis 2019) | `niklas-uhl/2DTriangleCounting` (`nuhl-integration`, `650d7203`) | See below. Square p only |
 | 6 | CombBLAS masked SpGEMM | `niklas-uhl/CombBLAS@46ebfc31` | Decision 6. `preprocessing` builds L and U; `counting` is the SpGEMM plus the reduce |
+| 7 | GRAPE / libgrape-lite LCC (Fan et al., SIGMOD'17) | new fork of `alibaba/libgrape-lite` (`master`, `beaa6e8a`) | See below |
 
 - **TriC.** Header-only. `run_kagen` (`graph.hpp:786`) already builds TriC's `Graph` from KaGen's CSR, so moving it
   into `ingest` is the whole conversion. The variants are distinct classes (`TriangulateAggrBuffered`, `...Hash2`,
@@ -113,6 +122,50 @@ enough to decide whether to drop one.
 - **LCC.** Autotools C, so the fork branch adds CMake: a library target and CLaMPI via FetchContent. The native input
   is adjacency lists. Build with CLaMPI and SIMD, as their README prescribes for the paper results. The public CLaMPI
   lacks the paper's custom eviction scores.
+- **GRAPE.** Run `LCCOpt` (`examples/analytical_apps/lcc/lcc_opt.h`, what `--opt` runs for undirected graphs).
+  What it does, from the source at `beaa6e8a`, in BSP supersteps on an edge-cut fragment:
+  1. Degree exchange, then orientation from low to high degree, ties broken by a hash of the gid.
+  2. Each local `v` sends N⁺(v) once to each rank holding an out-neighbour (`SendMsgThroughOEdges` →
+     `frag.OEDests(v)`). The receiver keeps only ids it knows (`Gid2Vertex`).
+  3. Sorted neighbourhoods, SIMD merge intersection, a per-thread dense bitmap for hubs
+     (|N⁺| > 0.4 · max |N⁺|), threads (`ParallelEngine`) on top of MPI.
+  4. LCC only: an `atomic_add` on all three vertices per triangle, then a superstep that sends the ghosts' counts to
+     their owners.
+
+  To do on the fork branch:
+  - A switch `--grape-global-count` that drops step 4's atomics and sync superstep. KaTric computes no LCC, so the
+    default (as published, LCC) carries extra work; report both.
+  - Pin `count_t` to 64 bits: `LCC32`/`LCC64` is picked by `--edge_num`, not by triangle count, and RMAT hubs could
+    overflow 32 bits.
+  - Native input is an edge list fed through `AddVertex`/`AddEdge` + `ConstructFragment`. `BasicLocalFragmentLoader`
+    (the in-memory one) forces hash partitioning and no rebalancing; the opt driver uses the segment partitioner +
+    edge rebalancing, i.e. a balanced 1D split. Find a way to keep KaGen's 1D distribution (segment partitioner
+    given KaGen's ranges, or the regular loader fed per rank). This is the main integration work.
+  - `preprocessing` is fragment construction (vertex map/idxer, CSR, ghosts) plus steps 1–2; `counting` is step 3
+    (+ 4). Its own benchmarks time only the algorithm.
+  - Ranks per node: one per node (or per socket) plus threads, its intended configuration. MPI-only (48 ranks per
+    node) does not work as published, see the message pool below.
+
+  Communication (`ParallelMessageManagerOpt`, `thread_local_message_buffer_opt.h`):
+  - BSP rounds. Compute threads serialize `(gid, msg)` into per-thread channels, one buffer per destination rank
+    (2 MiB block). A full buffer goes to a send queue, and a dedicated **send thread** `MPI_Isend`s it (tag =
+    round), so sending overlaps the computation of the round.
+  - At the end of a round, every rank sends a zero-length end marker to **all** p − 1 others, then `MPI_Waitall`:
+    O(p) messages per rank and round, even with sparse communication.
+  - A **receive thread** loops on blocking `MPI_Probe(ANY_SOURCE)` and receives into pool buffers; the end markers
+    count down the producers. Messages are processed only in the **next** round (`ParallelProcess`, deserialized by
+    the compute threads), so all ghost neighbourhoods are buffered at once. No routing or indirection.
+  - Termination: `MPI_Allreduce` over "sent something or `ForceContinue()`".
+  - Needs `MPI_THREAD_MULTIPLE` (`sync_comm.h` requests it). `main` asks for it only when GRAPE is selected.
+  - Memory: `Worker::initPool` preallocates and zeroes a message pool of at least 16 MiB · (p + 1) · threads,
+    capped at 60 % of the node's `MemAvailable` **per rank**. Each rank also has `hardware_concurrency()` channels
+    with one buffer per destination. With many ranks per node this runs out of memory already at moderate p (e.g.
+    p = 192, 1 thread: ≥ 3 GiB per rank, 48 ranks per node). Patching this on the fork would change GRAPE; use its
+    intended rank layout instead and say so.
+
+  Expect: it holds all ghost neighbourhoods at once (no buffered/async processing), so memory and skew at high p are
+  where KaTric should differ. Its own numbers (LCC, `GraphalyticsReport.md`): graph500-28/29/30 in 60/137/318 s on
+  8 cloud nodes; 9–36× faster than PowerGraph (`Performance.md`).
 
 For each competitor:
 - [x] TriC (see "TriC: findings" below)
@@ -121,6 +174,7 @@ For each competitor:
 - [ ] TriPoll / YGM
 - [ ] Tom2D
 - [ ] CombBLAS
+- [ ] GRAPE
 
 Record for each, once it is done:
 - fork SHA
