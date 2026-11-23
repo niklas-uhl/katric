@@ -40,10 +40,19 @@ enum class Threshold { local_nodes, local_edges, none };
 enum class IntersectionMethod { merge, binary_search, binary, hybrid };
 enum class TaskPoolType { std_thread, task_group };
 /// The cost of a vertex for the primary load balancing,
-/// `--primary-cost-function` (PATRIC's cost functions N, DPD, IDPD, and IDD;
-/// `none` turns the load balancing off). See vertex_costs()
+/// `--primary-cost-function` (PATRIC's cost functions N, DPD and IDPD; `none`
+/// turns the load balancing off). See vertex_costs()
 /// (katric/phases/load_balancing.h).
-enum class CostFunction { none, N, DPD, IDPD, IDD };
+enum class CostFunction { none, N, DPD, IDPD };
+/// What the primary load balancing checks before computing the cost,
+/// `--rebalance-precheck`. See primary_load_balancing().
+enum class RebalancePrecheck {
+  degree_bound,  ///< first the cost with each ghost's out-degree bounded by its
+                 ///< degree (IDD for IDPD), which needs only the degree
+                 ///< exchange; keep the graph if its max/avg does not exceed
+                 ///< `--rebalance-threshold`
+  none,          ///< compute the cost (with the ghosts' out-degrees) always
+};
 /// How push_to_ghosts() (katric/ghost_exchange.h) moves its messages,
 /// `--degree-exchange`.
 enum class GhostExchangeMode {
@@ -65,11 +74,12 @@ struct Config {
   std::string kagen_option_string;
   std::size_t iterations = 1;
   bool verify = false;
-  CostFunction primary_cost_function = CostFunction::N;
+  CostFunction primary_cost_function = CostFunction::IDPD;
   /// The primary load balancing redistributes only if the cost's max/avg over
   /// the ranks exceeds this (`--rebalance-threshold`; 1 = whenever it is not
   /// perfectly balanced)
-  double rebalance_threshold = 1.0;
+  double rebalance_threshold = 1.5;
+  RebalancePrecheck rebalance_precheck = RebalancePrecheck::degree_bound;
   /// CETRIC instead of DiTriC: the ghosts' out-edges in the local phase, only
   /// the cut edges in the global phase
   bool contraction = false;
@@ -93,7 +103,8 @@ struct Config {
   bool pseudo2core = false;
   /// Global phase: each rank gets only the part of N+(v) from its first
   /// receiver on (in orientation order), and no message if nothing follows it.
-  bool message_trimming = false;
+  /// (`--message-trimming`, the default; `--no-message-trimming` turns it off)
+  bool message_trimming = true;
 
   // Caliper ConfigManager configuration (e.g. "spot"); empty disables Caliper.
   // Output file via caliper_output.

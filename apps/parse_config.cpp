@@ -67,6 +67,13 @@ auto parse_config(std::span<char*> argv, kamping::v2::comm_view comm)
                  "(1 = whenever it is not perfectly balanced); otherwise the "
                  "input graph is kept, with its exchanged degrees")
       ->capture_default_str();
+  add_enum_option(app, "--rebalance-precheck", conf.rebalance_precheck)
+      ->description(
+          "degree-bound: first the cost with each ghost's out-degree bounded "
+          "by its degree (IDD for IDPD; needs only the degree exchange), and "
+          "keep the input graph if its max/avg does not exceed "
+          "--rebalance-threshold; none: exchange the ghosts' out-degrees and "
+          "compute the cost always");
 
   app.add_option("--caliper-config", conf.caliper_config,
                  "Caliper config, e.g. \"katric-timers,katric-counters\" "
@@ -87,10 +94,14 @@ auto parse_config(std::span<char*> argv, kamping::v2::comm_view comm)
                  conf.local_degree_of_parallelism);
 
   app.add_flag("--pseudo2core", conf.pseudo2core);
-  app.add_flag("--message-trimming", conf.message_trimming,
+  // on by default; kaval omits false flags, so suites turn it off with
+  // `no-message-trimming: true`
+  app.add_flag("--message-trimming,!--no-message-trimming",
+               conf.message_trimming,
                "Global phase: send each rank only the part of N+(v) from its "
                "first receiver on (in orientation order), and "
-               "nothing if no entry follows it");
+               "nothing if no entry follows it")
+      ->default_str("true");
 
   add_enum_option(app, "--degree-exchange", conf.degree_exchange);
   // Removed in 401dcb9 (there are no barriers between the phases any more);

@@ -90,7 +90,8 @@ TEST_P(LoadBalancing, BalancingWithDegree) {
 }
 
 // vertex_costs() against a count on the full graph, with the orientation by (degree, global id): DPD over the
-// out-neighbors, IDPD over the in-neighbors, IDD as IDPD with a ghost's out-degree replaced by its degree.
+// out-neighbors, IDPD over the in-neighbors, each with the ghosts' out-degrees and with them bounded by their degrees
+// (for IDPD that is IDD, the --rebalance-precheck degree-bound).
 TEST_P(LoadBalancing, VertexCosts) {
     auto const key        = [&](VertexId v) { return std::pair(G_full[v].size(), v); };
     auto const out_degree = [&](VertexId v) {
@@ -102,34 +103,44 @@ TEST_P(LoadBalancing, VertexCosts) {
     };
     auto const [first, last] = G.vertex_range;
     auto const is_local      = [&](VertexId v) { return first <= v && v < last; };
-    for (auto const function: {katric::CostFunction::DPD, katric::CostFunction::IDPD, katric::CostFunction::IDD}) {
-        katric::Config conf;
-        conf.primary_cost_function = function;
-        auto       graph           = katric::graph::Graph::from_kagen(G, MPI_COMM_WORLD);
-        auto const cost            = katric::vertex_costs(graph, conf);
-        ASSERT_EQ(cost.size(), last - first);
-        for (auto v = first; v < last; ++v) {
-            std::size_t expected = 0;
-            for (auto const& e: G_full[v]) {
-                VertexId const u   = e.head;
-                bool const     out = key(v) < key(u);
-                if (out != (function == katric::CostFunction::DPD)) {
-                    continue;
+    for (auto const function: {katric::CostFunction::DPD, katric::CostFunction::IDPD}) {
+        for (bool const bounded: {false, true}) {
+            katric::Config conf;
+            conf.primary_cost_function = function;
+            auto graph                 = katric::graph::Graph::from_kagen(G, MPI_COMM_WORLD);
+            graph.exchange_ghost_degrees(conf.degree_exchange, katric::MessageTag::CostFunction);
+            auto const orientation = katric::cost_orientation(graph);
+            auto const cost        = katric::vertex_costs(graph, conf, orientation, [&](auto ghost) -> std::uint64_t {
+                auto const u = graph.numbering().global_id(ghost);
+                return bounded ? G_full[u].size() : out_degree(u);
+            });
+            ASSERT_EQ(cost.size(), last - first);
+            for (auto v = first; v < last; ++v) {
+                std::size_t expected = 0;
+                for (auto const& e: G_full[v]) {
+                    VertexId const u   = e.head;
+                    bool const     out = key(v) < key(u);
+                    if (out != (function == katric::CostFunction::DPD)) {
+                        continue;
+                    }
+                    bool const ghost_degree = bounded && !is_local(u);
+                    expected += out_degree(v) + (ghost_degree ? G_full[u].size() : out_degree(u));
                 }
-                bool const ghost_degree = function == katric::CostFunction::IDD && !is_local(u);
-                expected += out_degree(v) + (ghost_degree ? G_full[u].size() : out_degree(u));
+                EXPECT_EQ(cost[v - first], expected)
+                    << "vertex " << v << ", cost function " << static_cast<int>(function) << ", bounded " << bounded;
             }
-            EXPECT_EQ(cost[v - first], expected) << "vertex " << v << ", cost function " << static_cast<int>(function);
         }
     }
 }
 
 // --rebalance-threshold: above the cost's max/avg the input graph comes back as it was, with its degrees (so that
 // preprocessing does not exchange them again); at 0 the graph is always redistributed (a new graph, no degrees yet).
+// With and without the pre-check on the degree bound.
 TEST_P(LoadBalancing, RebalanceThreshold) {
-    for (auto const function: {katric::CostFunction::IDPD, katric::CostFunction::IDD}) {
+    for (auto const precheck: {katric::RebalancePrecheck::degree_bound, katric::RebalancePrecheck::none}) {
         katric::Config conf;
-        conf.primary_cost_function = function;
+        conf.primary_cost_function = katric::CostFunction::IDPD;
+        conf.rebalance_precheck    = precheck;
         conf.rebalance_threshold   = 1e9;
         auto kept = katric::primary_load_balancing(katric::graph::Graph::from_kagen(G, MPI_COMM_WORLD), conf);
         EXPECT_TRUE(kept.has_undirected_degrees());

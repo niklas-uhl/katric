@@ -69,8 +69,12 @@ inline std::vector<std::pair<std::string, std::string>> option_values(CLI::App& 
         if (name == "help") {
             continue;
         }
-        if (option->get_expected_min() == 0) { // flags capture no default; they all default to false
-            values.emplace_back(name, option->count() > 0 ? option->as<std::string>() : "false");
+        if (option->get_expected_min() == 0) {
+            // flags capture no default: false unless set with default_str() (flags that are on by default)
+            auto const fallback = option->get_default_str().empty() ? "false" : option->get_default_str();
+            // a negated flag (--no-<name>) stores -1
+            auto value = option->count() > 0 ? option->as<std::string>() : fallback;
+            values.emplace_back(name, value == "-1" ? "false" : value);
         } else {
             option->capture_default_str(); // formats the bound variable, i.e. the parsed value
             values.emplace_back(name, option->get_default_str());
