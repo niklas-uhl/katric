@@ -308,6 +308,61 @@ by those `.cpp` files):
     5. Cluster checks: RHG at 3072 with another seed (is the 19 M hub an outlier), more iterations or the minimum for
        GNM with direct
 
+- Results 2026-11-23 (`straggler_26_11_21` 1536, `rebalance_26_11_21` 192-3072, `rebalance-rmat_26_11_21` 48-768; all
+  runs complete, no errors). Where to pick up: the next steps at the end
+  - `straggler` (per-rank recorder, `eval/perrank.py`): not one rank but 33-62 of 1536 (2-4%), all on nodes 21-31
+    (spread over the cores), 2.5-2.9x slower in `prepare`; the same ranks in every iteration and in both
+    configurations, also after IDPD's redistribution. Only the sub-region `prepare/pattern`
+    (`build_ghost_push_pattern`) is slow there (0.99 vs 0.34 s, exclusive): `input_graph`, `orientation`, `sorting`,
+    `global_ids` and the global phase run at the others' speed, so neither a slow core nor more data. The pattern
+    build is the one phase with a random `owners_[ghost]` lookup per adjacency entry and a freshly reserved 8 B x
+    adjacency-entries buffer: hypothesis memory (pages / TLB, e.g. no transparent huge pages on those ranks), not
+    tested. Costs ~0.65 s per pattern build at 1536 (every rank waits in `exchange`), ~6% of a permuted run
+  - `rebalance`, cost max/avg on the input and whether it rebalanced at 1.5:
+    GNM / RGG / permuted RGG: IDPD 1.03-1.06, IDD 1.04-1.06, kept (both);
+    RHG <= 1536: IDPD 1.08-1.18 kept, IDD 2.0 rebalanced; permuted RHG <= 1536: IDPD 1.04-1.14 kept, IDD 1.65-1.75
+    rebalanced; RHG (both) at 3072: IDPD 3.35-3.40, IDD 10-15, rebalanced (both)
+    - IDD overestimates RHG (the hubs' degree instead of their out-degree) and rebalances it for nothing: RHG
+      1.3 -> 2.5 s, permuted RHG 8.9 -> 12.6 s. The model's "IDD's max/avg tracks IDPD's" does not hold on RHG
+    - RHG at 3072: the 19 M hub sets off every cost function, and rebalancing hurts (none 5.3 s, IDPD 9.0 s; even the
+      global phase 0.78 -> 1.7 s)
+    - The check when the graph is kept, vs none: IDPD +0.15-0.25 s on RGG (~15%), +0.2-0.5 s GNM, +0.9-1.0 s (~11%)
+      permuted; IDD about half (its one exchange replaces the degree exchange; left is `cost_function_evaluation`,
+      avg 0.47 s on the permuted inputs, 0.2 s on RGG)
+    - fadbd12: IDPD unthresholded, permuted RGG 1536 17.4 -> 16.2 s (load balancing 6.8 -> 5.8 s); none unchanged
+    - The input's edge max/avg (ingest `local_edges`) tracks IDPD's cost max/avg on every input: GNM / RGG / permuted
+      1.00-1.05 (cost 1.03-1.06), RHG 1.05-1.16 (1.04-1.18), RHG 3072 3.33 (3.35-3.40), RMAT 5.1-26.9 (6.9-44)
+  - `rebalance-rmat`: IDPD beats IDD at every scale (9.7 / 20.3 / 68.4 s vs 10.6 / 22.3 / 85.1 s at 48 / 192 / 768):
+    IDD balances worse (longer global phase) and saves little, as RMAT's cost-function communication is the hubs'
+    transfer (exchange 4.4 vs 4.8 s at 192). The global phase still grows superlinearly (6.8 s at 48 -> 52 s at 768)
+    as in `baseline-rmat`: send-volume imbalance (next step 4 of 2026-11-21)
+  - Decisions (2026-11-23):
+    - Defaults: `--primary-cost-function IDPD`, `--rebalance-threshold 1.5`, message trimming on
+      (`--no-message-trimming` turns it off; kaval omits false flags). IDD removed as a cost function
+    - `--rebalance-precheck degree-bound` (default; user, 2026-11-23): IDD lives on as the pre-check. The cost with
+      each ghost's out-degree bounded by its degree needs only the degree exchange, which preprocessing (and the
+      orientation, if the graph is kept) needs anyway, and bounds IDPD per vertex; at or below the threshold the graph
+      is kept without the out-degree exchange (counter `rank_cost_bound`), above it IDPD decides (`rank_cost`), so
+      IDD's overestimate on RHG costs one exchange, not a redistribution. Left when kept: the evaluation (0.2-0.6 s
+      above). Not a bound on IDPD's max/avg in theory (the average grows too), so a case with the bound below and IDPD
+      above the threshold would be missed. `--rebalance-precheck none` computes IDPD always. (An edge-count
+      pre-check was considered: free and it tracked IDPD here, but blind on inputs balanced by edges by
+      construction, e.g. `distribution=balance-edges`)
+    - Suites that relied on the old defaults now say so (`rebalance-threshold: 1`, `no-message-trimming`), so that
+      they rerun as before
+  - Next steps (in this order; replace the list of 2026-11-21, its steps 2-5 stay):
+    1. Straggler: rerun `straggler` (the instrumentation of 2026-11-23, `profiling::ResourceCounters` in the pattern
+       build: per-rank page faults, CPU and NUMA node, huge pages, and cycles / instructions / dTLB load misses if perf
+       events are allowed; `eval/perrank.py --counters`); do the slow ranks stay with the nodes, and is it the TLB /
+       pages. The Linux part (perf events, getcpu, smaps_rollup) is untested locally (macOS): check the counters of a
+       small cluster run first. Also run `rebalance` once with the new defaults (degree-bound pre-check) to measure
+       what the check costs when it keeps the graph
+    2. The cost of `from_kagen` (2026-11-21 step 2)
+    3. A peak-memory counter per phase (2026-11-21 step 3)
+    4. RMAT's send-volume imbalance (2026-11-21 step 4)
+    5. Cluster checks: RHG at 3072 with another seed (as rebalancing hurts there, decides whether 1.5 needs more
+       than the max/avg), GNM with direct with more iterations
+
 ### 1. Prune
 
 Options that are dead or only used in old exploration suites (`experiments/legacy`), never in the paper suites.
