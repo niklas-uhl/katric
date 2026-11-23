@@ -28,6 +28,7 @@
 #include "katric/config.h"
 #include "katric/ghost_exchange.h"
 #include "katric/message_tags.h"
+#include "katric/resource_counters.h"
 
 namespace katric::graph {
 
@@ -550,6 +551,7 @@ public:
     KASSERT(!oriented_, "the ghost push pattern needs the undirected graph");
     if (!ghost_push_pattern_) {
       CALI_CXX_MARK_SCOPE("pattern");
+      profiling::ResourceCounters const resources;  // the straggler (2026-11-23)
       ghost_push_pattern_ = build_ghost_push_pattern(*this);
     }
     return *ghost_push_pattern_;
