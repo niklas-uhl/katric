@@ -51,13 +51,16 @@ competitor, and a factory that switches on `--algorithm`. KaCCv2's weak spots, a
 
 ## Shared pieces
 
-- [ ] `make_algorithm` switches on a `Config::algorithm` enum. The deprecated `patric`/`cetric-x` spellings map to
-      `katric`, so eval's `variant` column keeps working
-- [ ] One adapter per competitor in `apps/competitors/<name>.{h,cpp}`, using pimpl so the competitor's headers stay
-      in one TU. Each `.cpp` is compiled only when its option is ON, which defines `KATRIC_HAVE_<NAME>`
-- [ ] Competitor-specific options in a CLI11 option group per competitor (`--tric-variant`, `--tric-buffer-size`, ...).
+- [x] `make_algorithm` switches on a `Config::algorithm` enum. The deprecated `patric`/`cetric-x` spellings map to
+      `katric`, so eval's `variant` column keeps working. A competitor that is not compiled in is rejected after
+      parsing, naming its CMake option (`is_compiled_in()`)
+- [x] One adapter per competitor in `apps/competitors/<name>.{h,cpp}`: the header declares only a factory
+      (`make_tric()`), the `.cpp` is an object library `katric-<name>` that alone links the competitor's target, so its
+      headers, include directories and definitions stay in that TU. The option ON defines `KATRIC_HAVE_<NAME>`
+- [x] Competitor-specific options (`--tric-variant`, `--tric-buffer-size`, ...), under a help group per competitor
+      (`->group()`, not `add_option_group()`: `option_values()` would not see the options of a named option group).
       They land in `conf.options`, so Adiak records them as `config.*`
-- [ ] `apps/competitors/convert.h` converts the `kagen::Graph` into a global edge list, a CSR with 64-bit global ids,
+- [ ] (started: vertex distribution, sorted CSR) `apps/competitors/convert.h` converts the `kagen::Graph` into a global edge list, a CSR with 64-bit global ids,
       or the vertex distribution (`kagen::BuildVertexDistribution`). It uses KaGen's own builders where they fit and
       never assumes sorted neighbourhoods
 - [ ] Each adapter's constructor checks its constraints and aborts with a clear message:
@@ -112,7 +115,7 @@ enough to decide whether to drop one.
   lacks the paper's custom eviction scores.
 
 For each competitor:
-- [ ] TriC
+- [x] TriC (see "TriC: findings" below)
 - [ ] HavoqGT
 - [ ] LCC
 - [ ] TriPoll / YGM
@@ -126,6 +129,66 @@ Record for each, once it is done:
 - constraints
 - validation results
 
+### TriC: findings (2026-11-21)
+
+- **Fork:** `niklas-uhl/tric`, branch `katric` @ `4fb1e5d1` (on top of `main` `6049cb15`): library target `tric::tric`,
+  no `main`, no KaGen, header globals `inline`, `AGGR_BUFR` always defined (`Graph` then has `edge_stat_`, so all
+  variants coexist in one TU), and the bug fixes below marked `// katric:`.
+- **Native input:** TriC's `Graph` as its binary reader (`BinaryEdgeList::read`) builds it: 1D vertex distribution
+  (KaGen's), local CSR with 64-bit global ids, **sorted** neighbourhoods. Sorting happens in `ingest`.
+- **Regions:** `preprocessing` constructs the variant's `Triangulate*` object (buffer sizing; for the buffered variants
+  also the `erange_` allreduce and the local counting). `counting` is `count()`. `count()` accumulates into its
+  object, so every run constructs a new one; `clear()` (TriC's own free) runs at the end of `total`.
+- **reset():** the buffered variants mark edges done in `Graph::edge_stat_`, so `reset()` rebuilds it. The plain
+  variant does not modify the graph.
+- **Variants:** `plain` = `TriangulateAggrFatCompressed` (the paper's `tric`), `buffered` = `TriangulateAggrBuffered`
+  (the paper's `tric-buffered`: its CMake target set `AGGR_BUFR` and, by a typo meant for `tric-new`, `AGGR_HASH2`;
+  `main.cpp` checks `AGGR_BUFR` first), `hash2` = `TriangulateAggrBufferedHash2`.
+- **Constraints:** none on p. TriC counts every triangle three times (no orientation) and divides by 3, so it needs a
+  simple graph: parallel edges or self-loops give wrong counts.
+
+Bugs in TriC (fixed on the fork branch, marked `// katric:`), all correctness or UB, none changes the work done:
+- Degree-0 vertices: the buffered constructors skip only `(e0 + 1) == e1`, so for an isolated vertex they read
+  `edge_list_[e1 - 1]`, out of range at the ends of the local edge array. RMAT aborted with `_GLIBCXX_ASSERTIONS`.
+- `bufastric.hpp` zeroes only `erange_[0, nv)` of its `2 nv` entries before the `MPI_SUM` allreduce. Fresh `mmap`
+  pages hide it; reused memory (a second iteration) gives garbage ranges, and `edge_within_max()` then prunes or
+  keeps wedges wrongly.
+- `free()` on memory from `new[]` (buffered and hash2).
+- hash2 shrinks its buffer to `min(2 nghosts, -s)` (max over ranks). With one remote wedge that is 2 entries, too few
+  for vertex + neighbour + `-1` marker: `lookup_edges()` sends `[v, -1]` forever and `count()` never ends
+  (`triangle.metis` on 2 ranks). Fixed by a floor of 3; inputs with more than one remote wedge per rank are unaffected.
+
+Bugs in the old fork's KaGen path (`run_kagen`, removed on the branch), relevant to the IPDPS'23 TriC numbers on
+generated graphs:
+- **No sorting:** `check_edgelist()` stops at the first neighbour larger than the query, so unsorted neighbourhoods
+  miss triangles. With today's KaGen and the sort disabled: RGG2D (n=2^14, m=2^17) 87,573 instead of 416,390
+  triangles, GNM 123 instead of 631; RHG and RMAT happened to be right. Fewer found triangles also means less work. To
+  check: were the paper's generator runs verified, and was the old KaGen's CSR sorted?
+- `Graph(xadj.size(), ...)` makes `lnv_` one too large, so the loops visit a vertex `n_local` whose
+  `edge_indices_[n_local + 1]` is read out of range (UB; usually an empty range).
+- `edge_stat_` is never filled, so the buffered variant cannot have run on generated graphs.
+
+Behind a switch, `--tric-sparse-ranges` (default off = TriC as published):
+- Buffered and hash2 keep `erange_`, the first and last neighbour of **every** global vertex, on every rank, built by
+  an `MPI_Allreduce` over `2 n` entries: O(n) memory and communication per rank, which grows linearly in weak scaling
+  (2^20 vertices per rank on 2^14 ranks: 256 GiB per rank). They only look up neighbours of local vertices, so
+  `vertex_ranges.hpp` on the fork holds the ranges of the local vertices and the ghosts, the latter fetched from their
+  owners (alltoallv of requests and answers): O(local + ghosts) memory, O(ghosts) communication. The values equal
+  `erange_` (checked on every lookup with a temporary abort-on-mismatch build), so pruning, messages and counts are
+  unchanged. Cost: a ghost's range is a hash lookup instead of an array access.
+
+Performance issues, **not** changed (they are TriC as published):
+- Buffered: the constructor finds each remote edge's owner in `targets` with `std::find` (O(p) per remote edge);
+  `count()` polls with `MPI_Testsome` over all p requests and rescans all local vertices in every `lookup_edges()`
+  call, once per buffer refill. On com-amazon with 2 ranks (debug build) this is 9.5 s against 0.4 s for plain.
+- Plain: the constructor counts each vertex's wedges with an O(deg^2) loop instead of `e1 - m - 1`, and `sbuf_`
+  holds all remote wedges at once (O(wedges) memory, the documented design).
+- `Edge` carries a `double` weight: 16 bytes per edge.
+
+Validation: `--verify --iterations 3` at 1, 2, 4 ranks, all three variants: examples (triangle, hiv, com-amazon),
+RGG2D, RHG, GNM, RMAT (n=2^14, m=2^17). ctests `katric.<graph>.tric-<variant>.<p>cores`. Still open: the
+adapter-vs-original-`main` timing comparison and the SuperMUC comparison with the IPDPS'23 logs.
+
 ## Experiments and eval
 
 - [ ] `experiments/competitors-real-world.suite.yaml` and `competitors-weak-scaling.suite.yaml`. They `import` the
@@ -135,7 +198,7 @@ Record for each, once it is done:
       KaCCv2's `paper-combblas`
 - [ ] A HavoqGT suite with 32 tasks per node (check that kaval supports `tasks_per_node` per suite)
 - [ ] Core ranges go only in the suite header comments (no `max_cores`)
-- [ ] `eval/katric_eval.py`: the `variant` column takes the `algorithm` value (plus `tric-variant` and similar).
+- [x] (TriC) `eval/katric_eval.py`: the `variant` column takes the `algorithm` value (plus `tric-variant` and similar).
       Nothing else changes, since the output format is the same
 - [ ] `experiments/local/smoke.suite.yaml`: each enabled competitor with `--verify` (core counts 1 and 4 for the 2D
       ones)

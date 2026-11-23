@@ -61,7 +61,21 @@ enum class CommunicationPolicy {
   grid,    ///< through a 2D grid of indirections (one proxy per message)
 };
 
+/// What runs, `--algorithm`: KaTric, or a competitor behind the same
+/// interface (apps/competitors/, each only with its CMake option
+/// KATRIC_COMPETITOR_<NAME>, doc/competitors.md).
+enum class Algorithm { katric, tric };
+/// TriC's counting variant, `--tric-variant`: the classes from TriC's main.cpp
+/// (plain is its default build, buffered is `-DAGGR_BUFR`, hash2 is
+/// `-DAGGR_HASH2`).
+enum class TricVariant {
+  plain,     ///< TriangulateAggrFatCompressed (cfastric.hpp)
+  buffered,  ///< TriangulateAggrBuffered (bufastric.hpp)
+  hash2,     ///< TriangulateAggrBufferedHash2 (hashfastric2.hpp)
+};
+
 struct Config {
+  Algorithm algorithm = Algorithm::katric;
   std::string kagen_option_string;
   std::size_t iterations = 1;
   bool verify = false;
@@ -89,6 +103,16 @@ struct Config {
   double hybrid_cutoff_scale = 1.0;
 
   GhostExchangeMode degree_exchange = GhostExchangeMode::sparse;
+
+  // Competitors (only used with their --algorithm)
+  TricVariant tric_variant = TricVariant::plain;
+  /// Per-rank buffer size of the buffered TriC variants (TriC's `-s`; its
+  /// DEFAULT_BUF_SIZE is 8000)
+  std::size_t tric_buffer_size = 8000;
+  /// Buffered variants: the neighbour id ranges only of the local vertices and
+  /// ghosts, fetched from their owners, instead of TriC's global array of all
+  /// 2 n ranges on every rank (katric fork, vertex_ranges.hpp). Same pruning.
+  bool tric_sparse_ranges = false;
 
   bool pseudo2core = false;
   /// Global phase: each rank gets only the part of N+(v) from its first

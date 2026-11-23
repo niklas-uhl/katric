@@ -7,8 +7,8 @@ file name without extension>, so the same suite run on several machines can be l
 
   runs      one row per run: every CLI option (Adiak's `config.<option>`, under its option name), `triangles`,
             `ranks`, `threads`, `cores`, `variant` (DiTriC / CETRIC / pre-CETRIC, from --contraction or the old
-            --algorithm), `graph` and the KaGen options split into `kagen.<key>` columns, `git_commit`,
-            `launchdate`, `cluster` (Adiak's cluster name, e.g. hkn = HoreKa, ircs = SuperMUC-NG), `dir` (the
+            --algorithm; a competitor's name and variant, e.g. "TriC (plain)"), `graph` and the KaGen options
+            split into `kagen.<key>` columns, `git_commit`, `launchdate`, `cluster` (Adiak's cluster name, e.g. hkn = HoreKa, ircs = SuperMUC-NG), `dir` (the
             experiment directory), and how the binary was built (`build.type`, `build.compiler`, `build.cxx_flags`,
             `build.cxx_definitions`, e.g. KASSERT_ASSERTION_LEVEL; missing before 2026-11-13)
   timers    one row per run, iteration and region: `iteration` (null outside the iterations, e.g. `input`),
@@ -155,11 +155,20 @@ def _runs(tk, run_of_profile, dir_of_profile):
 ALGORITHMS = {"patric": "DiTriC", "cetric-x": "CETRIC", "cetric_x": "CETRIC", "cetric": "pre-CETRIC"}
 
 
+# Competitors (--algorithm <name>, doc/competitors.md) and the option that picks their variant, if any
+COMPETITORS = {"tric": ("TriC", "tric-variant")}
+
+
 def _variant(runs):
-    """`variant`: DiTriC, CETRIC (--contraction) or pre-CETRIC (only before the rename), from either spelling."""
+    """`variant`: DiTriC, CETRIC (--contraction) or pre-CETRIC (only before the rename), from either spelling; for a
+    competitor its name and variant, e.g. "TriC (plain)"."""
     names = [None] * len(runs)
     if "algorithm" in runs.columns:
         names = [ALGORITHMS.get(a) for a in runs["algorithm"]]
+        for i, algorithm in enumerate(runs["algorithm"]):
+            if algorithm in COMPETITORS:
+                name, option = COMPETITORS[algorithm]
+                names[i] = f"{name} ({runs[option][i]})" if option in runs.columns else name
     if "contraction" in runs.columns:
         names = [n or ("CETRIC" if c in ("true", "1") else "DiTriC") for n, c in zip(names, runs["contraction"])]
     return pl.Series("variant", names, dtype=pl.String)

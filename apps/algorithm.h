@@ -31,9 +31,14 @@ public:
   [[nodiscard]] virtual auto triangle_count() const -> std::size_t = 0;
 };
 
-/// KaTric as configured by `conf` (--contraction, --communication-policy),
-/// running on the ranks of `comm`. `conf` and `comm` must outlive it.
+/// The algorithm selected by `conf.algorithm`, configured by `conf`, running
+/// on the ranks of `comm`. `conf` and `comm` must outlive it. A competitor must
+/// be compiled in (is_compiled_in()).
 auto make_algorithm(Config const& conf, kamping::v2::comm_view comm)
     -> std::unique_ptr<AbstractAlgorithm>;
+
+/// Whether `algorithm` is part of this build: KaTric always, a competitor only
+/// with its CMake option KATRIC_COMPETITOR_<NAME>.
+auto is_compiled_in(Algorithm algorithm) -> bool;
 
 }  // namespace katric

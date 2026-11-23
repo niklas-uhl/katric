@@ -19,8 +19,13 @@
 
 #include "./parse_config.h"
 
+#include <algorithm>
+#include <cctype>
 #include <cstdlib>
 #include <iostream>
+#include <limits>
+#include <string>
+#include <vector>
 
 #include <CLI/CLI.hpp>
 #include <CLI/Error.hpp>
@@ -28,6 +33,7 @@
 #include <mpi.h>
 #include <tbb/task_arena.h>
 
+#include "./algorithm.h"
 #include "./parse_parameters.h"
 #include "katric/config.h"
 #include "git_hash.h"
@@ -108,9 +114,34 @@ katric::Config parse_config(int argc, char* argv[], int rank, int size) {
     );
     // Before the rename (2026-11-19) the variants were --algorithm patric (DiTriC), cetric-x (CETRIC) and cetric
     // (pre-CETRIC, removed). Still accepted so that job files generated before still run; remove once they have.
-    std::string algorithm;
-    app.add_option("--algorithm", algorithm, "Deprecated: patric = DiTriC, cetric-x = --contraction")
-        ->transform(CLI::IsMember({"patric", "cetric-x", "cetric", "cetric_x"}, CLI::ignore_case));
+    std::vector<std::string> algorithms{"patric", "cetric-x", "cetric_x", "cetric"};
+    for (katric::Algorithm value: magic_enum::enum_values<katric::Algorithm>()) {
+        algorithms.push_back(katric::cli_name(value));
+    }
+    std::string algorithm = katric::cli_name(conf.algorithm);
+    app.add_option(
+           "--algorithm",
+           algorithm,
+           "katric, or a competitor (doc/competitors.md; each needs its CMake option KATRIC_COMPETITOR_<NAME>). "
+           "Deprecated: patric = katric, cetric-x = katric --contraction"
+    )
+        ->transform(CLI::IsMember(algorithms, CLI::ignore_case));
+
+    add_enum_option(app, "--tric-variant", conf.tric_variant)->group("TriC (--algorithm tric)");
+    app.add_option(
+           "--tric-buffer-size",
+           conf.tric_buffer_size,
+           "Per-rank buffer size of the buffered variants (TriC's -s)"
+    )
+        ->check(CLI::Range(std::size_t{100}, std::numeric_limits<std::size_t>::max()))
+        ->group("TriC (--algorithm tric)");
+    app.add_flag(
+           "--tric-sparse-ranges",
+           conf.tric_sparse_ranges,
+           "Buffered variants: fetch the neighbour id ranges of the ghosts from their owners instead of TriC's "
+           "allreduce of all 2n ranges onto every rank (O(n) memory per rank); the pruning stays the same"
+    )
+        ->group("TriC (--algorithm tric)");
 
     // `new` was the name of `direct` until 2026-11-20 (job files and configs before); remove once they have run
     add_enum_option(
@@ -134,16 +165,28 @@ katric::Config parse_config(int argc, char* argv[], int rank, int size) {
     app.add_option("--hybrid-cutoff-scale", conf.hybrid_cutoff_scale);
 
     CLI11_PARSE_MPI(app, argc, argv, rank, size);
-    if (!algorithm.empty()) {
-        if (algorithm == "cetric") {
-            if (rank == 0) {
-                std::cerr << "--algorithm cetric (pre-CETRIC) was removed; run it from the tag pre-refactor. CETRIC is "
-                             "--contraction (formerly --algorithm cetric-x)\n";
-            }
-            MPI_Finalize();
-            std::exit(1);
+    if (algorithm == "cetric") {
+        if (rank == 0) {
+            std::cerr << "--algorithm cetric (pre-CETRIC) was removed; run it from the tag pre-refactor. CETRIC is "
+                         "--contraction (formerly --algorithm cetric-x)\n";
         }
+        MPI_Finalize();
+        std::exit(1);
+    }
+    if (algorithm == "patric" || algorithm == "cetric-x" || algorithm == "cetric_x") {
         conf.contraction = algorithm != "patric";
+        algorithm        = katric::cli_name(katric::Algorithm::katric); // recorded as katric (variant: --contraction)
+    }
+    conf.algorithm = *magic_enum::enum_cast<katric::Algorithm>(algorithm);
+    if (!katric::is_compiled_in(conf.algorithm)) {
+        if (rank == 0) {
+            std::string name(magic_enum::enum_name(conf.algorithm));
+            std::ranges::transform(name, name.begin(), [](unsigned char c) { return std::toupper(c); });
+            std::cerr << "--algorithm " << algorithm << " is not compiled in: configure with -DKATRIC_COMPETITOR_"
+                      << name << "=ON\n";
+        }
+        MPI_Finalize();
+        std::exit(1);
     }
     if (conf.num_threads == 0) {
         conf.num_threads = tbb::this_task_arena::max_concurrency();

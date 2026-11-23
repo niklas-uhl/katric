@@ -5,6 +5,8 @@
 #include <cstdint>
 #include <memory>
 #include <span>
+#include <stdexcept>
+#include <string>
 #include <utility>
 
 #include <kagen.h>
@@ -13,6 +15,10 @@
 #include "katric/katric.h"
 #include "katric/caliper.h"
 #include "katric/config.h"
+
+#ifdef KATRIC_HAVE_TRIC
+#include "./competitors/tric.h"
+#endif
 
 namespace katric {
 
@@ -84,7 +90,32 @@ private:
 
 auto make_algorithm(Config const& conf, kamping::v2::comm_view comm)
     -> std::unique_ptr<AbstractAlgorithm> {
-  return std::make_unique<KatricAlgorithm>(conf, comm);
+  switch (conf.algorithm) {
+    case Algorithm::katric:
+      return std::make_unique<KatricAlgorithm>(conf, comm);
+    case Algorithm::tric:
+#ifdef KATRIC_HAVE_TRIC
+      return make_tric(conf, comm);
+#else
+      break;
+#endif
+  }
+  throw std::invalid_argument("--algorithm " + cli_name(conf.algorithm) +
+                              " is not compiled in");
+}
+
+auto is_compiled_in(Algorithm algorithm) -> bool {
+  switch (algorithm) {
+    case Algorithm::katric:
+      return true;
+    case Algorithm::tric:
+#ifdef KATRIC_HAVE_TRIC
+      return true;
+#else
+      return false;
+#endif
+  }
+  return false;
 }
 
 }  // namespace katric

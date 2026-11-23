@@ -233,6 +233,16 @@ if(KATRIC_BUILD_APPS)
   FetchContent_MakeAvailable(cmake_git_version_tracking)
 endif()
 
+# Competitors (doc/competitors.md): forks with a branch `katric` that provides a library target.
+if(KATRIC_COMPETITOR_TRIC)
+  FetchContent_Declare(
+    tric
+    GIT_REPOSITORY https://github.com/niklas-uhl/tric
+    GIT_TAG 4fb1e5d1eb867cf83e205e5645ab64bb9ad71c51 # katric
+    SYSTEM EXCLUDE_FROM_ALL)
+  FetchContent_MakeAvailable(tric)
+endif()
+
 if(KATRIC_BUILD_TESTS)
   # Only register MPI tests with rank counts this machine can run, instead of oversubscribing. A cache entry, so that
   # tests/ sees it (a normal variable would only live in this directory scope).

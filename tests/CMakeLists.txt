@@ -44,6 +44,18 @@ if(TARGET katric)
   set(args_cetric-grid-exchange --config ${PROJECT_SOURCE_DIR}/configs/cetric.toml --degree-exchange grid)
   set(args_ditric-trimming --config ${PROJECT_SOURCE_DIR}/configs/ditric.toml --message-trimming)
   set(args_cetric-trimming --config ${PROJECT_SOURCE_DIR}/configs/cetric.toml --message-trimming)
+  # competitors (doc/competitors.md), each only if compiled in
+  if(KATRIC_COMPETITOR_TRIC)
+    foreach(variant plain buffered hash2)
+      list(APPEND example_configs tric-${variant})
+      set(args_tric-${variant} --algorithm tric --tric-variant ${variant} --iterations 2)
+    endforeach()
+    foreach(variant buffered hash2)
+      list(APPEND example_configs tric-${variant}-sparse-ranges)
+      set(args_tric-${variant}-sparse-ranges --algorithm tric --tric-variant ${variant} --tric-sparse-ranges
+                                             --iterations 2)
+    endforeach()
+  endif()
   # the hybrid configuration (configs/hybrid.toml, --num-threads > 1) is disabled until the hybrid path is re-ported
   # (doc/refactoring-plan.md)
   foreach(entry IN LISTS example_graphs)

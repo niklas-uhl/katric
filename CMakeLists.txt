@@ -7,6 +7,8 @@ option(KATRIC_BINARY_INTERSECTION_RECURSIVE "Use recursion in binary search inte
 option(KATRIC_ENABLE_CLANG_TIDY "Run clang-tidy (.clang-tidy) on katric's own sources while building" OFF)
 option(KATRIC_FETCH_TBB "Build the pinned oneTBB from source (shared) instead of using the system's" OFF)
 option(KATRIC_ENABLE_FORMAT_CMAKE "Fetch Format.cmake and provide the format/check-format/fix-format targets" OFF)
+# Competitors behind katric's benchmark interface (--algorithm <name>, doc/competitors.md), each opt-in
+option(KATRIC_COMPETITOR_TRIC "Build TriC (Ghosh & Halappanavar) into katric as --algorithm tric" OFF)
 set(KATRIC_CXX_FLAGS "" CACHE STRING "Additional compile options for katric's own targets (semicolon-separated)")
 set(KATRIC_ACTIVE_LOG_LEVEL "INFO" CACHE STRING
     "Compile-time spdlog level; SPDLOG_DEBUG/SPDLOG_TRACE calls below it are compiled out")
