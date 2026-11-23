@@ -156,6 +156,12 @@ enough to decide whether to drop one.
     count down the producers. Messages are processed only in the **next** round (`ParallelProcess`, deserialized by
     the compute threads), so all ghost neighbourhoods are buffered at once. No routing or indirection.
   - Termination: `MPI_Allreduce` over "sent something or `ForceContinue()`".
+  - **Buffer memory is unbounded**, like TriC plain's `sbuf_`; the 2 MiB block only sets message granularity. The
+    pool allocates a new chunk when empty (`MessageBufferPool::take()` never blocks). Sent chunks are parked in
+    `this_round_to_others_` until the next round's `Prepare()`, and received chunks in `recv_bufs_stash_` until the
+    next round has processed them. LCC's ghost exchange is one round, so a rank's peak holds all N⁺(v) copies it
+    sent, all it received (raw), and then the ghosts' `complete_neighbor`: up to three copies of
+    O(Σ_v |N⁺(v)| · |OEDests(v)|) volume. TriC plain holds O(remote wedges) instead.
   - Needs `MPI_THREAD_MULTIPLE` (`sync_comm.h` requests it). `main` asks for it only when GRAPE is selected.
   - Memory: `Worker::initPool` preallocates and zeroes a message pool of at least 16 MiB · (p + 1) · threads,
     capped at 60 % of the node's `MemAvailable` **per rank**. Each rank also has `hardware_concurrency()` channels
