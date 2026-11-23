@@ -16,5 +16,7 @@ HeaderFilterRegex: 'include/katric/'
 CheckOptions:
   readability-identifier-length.IgnoredVariableNames: '^([Guvw]|it|kv)$'
   readability-identifier-length.IgnoredParameterNames: '^([Guvw]|it|kv)$'
+  readability-identifier-length.IgnoredBindingNames: '^([Guvw]|it|kv)$'
+  readability-identifier-length.IgnoredLoopCounterNames: '^([Guvwijk_]|it|kv)$'
   readability-function-cognitive-complexity.Threshold: 80
   misc-non-private-member-variables-in-classes.IgnorePublicMemberVariables: true
