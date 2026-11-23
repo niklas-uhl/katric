@@ -384,13 +384,19 @@ by those `.cpp` files):
     the check costs +0.5 s (5%) over none instead of +1.0 s; RHG <= 1536 bound 2.0, IDPD 1.15 decides, kept (no
     redistribution); GNM +0-0.2 s, RGG +0.15 s over none (~0.04 s of it the counters). RHG 3072 still rebalances
     (IDPD 3.35) and is slower than none (9.4 vs 5.3 s)
-  - Load balancing, open (proposal 2026-11-23, not decided):
+  - Load balancing (proposal 2026-11-23; 1 and 2 implemented the same day, not yet measured on the cluster; 3:
+    suite `rmat-volume` with per-rank counters, plus the counters local_nodes / out_edges / cut_out_edges /
+    max_out_degree of the oriented graph in `preprocessing`):
     1. When the graph is kept, preprocessing orients with the same `degree_key` the cost function just evaluated:
        hand the cost function's orientation (is_out_edge / out-degrees) to `orient()` instead of recomputing it.
-       Would make the check nearly free when it keeps the graph (preprocessing `orientation` ~0.36 s on permuted RGG)
+       Would make the check nearly free when it keeps the graph (preprocessing `orientation` ~0.36 s on permuted RGG).
+       Done: Graph::keep_orientation() / orient_by_kept() (Lomuto partition on the kept flags), test
+       KeptOrientationMatchesKey (DiTriC and CETRIC)
     2. Achievable balance: a vertex's cost cannot be split by contiguous ranges, so with a vertex costing more than
        the average rank, redistribution cannot reach the threshold (RHG 3072: one hub, rebalancing hurts). Compare the
-       max/avg against max(max vertex cost, avg) instead of avg; check with the RHG seed rerun
+       max/avg against max(max vertex cost, avg) instead of avg; check with the RHG seed rerun. Done: in
+       exceeds_threshold() (counters `rank_cost_max_vertex`, `rank_cost_bound_max_vertex`); `--rebalance-threshold`
+       now means max / max(avg, largest vertex)
     3. RMAT: after IDPD the work is balanced but the send volume is not (max/avg 2.3-3.0) and the global phase grows
        6.8 -> 52 s from 48 to 768 cores. Measure per rank where the volume comes from first (recorder on
        `rebalance-rmat`), then a volume term in the cost or idea 1 (compute at the tail, DPD)
