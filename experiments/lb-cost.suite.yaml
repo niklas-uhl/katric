@@ -3,6 +3,8 @@
 # with p (17% at 192, 37% at 768 cores in `phases`). DiTriC only; `none` is the `phases` configuration on the same
 # binary. DPD = PATRIC's tail cost Σ_{u∈N+(v)} d+(v)+d+(u), IDPD = its surrogate (push) variant.
 # The repartitioning runs in its own region `primary_load_balancing`; compare the work counters' max / avg over ranks.
+# Defaults changed 2026-11-23 (IDPD, --rebalance-threshold 1.5, --rebalance-precheck degree-bound, message trimming
+# on); the options below pin this suite's earlier behaviour.
 name: lb-cost
 executable: apps/katric
 output_path_option_name: caliper-output
@@ -25,5 +27,8 @@ config:
     degree-exchange: dense
     communication-policy: new
     primary-cost-function: [none, DPD, IDPD]
+    rebalance-threshold: 1
+    rebalance-precheck: none
+    no-message-trimming: true
     intersection-method: merge
     iterations: 3

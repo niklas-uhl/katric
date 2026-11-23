@@ -3,6 +3,8 @@
 # of memory. So IDPD only (which fixes the work imbalance, lb-cost-rmat), up to 768 cores; the variant, the global
 # phase's communication and message trimming as in `baseline`. Two iterations. `--max-cores 768` when creating the
 # job files.
+# Defaults changed 2026-11-23 (IDPD, --rebalance-threshold 1.5, --rebalance-precheck degree-bound, message trimming
+# on); the options below pin this suite's earlier behaviour.
 name: baseline-rmat
 executable: apps/katric
 output_path_option_name: caliper-output
@@ -21,7 +23,9 @@ config:
   - contraction: [false, true]
     communication-policy: [direct, grid]
     primary-cost-function: IDPD
-    message-trimming: [false, true]
+    rebalance-threshold: 1
+    rebalance-precheck: none
+    no-message-trimming: [true, false]
     threshold: local-nodes
     degree-exchange: dense
     intersection-method: merge

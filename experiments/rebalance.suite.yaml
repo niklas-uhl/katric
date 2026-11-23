@@ -5,6 +5,8 @@
 # (cost max/avg 1.0-1.3 in the model; the counters `rank_cost` and `rebalanced` in primary_load_balancing tell), so
 # they should cost the cost function only, with the degree exchange reused. RMAT, which needs the rebalancing, is in
 # rebalance-rmat.
+# Results 2026-11-23 in doc/refactoring-plan.md. IDD was removed afterwards (it overestimates RHG; it lives on as
+# --rebalance-precheck degree-bound): the IDD configurations no longer parse.
 name: rebalance
 executable: apps/katric
 output_path_option_name: caliper-output

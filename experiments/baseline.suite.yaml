@@ -8,6 +8,8 @@
 # the old ones. Fixed: dense degree exchange (as the earlier suites), threshold local-nodes, merge intersection.
 # Build with the experiments preset (assertions off) and submit with --copy-binary. 16 configurations per input and
 # core count; `--config-filter`, `--input-filter` and `--cores` select parts.
+# Defaults changed 2026-11-23 (IDPD, --rebalance-threshold 1.5, --rebalance-precheck degree-bound, message trimming
+# on); the options below pin this suite's earlier behaviour.
 name: baseline
 executable: apps/katric
 output_path_option_name: caliper-output
@@ -27,7 +29,9 @@ config:
   - contraction: [false, true]
     communication-policy: [direct, grid]
     primary-cost-function: [none, IDPD]
-    message-trimming: [false, true]
+    rebalance-threshold: 1
+    rebalance-precheck: none
+    no-message-trimming: [true, false]
     threshold: local-nodes
     degree-exchange: dense
     intersection-method: merge

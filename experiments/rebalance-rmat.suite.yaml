@@ -3,6 +3,8 @@
 # baseline-rmat; IDD balances the work somewhat worse in the model, max/avg 1.18-1.70 vs 1.03-1.53). DiTriC, direct,
 # message trimming (the only configuration that fit in memory at 768 in baseline-rmat), threshold 1.5 (RMAT's cost
 # max/avg is far above). Two iterations. Cores as baseline-rmat: `--max-cores 768` (1536 ran out of memory).
+# Results 2026-11-23 in doc/refactoring-plan.md. IDD was removed afterwards (it overestimates RHG; it lives on as
+# --rebalance-precheck degree-bound): the IDD configurations no longer parse.
 name: rebalance-rmat
 executable: apps/katric
 output_path_option_name: caliper-output

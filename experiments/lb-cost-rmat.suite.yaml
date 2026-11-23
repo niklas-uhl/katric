@@ -3,6 +3,8 @@
 # (no-sync suite, 2026-11-18; jobs at 1536 / 3072 cores ran out of memory). DiTriC with primary load balancing none /
 # DPD (PATRIC's tail cost) / IDPD (push variant); compare the work counters' max / avg over ranks and the time per
 # iteration. Two iterations, as the unbalanced runs are long.
+# Defaults changed 2026-11-23 (IDPD, --rebalance-threshold 1.5, --rebalance-precheck degree-bound, message trimming
+# on); the options below pin this suite's earlier behaviour.
 name: lb-cost-rmat
 executable: apps/katric
 output_path_option_name: caliper-output
@@ -24,5 +26,8 @@ config:
     degree-exchange: dense
     communication-policy: new
     primary-cost-function: [none, DPD, IDPD]
+    rebalance-threshold: 1
+    rebalance-precheck: none
+    no-message-trimming: true
     intersection-method: merge
     iterations: 2

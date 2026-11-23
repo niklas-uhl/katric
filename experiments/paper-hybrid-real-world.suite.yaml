@@ -1,6 +1,8 @@
 # Hybrid (MPI + TBB) CETRIC on the real-world graphs: edge partitioning, local and global parallelism with task
 # priorities, grid communication. Ported from legacy/paper-suites/hybrid-realworld.suite.yaml; the old suite's time
 # limits were lower (europe, orkut 1, live-journal 2, uk-2007-05, twitter 5 minutes).
+# Defaults changed 2026-11-23 (IDPD, --rebalance-threshold 1.5, --rebalance-precheck degree-bound, message trimming
+# on); the options below pin this suite's earlier behaviour.
 name: paper-hybrid-real-world
 executable: apps/katric
 output_path_option_name: caliper-output
@@ -21,6 +23,7 @@ config:
     degree-exchange: dense
     communication-policy: grid
     primary-cost-function: none
+    no-message-trimming: true
     intersection-method: merge
     task-pool-type: task-group
     task-priorities: true

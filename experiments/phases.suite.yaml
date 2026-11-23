@@ -11,6 +11,8 @@
 # Up to 7cf91b7 the second configuration was cetric-x with neighborhoods sorted purely by degree
 # (`id-node-ordering: false`, removed in step 1 of doc/refactoring-plan.md); later configurations moved up by one.
 # Evaluate with `just notebook`. A laptop version is local/phases.suite.yaml.
+# Defaults changed 2026-11-23 (IDPD, --rebalance-threshold 1.5, --rebalance-precheck degree-bound, message trimming
+# on); the options below pin this suite's earlier behaviour.
 name: phases
 executable: apps/katric
 output_path_option_name: caliper-output
@@ -27,6 +29,7 @@ config:
     degree-exchange: dense
     communication-policy: new
     primary-cost-function: none
+    no-message-trimming: true
     intersection-method: merge
     iterations: 3
   # appended (so the indices of the configurations above stay the same): pre-CETRIC, cut edges oriented outward in
@@ -36,6 +39,7 @@ config:
     degree-exchange: dense
     communication-policy: new
     primary-cost-function: none
+    no-message-trimming: true
     intersection-method: merge
     iterations: 3
   # appended: the three algorithms with the 2D grid indirection in the global phase (the paper's choice at large p)
@@ -44,5 +48,6 @@ config:
     degree-exchange: dense
     communication-policy: grid
     primary-cost-function: none
+    no-message-trimming: true
     intersection-method: merge
     iterations: 3

@@ -31,13 +31,18 @@ before the rename of 2026-11-19 and still use `--algorithm patric` (DiTriC) / `c
 cetric` (pre-CETRIC) was removed and now fails, run it from the tag `pre-refactor`. `eval/katric_eval.py` gives every
 run a `variant` column from either spelling.
 
+Defaults changed 2026-11-23: `--primary-cost-function IDPD`, `--rebalance-threshold 1.5`, `--rebalance-precheck
+degree-bound` and message trimming on (`no-message-trimming: true` turns it off, as kaval omits false flags). The
+suites below pin what they relied on before; IDD was removed, so `rebalance` / `rebalance-rmat`'s IDD configurations
+no longer parse.
+
 | Suite | What |
 | --- | --- |
 | `baseline` | The current code before the next steps (2026-11-20): DiTriC / CETRIC x direct / grid x load balancing none / IDPD x message trimming off / on, on the `phases` inputs and GNM (run at 192 to 3072 cores). New option names |
 | `baseline-rmat` | `baseline` on RMAT with IDPD only (up to 768 cores) |
 | `rebalance` | `--rebalance-threshold` and the cost function IDD (e13a2de): DiTriC, direct, trimming; none / IDPD at 1 (as `baseline`) / IDPD and IDD at 1.5, on the `phases` inputs and GNM (run at 192 to 3072 cores, as `baseline`) |
 | `rebalance-rmat` | IDPD vs IDD at threshold 1.5 on RMAT (up to 768 cores) |
-| `straggler` | Per-rank times (Caliper recorder via environment variables) of the ghost exchanges on permuted RGG at 1536 cores, IDPD / none, after fadbd12; read with `eval/perrank.py` |
+| `straggler` | Per-rank times (Caliper recorder via environment variables) of the ghost exchanges on permuted RGG at 1536 cores, IDPD / none, after fadbd12; read with `eval/perrank.py`. Since 2026-11-23 also per-rank resource counters of the pattern build (`eval/perrank.py --counters`) |
 | `paper-real-world` | Strong scaling of DiTriC (`patric`) and CETRIC (`cetric-x`), 512 to 32768 cores |
 | `paper-weak-scaling` | Weak scaling on RGG 2D, RHG and GNM, 512 to 32768 cores |
 | `paper-hybrid-real-world` | Hybrid CETRIC (MPI + TBB), 1 to 48 threads per rank |

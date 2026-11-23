@@ -10,6 +10,13 @@
 # values, so no $PWD). Region times are exclusive (`sum#time.duration.ns`), aggregated over the iterations by
 # nested path; with --perhost 48 the node of a rank is rank / 48 (the job log lists the nodes). Question: is the slow
 # rank the same in every iteration and configuration, or on the same node?
+# Results 2026-11-23 (doc/refactoring-plan.md): 33-62 ranks on nodes 21-31, the same in every iteration and
+# configuration, slow only in `prepare/pattern`. Since then the pattern build reports per rank (counters, recorded by
+# the recorder as it keys on counter.name too) page faults, CPU, NUMA node, transparent huge pages and, if perf events
+# are allowed, cycles / instructions / dTLB load misses: rerun, then `eval/perrank.py --counters`. Does it stay with
+# the nodes, and is it the pages / TLB?
+# Defaults changed 2026-11-23: the IDPD configuration pins the threshold 1 without the pre-check (redistributes as
+# before), both pin message trimming (now the default).
 name: straggler
 executable: apps/katric
 output_path_option_name: caliper-output
@@ -28,6 +35,8 @@ graphs:
     scale_weak: true
 config:
   - primary-cost-function: IDPD
+    rebalance-threshold: 1
+    rebalance-precheck: none
     message-trimming: true
     communication-policy: direct
     threshold: local-nodes
@@ -36,7 +45,7 @@ config:
     iterations: 3
     ENV: &perrank
       CALI_SERVICES_ENABLE: aggregate,event,mpi,recorder,timer
-      CALI_AGGREGATE_KEY: prop:nested,mpi.rank
+      CALI_AGGREGATE_KEY: prop:nested,mpi.rank,counter.name
       CALI_RECORDER_FILENAME: straggler-perrank/idpd/rank-%mpi.rank%.cali
   - primary-cost-function: none
     message-trimming: true

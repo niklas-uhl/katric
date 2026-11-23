@@ -1,5 +1,7 @@
 # Weak scaling of DiTriC (patric) and CETRIC (cetric-x) on generated graphs, both communication policies.
 # Ported from legacy/paper-suites/weak-scaling.suite.yaml.
+# Defaults changed 2026-11-23 (IDPD, --rebalance-threshold 1.5, --rebalance-precheck degree-bound, message trimming
+# on); the options below pin this suite's earlier behaviour.
 name: paper-weak-scaling
 executable: apps/katric
 output_path_option_name: caliper-output
@@ -19,5 +21,6 @@ config:
     degree-exchange: dense
     communication-policy: [new, grid]
     primary-cost-function: none
+    no-message-trimming: true
     intersection-method: merge
     iterations: 4

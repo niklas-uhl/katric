@@ -16,6 +16,7 @@ config:
     degree-exchange: dense
     communication-policy: new
     primary-cost-function: none
+    no-message-trimming: true
     intersection-method: merge
     iterations: 3
   # appended (so the indices of the configurations above stay the same): pre-CETRIC, cut edges oriented outward in
@@ -25,6 +26,7 @@ config:
     degree-exchange: dense
     communication-policy: new
     primary-cost-function: none
+    no-message-trimming: true
     intersection-method: merge
     iterations: 3
   # appended: the three algorithms with the 2D grid indirection in the global phase (the paper's choice at large p)
@@ -33,5 +35,6 @@ config:
     degree-exchange: dense
     communication-policy: grid
     primary-cost-function: none
+    no-message-trimming: true
     intersection-method: merge
     iterations: 3

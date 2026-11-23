@@ -3,6 +3,8 @@
 # (8 ranks) the global phase's send volume drops by 25% without locality (GNM, permuted RGG), 15% on RMAT, 37% on
 # com-amazon and 43-77% on RHG, for 1.1-1.5x the sending time; whether it pays off depends on the network.
 # DiTriC and CETRIC with and without trimming; compare the global phase's time, send_volume and send_ns.
+# Defaults changed 2026-11-23 (IDPD, --rebalance-threshold 1.5, --rebalance-precheck degree-bound, message trimming
+# on); the options below pin this suite's earlier behaviour.
 name: trimming
 executable: apps/katric
 output_path_option_name: caliper-output
@@ -39,5 +41,5 @@ config:
     communication-policy: new
     primary-cost-function: none
     intersection-method: merge
-    message-trimming: [false, true]
+    no-message-trimming: [true, false]
     iterations: 3

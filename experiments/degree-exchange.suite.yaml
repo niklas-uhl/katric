@@ -5,6 +5,8 @@
 # locality; RMAT's hubs make the exchange irregular). Extended 2026-11-18 by RMAT/GNM and 1536/3072 cores: up to 768
 # the three transports were within 5-10% of each other.
 # Look at the region `degree_exchange` (sub-regions `prepare`, `exchange`); the rest of the run is identical.
+# Defaults changed 2026-11-23 (IDPD, --rebalance-threshold 1.5, --rebalance-precheck degree-bound, message trimming
+# on); the options below pin this suite's earlier behaviour.
 name: degree-exchange
 executable: apps/katric
 output_path_option_name: caliper-output
@@ -47,5 +49,6 @@ config:
     degree-exchange: [dense, sparse, grid]
     communication-policy: new
     primary-cost-function: none
+    no-message-trimming: true
     intersection-method: merge
     iterations: 3
