@@ -551,7 +551,11 @@ public:
     KASSERT(!oriented_, "the ghost push pattern needs the undirected graph");
     if (!ghost_push_pattern_) {
       CALI_CXX_MARK_SCOPE("pattern");
-      profiling::ResourceCounters const resources;  // the straggler (2026-11-23)
+      // the straggler (2026-11-23), opt-in
+      std::optional<profiling::ResourceCounters> resources;
+      if (profiling::ResourceCounters::enabled()) {
+        resources.emplace();
+      }
       ghost_push_pattern_ = build_ghost_push_pattern(*this);
     }
     return *ghost_push_pattern_;

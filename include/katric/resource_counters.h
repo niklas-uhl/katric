@@ -7,6 +7,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <fstream>
 #include <string>
 #include <utility>
@@ -24,6 +25,9 @@
 
 namespace katric::profiling {
 
+/// Opt-in (`enabled()`: the environment variable KATRIC_RESOURCE_COUNTERS is
+/// set): it costs ~40 ms per use at 2^22 edges per rank on SuperMUC-NG (most
+/// likely reading smaps_rollup, which walks the page tables).
 /// Reports, when it goes out of scope, to the Caliper region open then (so
 /// construct it after the region's scope guard): `page_faults` and
 /// `major_page_faults` during its lifetime; `cpu` and `numa_node` the rank runs
@@ -49,6 +53,12 @@ public:
     }
 #endif
   }
+  /// Whether KATRIC_RESOURCE_COUNTERS is set (read once).
+  [[nodiscard]] static auto enabled() -> bool {
+    static bool const enabled = std::getenv("KATRIC_RESOURCE_COUNTERS") != nullptr;
+    return enabled;
+  }
+
   ResourceCounters(ResourceCounters const&) = delete;
   auto operator=(ResourceCounters const&) -> ResourceCounters& = delete;
   ResourceCounters(ResourceCounters&&) = delete;

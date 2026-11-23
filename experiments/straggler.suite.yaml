@@ -17,6 +17,17 @@
 # the nodes, and is it the pages / TLB?
 # Defaults changed 2026-11-23: the IDPD configuration pins the threshold 1 without the pre-check (redistributes as
 # before), both pin message trimming (now the default).
+# Results of the rerun (2026-11-23, other nodes): the same ranks are slow, with the same instructions but 3.3x the
+# cycles and 22x the dTLB load misses; their processes have ~15-20 MB fewer transparent huge pages. Hypothesis: on those
+# ranks a ~32 MiB array (owners_, 4 B per ghost, ~8.38 M ghosts) is not backed by huge pages, as glibc places it by its
+# dynamic mmap threshold (at most 32 MiB). Appended configurations (none, as the second one) test that without code
+# changes:
+#   hugetlb:   GLIBC_TUNABLES=glibc.malloc.hugetlb=1, malloc madvises THP for its allocations (glibc >= 2.35; the
+#              version is recorded as memory.glibc, older ones ignore the tunable silently)
+#   mmap-1m:   MALLOC_MMAP_THRESHOLD_=1 MiB, fixed (no dynamic threshold): every large array from mmap
+#   mmap-32m:  MALLOC_MMAP_THRESHOLD_=32 MiB (the maximum), fixed: arrays below 32 MiB from the heap
+# If the slow ranks disappear in one of them, the placement is the cause. KATRIC_RESOURCE_COUNTERS turns the per-rank
+# resource counters on (opt-in since they cost ~40 ms per pattern build); the THP mode is recorded as memory.thp_*.
 name: straggler
 executable: apps/katric
 output_path_option_name: caliper-output
@@ -46,6 +57,7 @@ config:
     ENV: &perrank
       CALI_SERVICES_ENABLE: aggregate,event,mpi,recorder,timer
       CALI_AGGREGATE_KEY: prop:nested,mpi.rank,counter.name
+      KATRIC_RESOURCE_COUNTERS: 1
       CALI_RECORDER_FILENAME: straggler-perrank/idpd/rank-%mpi.rank%.cali
   - primary-cost-function: none
     message-trimming: true
@@ -57,3 +69,37 @@ config:
     ENV:
       <<: *perrank
       CALI_RECORDER_FILENAME: straggler-perrank/none/rank-%mpi.rank%.cali
+  # appended 2026-11-23: the allocator variants (see above)
+  - primary-cost-function: none
+    message-trimming: true
+    communication-policy: direct
+    threshold: local-nodes
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 3
+    ENV:
+      <<: *perrank
+      CALI_RECORDER_FILENAME: straggler-perrank/none-hugetlb/rank-%mpi.rank%.cali
+      GLIBC_TUNABLES: glibc.malloc.hugetlb=1
+  - primary-cost-function: none
+    message-trimming: true
+    communication-policy: direct
+    threshold: local-nodes
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 3
+    ENV:
+      <<: *perrank
+      CALI_RECORDER_FILENAME: straggler-perrank/none-mmap-1m/rank-%mpi.rank%.cali
+      MALLOC_MMAP_THRESHOLD_: 1048576
+  - primary-cost-function: none
+    message-trimming: true
+    communication-policy: direct
+    threshold: local-nodes
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 3
+    ENV:
+      <<: *perrank
+      CALI_RECORDER_FILENAME: straggler-perrank/none-mmap-32m/rank-%mpi.rank%.cali
+      MALLOC_MMAP_THRESHOLD_: 33554432

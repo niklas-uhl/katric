@@ -50,6 +50,7 @@
 #include <tbb/task_arena.h>
 
 #include "./algorithm.h"
+#include "./memory_environment.h"
 #include "./build_info.h"
 #include "./parse_config.h"
 #include "./verify.h"
@@ -108,6 +109,7 @@ auto main(int argc, char* argv[]) -> int {
                    std::string(katric::build_info::cxx_flags));
       adiak::value("build.cxx_definitions",
                    std::string(katric::build_info::cxx_definitions));
+      record_memory_environment();
       adiak::collect_all();  // user, launch date, command line, hosts, job
                              // size, MPI version, ...
       caliper.start();
