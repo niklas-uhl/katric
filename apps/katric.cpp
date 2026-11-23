@@ -92,7 +92,10 @@ auto main(int argc, char* argv[]) -> int {
                                caliper.error_msg());
         MPI_Abort(MPI_COMM_WORLD, 1);
       }
-      adiak::init(comm.mpi_handle());
+      // adiak takes a pointer to the MPI_Comm (void*, so passing the handle
+      // itself compiles and crashes in adiak_collect_all)
+      MPI_Comm adiak_comm = comm.mpi_handle();
+      adiak::init(static_cast<void*>(&adiak_comm));
       for (auto const& [name, value] : conf.options) {
         adiak::value("config." + name, value);
       }
