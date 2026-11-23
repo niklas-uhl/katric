@@ -363,6 +363,39 @@ by those `.cpp` files):
     5. Cluster checks: RHG at 3072 with another seed (as rebalancing hurts there, decides whether 1.5 needs more
        than the max/avg), GNM with direct with more iterations
 
+- Results 2026-11-23, later (`straggler_26_11_23` 1536 on other nodes, `rebalance_26_11_23` with the new defaults;
+  `rebalance-rmat_26_11_23` not in yet; the IDD configuration of `rebalance` failed as expected, permuted RHG 3072 at
+  1.5 missing: the job's log ends there)
+  - Straggler: the same ranks are slow (r1346, r1038, r1052, r1055, ...) on a different set of nodes (i07 instead of
+    i04): it follows the rank / its data, not the hardware. On those ranks the pattern build executes the same
+    instructions (3.3e8) in 3.3x the cycles with 22x the dTLB load misses (6.8 M vs 0.3 M per build, about one per
+    adjacency entry); page faults normal, no major faults. Their processes have ~15-20 MB fewer transparent huge pages
+    (280 vs 297 MB). Input sizes (local / cut edges, wedges) do not separate them. Hypothesis: a ~32 MiB array
+    (`owners_`, 4 B per ghost, ~8.38 M ghosts; also the 32-bit adjacency) lands below / above glibc's dynamic mmap
+    threshold (at most 32 MiB) depending on the rank's allocation history, and is then not backed by huge pages.
+    `straggler` now has allocator variants (GLIBC_TUNABLES hugetlb, fixed mmap threshold 1 MiB / 32 MiB) and records
+    the glibc version and THP mode (adiak `memory.*`). Fix candidates once confirmed: madvise(MADV_HUGEPAGE) on the large
+    arrays, or a pattern build without the `owners_` lookup (binary search over the per-owner ghost offsets, p + 1
+    entries)
+  - `ResourceCounters` cost ~40 ms per pattern build (avg; 3x the build itself on RGG / RHG), most likely reading
+    smaps_rollup: now opt-in (KATRIC_RESOURCE_COUNTERS, set by `straggler` only). `rebalance_26_11_23`'s times include
+    it (~0.04 s per pattern build)
+  - Pre-check `degree-bound` (IDPD at 1.5, vs 2026-11-21): permuted inputs kept, load balancing 2.9 -> 2.3 s at 1536,
+    the check costs +0.5 s (5%) over none instead of +1.0 s; RHG <= 1536 bound 2.0, IDPD 1.15 decides, kept (no
+    redistribution); GNM +0-0.2 s, RGG +0.15 s over none (~0.04 s of it the counters). RHG 3072 still rebalances
+    (IDPD 3.35) and is slower than none (9.4 vs 5.3 s)
+  - Load balancing, open (proposal 2026-11-23, not decided):
+    1. When the graph is kept, preprocessing orients with the same `degree_key` the cost function just evaluated:
+       hand the cost function's orientation (is_out_edge / out-degrees) to `orient()` instead of recomputing it.
+       Would make the check nearly free when it keeps the graph (preprocessing `orientation` ~0.36 s on permuted RGG)
+    2. Achievable balance: a vertex's cost cannot be split by contiguous ranges, so with a vertex costing more than
+       the average rank, redistribution cannot reach the threshold (RHG 3072: one hub, rebalancing hurts). Compare the
+       max/avg against max(max vertex cost, avg) instead of avg; check with the RHG seed rerun
+    3. RMAT: after IDPD the work is balanced but the send volume is not (max/avg 2.3-3.0) and the global phase grows
+       6.8 -> 52 s from 48 to 768 cores. Measure per rank where the volume comes from first (recorder on
+       `rebalance-rmat`), then a volume term in the cost or idea 1 (compute at the tail, DPD)
+    4. The redistribution itself (`from_kagen`, ~2.5 s at 1536 permuted): 2026-11-21 step 2
+
 ### 1. Prune
 
 Options that are dead or only used in old exploration suites (`experiments/legacy`), never in the paper suites.
