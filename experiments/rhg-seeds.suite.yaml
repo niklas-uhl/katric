@@ -1,0 +1,41 @@
+# RHG at 3072 cores with other seeds (2026-11-23; next step 5 of doc/refactoring-plan.md and the check of the
+# achievable-balance threshold). With the `phases` seed, RHG at 3072 has one hub of degree 19.1 M (0.76 M at 1536):
+# its rank holds 3.3x the average edges, every cost function exceeded 1.5, and rebalancing made it slower (none 5.3 s,
+# IDPD 9.4 s; rebalance_26_11_21 / _23). Questions: is the hub an outlier of this seed, and does the threshold against
+# max(avg, largest vertex cost) now keep the graph there (counters rebalanced, rank_cost_max_vertex,
+# rank_cost_bound_max_vertex in primary_load_balancing)?
+# The `phases` seed (as a reference with the new threshold) and two others; RHG with and without locality; none vs
+# IDPD at 1.5 (the defaults). DiTriC, direct, message trimming. Run at 1536 and 3072:
+# `--min-cores 1536 --max-cores 3072` when creating the job files.
+name: rhg-seeds
+executable: apps/katric
+output_path_option_name: caliper-output
+threads_option_name: num-threads
+ncores: node-size-pow2
+threads_per_rank: [1]
+time_limit: 10
+graphs:
+  - generator: kagen
+    type: rhg
+    N: 18
+    M: 22
+    gamma: 2.8
+    seed: [28475421, 1, 2]
+    scale_weak: true
+  - generator: kagen
+    type: rhg
+    N: 18
+    M: 22
+    gamma: 2.8
+    permute: 1
+    seed: [28475421, 1, 2]
+    scale_weak: true
+config:
+  - primary-cost-function: [none, IDPD]
+    rebalance-threshold: 1.5
+    message-trimming: true
+    communication-policy: direct
+    threshold: local-nodes
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 3

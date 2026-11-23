@@ -31,10 +31,12 @@ inline auto degree_key(graph::Graph const& G) {
 }
 
 /// Degree exchange (region `degree_exchange`) and orientation by (degree,
-/// global id) (region `orientation`), then the neighborhoods sorted by handle
+/// global id) (region `orientation`; taken from the primary load balancing's
+/// cost function if it kept the graph), then the neighborhoods sorted by handle
 /// (`sorting`), in place. With `--contraction`, also the ghosts' out-edges to
 /// local vertices, so that the local phase finds every triangle with two local
-/// vertices.
+/// vertices. Counters (region `preprocessing`) `local_nodes`, `out_edges`,
+/// `cut_out_edges`, `max_out_degree` of the oriented graph.
 inline void preprocessing(graph::Graph& G, Config const& conf) {
   CALI_CXX_MARK_SCOPE("preprocessing");
   {
@@ -43,12 +45,32 @@ inline void preprocessing(graph::Graph& G, Config const& conf) {
   }
   {
     CALI_CXX_MARK_SCOPE("orientation");
-    G.orient(degree_key(G), conf.contraction);
+    if (G.has_kept_orientation()) {  // decided by the cost function, same key
+      G.orient_by_kept(conf.contraction);
+    } else {
+      G.orient(degree_key(G), conf.contraction);
+    }
   }
   {
     CALI_CXX_MARK_SCOPE("sorting");
     G.sort_neighborhoods();
   }
+  // the shape of the oriented graph per rank (after any redistribution; the
+  // input's is in `ingest`): what the global phase sends
+  std::size_t cut_out_edges = 0;
+  std::size_t max_out_degree = 0;
+  for (auto const v : G.local_vertices()) {
+    cut_out_edges += G.ghost_heads(v).size();
+    max_out_degree = std::max(max_out_degree, G.local_neighbors(v).size());
+  }
+  profiling::counter_add("local_nodes",
+                         static_cast<std::int64_t>(G.num_local_vertices()));
+  profiling::counter_add("out_edges",
+                         static_cast<std::int64_t>(G.num_local_edges()));
+  profiling::counter_add("cut_out_edges",
+                         static_cast<std::int64_t>(cut_out_edges));
+  profiling::counter_add("max_out_degree",
+                         static_cast<std::int64_t>(max_out_degree));
 }
 
 }  // namespace katric

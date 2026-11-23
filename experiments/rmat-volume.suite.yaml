@@ -1,0 +1,37 @@
+# Where RMAT's send-volume imbalance comes from once IDPD has balanced the work (2026-11-23; next step 3 of the
+# load-balancing proposal in doc/refactoring-plan.md). In rebalance-rmat the wedge checks are balanced (max/avg
+# 1.05-1.16) but the global phase's send volume is not (max/avg 2.3-3.0), and the global phase grows 6.8 -> 52 s from
+# 48 to 768 cores. The defaults (IDPD, threshold 1.5, degree-bound pre-check, message trimming), DiTriC, direct.
+#
+# Caliper's recorder writes one profile per rank to rmat-volume-perrank/<ranks>/rank-<rank>.cali (relative to the
+# directory the job was submitted from), keyed on counter.name too, so the counters are per rank: the global phase's
+# send_volume / receive_volume / sent_messages / wedge_checks / handle_ns / poll_ns, and the oriented graph's shape
+# after the redistribution (preprocessing: local_nodes, out_edges, cut_out_edges, max_out_degree). Read with
+#   uv run --group eval eval/perrank.py <dir> --counters --top 10 total/global_phase total/preprocessing
+# Question: do the heaviest senders hold more out-edges, more cut out-edges, or out-edges reaching more ranks (volume per
+# cut out-edge)? That decides between a volume term in the cost function and computing at the tail (idea 1).
+# Cores as rebalance-rmat: `--max-cores 768` when creating the job files.
+name: rmat-volume
+executable: apps/katric
+output_path_option_name: caliper-output
+threads_option_name: num-threads
+ncores: node-size-pow2
+threads_per_rank: [1]
+time_limit: 15
+graphs:
+  - generator: kagen
+    type: rmat
+    N: 16
+    M: 20
+    seed: 28475421
+    scale_weak: true
+config:
+  - communication-policy: direct
+    threshold: local-nodes
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 2
+    ENV:
+      CALI_SERVICES_ENABLE: aggregate,event,mpi,recorder,timer
+      CALI_AGGREGATE_KEY: prop:nested,mpi.rank,counter.name
+      CALI_RECORDER_FILENAME: rmat-volume-perrank/%mpi.world.size%/rank-%mpi.rank%.cali

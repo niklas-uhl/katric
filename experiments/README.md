@@ -43,6 +43,8 @@ no longer parse.
 | `rebalance` | `--rebalance-threshold` and the cost function IDD (e13a2de): DiTriC, direct, trimming; none / IDPD at 1 (as `baseline`) / IDPD and IDD at 1.5, on the `phases` inputs and GNM (run at 192 to 3072 cores, as `baseline`) |
 | `rebalance-rmat` | IDPD vs IDD at threshold 1.5 on RMAT (up to 768 cores) |
 | `straggler` | Per-rank times (Caliper recorder via environment variables) of the ghost exchanges on permuted RGG at 1536 cores, IDPD / none, after fadbd12; read with `eval/perrank.py`. Since 2026-11-23 also per-rank resource counters of the pattern build (`eval/perrank.py --counters`) |
+| `rmat-volume` | Per-rank send volume and oriented-graph shape on RMAT with the defaults (IDPD at 1.5), up to 768 cores: where the volume imbalance after balancing comes from (Caliper recorder; `eval/perrank.py --counters`) |
+| `rhg-seeds` | RHG (with and without locality) at 1536 / 3072 with the `phases` seed and two others, none vs IDPD at 1.5: is the 3072 hub an outlier, and does the achievable-balance threshold keep the graph there |
 | `paper-real-world` | Strong scaling of DiTriC (`patric`) and CETRIC (`cetric-x`), 512 to 32768 cores |
 | `paper-weak-scaling` | Weak scaling on RGG 2D, RHG and GNM, 512 to 32768 cores |
 | `paper-hybrid-real-world` | Hybrid CETRIC (MPI + TBB), 1 to 48 threads per rank |
