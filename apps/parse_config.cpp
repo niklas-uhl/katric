@@ -63,9 +63,11 @@ auto parse_config(std::span<char*> argv, kamping::v2::comm_view comm)
   add_enum_option(app, "--primary-cost-function", conf.primary_cost_function);
   app.add_option("--rebalance-threshold", conf.rebalance_threshold,
                  "Redistribute in the primary load balancing only if the "
-                 "cost's max/avg over the ranks exceeds this "
-                 "(1 = whenever it is not perfectly balanced); otherwise the "
-                 "input graph is kept, with its exchanged degrees")
+                 "cost's max over the ranks exceeds this times the "
+                 "achievable, max(avg, the largest vertex cost) "
+                 "(1 = whenever it can be improved at all); otherwise the "
+                 "input graph is kept, with its exchanged degrees and "
+                 "orientation")
       ->capture_default_str();
   add_enum_option(app, "--rebalance-precheck", conf.rebalance_precheck)
       ->description(

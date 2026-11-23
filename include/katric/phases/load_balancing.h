@@ -33,6 +33,7 @@
 #include <optional>
 #include <ranges>
 #include <span>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -197,36 +198,54 @@ auto vertex_costs(graph::Graph const& G,
   return cost;
 }
 
-/// Whether the cost's max/avg over the ranks (of each rank's sum) exceeds
-/// `threshold`; collective (two allreduces). Reports each rank's sum as the
-/// counter `counter` (so its max/avg is in the counters).
+/// Whether redistributing by `cost` can improve the balance by more than
+/// `threshold`: the max over the ranks (of each rank's sum) exceeds `threshold`
+/// times the best a redistribution into contiguous ranges can reach,
+/// max(avg, the largest single vertex's cost) (a vertex cannot be split: with
+/// RHG's hub at 3072 cores, rebalancing only made it slower). Collective (three
+/// allreduces). Reports each rank's sum as the counter `counter` and its
+/// largest vertex cost as `<counter>_max_vertex` (so the max/avg and the
+/// largest vertex are in the counters).
 inline auto exceeds_threshold(std::span<std::size_t const> cost,
                               double threshold,
                               kamping::v2::comm_view comm,
-                              char const* counter) -> bool {
+                              std::string const& counter) -> bool {
   namespace views = kamping::v2::views;
   std::uint64_t const local =
       std::reduce(cost.begin(), cost.end(), std::uint64_t{0});
+  std::uint64_t const local_max_vertex =
+      cost.empty() ? 0 : *std::ranges::max_element(cost);
   std::uint64_t max = 0;
+  std::uint64_t max_vertex = 0;
   std::uint64_t total = 0;
   kamping::v2::allreduce(std::views::single(local), views::ref_single(max),
+                         kamping::v2::ops::max<>{}, comm);
+  kamping::v2::allreduce(std::views::single(local_max_vertex),
+                         views::ref_single(max_vertex),
                          kamping::v2::ops::max<>{}, comm);
   kamping::v2::allreduce(std::views::single(local), views::ref_single(total),
                          comm);
   double const avg =
       static_cast<double>(total) / static_cast<double>(comm.size());
-  profiling::counter_add(counter, static_cast<std::int64_t>(local));
-  return total > 0 && static_cast<double>(max) > threshold * avg;
+  double const achievable = std::max(avg, static_cast<double>(max_vertex));
+  profiling::counter_add(counter.c_str(), static_cast<std::int64_t>(local));
+  profiling::counter_add((counter + "_max_vertex").c_str(),
+                         static_cast<std::int64_t>(local_max_vertex));
+  return total > 0 && static_cast<double>(max) > threshold * achievable;
 }
 
 /// Whether the primary load balancing should redistribute `G`: the cost's
-/// max/avg over the ranks exceeds `--rebalance-threshold`. N is the vertex
+/// max over the ranks exceeds `--rebalance-threshold` times the achievable
+/// (exceeds_threshold(): max(avg, largest vertex)). N is the vertex
 /// count. DPD and IDPD need the ghosts' degrees (exchanged here; kept in `G`,
 /// so preprocessing does not exchange them again) and their out-degrees; with
 /// `--rebalance-precheck degree-bound`, the cost is first computed with the
 /// out-degrees bounded by the degrees (counter `rank_cost_bound`), and if that
 /// does not exceed the threshold, `G` is kept without the out-degree exchange.
-/// Returns the cost if it does, nothing otherwise. Counters `rank_cost` (if
+/// Returns the cost if it does, nothing otherwise; then `G` keeps the cost
+/// function's orientation (Graph::keep_orientation(), the key of
+/// preprocessing), so that preprocessing does not decide it again. Counters
+/// `rank_cost` (if
 /// computed) and `rebalanced` (1 on every rank if so). Regions
 /// `cost_function_communication` (the exchanges of the ghosts' degrees and
 /// out-degrees) and `cost_function_evaluation` (the orientation and the costs,
@@ -236,14 +255,11 @@ inline auto costs_if_imbalanced(graph::Graph& G, Config const& conf)
   using graph::VertexHandle;
   auto const comm = G.comm();
   auto const threshold = conf.rebalance_threshold;
-  auto const decide = [&](std::vector<std::size_t> cost)
-      -> std::optional<std::vector<std::size_t>> {
+  if (conf.primary_cost_function == CostFunction::N) {
+    std::vector<std::size_t> cost(G.num_local_vertices(), 1);
     bool const exceeds = exceeds_threshold(cost, threshold, comm, "rank_cost");
     profiling::counter_add("rebalanced", exceeds ? 1 : 0);
     return exceeds ? std::optional(std::move(cost)) : std::nullopt;
-  };
-  if (conf.primary_cost_function == CostFunction::N) {
-    return decide(std::vector<std::size_t>(G.num_local_vertices(), 1));
   }
   KASSERT(conf.primary_cost_function == CostFunction::DPD ||
           conf.primary_cost_function == CostFunction::IDPD);
@@ -252,15 +268,19 @@ inline auto costs_if_imbalanced(graph::Graph& G, Config const& conf)
     CALI_CXX_MARK_SCOPE("cost_function_communication");
     G.exchange_ghost_degrees(conf.degree_exchange, MessageTag::CostFunction);
   }
-  auto const orientation = cost_orientation(G);
+  auto orientation = cost_orientation(G);
+  auto const keep = [&]() -> std::optional<std::vector<std::size_t>> {
+    profiling::counter_add("rebalanced", 0);
+    G.keep_orientation(std::move(orientation.is_out_edge));
+    return std::nullopt;
+  };
   if (conf.rebalance_precheck == RebalancePrecheck::degree_bound) {
     auto const bound = vertex_costs(G, conf, orientation,
                                     [&](VertexHandle ghost) -> std::uint64_t {
                                       return G.undirected_degree(ghost);
                                     });
     if (!exceeds_threshold(bound, threshold, comm, "rank_cost_bound")) {
-      profiling::counter_add("rebalanced", 0);
-      return std::nullopt;
+      return keep();
     }
   }
   std::vector<std::uint64_t> ghost_out_degree;
@@ -273,10 +293,15 @@ inline auto costs_if_imbalanced(graph::Graph& G, Config const& conf)
         },
         conf.degree_exchange, MessageTag::CostFunctionOutDegree);
   }
-  return decide(vertex_costs(
+  auto cost = vertex_costs(
       G, conf, orientation, [&](VertexHandle ghost) -> std::uint64_t {
         return ghost_out_degree[numbering.to_ghost_index(ghost)];
-      }));
+      });
+  if (!exceeds_threshold(cost, threshold, comm, "rank_cost")) {
+    return keep();
+  }
+  profiling::counter_add("rebalanced", 1);
+  return cost;
 }
 
 /// Repartitions `G` into contiguous vertex ranges of equal cost

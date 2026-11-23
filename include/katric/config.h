@@ -75,9 +75,9 @@ struct Config {
   std::size_t iterations = 1;
   bool verify = false;
   CostFunction primary_cost_function = CostFunction::IDPD;
-  /// The primary load balancing redistributes only if the cost's max/avg over
-  /// the ranks exceeds this (`--rebalance-threshold`; 1 = whenever it is not
-  /// perfectly balanced)
+  /// The primary load balancing redistributes only if the cost's max over the
+  /// ranks exceeds this times the achievable, max(avg, the largest vertex cost)
+  /// (`--rebalance-threshold`; 1 = whenever it can be improved at all)
   double rebalance_threshold = 1.5;
   RebalancePrecheck rebalance_precheck = RebalancePrecheck::degree_bound;
   /// CETRIC instead of DiTriC: the ghosts' out-edges in the local phase, only

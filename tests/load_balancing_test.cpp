@@ -17,6 +17,7 @@
 // IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <numeric>
@@ -157,6 +158,34 @@ TEST_P(LoadBalancing, RebalanceThreshold) {
         std::uint64_t       global = 0;
         MPI_Allreduce(&local, &global, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
         EXPECT_EQ(global, G_full.size());
+    }
+}
+
+// A kept graph is oriented with the cost function's decisions (Graph::keep_orientation()); after preprocessing it
+// must equal the same graph oriented by preprocessing's key, for DiTriC and CETRIC (the ghosts' out-edges).
+TEST_P(LoadBalancing, KeptOrientationMatchesKey) {
+    for (bool const contraction: {false, true}) {
+        katric::Config conf;
+        conf.primary_cost_function = katric::CostFunction::IDPD;
+        conf.rebalance_threshold   = 1e9;
+        conf.contraction           = contraction;
+        auto kept = katric::primary_load_balancing(katric::graph::Graph::from_kagen(G, MPI_COMM_WORLD), conf);
+        ASSERT_TRUE(kept.has_kept_orientation());
+        katric::preprocessing(kept, conf);
+        EXPECT_FALSE(kept.has_kept_orientation());
+
+        auto reference = katric::graph::Graph::from_kagen(G, MPI_COMM_WORLD);
+        katric::preprocessing(reference, conf);
+        for (auto const v: reference.local_vertices()) {
+            auto const expected = reference.local_neighbors(v);
+            auto const actual   = kept.local_neighbors(v);
+            EXPECT_TRUE(std::ranges::equal(expected, actual)) << "vertex " << reference.global_id(v);
+        }
+        if (contraction) {
+            for (auto const ghost: reference.ghosts()) {
+                EXPECT_TRUE(std::ranges::equal(reference.ghost_out_neighbors(ghost), kept.ghost_out_neighbors(ghost)));
+            }
+        }
     }
 }
 

@@ -571,7 +571,6 @@ public:
   template <typename Key>
   void orient(Key const& key, bool ghost_out_edges) {
     KASSERT(!oriented_);
-    ghost_push_pattern_.reset();  // the neighborhoods change
     std::vector<std::size_t> out_degree(num_local_vertices());
     for (VertexHandle const v : local_vertices()) {
       auto const key_v = key(v);
@@ -582,37 +581,41 @@ public:
       out_degree[to_local_index(v)] =
           static_cast<std::size_t>(in_begin - neighbors.begin());
     }
-    // the ghosts' out-edges: a local vertex's in-neighbors that are ghosts
-    if (ghost_out_edges) {
-      auto const in_neighbors = [&](VertexHandle v) {
-        return local_neighbors(v).subspan(out_degree[to_local_index(v)]);
-      };
-      std::vector<std::size_t> ghost_xadj(num_ghosts() + 1, 0);
-      for (VertexHandle const v : local_vertices()) {
-        for (VertexHandle const u : in_neighbors(v)) {
-          if (is_ghost(u)) {
-            ghost_xadj[numbering_.to_ghost_index(u) + 1]++;
-          }
+    finish_orientation(out_degree, ghost_out_edges);
+  }
+
+  /// Building step: keeps the orientation of every edge (adjacency order,
+  /// true = out-edge) that a caller has decided already, for orient_by_kept()
+  /// (the primary load balancing's cost function, with the key of
+  /// preprocessing). Valid while the neighborhoods do not change.
+  void keep_orientation(std::vector<bool> is_out_edge) {
+    KASSERT(!oriented_);
+    KASSERT(is_out_edge.size() == num_local_edges());
+    kept_orientation_ = std::move(is_out_edge);
+  }
+  [[nodiscard]] auto has_kept_orientation() const -> bool {
+    return kept_orientation_.has_value();
+  }
+  /// orient() with the orientation from keep_orientation() instead of a key:
+  /// no key lookups (Lomuto partition, so each flag is read at its edge's
+  /// original position).
+  void orient_by_kept(bool ghost_out_edges) {
+    KASSERT(!oriented_);
+    KASSERT(has_kept_orientation());
+    auto const& is_out_edge = *kept_orientation_;
+    std::vector<std::size_t> out_degree(num_local_vertices());
+    std::size_t edge = 0;
+    for (VertexHandle const v : local_vertices()) {
+      auto const neighbors = local_.mutable_neighbors(to_local_index(v));
+      std::size_t out = 0;
+      for (std::size_t i = 0; i < neighbors.size(); ++i) {
+        if (is_out_edge[edge++]) {
+          std::swap(neighbors[out++], neighbors[i]);
         }
       }
-      for (std::size_t index = 0; index + 1 < ghost_xadj.size(); ++index) {
-        ghost_xadj[index + 1] += ghost_xadj[index];
-      }
-      std::vector<VertexHandle> ghost_adjncy(ghost_xadj.back());
-      std::vector<std::size_t> next(ghost_xadj.begin(), ghost_xadj.end() - 1);
-      for (VertexHandle const v : local_vertices()) {
-        for (VertexHandle const u : in_neighbors(v)) {
-          if (is_ghost(u)) {
-            // v ascending: each ghost's neighborhood comes out sorted
-            ghost_adjncy[next[numbering_.to_ghost_index(u)]++] = v;
-          }
-        }
-      }
-      ghost_out_ = {std::move(ghost_xadj), std::move(ghost_adjncy)};
-      has_ghost_out_edges_ = true;
+      out_degree[to_local_index(v)] = out;
     }
-    local_.truncate_neighborhoods(out_degree);
-    oriented_ = true;
+    finish_orientation(out_degree, ghost_out_edges);
   }
   /// Building step: sorts the neighbors of every local vertex by handle (local
   /// vertices first, then ghosts, each by global id) and records where the
@@ -716,6 +719,45 @@ public:
   }
 
 private:
+  /// The rest of orient() once each neighborhood is partitioned (out-neighbors
+  /// first, `out_degree` of them): the ghosts' out-edges (CETRIC) and the cut.
+  void finish_orientation(std::vector<std::size_t> const& out_degree,
+                          bool ghost_out_edges) {
+    ghost_push_pattern_.reset();  // the neighborhoods change
+    kept_orientation_.reset();
+    // the ghosts' out-edges: a local vertex's in-neighbors that are ghosts
+    if (ghost_out_edges) {
+      auto const in_neighbors = [&](VertexHandle v) {
+        return local_neighbors(v).subspan(out_degree[to_local_index(v)]);
+      };
+      std::vector<std::size_t> ghost_xadj(num_ghosts() + 1, 0);
+      for (VertexHandle const v : local_vertices()) {
+        for (VertexHandle const u : in_neighbors(v)) {
+          if (is_ghost(u)) {
+            ghost_xadj[numbering_.to_ghost_index(u) + 1]++;
+          }
+        }
+      }
+      for (std::size_t index = 0; index + 1 < ghost_xadj.size(); ++index) {
+        ghost_xadj[index + 1] += ghost_xadj[index];
+      }
+      std::vector<VertexHandle> ghost_adjncy(ghost_xadj.back());
+      std::vector<std::size_t> next(ghost_xadj.begin(), ghost_xadj.end() - 1);
+      for (VertexHandle const v : local_vertices()) {
+        for (VertexHandle const u : in_neighbors(v)) {
+          if (is_ghost(u)) {
+            // v ascending: each ghost's neighborhood comes out sorted
+            ghost_adjncy[next[numbering_.to_ghost_index(u)]++] = v;
+          }
+        }
+      }
+      ghost_out_ = {std::move(ghost_xadj), std::move(ghost_adjncy)};
+      has_ghost_out_edges_ = true;
+    }
+    local_.truncate_neighborhoods(out_degree);
+    oriented_ = true;
+  }
+
   [[nodiscard]] auto num_local_heads(VertexHandle vertex) const -> std::size_t {
     KASSERT(num_local_heads_.size() == num_local_vertices(),
             "neighborhoods not sorted");
@@ -728,6 +770,8 @@ private:
   std::vector<Degree> ghost_undirected_degrees_;  // once exchanged
   bool degrees_exchanged_ = false;
   std::optional<GhostPushPattern> ghost_push_pattern_;  // until orient()
+  // keep_orientation() until orient_by_kept()
+  std::optional<std::vector<bool>> kept_orientation_;
   bool oriented_ = false;
   bool has_ghost_out_edges_ = false;
   AdjacencyArray<VertexHandle> ghost_out_;  // empty without
