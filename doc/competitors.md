@@ -149,7 +149,10 @@ enough to decide whether to drop one.
   Communication (`ParallelMessageManagerOpt`, `thread_local_message_buffer_opt.h`):
   - BSP rounds. Compute threads serialize `(gid, msg)` into per-thread channels, one buffer per destination rank
     (2 MiB block). A full buffer goes to a send queue, and a dedicated **send thread** `MPI_Isend`s it (tag =
-    round), so sending overlaps the computation of the round.
+    round), so sending overlaps the computation of the round. That early sending only kicks in when one thread
+    sends more than one block (LCC uses the default, ~2 MiB) to one destination in a round, roughly
+    V / (p · t) > 2 MiB. At high p in weak scaling almost everything goes out in `FlushMessages()` at the end of
+    the round. The receiver stores early messages but processes nothing before the next round.
   - At the end of a round, every rank sends a zero-length end marker to **all** p − 1 others, then `MPI_Waitall`:
     O(p) messages per rank and round, even with sparse communication.
   - A **receive thread** loops on blocking `MPI_Probe(ANY_SOURCE)` and receives into pool buffers; the end markers
