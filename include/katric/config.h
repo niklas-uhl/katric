@@ -86,13 +86,6 @@ enum class Receiver {
   probe,       ///< MPI_Improbe, then a receive of the probed size
   posted,      ///< preposted receives
 };
-/// What BriefKAsten flushes when a rank runs out of work (in `terminate`),
-/// `--idle-flush`.
-enum class IdleFlush {
-  off,    ///< nothing: buffers leave when full or in the termination drain
-  all,    ///< every non-empty buffer (BriefKAsten's default)
-  stale,  ///< the buffers that did not grow since the previous attempt
-};
 
 struct Config {
   std::string kagen_option_string;
@@ -119,7 +112,9 @@ struct Config {
   /// BriefKAsten: credit-based flow control (window per peer)
   bool flow_control = true;
   Receiver receiver = Receiver::persistent;
-  IdleFlush idle_flush = IdleFlush::all;
+  /// BriefKAsten: poll only on every n-th sender vertex (1: on every one, as
+  /// the legacy queue)
+  std::size_t poll_skip = 1;
   bool local_parallel = false;
   bool global_parallel = false;
   bool parallel_compact = false;

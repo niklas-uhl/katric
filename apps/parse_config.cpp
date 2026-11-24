@@ -155,7 +155,9 @@ auto parse_config(std::span<char*> argv, kamping::v2::comm_view comm)
                "BriefKAsten: credit-based flow control")
       ->default_str("true");
   add_enum_option(app, "--receiver", conf.receiver);
-  add_enum_option(app, "--idle-flush", conf.idle_flush);
+  app.add_option("--poll-skip", conf.poll_skip,
+                 "BriefKAsten: poll after every n-th sender vertex only")
+      ->check(CLI::PositiveNumber);
 
   add_enum_option(app, "--intersection-method", conf.intersection_method);
   app.add_option("--binary-intersection-cutoff",

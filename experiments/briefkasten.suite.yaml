@@ -2,11 +2,13 @@
 # trimming, no load balancing (as the numbers in the plan's "Why", from `baseline` / `rebalance`), on permuted RGG,
 # GNM and permuted RHG (the inputs whose traffic is spread over all ranks). Legacy direct / grid (threshold
 # local-nodes, as before) vs BriefKAsten direct / grid with a buffer of 4, 16 or 64 KiB per destination, BriefKAsten's
-# defaults otherwise (8 request slots, flow control, persistent receiver, idle flush all). Questions: does the global
-# phase stay flat with p; polling cost per message; which buffer size; where grid overtakes direct now.
+# defaults otherwise (8 request slots, flow control, persistent receiver, synchronous termination), polling after
+# every sender vertex as the legacy queue; at 16 KiB also with `--poll-skip 100` (poll after every 100th). Questions:
+# does the global phase stay flat with p; polling cost per message; which buffer size; does throttled polling pay off;
+# where grid overtakes direct now.
 # Run at `--min-cores 192 --max-cores 3072` (as `baseline`). Memory: up to ~2 p buffers per rank with flow control,
 # 384 MiB at 3072 cores with 64 KiB (direct). Build with the experiments preset, submit with --copy-binary.
-# 8 configurations per input and core count. RMAT is in briefkasten-rmat.
+# 10 configurations per input and core count. RMAT is in briefkasten-rmat.
 name: briefkasten
 executable: apps/katric
 output_path_option_name: caliper-output
@@ -48,6 +50,15 @@ config:
   - message-queue: briefkasten
     communication-policy: [direct, grid]
     buffer-size: [4096, 16384, 65536]
+    primary-cost-function: none
+    message-trimming: true
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 3
+  - message-queue: briefkasten
+    communication-policy: [direct, grid]
+    buffer-size: 16384
+    poll-skip: 100
     primary-cost-function: none
     message-trimming: true
     degree-exchange: dense

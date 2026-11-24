@@ -206,25 +206,15 @@ void post_trimmed_messages(graph::Graph const& G,
 }
 
 /// BriefKAsten's configuration from `--buffer-size`, `--request-slots`,
-/// `--flow-control`, `--idle-flush`. Everything else is BriefKAsten's default
-/// (a capacity per destination buffer, no global threshold).
+/// `--flow-control`. Everything else is BriefKAsten's default (a capacity per
+/// destination buffer, no global threshold, idle flush of every buffer on
+/// entering `terminate`).
 inline auto briefkasten_config(Config const& conf) -> briefkasten::Config {
   briefkasten::Config config;
   config.local_threshold_bytes = conf.buffer_size;
   config.num_request_slots = conf.request_slots;
   config.num_credit_buffers =
       conf.flow_control ? std::nullopt : std::optional<std::size_t>(0);
-  switch (conf.idle_flush) {
-    case IdleFlush::off:
-      config.idle_flush = briefkasten::IdleFlush::off;
-      break;
-    case IdleFlush::all:
-      config.idle_flush = briefkasten::IdleFlush::all;
-      break;
-    case IdleFlush::stale:
-      config.idle_flush = briefkasten::IdleFlush::stale;
-      break;
-  }
   return config;
 }
 
@@ -244,7 +234,10 @@ auto make_briefkasten_queue(MPI_Comm comm, briefkasten::Config const& config) {
 
 /// Calls `f` with the global phase's BriefKAsten queue on `G`'s communicator:
 /// `--receiver`, direct or through BriefKAsten's grid
-/// (`--communication-policy`).
+/// (`--communication-policy`). Synchronous mode: handling a message creates no
+/// new work (a proxy's forwarding is counted as pending by the queue), so an
+/// arrival need not abort termination; `terminate` returns once all ranks are
+/// done, draining every buffer (relays included) before each counting round.
 template <typename F>
 void with_briefkasten_queue(graph::Graph const& G, Config const& conf, F&& f) {
   MPI_Comm const comm = G.comm().mpi_handle();
@@ -253,8 +246,10 @@ void with_briefkasten_queue(graph::Graph const& G, Config const& conf, F&& f) {
     if (conf.communication_policy == CommunicationPolicy::grid) {
       briefkasten::IndirectionAdapter grid_queue{
           std::move(queue), briefkasten::GridIndirectionScheme{comm}};
+      grid_queue.synchronous_mode();
       f(grid_queue, std::as_const(grid_queue.queue()));
     } else {
+      queue.synchronous_mode();
       f(queue, std::as_const(queue));
     }
   };
@@ -447,10 +442,13 @@ inline void global_phase(graph::Graph const& G,
                 std::span<graph::VertexId const>(message), destination,
                 on_briefkasten_message);
           },
-          [&] { queue.poll(on_briefkasten_message); },
+          // `--poll-skip`: polls on every n-th call (every call for 1)
+          [&] { queue.poll_throttled(on_briefkasten_message, conf.poll_skip); },
           [&] {
-            while (!queue.terminate(on_briefkasten_message)) {
-            }
+            // synchronous mode: never aborted by an arrival
+            [[maybe_unused]] bool const terminated =
+                queue.terminate(on_briefkasten_message);
+            KASSERT(terminated);
           });
       report_briefkasten_counters(base_queue, receive_volume);
     });

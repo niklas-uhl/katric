@@ -118,11 +118,16 @@ The grid already scales this way today (`baseline_26_11_20`, 192 -> 3072: permut
    sentinel 1); 6178 buffers at 4 KiB vs 540 legacy messages (n-word threshold at 4 ranks is ~130 KiB).
 4. **Options.** `--message-queue legacy|briefkasten` for the transition (legacy keeps `--threshold` /
    `--threshold-scale`); for BriefKAsten `--buffer-size` (local threshold, bytes), `--request-slots`,
-   `--flow-control` / `--no-flow-control`, `--receiver persistent|probe|posted`, `--idle-flush`. Suites that compare
+   `--flow-control` / `--no-flow-control`, `--receiver persistent|probe|posted`, `--poll-skip`. Suites that compare
    with earlier data pin `message-queue: legacy`, as for the defaults on 2026-11-23.
    Done 2026-11-24: defaults `--message-queue legacy` (until step 7, so existing suites need no pin yet),
-   `--buffer-size 4096`, `--request-slots 8`, flow control on, `--receiver persistent`, `--idle-flush all`
-   (BriefKAsten's defaults except the buffer size, KaCCv2's 4 KiB). ctest configs `ditric-briefkasten` and
+   `--buffer-size 4096`, `--request-slots 8`, flow control on, `--receiver persistent` (BriefKAsten's defaults
+   except the buffer size, KaCCv2's 4 KiB), `--poll-skip 1`. Changed the same day: the queue runs in synchronous
+   mode (handling a message creates no new work; a proxy's forwarding is counted as pending), so one `terminate`
+   call returns once all ranks are done, draining every buffer, relays included, before each counting round. That
+   drain makes the idle flush (which acts only on entering `terminate`) irrelevant, so `--idle-flush` was dropped
+   (BriefKAsten's default `all` stays). `--poll-skip n` polls after every n-th sender vertex (`poll_throttled`;
+   BriefKAsten's default is 100); the legacy queue polls after every one. ctest configs `ditric-briefkasten` and
    `cetric-briefkasten-grid` (256 B buffers, so large messages occur).
 5. **Local validation.** Identical triangle counts on the refcheck inputs (DiTriC / CETRIC, trimming on / off,
    direct / grid, 2-8 ranks), plus a tiny buffer (e.g. 64 B) so every message takes the oversized path, and
@@ -154,7 +159,8 @@ The grid already scales this way today (`baseline_26_11_20`, 192 -> 3072: permut
    where grid overtakes direct now.
    Suites written 2026-11-24: `experiments/briefkasten.suite.yaml` (permuted RGG N18, GNM N16, permuted RHG N18;
    no load balancing, trimming; legacy direct / grid at threshold local-nodes vs BriefKAsten direct / grid x
-   `--buffer-size` 4096 / 16384 / 65536; 3 iterations; `--min-cores 192 --max-cores 3072`) and
+   `--buffer-size` 4096 / 16384 / 65536, at 16384 also `--poll-skip 100`; 3 iterations; `--min-cores 192
+   --max-cores 3072`) and
    `briefkasten-rmat.suite.yaml` (the same configurations on RMAT N16 with the default load balancing,
    `--max-cores 768`). Memory at 3072 with 64 KiB: up to ~2 p buffers per rank with flow control, ~384 MiB.
 7. **Default BriefKAsten** after the comparison; the legacy queue (with katric's grid adapter, which it needs) stays
