@@ -163,6 +163,53 @@ The grid already scales this way today (`baseline_26_11_20`, 192 -> 3072: permut
    --max-cores 3072`) and
    `briefkasten-rmat.suite.yaml` (the same configurations on RMAT N16 with the default load balancing,
    `--max-cores 768`). Memory at 3072 with 64 KiB: up to ~2 p buffers per rank with flow control, ~384 MiB.
+   **Results 2026-11-25** (`eval/data/supermuc/briefkasten_26_11_24`, `briefkasten-rmat_26_11_24`; some 3072 runs
+   missing). Global phase, max over ranks, mean of 3 iterations, s (brd / brg = BriefKAsten direct / grid with C,
+   led / leg = legacy direct / grid, /s100 = `--poll-skip 100`):
+
+   | input, cores | led | leg | brd4k | brd16k | brd16k/s100 | brd64k | brg4k | brg16k | brg64k |
+   |---|---|---|---|---|---|---|---|---|---|
+   | RGG perm. 192 | 4.26 | 5.81 | 4.58 | 4.32 | 3.96 | 4.32 | 5.85 | 5.45 | 5.31 |
+   | RGG perm. 3072 | 7.66 | 7.82 | 5.33 | 6.12 | 8.39 | 6.79 | 7.72 | 6.46 | 6.50 |
+   | GNM 192 | 1.11 | 1.42 | 1.13 | 1.02 | 0.90 | 1.02 | 1.46 | 1.25 | 1.27 |
+   | GNM 1536 | 3.05 | 1.49 | 1.38 | 1.29 | 1.06 | 1.41 | 1.62 | 1.48 | 1.47 |
+   | RHG perm. 192 | 3.75 | 5.30 | 4.06 | 3.83 | 3.36 | 3.93 | 5.31 | 4.86 | 4.91 |
+   | RHG perm. 1536 | 5.25 | 5.77 | 4.67 | 4.95 | 4.31 | 5.61 | 6.18 | 5.41 | 5.54 |
+   | RMAT 48 | 6.70 | 11.9 | 6.95 | 10.1 | 10.1 | 9.68 | 7.62 | 8.08 | 7.87 |
+   | RMAT 768 | 44.5 | crash | 27.8 | 25.5 | 38.4 | 23.6 | 30.6 | crash | crash |
+
+   - Messages per rank constant in p with BriefKAsten (V / C: RGG ~105 K at 4 KiB, ~26 K at 16 KiB), legacy direct
+     doubles with p (35 K -> 578 K on RGG). BriefKAsten direct 4 KiB is the flattest (RGG 4.6 -> 5.3 s from 192 to
+     3072, legacy direct 4.3 -> 7.7 s); legacy direct on GNM falls apart from 1536 on (3.1 s vs ~1.1-1.4).
+   - Grid is still ~1 s slower than direct up to 3072, mostly polling (proxies poll about twice as long); not
+     needed at this scale.
+   - 64 KiB direct: handle time max grows with p (RGG 2.0 -> 3.7 s) while the average (~1.9 s) and the work
+     (50 M wedge checks) stay constant; 4 KiB stays at 2.0-2.2 s. A few slow ranks, presumably memory pressure of
+     the larger pool (up to 2 buffers per peer); per-rank data would tell.
+   - `--poll-skip 100` (direct) gains ~10 % up to 1536 (RGG 3.96 vs 4.32, RHG 3.36 vs 3.83), loses at the top:
+     RGG 3072 8.39 vs 6.12, RMAT 768 38.4 vs 25.5. Send completions are only noticed on a poll, so buffers park for a
+     request slot (RGG 3072: 1 K -> 16 K parked for capacity per rank). In grid no gain: proxies grant credit late
+     (parked for credit ~0.1 K -> 22 K per rank).
+   - Request slots are the bottleneck on RMAT: almost every buffer parks for capacity (16 KiB at 768: 91 K of 102 K
+     buffers per rank) with 8 slots.
+   - **Large messages (RMAT only).** At 4 KiB they carry 19 % (48 cores) to 60 % (768) of the volume, ~110 K per
+     rank at 768, averaging ~1000 words (~8 KB, just above the buffer), so not hub-sized; at 16 KiB 4 % of the
+     volume, at 64 KiB none. 4 KiB is still the best BriefKAsten setting at 48 cores (6.95 s) and 3-18 % behind
+     16 / 64 KiB at 384-768 (the busiest rank sends 3.3x more messages: 957 K vs 293 K). The RMAT global phase is
+     dominated by the send loop of the hub ranks, ~10 s at 768 with every queue (legacy direct 9.9 s):
+     `post_trimmed_messages` scans all of N+(v) once per destination (d x destinations per hub), a katric cost;
+     plus imbalanced handle time (~11 s).
+   - Counter bug: `oversize_passes` counts `has_credit` returning true for an oversized buffer, which is re-checked
+     while it waits for a request slot (480 K "passes" vs 110 K large messages per rank at 768, 4 KiB). Count at the
+     send instead.
+   - **Crashes.** RMAT 384 / 768: BriefKAsten grid 16 KiB, 64 KiB, 16 KiB/s100 and legacy grid (768) abort in Intel
+     MPI (`intel_transport_recv.h:1267: cma_read_nbytes == size`, the single-copy CMA path for large intra-node
+     messages). The legacy grid adaptor too, so not BriefKAsten-specific; seems tied to large relayed buffers
+     (4 KiB grid never crashed). Intel support suggested `I_MPI_SHM_CMA=0` for the same assertion (community thread
+     1329425), without a root cause: suite `briefkasten-cma-debug`.
+   Consequences: default `--message-queue briefkasten --buffer-size 4096 --poll-skip 1` (step 7). BriefKAsten:
+   more request slots, `poll_throttled` that does not skip while buffers are parked, count `oversize_passes` at the
+   send. katric: build the trimmed messages of a hub in one pass (algorithm idea, separate from this migration).
 7. **Default BriefKAsten** after the comparison; the legacy queue (with katric's grid adapter, which it needs) stays
    behind `--message-queue legacy` for reproducing earlier results.
 
@@ -175,4 +222,4 @@ The grid already scales this way today (`baseline_26_11_20`, 192 -> 3072: permut
 
 ## Open decisions
 
-- Default buffer size C (after step 6); KaCCv2 uses 4 KiB.
+- Default buffer size C: 4 KiB (decided 2026-11-25 after step 6, as KaCCv2).
