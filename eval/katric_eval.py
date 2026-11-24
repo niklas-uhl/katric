@@ -5,7 +5,8 @@ Every run writes <run>.cali (spot profile with the region times and the Adiak ru
 reads the profiles; this module flattens them into three tables, joined on `run` (<experiment directory>/<the run's
 file name without extension>, so the same suite run on several machines can be loaded together):
 
-  runs      one row per run: every CLI option (Adiak's `config.<option>`, under its option name), `triangles`,
+  runs      one row per run: every CLI option (Adiak's `config.<option>`, under its option name; null where a
+            run does not have it), `triangles`,
             `ranks`, `threads`, `cores`, `variant` (DiTriC / CETRIC / pre-CETRIC, from --contraction or the old
             --algorithm), `graph` and the KaGen options split into `kagen.<key>` columns, `git_commit`,
             `launchdate`, `cluster` (Adiak's cluster name, e.g. hkn = HoreKa, ircs = SuperMUC-NG), `dir` (the
@@ -29,6 +30,7 @@ itself, e.g. for its tree view.
 import argparse
 import json
 import math
+import re
 import sys
 import warnings
 from dataclasses import dataclass
@@ -124,12 +126,20 @@ def graph_label(options, cores):
     return f"{options.get('type', '?')}({','.join(args)})"
 
 
+def _option_str(value):
+    """An option's value as a string; whole numbers without ".0", as pandas makes an integer option a float when
+    some runs do not have it (e.g. 16384.0 for --buffer-size when loading runs from before it)."""
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value)
+
+
 def _runs(tk, run_of_profile, dir_of_profile):
     meta = tk.metadata.reset_index()
     columns = {"profile": meta["profile"]}
     for name in meta.columns:
-        if name.startswith("config."):
-            columns[name.removeprefix("config.")] = meta[name].astype(str)
+        if name.startswith("config."):  # null for options a run does not have (added or removed since)
+            columns[name.removeprefix("config.")] = meta[name].map(_option_str, na_action="ignore")
         elif name in METADATA:
             columns[METADATA[name]] = meta[name]
         elif name.startswith("build."):  # build type, compiler, flags and definitions
@@ -234,6 +244,27 @@ def config_options(runs, within_dirs=False):
         varying = runs.group_by("dir").agg(pl.col(options).n_unique()).select(pl.col(options).max())
         return [c for c in options if varying[c][0] > 1]
     return [c for c in options if runs[c].n_unique() > 1]
+
+
+def cli_options():
+    """katric's CLI options in the order apps/parse_config.cpp declares them (grouped by topic there: input and load
+    balancing, the algorithm, threading, message queue, intersection), read from the source so that new options need
+    no list here."""
+    source = (Path(__file__).parent.parent / "apps" / "parse_config.cpp").read_text()
+    return re.findall(r'add_(?:option|flag|enum_option)\(\s*(?:app,\s*)?"--([\w-]+)', source)
+
+
+def config_label(options):
+    """Expression for a configuration's label from `options` (e.g. `config_options(runs)`): the variant, then
+    ` [option=value]` per option in the CLI's order (`cli_options`; options removed since last, alphabetically),
+    left out where a run does not have the option, e.g.
+    "CETRIC [communication-policy=grid] [message-queue=briefkasten] [buffer-size=16384]". The variant replaces
+    `contraction` and `algorithm`."""
+    rank = {o: i for i, o in enumerate(cli_options())}
+    options = sorted((o for o in options if o not in ("variant", "contraction", "algorithm")),
+                     key=lambda o: (rank.get(o, len(rank)), o))
+    parts = [pl.concat_str(pl.lit(f" [{o}="), pl.col(o), pl.lit("]")) for o in options]  # null where missing
+    return pl.concat_str(pl.col("variant"), *parts, ignore_nulls=True)
 
 
 def main():

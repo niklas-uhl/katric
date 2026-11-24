@@ -62,17 +62,12 @@ def _(browser, katric_eval, mo, reload):
 
 @app.cell(hide_code=True)
 def _(katric_eval, merge, pl, r):
-    # configuration label from the options that differ between runs (with `merge`: within a directory): the value, or
-    # the option name for a set flag; `series` adds the machine when runs of several clusters are loaded
-    def _label(o):
-        if set(r.runs[o].unique()) <= {"true", "false"}:
-            return pl.when(pl.col(o) == "true").then(pl.lit(o))
-        return pl.col(o)
-
+    # configuration label from the options that differ between runs (with `merge`: within a directory), e.g.
+    # "CETRIC [communication-policy=grid] [buffer-size=16384]"; `series` adds the machine when runs of several
+    # clusters are loaded
     _machines = {"hkn": "HoreKa", "ircs": "SuperMUC-NG"}
     runs = r.runs.with_columns(
-        config=pl.concat_str([_label(o) for o in katric_eval.config_options(r.runs, within_dirs=merge.value)],
-                             separator=" ", ignore_nulls=True),
+        config=katric_eval.config_label(katric_eval.config_options(r.runs, within_dirs=merge.value)),
         machine=pl.col("cluster").replace(_machines),
     )
     runs = runs.with_columns(
@@ -88,7 +83,8 @@ def _(mo):
 
     Run time of an iteration: maximum across ranks of the selected region, mean over the iterations; error bars span
     the fastest and the slowest iteration. Hover for details, click points (shift-click for more) to list their
-    runs under *Details*, click a legend entry to highlight a configuration.
+    runs under *Details*, click a legend entry to highlight a configuration. Scroll to zoom, drag to pan, double-click
+    to reset.
     """)
     return
 
@@ -108,31 +104,37 @@ def _(pl, r, region, runs):
 
 @app.cell(hide_code=True)
 def _(alt, mo, region, times):
-    _select = alt.selection_point(fields=["graph", "series", "cores", "threads"])
+    # one chart per graph instead of a facet, so that each has its own zoom (a facet shares one between its panels)
+    _select = alt.selection_point(name="points", fields=["graph", "series", "cores", "threads"])
     _legend = alt.selection_point(fields=["series"], bind="legend")
     _title = f"time of '{region.value}' [s]"
-    _base = alt.Chart().encode(
-        x=alt.X("cores:Q", scale=alt.Scale(type="log", base=2),
-                axis=alt.Axis(values=sorted(times["cores"].unique()))),  # ticks at the measured core counts
-        y=alt.Y("time:Q", scale=alt.Scale(type="log"), title=_title),
-        color=alt.Color("series:N", legend=alt.Legend(orient="bottom", direction="vertical", labelLimit=0)),
-        detail="line:N",
-        opacity=alt.condition(_select & _legend, alt.value(1.0), alt.value(0.15)),
-        tooltip=["series", "threads", "cores", alt.Tooltip("time:Q", format=".4g"),
-                 alt.Tooltip("time_min:Q", title="min", format=".4g"),
-                 alt.Tooltip("time_max:Q", title="max", format=".4g")],
-    )
-    chart = mo.ui.altair_chart(
-        alt.layer(
-            _base.mark_line(point=True).add_params(_select, _legend)
+
+    def _graph(i, graph):
+        # scroll to zoom, drag to pan, double-click to reset; marimo ignores selections named pan_zoom* in
+        # chart.value, so zooming leaves the selected points as they are
+        _zoom = alt.selection_interval(bind="scales", name=f"pan_zoom_{i}")
+        _base = alt.Chart(title=graph).encode(
+            x=alt.X("cores:Q", scale=alt.Scale(type="log", base=2),
+                    axis=alt.Axis(values=sorted(times["cores"].unique()))),  # ticks at the measured core counts
+            y=alt.Y("time:Q", scale=alt.Scale(type="log"), title=_title),
+            color=alt.Color("series:N", legend=alt.Legend(orient="bottom", direction="vertical", labelLimit=0)),
+            detail="line:N",
+            opacity=alt.condition(_select & _legend, alt.value(1.0), alt.value(0.15)),
+            tooltip=["series", "threads", "cores", alt.Tooltip("time:Q", format=".4g"),
+                     alt.Tooltip("time_min:Q", title="min", format=".4g"),
+                     alt.Tooltip("time_max:Q", title="max", format=".4g")],
+        )
+        return alt.layer(
+            _base.mark_line(point=True).add_params(_select, _legend, _zoom)
             .encode(shape=alt.Shape("threads:N", title="threads/rank")),
             # fastest and slowest iteration
             _base.mark_errorbar(ticks=True).encode(y=alt.Y("time_min:Q", title=_title), y2="time_max:Q"),
-            data=times,
-        )
-        .properties(width=250, height=200)
-        .facet(alt.Facet("graph:N", title=None), columns=3)
-        .resolve_scale(y="independent")
+            data=times.filter(graph=graph),
+        ).properties(width=250, height=200)
+
+    chart = mo.ui.altair_chart(
+        alt.concat(*[_graph(i, g) for i, g in enumerate(times["graph"].unique(maintain_order=True))], columns=3)
+        .resolve_scale(color="shared", shape="shared")
     )
     chart
     return (chart,)
@@ -201,9 +203,12 @@ def _(alt, breakdown, mo):
 
 
 @app.cell(hide_code=True)
-def _(chart, pl, r, runs):
-    # the selected points' runs with the time of every region (maximum across ranks, mean over the iterations)
-    _selected = runs.join(chart.value.select("graph", "series", "cores", "threads"),
+def _(chart, pl, r, runs, times):
+    # the selected points' runs with the time of every region (maximum across ranks, mean over the iterations);
+    # apply_selection as the data is per graph (chart.value only sees a chart's top-level data), and it keeps all rows
+    # while no point is selected
+    _points = chart.apply_selection(times) if any(chart.selections.get("points", {}).values()) else times.head(0)
+    _selected = runs.join(_points.select("graph", "series", "cores", "threads"),
                           on=["graph", "series", "cores", "threads"])
     selected_regions = (
         r.timers.filter(pl.col("iteration").is_not_null())
