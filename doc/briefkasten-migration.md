@@ -86,7 +86,13 @@ The grid already scales this way today (`baseline_26_11_20`, 192 -> 3072: permut
    - Earlier note, katric-side chunking: a chunk of N+(v) is only useful at the receiver with the targets u on
      that rank (the receiver finds them in N+(v) today), so every chunk would carry them as a header. More format, more
      volume; only if the library fix is not wanted.
-2. **katric merger / splitter** (`include/katric/phases/global.h`, replacing `Merger` / `Splitter`). Buffer of
+2. **Merger / splitter: BriefKAsten's, fixed there instead of katric's own (2026-11-24).** katric's record format
+   is exactly `EnvelopeSerializationMerger` / `Splitter`'s ([receiver, size, payload]); its problems were generic, so
+   they are fixed in BriefKAsten PR #25 (`feat/contiguous-envelope-serialization` @ b981e72, stacked on #24): the
+   merger appends in place, the splitter yields a `std::span` into the buffer when the message type is the buffer
+   type (katric: `std::uint64_t` global ids in a `std::uint64_t` buffer). Test `aggregators_test`; BriefKAsten's MPI
+   tests pass at 4 ranks. katric pinned to b981e72. The global phase uses the pair directly (step 3). Original idea:
+   **katric merger / splitter** (`include/katric/phases/global.h`, replacing `Merger` / `Splitter`). Buffer of
    `std::uint64_t` (global ids); a record is [receiver, length, v, N+(v)...]: the receiver for the indirection (one
    format for direct and grid; today the sentinel costs one word, the grid adapter two more), the length instead of the
    sentinel (no scan for `message_end`). The merger appends in place (no temporary) and implements
