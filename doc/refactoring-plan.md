@@ -447,6 +447,27 @@ by those `.cpp` files):
   the pattern build's loop in stages (scan, is_local, owner lookup, dedupe; dedupe on both copies; the real build).
   Suite `straggler-debug` (1536): N18 with the `straggler` seed and seed 1 (data or rank?), N17 (no id >= 2^28) and
   N19 (ids >= 2^28 from rank 512). The Linux part is untested locally
+- Results `straggler-debug_26_11_24` (all four inputs, 2 iterations, the Linux fields work): medians in ms
+  | input / ranks       | scan | owner | dedupe | dedupe on copy | dedupe on THP copy | build |
+  |---------------------|------|-------|--------|----------------|--------------------|-------|
+  | N18, 1443-1493 normal | 14 | 144   | 153    | 153            | 153                | 306   |
+  | N18, 43-93 slow     | 15   | 150   | 860-913| 116-125        | 120-137            | 886-977 |
+  | N17, all            | 7    | 68    | 286    | 72             | 71                 | 352   |
+  | N19, all            | 28   | 296   | 314    | 314            | 314                | 627   |
+  - The time goes into the dedupe loop (owner lookup + last rank sent to) on the original `owners_` array only: the
+    same loop on a fresh copy of the same data on the same rank is fast (7.5x less). Not the data, not the rank, not
+    the node: the memory backing that one array. The owner lookup alone stays fast on it (independent loads overlap
+    their misses; unexplained in detail)
+  - Iteration 1 / N18: slow <=> `owners_` in [heap] (all slow ranks, no normal one), whose VMA is 21% huge pages vs
+    96% for the normal ranks' mmapped arrays. Its 33.16 MB sit just below glibc's 32 MiB maximum mmap threshold, so
+    heap or mmap depends on the rank's allocation history (seed 1: other ranks, also >= ~1048). N17 (16.6 MB, always
+    heap): EVERY rank pays 4x in the loop (build 352 ms, more than N18's 306 at half the size); N19 (66 MB, always
+    mmap, 97% huge): no rank. So the vertex ids >= 2^28 were a coincidence of the allocation history
+  - A copy in a 2 MiB aligned MADV_HUGEPAGE buffer is fast everywhere. Open: why the `straggler` variant
+    MALLOC_MMAP_THRESHOLD_=1 MiB (owners_ from mmap) did not help; check that it took effect (`memory.*` adiak)
+  - Fix candidates: (a) large randomly accessed arrays (owners_, also the ghost arrays) from a huge-page allocator
+    (2 MiB aligned + madvise(MADV_HUGEPAGE)); (b) no `owners_` at all: owner of ghost index i = upper_bound over the
+    per-owner ghost offsets (p + 1 entries, cache resident), saves 4 B per ghost
 
 ### 1. Prune
 
