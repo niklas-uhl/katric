@@ -276,7 +276,8 @@ that (`bufastric`, `hashfastric2` identical).
   - Portability only (Linux/x86 unchanged): SSE `memcpy` only on x86_64, `aligned_alloc` size rounded on macOS,
     `cpu_set_t` code only on Linux.
   - LCC, `--lcc-degree-reduction`: a rank without edges after its 1D split scanned with `nedge - 1` wrapped around
-    and read `r_ed[-2]` (`triangle.metis` on 4 ranks).
+    and read `r_ed[-2]` (`triangle.metis` on 4 ranks); removing the edges of removed vertices read `o_ed[2 * pnod]`
+    before checking `pnod < nod` (up to two entries past the list).
 - **Validation:** `--verify --iterations 2` at 1, 2, 4 ranks (`OMP_NUM_THREADS=1`, 64 MiB cache), with and without
   `--lcc-degree-reduction`: triangle, hiv, com-amazon, RGG2D, RHG, GNM, RMAT. 16 ctests.
 
