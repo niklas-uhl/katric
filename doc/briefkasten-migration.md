@@ -196,9 +196,11 @@ The grid already scales this way today (`baseline_26_11_20`, 192 -> 3072: permut
      rank at 768, averaging ~1000 words (~8 KB, just above the buffer), so not hub-sized; at 16 KiB 4 % of the
      volume, at 64 KiB none. 4 KiB is still the best BriefKAsten setting at 48 cores (6.95 s) and 3-18 % behind
      16 / 64 KiB at 384-768 (the busiest rank sends 3.3x more messages: 957 K vs 293 K). The RMAT global phase is
-     dominated by the send loop of the hub ranks, ~10 s at 768 with every queue (legacy direct 9.9 s):
-     `post_trimmed_messages` scans all of N+(v) once per destination (d x destinations per hub), a katric cost;
-     plus imbalanced handle time (~11 s).
+     dominated by the send loop of the busiest rank, ~10 s at 768 with every queue (legacy direct 9.9 s): it sends
+     539 M words, 3x the average (the volume imbalance after load balancing, cf. `rmat-volume`), plus imbalanced
+     handle time (~11 s). Checked 2026-11-25: `post_trimmed_messages` scans N+(v) once per destination, i.e. the
+     sent plus the trimmed entries (~960 M on that rank), at most ~1.8x the copying it has to do anyway, so building
+     the messages in one pass would save only the comparisons on the trimmed part; not pursued.
    - Counter bug: `oversize_passes` counts `has_credit` returning true for an oversized buffer, which is re-checked
      while it waits for a request slot (480 K "passes" vs 110 K large messages per rank at 768, 4 KiB). Count at the
      send instead.
@@ -209,12 +211,20 @@ The grid already scales this way today (`baseline_26_11_20`, 192 -> 3072: permut
      1329425), without a root cause: suite `briefkasten-cma-debug`.
    Consequences: default `--message-queue briefkasten --buffer-size 4096 --poll-skip 1` (step 7). BriefKAsten:
    more request slots, `poll_throttled` that does not skip while buffers are parked, count `oversize_passes` at the
-   send. katric: build the trimmed messages of a hub in one pass (algorithm idea, separate from this migration).
+   send. katric: nothing queue-specific (the RMAT cost is the busiest rank's send volume).
 7. **Default BriefKAsten** after the comparison; the legacy queue (with katric's grid adapter, which it needs) stays
    behind `--message-queue legacy` for reproducing earlier results.
    Done 2026-11-25: default `--message-queue briefkasten` (`--buffer-size 4096`, `--poll-skip 1` were already the
    defaults); every cluster suite except `briefkasten*` pins `message-queue: legacy` (the local smoke / phases
    suites take the new default). ctest: `ditric-legacy` keeps the legacy queue covered.
+8. **BriefKAsten tweaks** (2026-11-25). BriefKAsten branch `feat/throttled-poll-and-pass-count` @ 75d4f95 (local,
+   on `feat/contiguous-envelope-serialization`): `poll_throttled` polls on every call while buffers are parked or
+   every send slot is taken (it skipped them, which parked buffers for a slot at the top scale); `oversize_passes`
+   counted once per send in `track_send` (was per `has_credit` check; `large_message_test` checks passes <= large
+   messages, which failed at 9 ranks with the old count). BriefKAsten tests pass; katric counts unchanged with
+   `--poll-skip 100` (direct / grid, RMAT and permuted RGG, 4 / 9 ranks, also 256 B / 1 slot). Suites
+   `briefkasten-tuning` (+ `-rmat`): direct 4 KiB x `--request-slots` 8 / 32 x `--poll-skip` 1 / 100. Decide the
+   defaults of both from it.
 
 ## Decisions (2026-11-24)
 

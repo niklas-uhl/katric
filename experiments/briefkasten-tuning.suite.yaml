@@ -1,0 +1,48 @@
+# BriefKAsten tweaks after `briefkasten` (doc/briefkasten-migration.md, step 8): request slots and throttled polling,
+# with the default queue (BriefKAsten direct, 4 KiB). In `briefkasten`, --poll-skip 100 gained ~10 % up to 1536 cores and
+# lost at the top (buffers parked for a request slot, since only a poll notices completed sends), and on RMAT almost
+# every buffer waited for one of the 8 request slots. Needs BriefKAsten with 75d4f95 (poll_throttled polls on every
+# call while buffers are parked or all slots are taken). --request-slots 8 (default) / 32 x --poll-skip 1 (default) /
+# 100, on the inputs of `briefkasten` without RMAT (`--min-cores 192 --max-cores 3072`); RMAT in
+# briefkasten-tuning-rmat. 4 configurations per input and core count. Compare `request-slots: 8, poll-skip: 1` with
+# brd4k of `briefkasten_26_11_24`.
+name: briefkasten-tuning
+executable: apps/katric
+output_path_option_name: caliper-output
+threads_option_name: num-threads
+ncores: node-size-pow2
+threads_per_rank: [1]
+time_limit: 10
+graphs:
+  - generator: kagen
+    type: rgg2d
+    N: 18
+    M: 22
+    permute: 1
+    seed: 28475421
+    scale_weak: true
+  - generator: kagen
+    type: gnm-undirected
+    N: 16
+    M: 20
+    seed: 28475421
+    scale_weak: true
+  - generator: kagen
+    type: rhg
+    N: 18
+    M: 22
+    gamma: 2.8
+    permute: 1
+    seed: 28475421
+    scale_weak: true
+config:
+  - message-queue: briefkasten
+    communication-policy: direct
+    buffer-size: 4096
+    request-slots: [8, 32]
+    poll-skip: [1, 100]
+    primary-cost-function: none
+    message-trimming: true
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 3
