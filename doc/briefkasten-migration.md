@@ -65,7 +65,21 @@ The grid already scales this way today (`baseline_26_11_20`, 192 -> 3072: permut
      its large-message path whenever a local threshold is set (LARGE_MESSAGE_TAG, probing receiver that allocates the
      buffer). A relay (grid) that receives such a message reposts it and takes the same path. Counter
      `num_large_messages` (and its elements).
-   - Rejected alternative, katric-side chunking: a chunk of N+(v) is only useful at the receiver with the targets u on
+   - Done 2026-11-24, BriefKAsten branch `fix/oversized-messages` @ b94940a (on feat/idle-flush, local, not pushed):
+     the hang reproduced (all variants hung), fixed as above (`Config::allow_large_messages`, default on). It also
+     needed two flow-control fixes for the grid: the proxied credit sum lost and re-added the overshoot of an
+     oversize pass, and the high-water assertion fired on grants to non-proxied peers while a proxy forwarded an
+     oversize buffer. `large_message_test` passes direct / grid x flow control on / off on 1-9 ranks; the existing
+     tests pass at 4 and 9 ranks. Cost: one extra MPI_Improbe per poll for the large-message tag.
+   - Alternative, chunking (post_message consumes what fits, the rest goes into the next buffer): needs a merger
+     that can stop mid-message and a katric format change. A chunk of N+(v) is only useful with the targets u on the
+     receiving rank, which the receiver finds in the whole message today, so every chunk carries them as a header
+     ([v, k, targets..., slice]) and the handler intersects each target's N+(u) with each slice (every w in exactly
+     one slice, so no duplicates). More volume (k + 2 words per chunk), N+(u) scanned once per chunk unless
+     restricted to the slice's range, and a hub with more targets on one rank than fit a buffer needs the header
+     itself split (targets x slices). Gain: every buffer within the credit window and no extra probe. Kept as an
+     option if large messages turn out costly (only RMAT / real-world hubs produce them).
+   - Earlier note, katric-side chunking: a chunk of N+(v) is only useful at the receiver with the targets u on
      that rank (the receiver finds them in N+(v) today), so every chunk would carry them as a header. More format, more
      volume; only if the library fix is not wanted.
 2. **katric merger / splitter** (`include/katric/phases/global.h`, replacing `Merger` / `Splitter`). Buffer of
