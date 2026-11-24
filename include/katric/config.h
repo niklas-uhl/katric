@@ -65,7 +65,7 @@ enum class CommunicationPolicy {
 /// What runs, `--algorithm`: KaTric, or a competitor behind the same
 /// interface (apps/competitors/, each only with its CMake option
 /// KATRIC_COMPETITOR_<NAME>, doc/competitors.md).
-enum class Algorithm { katric, tric, havoqgt };
+enum class Algorithm { katric, tric, havoqgt, xxtric };
 /// TriC's counting variant, `--tric-variant`: the classes from TriC's main.cpp
 /// (plain is its default build, buffered is `-DAGGR_BUFR`, hash2 is
 /// `-DAGGR_HASH2`, inrecv is `-DAGGR_BUFR_INRECV`).
@@ -127,6 +127,9 @@ struct Config {
   /// HavoqGT: compute and print its diagnostics (allreduces, degree
   /// histograms) between orientation and count, as its own driver does
   bool havoqgt_stats = false;
+  /// xxtric's per-rank buffer size (its `-s`); -1, its default, means twice
+  /// the number of ghost entries, i.e. no cap
+  std::int64_t xxtric_buffer_size = -1;
 
   bool pseudo2core = false;
   /// Global phase: each rank gets only the part of N+(v) from its first

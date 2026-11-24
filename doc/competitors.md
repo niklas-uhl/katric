@@ -211,6 +211,38 @@ Upstream TriC since 2022: new variants `ibufastric`/`inbufastric` (single counti
 `-DAGGR_BUFR_INRECV`), self-loops skipped in `cfastric`, C++20. The three variants we use are unchanged apart from
 that (`bufastric`, `hashfastric2` identical).
 
+### HavoqGT: findings (2026-11-24)
+
+- **Fork:** `niklas-uhl/havoqgt`, branch `katric` on upstream master (via `fa09fbe3`): INTERFACE target
+  `havoqgt::havoqgt` (MPI, Boost headers, Threads); Metall, KaGen, CGAL, UMap, HDF5, executables and tests dropped.
+  Boost.Interprocess stays: `bip::vector`/`offset_ptr` let the graph live in a mapped heap (Metall); with
+  `std::allocator` they act as `std::vector` / raw pointer, and Boost is needed anyway (unordered, container, random).
+- **Native input:** an edge list (`tuple<u64, u64, double>`, both directions), distributed by HavoqGT itself
+  (vertices cyclically, delegates above `--havoqgt-delegate-threshold`, default 2^20 as the old driver).
+- **Regions:** `preprocessing` = `delegate_partitioned_graph` construction + `triangle_count_orient()` (directed
+  2-core); `counting` = `triangle_count_wedges()`. The fork splits `new_triangle_count()` into these two; its
+  diagnostics (allreduces, degree histograms) run only with `--havoqgt-stats` (default off). Everything is rebuilt
+  per run, `reset()` is a no-op.
+- **Constraints:** `MPI_COMM_WORLD` only; equal ranks per node in contiguous blocks (checked, YGM's nl/nr mailbox).
+  `havoqgt::init` (node-local communicators, O(p) rank-by-rank) runs once in the constructor, untimed.
+- **Fixed (marked `// katric:`):** missing `offset_ptr.hpp` include (Boost 1.92); `&v[0]` → `v.data()` on MPI
+  buffers (empty vectors abort with GCC ≥ 15's default `-O0` assertions); `vertices_end()` stepped below index 0 on
+  a rank without vertices (more ranks than vertices).
+- **Validation:** `--verify --iterations 2` at 1, 2, 4 ranks: triangle, hiv, com-amazon, RGG2D, RHG, GNM, RMAT; 16
+  ctests incl. `--havoqgt-stats`.
+
+### xxtric: findings (2026-11-24)
+
+- **Fork:** `niklas-uhl/xxtric`, branch `katric` on `sg0/xxtric` main `eb797a3`: INTERFACE target `xxtric::xxtric`
+  (MPI, C++20), the CPU path (`deftypes`, `utils`, `graph`, `xxtric.hpp`) inline-safe, self-contained and in
+  `namespace xxtric`. CUDA variants, `main.cpp` and Makefiles untouched and unbuilt.
+- **Native input, regions, `reset()`:** as TriC's buffered variants (same `Graph`, `edge_stat_` rebuilt).
+  `--xxtric-buffer-size` defaults to its `-1` (2 × ghost entries, no cap).
+- **Same bugs as TriC** (not fixed yet, pending decision): degree-0 vertices read `edge e1-1` out of range (RMAT
+  aborts); the buffer shrinks to 2 with one remote wedge and `count()` never ends (`triangle.metis` on 4 ranks).
+  Also `Graph::operator delete` calls `free()` on memory from `operator new`.
+- **Validation so far:** correct on hiv, com-amazon, RGG2D, RHG, GNM at 1, 2, 4 ranks.
+
 ### TriC: findings (2026-11-21, rebased 2026-11-24)
 
 - **Rebase (2026-11-24):** `katric` = upstream `6939dbe` + library target + fixes + `namespace tric` (all headers;

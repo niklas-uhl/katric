@@ -238,15 +238,23 @@ if(KATRIC_COMPETITOR_TRIC)
   FetchContent_Declare(
     tric
     GIT_REPOSITORY https://github.com/niklas-uhl/tric
-    GIT_TAG 12dc19ac336c2380538dc8acf6b6497002185596 # katric (on sg0/tric master 6939dbe, archived 2026-10)
+    GIT_TAG f1dec08186333a765985f6d2837cca0254bdb593 # katric (on sg0/tric master 6939dbe, archived 2026-10)
     SYSTEM EXCLUDE_FROM_ALL)
   FetchContent_MakeAvailable(tric)
+endif()
+if(KATRIC_COMPETITOR_XXTRIC)
+  FetchContent_Declare(
+    xxtric
+    GIT_REPOSITORY https://github.com/niklas-uhl/xxtric
+    GIT_TAG 8036c9a982556c210a12198b88f59a43780f15bd # katric (on sg0/xxtric main eb797a3)
+    SYSTEM EXCLUDE_FROM_ALL)
+  FetchContent_MakeAvailable(xxtric)
 endif()
 if(KATRIC_COMPETITOR_HAVOQGT)
   FetchContent_Declare(
     havoqgt
     GIT_REPOSITORY https://github.com/niklas-uhl/havoqgt
-    GIT_TAG HAVOQGT_SHA # katric (on llnl/havoqgt master 2e8b2a8)
+    GIT_TAG dd3f7cc5b0bdbcaa04a5a43e869b4ac98dbc47d3 # katric (on llnl/havoqgt master 2e8b2a8)
     SYSTEM EXCLUDE_FROM_ALL)
   FetchContent_MakeAvailable(havoqgt)
 endif()

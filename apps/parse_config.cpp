@@ -168,6 +168,13 @@ katric::Config parse_config(int argc, char* argv[], int rank, int size) {
            "as its own driver does"
     )
         ->group("HavoqGT (--algorithm havoqgt)");
+    app.add_option(
+           "--xxtric-buffer-size",
+           conf.xxtric_buffer_size,
+           "Per-rank buffer size (xxtric's -s); -1: twice the ghost entries, i.e. no cap (its default)"
+    )
+        ->capture_default_str()
+        ->group("xxtric (--algorithm xxtric)");
 
     // `new` was the name of `direct` until 2026-11-20 (job files and configs before); remove once they have run
     add_enum_option(
