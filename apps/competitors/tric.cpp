@@ -24,6 +24,11 @@
 namespace katric {
 namespace {
 
+using tric::Edge;
+using tric::Graph;
+using tric::GraphElem;
+using tric::MPI_GRAPH_TYPE;
+
 /// The native input is TriC's own Graph as its binary file reader
 /// (BinaryEdgeList::read) builds it: a 1D vertex distribution, local CSR with
 /// global ids, sorted neighbourhoods (check_edgelist() relies on that).
@@ -73,17 +78,17 @@ public:
     auto const buffer_size = static_cast<GraphElem>(conf_.tric_buffer_size);
     switch (conf_.tric_variant) {
       case TricVariant::plain:
-        count<TriangulateAggrFatCompressed>();
+        count<tric::TriangulateAggrFatCompressed>();
         break;
       case TricVariant::buffered:
-        count<TriangulateAggrBuffered>(buffer_size, conf_.tric_sparse_ranges);
+        count<tric::TriangulateAggrBuffered>(buffer_size, conf_.tric_sparse_ranges);
         break;
       case TricVariant::hash2:
-        count<TriangulateAggrBufferedHash2>(buffer_size,
+        count<tric::TriangulateAggrBufferedHash2>(buffer_size,
                                              conf_.tric_sparse_ranges);
         break;
       case TricVariant::inrecv:
-        count<TriangulateAggrBufferedInrecv>(buffer_size);
+        count<tric::TriangulateAggrBufferedInrecv>(buffer_size);
         break;
     }
   }

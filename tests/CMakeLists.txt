@@ -44,20 +44,27 @@ if(TARGET katric)
   set(args_cetric-grid-exchange --config ${PROJECT_SOURCE_DIR}/configs/cetric.toml --degree-exchange grid)
   set(args_ditric-trimming --config ${PROJECT_SOURCE_DIR}/configs/ditric.toml --message-trimming)
   set(args_cetric-trimming --config ${PROJECT_SOURCE_DIR}/configs/cetric.toml --message-trimming)
-  # competitors (doc/competitors.md), each only if compiled in
+  # competitors (doc/competitors.md), each only if compiled in. Their tests get a timeout of their own, so that a
+  # competitor that hangs (TriC's buffered variants did on tiny inputs) fails fast instead of after ctest's 1500 s.
+  # The slowest so far takes ~75 s in a Debug build (com-amazon, tric hash2 with sparse ranges, 2 ranks, ctest -j4).
+  set(KATRIC_COMPETITOR_TEST_TIMEOUT 180 CACHE STRING "Timeout in seconds of each competitor ctest")
+  set(competitor_configs "")
   if(KATRIC_COMPETITOR_TRIC)
     foreach(variant plain buffered hash2 inrecv)
       list(APPEND example_configs tric-${variant})
+      list(APPEND competitor_configs tric-${variant})
       set(args_tric-${variant} --algorithm tric --tric-variant ${variant} --iterations 2)
     endforeach()
     foreach(variant buffered hash2)
       list(APPEND example_configs tric-${variant}-sparse-ranges)
+      list(APPEND competitor_configs tric-${variant}-sparse-ranges)
       set(args_tric-${variant}-sparse-ranges --algorithm tric --tric-variant ${variant} --tric-sparse-ranges
                                              --iterations 2)
     endforeach()
   endif()
   if(KATRIC_COMPETITOR_HAVOQGT)
     list(APPEND example_configs havoqgt havoqgt-stats)
+    list(APPEND competitor_configs havoqgt havoqgt-stats)
     set(args_havoqgt --algorithm havoqgt --iterations 2)
     set(args_havoqgt-stats --algorithm havoqgt --havoqgt-stats)
   endif()
@@ -77,6 +84,10 @@ if(TARGET katric)
         add_test(NAME katric.${graph}.${config}.${ranks}cores
                  COMMAND ${CMAKE_COMMAND} "-DCOMMAND=${command}" "-DKAGEN_OPTION_STRING=${kagen_${graph}}"
                          -DEXPECTED=${expected} -P ${CMAKE_CURRENT_SOURCE_DIR}/check_triangle_count.cmake)
+        if(config IN_LIST competitor_configs)
+          set_tests_properties(katric.${graph}.${config}.${ranks}cores PROPERTIES TIMEOUT
+                                                                                 ${KATRIC_COMPETITOR_TEST_TIMEOUT})
+        endif()
       endforeach()
     endforeach()
   endforeach()

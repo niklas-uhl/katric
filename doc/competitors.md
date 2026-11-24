@@ -43,6 +43,11 @@ competitor, and a factory that switches on `--algorithm`. KaCCv2's weak spots, a
    GraphBLAS/LAGraph, GBBS and Ligra are shared memory.
 4. **Forks:** a `katric` branch in each fork under niklas-uhl. The branch has a library target with a "construct from
    CSR or edge list + communicator" entry point, no `main`, and no KaGen submodule.
+   - Each `katric` branch sits on the competitor's **latest upstream** version (checked 2026-11-24, see "Upstreams").
+   - Dependencies the counting does not need are dropped from the fork's build (Metall, CGAL, UMap, HDF5, ...).
+   - C++ competitors live in a namespace of their own (`tric`, `xxtric`, `havoqgt`), so that all of them link into
+     one binary. Macros are contained by the one-TU-per-adapter rule. C competitors (Tom2D, LCC): check `nm` for
+     clashes. Known clash to come: HavoqGT bundles an old YGM in `namespace ygm`, TriPoll uses the real one.
 5. **LCC is GPL-3.0** (`fvella/lcc` + `spcl/CLaMPI`). It is linked only with `KATRIC_COMPETITOR_LCC=ON`. Binaries
    built with it are GPL and not distributed, and the README says so.
 6. **CombBLAS builds on KaCCv2's adapter and fork** `niklas-uhl/CombBLAS@46ebfc31`, which carries the fixes.
@@ -98,7 +103,8 @@ enough to decide whether to drop one.
 
 | Step | Competitor | Fork / pin | Adapter notes |
 | --- | --- | --- | --- |
-| 1 | TriC (Ghosh & Halappanavar, HPEC'20) | `niklas-uhl/tric` (`main`, `6049cb15`) | See below |
+| 1 | TriC (Ghosh & Halappanavar, HPEC'20) | `niklas-uhl/tric` (`katric` on `sg0/tric` master `6939dbe`) | See below |
+| 1b | xxtric (Ghosh, arXiv 2610.29988, 2026), TriC's successor, CPU path | fork of `sg0/xxtric` (`main`, `eb797a32`) | `--algorithm xxtric`; same `Graph` as TriC, single counting |
 | 2 | HavoqGT (Pearce et al.) | `niklas-uhl/havoqgt` (`master`, `fa09fbe3`) | See below. Equal ranks per node (32 of 48 on SuperMUC in the paper) |
 | 3 | LCC (Strausz et al., IPDPS'22) | new forks of `fvella/lcc` and `spcl/CLaMPI` | See below |
 | 4 | TriPoll / YGM (Steil et al., SC'21) | new fork of `LLNL/tripoll` | See below |
@@ -192,7 +198,26 @@ Record for each, once it is done:
 - constraints
 - validation results
 
-### TriC: findings (2026-11-21)
+### Upstreams (checked 2026-11-24)
+
+| Fork | Upstream | State |
+| --- | --- | --- |
+| `niklas-uhl/tric` | `sg0/tric`, **archived** 2026-10-29 (final `6939dbe`), successor `sg0/xxtric` | was 72 commits behind; `katric` rebased onto `6939dbe` (old branch: `katric-2022`) |
+| `niklas-uhl/havoqgt` | `llnl/havoqgt` master `2e8b2a8` (2021) | up to date; `develop` only adds HDF5/CC I/O |
+| `niklas-uhl/2DTriangleCounting` | `KarypisLab/2DTriangleCounting` (frozen 2019) | up to date |
+| `niklas-uhl/CombBLAS@46ebfc31` | `PASSIONLab/CombBLAS` master | contains all of master |
+
+Upstream TriC since 2022: new variants `ibufastric`/`inbufastric` (single counting, the README's recommendation,
+`-DAGGR_BUFR_INRECV`), self-loops skipped in `cfastric`, C++20. The three variants we use are unchanged apart from
+that (`bufastric`, `hashfastric2` identical).
+
+### TriC: findings (2026-11-21, rebased 2026-11-24)
+
+- **Rebase (2026-11-24):** `katric` = upstream `6939dbe` + library target + fixes + `namespace tric` (all headers;
+  std includes hoisted in `utils.hpp`). New `--tric-variant inrecv` (`TriangulateAggrBufferedInrecv`): counts each
+  triangle once (precedence by vertex id). It had the degree-0 read and the buffer-of-2 livelock (`triangle.metis`
+  on 4 ranks) too; both fixed as in the other variants. `--tric-sparse-ranges` is only implemented for
+  buffered/hash2 and rejected otherwise.
 
 - **Fork:** `niklas-uhl/tric`, branch `katric` @ `4fb1e5d1` (on top of `main` `6049cb15`): library target `tric::tric`,
   no `main`, no KaGen, header globals `inline`, `AGGR_BUFR` always defined (`Graph` then has `edge_stat_`, so all
