@@ -30,7 +30,6 @@ itself, e.g. for its tree view.
 import argparse
 import json
 import math
-import re
 import sys
 import warnings
 from dataclasses import dataclass
@@ -137,7 +136,9 @@ def _option_str(value):
 def _runs(tk, run_of_profile, dir_of_profile):
     meta = tk.metadata.reset_index()
     columns = {"profile": meta["profile"]}
-    for name in meta.columns:
+    # reversed: Thicket gives Adiak's values in reverse order of recording, and katric records the options in the
+    # order the CLI declares them (by topic), which labels and tables then keep
+    for name in reversed(meta.columns):
         if name.startswith("config."):  # null for options a run does not have (added or removed since)
             columns[name.removeprefix("config.")] = meta[name].map(_option_str, na_action="ignore")
         elif name in METADATA:
@@ -246,23 +247,12 @@ def config_options(runs, within_dirs=False):
     return [c for c in options if runs[c].n_unique() > 1]
 
 
-def cli_options():
-    """katric's CLI options in the order apps/parse_config.cpp declares them (grouped by topic there: input and load
-    balancing, the algorithm, threading, message queue, intersection), read from the source so that new options need
-    no list here."""
-    source = (Path(__file__).parent.parent / "apps" / "parse_config.cpp").read_text()
-    return re.findall(r'add_(?:option|flag|enum_option)\(\s*(?:app,\s*)?"--([\w-]+)', source)
-
-
 def config_label(options):
     """Expression for a configuration's label from `options` (e.g. `config_options(runs)`): the variant, then
-    ` [option=value]` per option in the CLI's order (`cli_options`; options removed since last, alphabetically),
-    left out where a run does not have the option, e.g.
+    ` [option=value]` per option, in the given order, left out where a run does not have the option, e.g.
     "CETRIC [communication-policy=grid] [message-queue=briefkasten] [buffer-size=16384]". The variant replaces
     `contraction` and `algorithm`."""
-    rank = {o: i for i, o in enumerate(cli_options())}
-    options = sorted((o for o in options if o not in ("variant", "contraction", "algorithm")),
-                     key=lambda o: (rank.get(o, len(rank)), o))
+    options = [o for o in options if o not in ("variant", "contraction", "algorithm")]
     parts = [pl.concat_str(pl.lit(f" [{o}="), pl.col(o), pl.lit("]")) for o in options]  # null where missing
     return pl.concat_str(pl.col("variant"), *parts, ignore_nulls=True)
 
