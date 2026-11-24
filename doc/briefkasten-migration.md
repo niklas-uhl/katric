@@ -92,13 +92,16 @@ The grid already scales this way today (`baseline_26_11_20`, 192 -> 3072: permut
    BriefKAsten direct / grid x C in {4, 16, 64} KiB, defaults otherwise, 3 iterations; cores set at job creation
    (192-3072 shows the trend). Questions: does the global phase stay flat with p; polling cost per message; which C;
    where grid overtakes direct now.
-7. **Remove the legacy queue** after the comparison: `IndirectMessageQueueAdaptor`, the `message-queue` dependency
-   and its patch, `--message-queue`, `--threshold*`; the `pre-refactor` tag keeps the old code for reproducing earlier
-   results.
+7. **Default BriefKAsten** after the comparison; the legacy queue (with katric's grid adapter, which it needs) stays
+   behind `--message-queue legacy` for reproducing earlier results.
+
+## Decisions (2026-11-24)
+
+- katric moves to C++23 (no range-v3).
+- BriefKAsten pinned to `feat/idle-flush` (1c5ed3d at the time), plus the step-1 fix on a branch on top of it.
+- The legacy queue stays behind `--message-queue legacy` after the comparison, for reproducing earlier results
+  (step 7 removes only katric's own grid adapter once BriefKAsten's grid replaces it, and the transition pins).
 
 ## Open decisions
 
-- C++23 for katric vs range-v3 under C++20 (BriefKAsten supports both).
-- BriefKAsten SHA: `feat/idle-flush` (1c5ed3d) or KaCCv2's pin (5664f7f).
 - Default buffer size C (after step 6); KaCCv2 uses 4 KiB.
-- Whether the legacy queue stays longer than the comparison (reproducing the earlier paper numbers).
