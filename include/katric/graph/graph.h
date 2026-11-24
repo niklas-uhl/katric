@@ -28,6 +28,7 @@
 #include "katric/config.h"
 #include "katric/ghost_exchange.h"
 #include "katric/message_tags.h"
+#include "katric/straggler_debug.h"
 #include "katric/resource_counters.h"
 
 namespace katric::graph {
@@ -235,6 +236,10 @@ public:
   [[nodiscard]] auto owner(VertexHandle vertex) const -> int {
     return is_local(vertex) ? LocalNumbering::owner(vertex)
                             : owners_[to_ghost_index(vertex)];
+  }
+  /// The owner of every ghost, by ghost index (the straggler diagnostics).
+  [[nodiscard]] auto ghost_owners() const -> std::span<int const> {
+    return owners_;
   }
 
   /// The 2D grid over the communicator's ranks for the grid exchange, built on
@@ -550,6 +555,10 @@ public:
   [[nodiscard]] auto ghost_push_pattern() -> GhostPushPattern const& {
     KASSERT(!oriented_, "the ghost push pattern needs the undirected graph");
     if (!ghost_push_pattern_) {
+      // the straggler (2026-11-24), opt-in: before the region `pattern`
+      if (profiling::straggler_debug_enabled()) {
+        profiling::print_straggler_debug(*this);
+      }
       CALI_CXX_MARK_SCOPE("pattern");
       // the straggler (2026-11-23), opt-in
       std::optional<profiling::ResourceCounters> resources;

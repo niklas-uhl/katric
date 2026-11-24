@@ -1,0 +1,54 @@
+# The straggler with printed diagnostics (2026-11-24; doc/refactoring-plan.md, results 2026-11-23). The allocator
+# variants of `straggler` refuted the huge-page / mmap-threshold hypothesis: the slow ranks (all >= ~1030 at 1536 cores,
+# i.e. vertex ids >= 2^28 with 2^18 vertices per rank) keep 22x the dTLB load misses in the pattern build. perf on one
+# rank is impractical on SuperMUC-NG, so KATRIC_STRAGGLER_DEBUG prints per rank (stderr, lines `STRAGGLER r=<rank>
+# kind=host|array|time ...`, see include/katric/straggler_debug.h): the host / CPU / NUMA node, for adjncy, owners and
+# two fresh copies of owners the smaps VMAs (Rss, AnonHugePages, THPeligible) and the NUMA nodes of their pages, and
+# the pattern build's loop in stages (scan, is_local, owner lookup, dedupe; dedupe again on a fresh vector and on a
+# madvise(MADV_HUGEPAGE) buffer; the real build). Get them with `grep '^STRAGGLER'` from the job log.
+# Questions:
+#   - which stage jumps on the slow ranks (the owners lookup?), and does a fresh / huge-page copy remove it
+#   - data or rank position: N18 with the `straggler` seed (reference) and another seed; N17 (2^27 vertices at 1536:
+#     no id >= 2^28) and N19 (ids >= 2^28 from rank 512 on). If the slow set moves to rank >= 512 at N19 and vanishes
+#     at N17, it is the id magnitude, not the rank or node
+# The Linux part (smaps, move_pages, getcpu) is untested locally (macOS): check the output of the first run.
+name: straggler-debug
+executable: apps/katric
+output_path_option_name: caliper-output
+threads_option_name: num-threads
+ncores: [1536]
+max_cores: 1536
+threads_per_rank: [1]
+time_limit: 10
+graphs:
+  - generator: kagen
+    type: rgg2d
+    N: 18
+    M: 22
+    permute: 1
+    seed: [28475421, 1]
+    scale_weak: true
+  - generator: kagen
+    type: rgg2d
+    N: 17
+    M: 21
+    permute: 1
+    seed: 28475421
+    scale_weak: true
+  - generator: kagen
+    type: rgg2d
+    N: 19
+    M: 23
+    permute: 1
+    seed: 28475421
+    scale_weak: true
+config:
+  - primary-cost-function: none
+    message-trimming: true
+    communication-policy: direct
+    threshold: local-nodes
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 2
+    ENV:
+      KATRIC_STRAGGLER_DEBUG: 1
