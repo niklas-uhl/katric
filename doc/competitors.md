@@ -244,6 +244,42 @@ that (`bufastric`, `hashfastric2` identical).
 - **Validation:** `--verify --iterations 2` at 1, 2, 4 ranks, default buffer and `--xxtric-buffer-size 8000`:
   triangle, hiv, com-amazon, RGG2D, RHG, GNM, RMAT. ctests `katric.<graph>.xxtric[-buffer-size].<p>cores`.
 
+### LCC: findings (2026-11-24)
+
+- **Forks:** `niklas-uhl/lcc` `katric` on `fvella/lcc` master `42c30b0` (2022, inactive), `niklas-uhl/CLaMPI` `katric` on
+  `spcl/CLaMPI` master `bb55272` (2021). Both GPL-3.0 (decision 5, README note). CMake instead of autotools:
+  `lcc::lcc` (static C, built as `--with-simd --with-clampi`, the paper's configuration, OpenMP) fetches
+  `clampi::clampi` (static C, adaptive scheme on as its README prescribes for x86).
+- **Library calls** (`include/lcc_api.h`) replace `main()`: `lcc_setup` (1 x p mesh as in the paper, N rounded up to a
+  multiple of p with isolated vertices, communicators, `cl_init` once), `lcc_preprocess` (2D partitioning, which with
+  R = 1 is a block of N/p consecutive vertices per rank; `norm_graph` sort/dedup; CSC), `lcc_count` (the kernel
+  `lcc_func_bin_simd` plus a global sum of its per-vertex triangle counts / 3; LCC itself only computes LCC values),
+  `lcc_free`. Every other symbol of `lcc.c` is `static`; the library exports only these four.
+- **Native input:** LCC's reader output, a chunk of `(u, v)` pairs per rank. KaGen's edges come with both directions,
+  so LCC's `mirror()` is skipped (it would only add duplicates that `norm_graph` removes).
+- **Regions:** `preprocessing` = setup + preprocess; `counting` = `lcc_count` (window creation, CLaMPI caches, kernel,
+  allreduce), as LCC's own timer around `lcc_func_bin_simd`. The edge list is copied in `reset()` (untimed), since LCC
+  takes ownership and reallocates it. Everything else is rebuilt per run.
+- **Options:** `--lcc-cache-size` (bytes per rank for CLaMPI's caches, allocated up front; LCC hard-coded 8 GiB, which
+  rules out many ranks per node: 1 rank per node + OpenMP threads is its natural layout), `--lcc-degree-reduction`
+  (its `-H 1`, off by default). OpenMP threads via `OMP_NUM_THREADS` (ctests: 1).
+- **Constraints:** `MPI_COMM_WORLD`; N < 2^32 (local and remote ids are 32-bit, `MPI_UINT32_T` in the `Get`s), so the
+  largest weak-scaling inputs cannot run; at most 1024 ranks (`MAX_PROC_J`); < 2^31 edges per rank (`int ned`); O(N)
+  arrays per rank (`row_pp = N`: receive buffers, `reach`, degrees; CLaMPI index 3.2 N bytes).
+- **Fixed (marked `// katric:`):**
+  - LCC: the offsets window had `col_bl` entries, the kernel reads `col[v + 1]` (MPI_ERR_RMA_RANGE for the last local
+    vertex with Open MPI); `nglobal_ed` from an `int` passed as `MPI_UINT64_T`.
+  - CLaMPI: the window mode was read into one `char` (1 byte overflow) and compared with / assigned string constants,
+    so every window was effectively *always-cache*; fixed, and LCC now requests always-cache explicitly (same
+    behaviour as the published runs; transparent mode would invalidate the cache on every flush). The global
+    `cl_conf_t clampi` defined in a header (fails with `-fno-common`).
+  - Portability only (Linux/x86 unchanged): SSE `memcpy` only on x86_64, `aligned_alloc` size rounded on macOS,
+    `cpu_set_t` code only on Linux.
+- **Known, not fixed:** `--lcc-degree-reduction` crashes on a rank without edges after its 1D split
+  (`for (i = 0; i < nedge - 1; ...)` with unsigned `nedge = 0`; `triangle.metis` on 4 ranks).
+- **Validation:** `--verify --iterations 2` at 1, 2, 4 ranks (`OMP_NUM_THREADS=1`, 64 MiB cache): triangle, hiv,
+  com-amazon, RGG2D, RHG, GNM, RMAT; with `--lcc-degree-reduction` all but the case above.
+
 ### TriC: findings (2026-11-21, rebased 2026-11-24)
 
 - **Rebase (2026-11-24):** `katric` = upstream `6939dbe` + library target + fixes + `namespace tric` (all headers;

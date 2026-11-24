@@ -66,6 +66,14 @@ cmake --workflow --preset dev   # Debug, warnings, assertions; configure, build 
 For machine-specific settings (compiler, local checkouts of dependencies), copy `CMakeUserPresets.json.template` to
 `CMakeUserPresets.json` and adapt it; that file is not tracked.
 
+### Competitors
+
+Competing triangle counters can be compiled into the same binary and selected with `--algorithm <name>` (see
+`doc/competitors.md`). Each is opt-in via `-DKATRIC_COMPETITOR_<NAME>=ON` (`TRIC`, `XXTRIC`, `HAVOQGT`, `LCC`).
+
+**License:** LCC and CLaMPI are GPL-3.0. A binary built with `KATRIC_COMPETITOR_LCC=ON` is therefore GPL-licensed;
+such binaries are for our own experiments and are not distributed.
+
 ## Running
 For reproducing our experiments with kaval, see [experiments/README.md](./experiments/README.md).
 
