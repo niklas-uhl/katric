@@ -65,7 +65,7 @@ enum class CommunicationPolicy {
 /// What runs, `--algorithm`: KaTric, or a competitor behind the same
 /// interface (apps/competitors/, each only with its CMake option
 /// KATRIC_COMPETITOR_<NAME>, doc/competitors.md).
-enum class Algorithm { katric, tric, havoqgt, xxtric };
+enum class Algorithm { katric, tric, havoqgt, xxtric, lcc };
 /// TriC's counting variant, `--tric-variant`: the classes from TriC's main.cpp
 /// (plain is its default build, buffered is `-DAGGR_BUFR`, hash2 is
 /// `-DAGGR_HASH2`, inrecv is `-DAGGR_BUFR_INRECV`).
@@ -130,6 +130,10 @@ struct Config {
   /// xxtric's per-rank buffer size (its `-s`); -1, its default, means twice
   /// the number of ghost entries, i.e. no cap
   std::int64_t xxtric_buffer_size = -1;
+  /// LCC: bytes per rank for CLaMPI's RMA caches (LCC hard-coded 8 GiB)
+  std::uint64_t lcc_cache_size = 8589934592ULL;
+  /// LCC's -H 1: remove degree-1 vertices first (off by default, as in LCC)
+  bool lcc_degree_reduction = false;
 
   bool pseudo2core = false;
   /// Global phase: each rank gets only the part of N+(v) from its first

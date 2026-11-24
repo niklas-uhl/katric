@@ -10,6 +10,7 @@ option(KATRIC_ENABLE_FORMAT_CMAKE "Fetch Format.cmake and provide the format/che
 # Competitors behind katric's benchmark interface (--algorithm <name>, doc/competitors.md), each opt-in
 option(KATRIC_COMPETITOR_TRIC "Build TriC (Ghosh & Halappanavar) into katric as --algorithm tric" OFF)
 option(KATRIC_COMPETITOR_XXTRIC "Build xxtric's CPU path (Ghosh, TriC's successor) into katric as --algorithm xxtric" OFF)
+option(KATRIC_COMPETITOR_LCC "Build LCC (Strausz et al., with CLaMPI) into katric as --algorithm lcc; GPL-3.0, makes the binary GPL" OFF)
 option(KATRIC_COMPETITOR_HAVOQGT "Build HavoqGT's triangle count (Pearce et al.) into katric as --algorithm havoqgt; needs Boost" OFF)
 set(KATRIC_CXX_FLAGS "" CACHE STRING "Additional compile options for katric's own targets (semicolon-separated)")
 set(KATRIC_ACTIVE_LOG_LEVEL "INFO" CACHE STRING

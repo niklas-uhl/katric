@@ -175,6 +175,19 @@ katric::Config parse_config(int argc, char* argv[], int rank, int size) {
     )
         ->capture_default_str()
         ->group("xxtric (--algorithm xxtric)");
+    app.add_option(
+           "--lcc-cache-size",
+           conf.lcc_cache_size,
+           "Bytes per rank for CLaMPI's RMA caches (allocated up front; LCC hard-coded 8 GiB)"
+    )
+        ->capture_default_str()
+        ->group("LCC (--algorithm lcc)");
+    app.add_flag(
+           "--lcc-degree-reduction",
+           conf.lcc_degree_reduction,
+           "Remove degree-1 vertices before partitioning (LCC's -H 1)"
+    )
+        ->group("LCC (--algorithm lcc)");
 
     // `new` was the name of `direct` until 2026-11-20 (job files and configs before); remove once they have run
     add_enum_option(

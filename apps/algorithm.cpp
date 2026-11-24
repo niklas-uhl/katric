@@ -25,6 +25,9 @@
 #ifdef KATRIC_HAVE_XXTRIC
 #include "./competitors/xxtric.h"
 #endif
+#ifdef KATRIC_HAVE_LCC
+#include "./competitors/lcc.h"
+#endif
 
 namespace katric {
 
@@ -117,6 +120,12 @@ auto make_algorithm(Config const& conf, kamping::v2::comm_view comm)
 #else
       break;
 #endif
+    case Algorithm::lcc:
+#ifdef KATRIC_HAVE_LCC
+      return make_lcc(conf, comm);
+#else
+      break;
+#endif
   }
   throw std::invalid_argument("--algorithm " + cli_name(conf.algorithm) +
                               " is not compiled in");
@@ -140,6 +149,12 @@ auto is_compiled_in(Algorithm algorithm) -> bool {
 #endif
     case Algorithm::xxtric:
 #ifdef KATRIC_HAVE_XXTRIC
+      return true;
+#else
+      return false;
+#endif
+    case Algorithm::lcc:
+#ifdef KATRIC_HAVE_LCC
       return true;
 #else
       return false;
