@@ -9,12 +9,18 @@
 #include <functional>
 #include <iterator>
 #include <limits>
+#include <optional>
 #include <ranges>
 #include <span>
 #include <stdexcept>
 #include <utility>
 #include <vector>
 
+#include <briefkasten/aggregators.hpp>
+#include <briefkasten/buffered_queue.hpp>
+#include <briefkasten/grid_indirection.hpp>
+#include <briefkasten/indirection.hpp>
+#include <briefkasten/queue_builder.hpp>
 #include <message-queue/buffered_queue.h>
 #include <mpi.h>
 
@@ -29,7 +35,8 @@
 
 namespace katric {
 
-/// The message queue's buffer threshold (`--threshold`, `--threshold-scale`).
+/// The legacy message queue's buffer threshold (`--threshold`,
+/// `--threshold-scale`).
 /// Taken from the load-balanced graph before the orientation (`local-edges`
 /// counts the undirected edges).
 inline auto get_threshold(graph::Graph const& G, Config const& conf)
@@ -149,12 +156,13 @@ inline auto make_message(graph::Graph const& G, graph::VertexHandle v)
 /// only the entries of N+(v) from its first receiver u_r (in orientation order,
 /// key (undirected degree, global id)) on; with no entry after u_r, it needs no
 /// message. Posts the message for each destination of `v` (built in `message`,
-/// reused) and counts the entries (incl. the sender id) not sent against
-/// sending N+(v) whole, and the messages not sent at all.
-template <typename Queue>
+/// reused) with `post(message, destination)` and counts the entries (incl. the
+/// sender id) not sent against sending N+(v) whole, and the messages not sent
+/// at all.
+template <typename Post>
 void post_trimmed_messages(graph::Graph const& G,
                            graph::VertexHandle v,
-                           Queue& queue,
+                           Post&& post,
                            std::vector<graph::VertexId>& message,
                            std::size_t& trimmed_entries,
                            std::size_t& dropped_messages) {
@@ -188,8 +196,7 @@ void post_trimmed_messages(graph::Graph const& G,
     // u_r itself is in the message; anything more comes after it
     if (message.size() > 2) {
       trimmed_entries += neighbors.size() + 1 - message.size();
-      queue.post_message(std::span<graph::VertexId const>(message),
-                         destination);
+      post(std::span<graph::VertexId const>(message), destination);
     } else {
       trimmed_entries += neighbors.size() + 1;
       dropped_messages++;
@@ -198,9 +205,113 @@ void post_trimmed_messages(graph::Graph const& G,
   }
 }
 
+/// BriefKAsten's configuration from `--buffer-size`, `--request-slots`,
+/// `--flow-control`, `--idle-flush`. Everything else is BriefKAsten's default
+/// (a capacity per destination buffer, no global threshold).
+inline auto briefkasten_config(Config const& conf) -> briefkasten::Config {
+  briefkasten::Config config;
+  config.local_threshold_bytes = conf.buffer_size;
+  config.num_request_slots = conf.request_slots;
+  config.num_credit_buffers =
+      conf.flow_control ? std::nullopt : std::optional<std::size_t>(0);
+  switch (conf.idle_flush) {
+    case IdleFlush::off:
+      config.idle_flush = briefkasten::IdleFlush::off;
+      break;
+    case IdleFlush::all:
+      config.idle_flush = briefkasten::IdleFlush::all;
+      break;
+    case IdleFlush::stale:
+      config.idle_flush = briefkasten::IdleFlush::stale;
+      break;
+  }
+  return config;
+}
+
+/// A BriefKAsten queue of global ids with `Receiver`. A buffer holds records
+/// [receiver, length, message...] (the receiver for the grid's proxies), and a
+/// received message is a span into the buffer.
+template <template <typename> typename Receiver>
+auto make_briefkasten_queue(MPI_Comm comm, briefkasten::Config const& config) {
+  return briefkasten::BufferedMessageQueueBuilder<graph::VertexId>(comm, config)
+      .with_merger(briefkasten::aggregation::EnvelopeSerializationMerger{})
+      .with_splitter(
+          briefkasten::aggregation::EnvelopeSerializationSplitter<
+              graph::VertexId>{})
+      .template with_receiver<Receiver>()
+      .build();
+}
+
+/// Calls `f` with the global phase's BriefKAsten queue on `G`'s communicator:
+/// `--receiver`, direct or through BriefKAsten's grid
+/// (`--communication-policy`).
+template <typename F>
+void with_briefkasten_queue(graph::Graph const& G, Config const& conf, F&& f) {
+  MPI_Comm const comm = G.comm().mpi_handle();
+  auto const config = briefkasten_config(conf);
+  auto const with = [&](auto queue) -> void {
+    if (conf.communication_policy == CommunicationPolicy::grid) {
+      briefkasten::IndirectionAdapter grid_queue{
+          std::move(queue), briefkasten::GridIndirectionScheme{comm}};
+      f(grid_queue, std::as_const(grid_queue.queue()));
+    } else {
+      f(queue, std::as_const(queue));
+    }
+  };
+  switch (conf.receiver) {
+    case Receiver::persistent:
+      with(make_briefkasten_queue<briefkasten::PersistentReceiver>(comm,
+                                                                    config));
+      break;
+    case Receiver::probe:
+      with(make_briefkasten_queue<briefkasten::ProbeReceiver>(comm, config));
+      break;
+    case Receiver::posted:
+      with(make_briefkasten_queue<briefkasten::PrepostingReceiver>(comm,
+                                                                    config));
+      break;
+  }
+}
+
+/// Reports the counters of the BriefKAsten queue (the one under the grid
+/// adapter) to the open Caliper region. Messages are buffers (each hop),
+/// send volume the elements sent (each hop, with the 2-word header of every
+/// message), receive volume the elements of the messages delivered here (with
+/// their headers; what a proxy relays is not included).
+template <typename Queue>
+void report_briefkasten_counters(Queue const& queue,
+                                 std::size_t receive_volume) {
+  auto const counts = queue.message_counts();
+  profiling::MessageStatistics{.sent_messages = counts.send,
+                               .received_messages = counts.receive,
+                               .send_volume = queue.num_elements_flushed(),
+                               .receive_volume = receive_volume}
+      .report();
+  auto const add = [](char const* name, std::size_t value) {
+    profiling::counter_add(name, static_cast<std::int64_t>(value));
+  };
+  add("overflows", queue.num_overflows());
+  add("buffer_stalls", queue.num_buffer_stalls());
+  add("send_capacity_waits", queue.num_send_capacity_waits());
+  add("parked_for_credit", queue.num_parked_for_credit());
+  add("parked_for_capacity", queue.num_parked_for_capacity());
+  add("oversize_passes", queue.num_oversize_passes());
+  add("large_messages", queue.num_large_messages());
+  add("large_message_elements", queue.num_large_message_elements());
+  add("forced_flushes", queue.num_forced_flushes());
+  add("idle_flushes", queue.num_idle_flushes());
+  add("idle_flush_elements", queue.num_idle_flush_elements());
+  add("polls", queue.num_polls());
+  add("unproductive_polls", queue.num_unproductive_polls());
+  add("termination_rounds", queue.num_termination_rounds());
+  // the most buffers waiting for a send slot at once (use the max over ranks)
+  add("peak_send_backlog", queue.peak_send_backlog());
+}
+
 /// The global phase: sends the message of every local vertex v with cut edges
 /// once to each rank holding the head of a cut out-edge of v, and handles the
-/// received messages. `threshold` is the message queue's buffer size.
+/// received messages, through the legacy message queue (`threshold` is its
+/// buffer size) or BriefKAsten (`--message-queue`).
 ///
 /// A neighborhood is ascending and the vertex ranges are contiguous in rank
 /// order, so the heads on one rank form a run: an entry beyond the current
@@ -213,43 +324,23 @@ inline void global_phase(graph::Graph const& G,
                          TriangleCounter& triangles) {
   CALI_CXX_MARK_SCOPE("global_phase");
   auto const triangles_before = triangles.count();
-  // the legacy message queue communicates on MPI_COMM_WORLD, whatever the
-  // graph's communicator is (until BriefKAsten replaces it)
-  int comparison = MPI_UNEQUAL;
-  MPI_Comm_compare(G.comm().mpi_handle(), MPI_COMM_WORLD, &comparison);
-  if (comparison != MPI_IDENT && comparison != MPI_CONGRUENT) {
-    throw std::invalid_argument(
-        "the global phase needs MPI_COMM_WORLD (legacy message queue)");
-  }
-  auto base_queue =
-      message_queue::make_buffered_queue<graph::VertexId>(Merger{}, Splitter{});
-  // `--communication-policy`: calls `f` with the queue, direct or through the
-  // 2D grid adaptor
-  auto const with_queue = [&](auto&& f) -> void {
-    if (conf.communication_policy == CommunicationPolicy::grid) {
-      IndirectMessageQueueAdaptor queue(base_queue);
-      f(queue);
-    } else {
-      f(base_queue);
-    }
-  };
   GlobalPhaseCounters counters;
   // Time spent building and posting messages and handling received ones (the
   // intersections), accumulated per call because a Caliper region per message
   // would cost more than the work it measures. `send_time` is the loop outside
-  // `poll` (building and posting, skipping vertices without cut edges);
-  // `poll_time` is the time in `poll` outside the handler (the queue's own
-  // work); one clock reading per boundary, two per sender. `handle_time`
-  // includes messages handled during termination, which is also counted
-  // separately, so the region `termination` minus that part is the wait for
-  // the other ranks.
+  // `poll` (building and posting, skipping vertices without cut edges; without
+  // messages handled while posting, which BriefKAsten does when it waits for a
+  // buffer or a send slot); `poll_time` is the time in `poll` outside the
+  // handler (the queue's own work); one clock reading per boundary, two per
+  // sender. `handle_time` includes messages handled during termination, which
+  // is also counted separately, so the region `termination` minus that part is
+  // the wait for the other ranks.
   using clock = std::chrono::steady_clock;
   clock::duration send_time{};
   clock::duration handle_time{};
   clock::duration poll_time{};
   clock::duration termination_handle_time{};
-  auto on_message = [&](std::span<graph::VertexId const> message,
-                        int /*sender*/) {
+  auto on_message = [&](std::span<graph::VertexId const> message) {
     auto const start = clock::now();
     process_message(G, conf, message, counters, triangles);
     handle_time += clock::now() - start;
@@ -258,9 +349,11 @@ inline void global_phase(graph::Graph const& G,
   std::vector<graph::VertexId> trimmed_message;
   std::size_t trimmed_entries = 0;
   std::size_t dropped_messages = 0;
-  with_queue([&](auto& queue) -> void {
-    queue.set_threshold(threshold);
+  // The send loop and the termination, with `post(message, destination)`,
+  // `poll()` and `terminate()` (returns once all ranks are done) of the queue.
+  auto const exchange = [&](auto&& post, auto&& poll, auto&& terminate) {
     auto send_start = clock::now();
+    auto handle_before_send = handle_time;
     for (graph::VertexHandle const v : G.local_vertices()) {
       if (!G.has_cut_edges(v)) {
         continue;
@@ -270,7 +363,7 @@ inline void global_phase(graph::Graph const& G,
       if (conf.pseudo2core && neighbors.size() < 2) {
         counters.skipped_nodes++;
       } else if (conf.message_trimming) {
-        post_trimmed_messages(G, v, queue, trimmed_message, trimmed_entries,
+        post_trimmed_messages(G, v, post, trimmed_message, trimmed_entries,
                               dropped_messages);
       } else {
         auto const message = make_message(G, v);
@@ -285,32 +378,83 @@ inline void global_phase(graph::Graph const& G,
           }
           int const destination = G.owner_of_id(w);
           destination_end = G.range_of(destination).second;
-          queue.post_message(std::span<graph::VertexId const>(message),
-                             destination);
+          post(std::span<graph::VertexId const>(message), destination);
         }
       }
       auto const poll_start = clock::now();
-      send_time += poll_start - send_start;
       auto const handle_before = handle_time;
-      queue.poll(on_message);
+      send_time += (poll_start - send_start) - (handle_time - handle_before_send);
+      poll();
       send_start = clock::now();
+      handle_before_send = handle_time;
       poll_time += (send_start - poll_start) - (handle_time - handle_before);
     }
-    send_time += clock::now() - send_start;
-    {
-      CALI_CXX_MARK_SCOPE("termination");
-      auto const handle_before = handle_time;
-      queue.terminate(on_message);
-      termination_handle_time = handle_time - handle_before;
+    send_time += (clock::now() - send_start) - (handle_time - handle_before_send);
+    CALI_CXX_MARK_SCOPE("termination");
+    auto const handle_before = handle_time;
+    terminate();
+    termination_handle_time = handle_time - handle_before;
+  };
+  if (conf.message_queue == MessageQueue::legacy) {
+    // the legacy message queue communicates on MPI_COMM_WORLD, whatever the
+    // graph's communicator is
+    int comparison = MPI_UNEQUAL;
+    MPI_Comm_compare(G.comm().mpi_handle(), MPI_COMM_WORLD, &comparison);
+    if (comparison != MPI_IDENT && comparison != MPI_CONGRUENT) {
+      throw std::invalid_argument(
+          "the legacy message queue needs MPI_COMM_WORLD");
     }
-    auto const& stats = queue.stats();
-    profiling::MessageStatistics{
-        .sent_messages = stats.sent_messages,
-        .received_messages = stats.received_messages,
-        .send_volume = stats.send_volume,
-        .receive_volume = stats.receive_volume}
-        .report();
-  });
+    auto base_queue = message_queue::make_buffered_queue<graph::VertexId>(
+        Merger{}, Splitter{});
+    auto const on_legacy_message =
+        [&](std::span<graph::VertexId const> message, int /*sender*/) {
+          on_message(message);
+        };
+    // `--communication-policy`: direct or through katric's 2D grid adaptor
+    auto const run = [&](auto& queue) -> void {
+      queue.set_threshold(threshold);
+      exchange(
+          [&](std::span<graph::VertexId const> message, int destination) {
+            queue.post_message(message, destination);
+          },
+          [&] { queue.poll(on_legacy_message); },
+          [&] { queue.terminate(on_legacy_message); });
+      auto const& stats = queue.stats();
+      profiling::MessageStatistics{
+          .sent_messages = stats.sent_messages,
+          .received_messages = stats.received_messages,
+          .send_volume = stats.send_volume,
+          .receive_volume = stats.receive_volume}
+          .report();
+    };
+    if (conf.communication_policy == CommunicationPolicy::grid) {
+      IndirectMessageQueueAdaptor queue(base_queue);
+      run(queue);
+    } else {
+      run(base_queue);
+    }
+  } else {
+    std::size_t receive_volume = 0;
+    auto const on_briefkasten_message = [&](auto envelope) {
+      receive_volume += envelope.message.size() + 2;
+      on_message(envelope.message);
+    };
+    with_briefkasten_queue(G, conf, [&](auto& queue, auto const& base_queue) {
+      exchange(
+          [&](std::span<graph::VertexId const> message, int destination) {
+            // a message is taken as an rvalue range (a copy of the span)
+            queue.post_message_blocking(
+                std::span<graph::VertexId const>(message), destination,
+                on_briefkasten_message);
+          },
+          [&] { queue.poll(on_briefkasten_message); },
+          [&] {
+            while (!queue.terminate(on_briefkasten_message)) {
+            }
+          });
+      report_briefkasten_counters(base_queue, receive_volume);
+    });
+  }
   counters.report();
   if (conf.message_trimming) {
     profiling::counter_add("trimmed_entries",

@@ -105,13 +105,48 @@ The grid already scales this way today (`baseline_26_11_20`, 192 -> 3072: permut
    comparable. Messages and volume from `message_counts()`; new counters: overflows, buffer stalls, send capacity waits,
    parked for credit / capacity, oversize passes, large messages, idle flushes, polls / unproductive polls, peak
    send backlog.
+   Done 2026-11-24 (with step 4): `global_phase` runs one send loop / termination (`exchange`) on either queue;
+   BriefKAsten from `with_briefkasten_queue` (`--receiver` as a template parameter, grid via
+   `IndirectionAdapter{queue, GridIndirectionScheme{comm}}`) on `G.comm()`, `EnvelopeSerializationMerger` /
+   `Splitter<VertexId>` (spans into the buffer). `post_message_blocking` may handle messages while it waits; their
+   time is in `handle_ns`, not `send_ns`. Counters (`report_briefkasten_counters`, under the grid adapter its
+   queue): messages = buffers per hop, `send_volume` = elements flushed per hop incl. the 2-word header,
+   `receive_volume` = delivered messages incl. header (relayed ones not counted); plus overflows, buffer_stalls,
+   send_capacity_waits, parked_for_credit / _capacity, oversize_passes, large_messages (+ _elements),
+   forced_flushes, idle_flushes (+ _elements), polls, unproductive_polls, termination_rounds, peak_send_backlog.
+   Laptop, permuted RGG 2^16, 4 ranks, DiTriC: work counters identical to legacy; volume +6 % (header 2 words vs
+   sentinel 1); 6178 buffers at 4 KiB vs 540 legacy messages (n-word threshold at 4 ranks is ~130 KiB).
 4. **Options.** `--message-queue legacy|briefkasten` for the transition (legacy keeps `--threshold` /
    `--threshold-scale`); for BriefKAsten `--buffer-size` (local threshold, bytes), `--request-slots`,
    `--flow-control` / `--no-flow-control`, `--receiver persistent|probe|posted`, `--idle-flush`. Suites that compare
    with earlier data pin `message-queue: legacy`, as for the defaults on 2026-11-23.
+   Done 2026-11-24: defaults `--message-queue legacy` (until step 7, so existing suites need no pin yet),
+   `--buffer-size 4096`, `--request-slots 8`, flow control on, `--receiver persistent`, `--idle-flush all`
+   (BriefKAsten's defaults except the buffer size, KaCCv2's 4 KiB). ctest configs `ditric-briefkasten` and
+   `cetric-briefkasten-grid` (256 B buffers, so large messages occur).
 5. **Local validation.** Identical triangle counts on the refcheck inputs (DiTriC / CETRIC, trimming on / off,
    direct / grid, 2-8 ranks), plus a tiny buffer (e.g. 64 B) so every message takes the oversized path, and
    `--no-flow-control`. One small run per variant, not the whole test suite.
+   Run 2026-11-24 (4 inputs: hiv, com-amazon, permuted RGG 2^14, RMAT 2^14; 2 / 4 / 9 ranks; DiTriC with trimming,
+   CETRIC without; direct / grid; 7 BriefKAsten variants vs legacy). Found two BriefKAsten hangs, both only when
+   messages are larger than a buffer:
+   - **Credit stall (fixed).** The receiver grants once half the window W has freed up, so with nothing in flight
+     the credit stays anywhere in (W/2, W]; `has_credit` passed only buffers > W, so a large-message buffer in
+     (credit, W] waited forever (RMAT, direct, 64 B and 256 B buffers). Normal buffers are <= W/8 (8 credit
+     buffers); with `num_credit_buffers = 1` normal buffers could hit it too. Fix: pass buffers > W/2 once any
+     credit is left. BriefKAsten `fix/oversized-messages` @ b75b61f (pushed, PR #24), with a test (message
+     sizes 5 and 7 buffers, hung at 4 / 9 ranks) and a barrier between the tests of `large_message_test` (shared
+     communicator and tags; a previous queue's persistent receive could match the next test's message, receiver
+     destructor assertion). `feat/contiguous-envelope-serialization` rebased on it @ 0062f64 (PR #25); katric pinned to 0062f64.
+     `idle_flush_test` at 9 ranks fails that destructor assertion in ~1/3 of runs with and without the fix
+     (same isolation problem, presumably; not touched).
+   - **Grid without flow control: expected, not a bug.** Proxies forward from inside the receive handler with
+     `post_message_blocking`; each waits for a send slot to the other while its own receiver is busy (nested):
+     a cyclic wait. Bounded memory plus blocking is only safe with credit-based flow control (a proxy then parks
+     instead of blocking); direct mode is safe without it (no handler posts). Showed up only with 64 B buffers
+     (every message large, rendezvous sends hold their slot); with a lower eager limit on the cluster, normal
+     buffers could hit it too. katric rejects `--communication-policy grid --no-flow-control` with BriefKAsten (`parse_config`).
+
 6. **Cluster suite `briefkasten`.** Permuted RGG N18 and GNM N16 (then permuted RHG, RMAT): legacy direct / grid vs
    BriefKAsten direct / grid x C in {4, 16, 64} KiB, defaults otherwise, 3 iterations; cores set at job creation
    (192-3072 shows the trend). Questions: does the global phase stay flat with p; polling cost per message; which C;

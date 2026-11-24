@@ -161,13 +161,14 @@ FetchContent_Declare(
 # the legacy queue stays behind --message-queue legacy for reproducing earlier results. Pinned to a commit (not a
 # branch, not shallow: FetchContent keeps whatever a branch pin cloned first). Its own kamping / kassert declarations
 # are shadowed by katric's (declared first). C++23, so no range-v3.
-# b981e72 = feat/idle-flush + PR #24 (fix/oversized-messages: messages larger than a buffer, flow-control accounting)
-# + PR #25 (feat/contiguous-envelope-serialization: in-place EnvelopeSerializationMerger, contiguous split messages).
+# 0062f64 = feat/idle-flush + PR #24 (fix/oversized-messages: messages larger than a buffer, flow-control accounting,
+# oversize pass above half the credit window) + PR #25 (feat/contiguous-envelope-serialization: in-place
+# EnvelopeSerializationMerger, contiguous split messages).
 set(BRIEFKASTEN_USE_CXX23 ON)
 FetchContent_Declare(
   BriefKAsten
   GIT_REPOSITORY https://github.com/niklas-uhl/BriefKAsten
-  GIT_TAG b981e72d65e087ccec293120cd38638725b268df # feat/contiguous-envelope-serialization (stacked on #24)
+  GIT_TAG 0062f64db119df1f0bd8635313b3826c4e941e26 # feat/contiguous-envelope-serialization (stacked on #24)
   SYSTEM)
 
 # katric's own kassert instance (kassert::kassert, used by no other dependency). Its default level applies to every target

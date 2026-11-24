@@ -70,6 +70,30 @@ enum class CommunicationPolicy {
   grid,    ///< through a 2D grid of indirections (one proxy per message)
 };
 
+/// The message queue of the global phase, `--message-queue`
+/// (doc/briefkasten-migration.md).
+enum class MessageQueue {
+  legacy,       ///< the old message-queue: one global threshold (`--threshold`),
+                ///< flushes every buffer on overflow; grid through katric's
+                ///< own adaptor. Kept for reproducing earlier results.
+  briefkasten,  ///< BriefKAsten: a capacity per destination buffer
+                ///< (`--buffer-size`), bounded outstanding sends, credit-based
+                ///< flow control, its own grid indirection
+};
+/// BriefKAsten's receive strategy, `--receiver`.
+enum class Receiver {
+  persistent,  ///< persistent receive requests (BriefKAsten's default)
+  probe,       ///< MPI_Improbe, then a receive of the probed size
+  posted,      ///< preposted receives
+};
+/// What BriefKAsten flushes when a rank runs out of work (in `terminate`),
+/// `--idle-flush`.
+enum class IdleFlush {
+  off,    ///< nothing: buffers leave when full or in the termination drain
+  all,    ///< every non-empty buffer (BriefKAsten's default)
+  stale,  ///< the buffers that did not grow since the previous attempt
+};
+
 struct Config {
   std::string kagen_option_string;
   std::size_t iterations = 1;
@@ -86,6 +110,16 @@ struct Config {
   Threshold threshold = Threshold::local_nodes;
   double threshold_scale = 1.0;
   CommunicationPolicy communication_policy = CommunicationPolicy::direct;
+  MessageQueue message_queue = MessageQueue::legacy;
+  /// BriefKAsten: capacity of a destination's buffer in bytes (local
+  /// threshold); a message larger than it is sent on its own
+  std::size_t buffer_size = 4096;
+  /// BriefKAsten: sends in flight at once
+  std::size_t request_slots = 8;
+  /// BriefKAsten: credit-based flow control (window per peer)
+  bool flow_control = true;
+  Receiver receiver = Receiver::persistent;
+  IdleFlush idle_flush = IdleFlush::all;
   bool local_parallel = false;
   bool global_parallel = false;
   bool parallel_compact = false;

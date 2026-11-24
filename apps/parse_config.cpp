@@ -140,8 +140,22 @@ auto parse_config(std::span<char*> argv, kamping::v2::comm_view comm)
   add_enum_option(app, "--task-pool-type", conf.task_pool_type);
   app.add_flag("--task-priorities", conf.task_priorities);
 
+  add_enum_option(app, "--message-queue", conf.message_queue);
+  // legacy queue only
   add_enum_option(app, "--threshold", conf.threshold);
   app.add_option("--threshold-scale", conf.threshold_scale);
+  // BriefKAsten only
+  app.add_option("--buffer-size", conf.buffer_size,
+                 "BriefKAsten: bytes per destination buffer")
+      ->check(CLI::PositiveNumber);
+  app.add_option("--request-slots", conf.request_slots,
+                 "BriefKAsten: sends in flight at once")
+      ->check(CLI::PositiveNumber);
+  app.add_flag("--flow-control,!--no-flow-control", conf.flow_control,
+               "BriefKAsten: credit-based flow control")
+      ->default_str("true");
+  add_enum_option(app, "--receiver", conf.receiver);
+  add_enum_option(app, "--idle-flush", conf.idle_flush);
 
   add_enum_option(app, "--intersection-method", conf.intersection_method);
   app.add_option("--binary-intersection-cutoff",
@@ -160,6 +174,19 @@ auto parse_config(std::span<char*> argv, kamping::v2::comm_view comm)
       std::exit(1);
     }
     conf.contraction = algorithm != "patric";
+  }
+  // BriefKAsten's grid proxies forward from inside the receive handler and
+  // block for a send slot; without credit-based flow control two proxies can
+  // wait for each other (doc/briefkasten-migration.md, step 5)
+  if (conf.message_queue == katric::MessageQueue::briefkasten &&
+      conf.communication_policy == katric::CommunicationPolicy::grid &&
+      !conf.flow_control) {
+    if (comm.rank() == 0) {
+      std::cerr << "--communication-policy grid needs flow control with "
+                   "--message-queue briefkasten (drop --no-flow-control)\n";
+    }
+    MPI_Finalize();
+    std::exit(1);
   }
   if (conf.num_threads == 0) {
     conf.num_threads = tbb::this_task_arena::max_concurrency();
