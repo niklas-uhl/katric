@@ -2,6 +2,7 @@
 # of ~25 KB): BriefKAsten sends them as large messages (counters large_messages, oversize_passes). With load balancing
 # (the defaults: IDPD, threshold 1.5, precheck degree-bound), as RMAT needs it. Run up to `--max-cores 768` (as
 # `baseline-rmat`). 10 configurations per core count (with `--poll-skip 100` at 16 KiB, as `briefkasten`).
+# poll-skip: 1 pinned 2026-11-25, when the default became 100 (the suite ran with 1).
 name: briefkasten-rmat
 executable: apps/katric
 output_path_option_name: caliper-output
@@ -27,6 +28,7 @@ config:
   - message-queue: briefkasten
     communication-policy: [direct, grid]
     buffer-size: [4096, 16384, 65536]
+    poll-skip: 1
     message-trimming: true
     degree-exchange: dense
     intersection-method: merge

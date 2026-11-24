@@ -225,6 +225,27 @@ The grid already scales this way today (`baseline_26_11_20`, 192 -> 3072: permut
    `--poll-skip 100` (direct / grid, RMAT and permuted RGG, 4 / 9 ranks, also 256 B / 1 slot). Suites
    `briefkasten-tuning` (+ `-rmat`): direct 4 KiB x `--request-slots` 8 / 32 x `--poll-skip` 1 / 100. Decide the
    defaults of both from it.
+   **Results 2026-11-25** (`briefkasten-tuning_26_11_24`, `-rmat`; 3072 missing). Global phase, s:
+
+   | input, cores | slots 8 / skip 1 | 8 / 100 | 32 / 1 | 32 / 100 |
+   |---|---|---|---|---|
+   | RGG perm. 192 | 4.60 | 4.04 | 5.01 | 4.23 |
+   | RGG perm. 1536 | 4.92 | 4.48 | 5.52 | 4.68 |
+   | GNM 1536 | 1.43 | 1.08 | 1.56 | 1.33 |
+   | RHG perm. 1536 | 4.54 | 4.09 | 5.07 | 4.28 |
+   | RMAT 48 | 6.93 | 6.83 | 7.20 | 6.89 |
+   | RMAT 768 | 27.5 | 27.6 | 27.0 | 25.8 |
+
+   With 75d4f95, `--poll-skip 100` is best or equal everywhere (no blow-up up to 1536). 32 slots are slower on
+   RGG / GNM / RHG; on RMAT 32 / 100 is ~7 % faster at 768, but buffers still park for a slot (105 K per rank vs
+   145 K with 8): the busiest rank's volume, not the slot count. Decided: default `--poll-skip 100`, request slots
+   stay 8 (revisit RMAT with the 3072 data). Suites that ran with skip 1 (`briefkasten`, `-rmat`, `-cma-debug`) pin
+   `poll-skip: 1`.
+   **CMA debug, first run** (`briefkasten-cma-debug_26_11_24`): only c4 (direct) passed; all grid runs completed
+   iteration 1 with the right count and aborted in iteration 2, also those with `I_MPI_SHM_CMA=0`, in the same CMA
+   code: the variable is not documented for Intel MPI 2021.15 and had no effect. The suite now uses
+   `I_MPI_SHM=off` (no shared-memory transport) with `I_MPI_DEBUG=5`. Earlier, at 768 cores, the grid runs (and
+   legacy grid) aborted in iteration 1, so it is timing-dependent, not a carry-over between iterations as such.
 
 ## Decisions (2026-11-24)
 

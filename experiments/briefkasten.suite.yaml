@@ -9,6 +9,7 @@
 # Run at `--min-cores 192 --max-cores 3072` (as `baseline`). Memory: up to ~2 p buffers per rank with flow control,
 # 384 MiB at 3072 cores with 64 KiB (direct). Build with the experiments preset, submit with --copy-binary.
 # 10 configurations per input and core count. RMAT is in briefkasten-rmat.
+# poll-skip: 1 pinned 2026-11-25, when the default became 100 (the suite ran with 1).
 name: briefkasten
 executable: apps/katric
 output_path_option_name: caliper-output
@@ -51,6 +52,7 @@ config:
     communication-policy: [direct, grid]
     buffer-size: [4096, 16384, 65536]
     primary-cost-function: none
+    poll-skip: 1
     message-trimming: true
     degree-exchange: dense
     intersection-method: merge

@@ -114,8 +114,9 @@ struct Config {
   bool flow_control = true;
   Receiver receiver = Receiver::persistent;
   /// BriefKAsten: poll only on every n-th sender vertex (1: on every one, as
-  /// the legacy queue)
-  std::size_t poll_skip = 1;
+  /// the legacy queue); BriefKAsten polls on every call anyway while buffers
+  /// wait. 100 since 2026-11-25 (`briefkasten-tuning`)
+  std::size_t poll_skip = 100;
   bool local_parallel = false;
   bool global_parallel = false;
   bool parallel_compact = false;
