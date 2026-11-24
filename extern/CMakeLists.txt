@@ -246,7 +246,7 @@ if(KATRIC_COMPETITOR_XXTRIC)
   FetchContent_Declare(
     xxtric
     GIT_REPOSITORY https://github.com/niklas-uhl/xxtric
-    GIT_TAG 8036c9a982556c210a12198b88f59a43780f15bd # katric (on sg0/xxtric main eb797a3)
+    GIT_TAG 45215321b44f2434d4787a24e52586ca6cf888a6 # katric (on sg0/xxtric main eb797a3)
     SYSTEM EXCLUDE_FROM_ALL)
   FetchContent_MakeAvailable(xxtric)
 endif()

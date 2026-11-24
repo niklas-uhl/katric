@@ -238,10 +238,11 @@ that (`bufastric`, `hashfastric2` identical).
   `namespace xxtric`. CUDA variants, `main.cpp` and Makefiles untouched and unbuilt.
 - **Native input, regions, `reset()`:** as TriC's buffered variants (same `Graph`, `edge_stat_` rebuilt).
   `--xxtric-buffer-size` defaults to its `-1` (2 × ghost entries, no cap).
-- **Same bugs as TriC** (not fixed yet, pending decision): degree-0 vertices read `edge e1-1` out of range (RMAT
-  aborts); the buffer shrinks to 2 with one remote wedge and `count()` never ends (`triangle.metis` on 4 ranks).
-  Also `Graph::operator delete` calls `free()` on memory from `operator new`.
-- **Validation so far:** correct on hiv, com-amazon, RGG2D, RHG, GNM at 1, 2, 4 ranks.
+- **Fixed as on TriC** (marked `// katric:`): degree-0 vertices read `edge e1-1` out of range (RMAT aborted); the
+  buffer shrank to 2 with one remote wedge and `count()` never ended (`triangle.metis` on 4 ranks);
+  `Graph::operator delete` called `free()` on memory from `operator new` (removed).
+- **Validation:** `--verify --iterations 2` at 1, 2, 4 ranks, default buffer and `--xxtric-buffer-size 8000`:
+  triangle, hiv, com-amazon, RGG2D, RHG, GNM, RMAT. ctests `katric.<graph>.xxtric[-buffer-size].<p>cores`.
 
 ### TriC: findings (2026-11-21, rebased 2026-11-24)
 
