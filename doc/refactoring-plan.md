@@ -474,6 +474,13 @@ by those `.cpp` files):
     table + scan 45), so the search is branchless. Locally (4 ranks, permuted RGG 2^20) the dedupe loop costs 50 ms
     vs 45 ms with the array, same triangle count. Next: rerun `straggler-debug` (search vs array vs huge-page array
     at 1536)
+  - Rerun `straggler-debug_rerun_26_11_24` (4c7789c): the straggler is gone. Pattern build max/median 1.10-1.13 on
+    all inputs (was 3.4x on N18: max 1044-1049 ms vs median 306-315). Medians: N18 301 ms (was 306-315), N17 149 ms
+    (was 352: every rank paid the array there), N19 609-612 ms (was 627). Triangle counts identical to the first run
+    (all 8 runs). The search alone costs more than the array in the isolated dedupe stage (272 vs 155 ms at N18), but
+    the real build is not slower: the search is compute and overlaps the build's other memory accesses, the array
+    read was latency. The debug's own fresh owner array still turns slow on 51-246 ranks (max ~880 ms), so the
+    backing effect stays for any large randomly read array in that size band (watch the ghost degree arrays)
 
 ### 1. Prune
 
