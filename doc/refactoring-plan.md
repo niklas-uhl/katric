@@ -402,6 +402,52 @@ by those `.cpp` files):
        `rebalance-rmat`), then a volume term in the cost or idea 1 (compute at the tail, DPD)
     4. The redistribution itself (`from_kagen`, ~2.5 s at 1536 permuted): 2026-11-21 step 2
 
+- Partial data 2026-11-23, evening (jobs still running: `straggler_rerun`, `rhg-seeds` beyond 1536 none,
+  `rmat-volume` 192-768; `rmat-volume` 192 finished but not fetched)
+  - `rmat-volume` 48 / 96 (per rank): send volume max/avg 2.3, tracking out_edges / cut_out_edges (max/avg 2.9-3.3,
+    correlation 0.98-0.99) and local_nodes (max/avg 7-10). The top senders (every 16th rank: r15, r31, r47 at 48; r31,
+    r63, r95 at 96) hold 15-40x the median vertices, low-degree ones: IDPD gives them many cheap vertices, so their
+    out-edges (and cut out-edges) are ~3x the median, with fewer targets per cut edge (volume / cut out-edge 25-41 vs
+    33-58). Work is balanced (wedge checks max/avg 1.05), receive volume nearly (1.18-1.25), and at 48 / 96 the global
+    phase time too (max/avg 1.01-1.02): the volume imbalance does not cost time yet at this scale. Check at 192-768
+    whether it does; if so, the cost needs a send term (Σ over a vertex's cut out-edges), not only IDPD's work
+  - `rmat-volume` 192 / 384 (more data, same evening): every rank's global phase takes the same time (all wait in
+    `termination`), so per-rank phase times say nothing; the rank finishing last is the one sending least. Per rank
+    busy time (send + handle + poll) of the busiest rank ~ the phase (21.9 of 22.5 s at 384). Handling dominates:
+    avg 5.95 -> 11.1 s from 48 to 384 (wedge checks per rank 4.6e8 -> 9.7e8: RMAT does not weak-scale), max/avg
+    1.3-1.4 although wedge checks are balanced (1.03-1.09) -- the handling cost per wedge check differs between
+    ranks. Polling grows with p (avg 0.8 -> 5.2 s, max 11.6 s at 384). Sending is small (avg 1.9 s at 384, max 5.9 s);
+    up to 384 the send-volume imbalance (max/avg 2.3 -> 3.05) does not decide the time.
+    At 768 it does: global phase 51.8 s, busy avg 28.3 / max 46.7 s; polling avg 11.5 / max 35.2 s (3.1x), sending
+    avg 3.2 / max 10 s (3.2x), handling 1.25x; the busy time correlates 0.91 with send volume and with receive volume
+    (receive max/avg 1.46), polling 0.87-0.90 with send volume / messages; wedge checks only 0.61. So the cost
+    function needs a volume term from ~768 on (send: the vertex's cut out-edges x out-degree, as the model's
+    DPD+reply), or idea 1; and polling is for BriefKAsten
+  - `rhg-seeds` (1536 / 3072 except the `phases` seed's 3072 IDPD and seed 28475421 permuted 3072): the 19 M hub is
+    an outlier of the `phases` seed (seeds 1 / 2: hub 1.0-1.4 M at 3072, RHG none 1.28-1.38 s at 3072, as at 1536).
+    The defaults never rebalance RHG (IDPD max/avg 1.10-1.21 < 1.5), so the achievable-balance rule was not exercised
+    yet (needs the `phases` seed at 3072). The degree bound is loose on RHG (max/avg 1.4-2.9, its largest vertex up to
+    1.9x the average rank), so the out-degree exchange runs anyway: IDPD vs none +0.1-0.3 s on RHG, +0.6-1.3 s on
+    permuted RHG (~10%). The orientation reuse shows: preprocessing on permuted RHG 0.46 s (2026-11-23 rebalance) ->
+    0.20 s
+  - `rhg-seeds`, `phases` seed at 3072 (the case for the achievable-balance rule): kept, by the degree-bound check
+    already (its largest vertex sets the achievable); RHG 5.5 s vs none 5.2 s (was 9.4 s rebalanced), permuted
+    16.3 vs 15.8 s (was 25.4 s). The rule works
+  - `rebalance-rmat_26_11_23` (IDPD, degree-bound pre-check, before the orientation reuse): 10.0 / 13.7 / 20.3 /
+    33.9 / 69.9 s at 48-768, as 2026-11-21 (9.7-68.4 s): the pre-check exceeds on RMAT and IDPD runs as before
+  - `straggler_rerun` (all four variants; glibc 2.38, THP always, defrag madvise): the huge-page / mmap-threshold
+    hypothesis is refuted. In every variant (hugetlb, fixed threshold 1 MiB / 32 MiB) the slow ranks stay (pattern
+    max/avg 2.8-3.1) with the same 6.8 M dTLB misses; with a fixed threshold the median rank's misses drop 300 K ->
+    1.3 K without changing its time. The slow ranks' misses do not come from where malloc places the arrays. Next:
+    does the slow set follow the data (another seed) or the rank position (same seed at another p; the slow ranks are
+    all >= ~1030, i.e. vertex ids >= 2^28)? Then perf record on one slow rank
+- Straggler, 2026-11-24: perf on one rank is impractical on SuperMUC-NG, so printed diagnostics instead
+  (`KATRIC_STRAGGLER_DEBUG`, include/katric/straggler_debug.h, before the region `pattern`): per rank the smaps VMAs
+  and NUMA nodes of adjncy / owners and of two fresh copies of owners (a vector, a madvise(MADV_HUGEPAGE) buffer), and
+  the pattern build's loop in stages (scan, is_local, owner lookup, dedupe; dedupe on both copies; the real build).
+  Suite `straggler-debug` (1536): N18 with the `straggler` seed and seed 1 (data or rank?), N17 (no id >= 2^28) and
+  N19 (ids >= 2^28 from rank 512). The Linux part is untested locally
+
 ### 1. Prune
 
 Options that are dead or only used in old exploration suites (`experiments/legacy`), never in the paper suites.
