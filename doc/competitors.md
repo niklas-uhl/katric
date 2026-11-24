@@ -275,10 +275,10 @@ that (`bufastric`, `hashfastric2` identical).
     `cl_conf_t clampi` defined in a header (fails with `-fno-common`).
   - Portability only (Linux/x86 unchanged): SSE `memcpy` only on x86_64, `aligned_alloc` size rounded on macOS,
     `cpu_set_t` code only on Linux.
-- **Known, not fixed:** `--lcc-degree-reduction` crashes on a rank without edges after its 1D split
-  (`for (i = 0; i < nedge - 1; ...)` with unsigned `nedge = 0`; `triangle.metis` on 4 ranks).
-- **Validation:** `--verify --iterations 2` at 1, 2, 4 ranks (`OMP_NUM_THREADS=1`, 64 MiB cache): triangle, hiv,
-  com-amazon, RGG2D, RHG, GNM, RMAT; with `--lcc-degree-reduction` all but the case above.
+  - LCC, `--lcc-degree-reduction`: a rank without edges after its 1D split scanned with `nedge - 1` wrapped around
+    and read `r_ed[-2]` (`triangle.metis` on 4 ranks).
+- **Validation:** `--verify --iterations 2` at 1, 2, 4 ranks (`OMP_NUM_THREADS=1`, 64 MiB cache), with and without
+  `--lcc-degree-reduction`: triangle, hiv, com-amazon, RGG2D, RHG, GNM, RMAT. 16 ctests.
 
 ### TriC: findings (2026-11-21, rebased 2026-11-24)
 

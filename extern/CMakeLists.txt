@@ -256,7 +256,7 @@ if(KATRIC_COMPETITOR_LCC)
   FetchContent_Declare(
     lcc
     GIT_REPOSITORY https://github.com/niklas-uhl/lcc
-    GIT_TAG 1671e526e40432b4bb9b3051ad200de67de406d2 # katric (on fvella/lcc master 42c30b0)
+    GIT_TAG bf2404139dbdba9202d2666dac76db72b3285115 # katric (on fvella/lcc master 42c30b0)
     SYSTEM EXCLUDE_FROM_ALL)
   FetchContent_MakeAvailable(lcc)
 endif()
