@@ -217,8 +217,8 @@ The grid already scales this way today (`baseline_26_11_20`, 192 -> 3072: permut
    Done 2026-11-25: default `--message-queue briefkasten` (`--buffer-size 4096`, `--poll-skip 1` were already the
    defaults); every cluster suite except `briefkasten*` pins `message-queue: legacy` (the local smoke / phases
    suites take the new default). ctest: `ditric-legacy` keeps the legacy queue covered.
-8. **BriefKAsten tweaks** (2026-11-25). BriefKAsten branch `feat/throttled-poll-and-pass-count` @ 75d4f95 (local,
-   on `feat/contiguous-envelope-serialization`): `poll_throttled` polls on every call while buffers are parked or
+8. **BriefKAsten tweaks** (2026-11-25). BriefKAsten branch `feat/throttled-poll-and-pass-count` @ 75d4f95 (PR #26,
+   on `feat/contiguous-envelope-serialization`; katric pinned to it): `poll_throttled` polls on every call while buffers are parked or
    every send slot is taken (it skipped them, which parked buffers for a slot at the top scale); `oversize_passes`
    counted once per send in `track_send` (was per `has_credit` check; `large_message_test` checks passes <= large
    messages, which failed at 9 ranks with the old count). BriefKAsten tests pass; katric counts unchanged with
