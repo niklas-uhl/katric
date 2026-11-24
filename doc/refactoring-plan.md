@@ -481,6 +481,8 @@ by those `.cpp` files):
     the real build is not slower: the search is compute and overlaps the build's other memory accesses, the array
     read was latency. The debug's own fresh owner array still turns slow on 51-246 ranks (max ~880 ms), so the
     backing effect stays for any large randomly read array in that size band (watch the ghost degree arrays)
+- Global phase scaling, 2026-11-24: the growth with p is the message count (legacy queue: one global threshold,
+  flush-all), not the work; plan for the BriefKAsten migration in doc/briefkasten-migration.md
 
 ### 1. Prune
 
