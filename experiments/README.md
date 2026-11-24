@@ -42,6 +42,8 @@ no longer parse.
 | `baseline-rmat` | `baseline` on RMAT with IDPD only (up to 768 cores) |
 | `rebalance` | `--rebalance-threshold` and the cost function IDD (e13a2de): DiTriC, direct, trimming; none / IDPD at 1 (as `baseline`) / IDPD and IDD at 1.5, on the `phases` inputs and GNM (run at 192 to 3072 cores, as `baseline`) |
 | `rebalance-rmat` | IDPD vs IDD at threshold 1.5 on RMAT (up to 768 cores) |
+| `briefkasten` | The global phase on BriefKAsten (`--message-queue briefkasten`, buffer 4 / 16 / 64 KiB) vs the legacy queue, direct / grid: DiTriC, trimming, no load balancing, on permuted RGG, GNM and permuted RHG (192 to 3072 cores; doc/briefkasten-migration.md step 6) |
+| `briefkasten-rmat` | `briefkasten` on RMAT with the default load balancing (large messages; up to 768 cores) |
 | `straggler` | Per-rank times (Caliper recorder via environment variables) of the ghost exchanges on permuted RGG at 1536 cores, IDPD / none, after fadbd12; read with `eval/perrank.py`. Since 2026-11-23 also per-rank resource counters of the pattern build (`eval/perrank.py --counters`) |
 | `rmat-volume` | Per-rank send volume and oriented-graph shape on RMAT with the defaults (IDPD at 1.5), up to 768 cores: where the volume imbalance after balancing comes from (Caliper recorder; `eval/perrank.py --counters`) |
 | `rhg-seeds` | RHG (with and without locality) at 1536 / 3072 with the `phases` seed and two others, none vs IDPD at 1.5: is the 3072 hub an outlier, and does the achievable-balance threshold keep the graph there |

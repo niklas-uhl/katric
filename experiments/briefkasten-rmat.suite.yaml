@@ -1,0 +1,33 @@
+# `briefkasten` on RMAT, where hub messages are larger than a buffer (largest out-degree ~3200 at 768 cores, a message
+# of ~25 KB): BriefKAsten sends them as large messages (counters large_messages, oversize_passes). With load balancing
+# (the defaults: IDPD, threshold 1.5, precheck degree-bound), as RMAT needs it. Run up to `--max-cores 768` (as
+# `baseline-rmat`). 8 configurations per core count.
+name: briefkasten-rmat
+executable: apps/katric
+output_path_option_name: caliper-output
+threads_option_name: num-threads
+ncores: node-size-pow2
+threads_per_rank: [1]
+time_limit: 10
+graphs:
+  - generator: kagen
+    type: rmat
+    N: 16
+    M: 20
+    seed: 28475421
+    scale_weak: true
+config:
+  - message-queue: legacy
+    communication-policy: [direct, grid]
+    threshold: local-nodes
+    message-trimming: true
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 3
+  - message-queue: briefkasten
+    communication-policy: [direct, grid]
+    buffer-size: [4096, 16384, 65536]
+    message-trimming: true
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 3

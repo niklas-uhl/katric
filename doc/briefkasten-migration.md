@@ -139,7 +139,8 @@ The grid already scales this way today (`baseline_26_11_20`, 192 -> 3072: permut
      communicator and tags; a previous queue's persistent receive could match the next test's message, receiver
      destructor assertion). `feat/contiguous-envelope-serialization` rebased on it @ 0062f64 (PR #25); katric pinned to 0062f64.
      `idle_flush_test` at 9 ranks fails that destructor assertion in ~1/3 of runs with and without the fix
-     (same isolation problem, presumably; not touched).
+     (same isolation problem: KaTestrophe's listener does not synchronize the ranks between tests,
+     kamping-site/KaTestrophe.cmake#7).
    - **Grid without flow control: expected, not a bug.** Proxies forward from inside the receive handler with
      `post_message_blocking`; each waits for a send slot to the other while its own receiver is busy (nested):
      a cyclic wait. Bounded memory plus blocking is only safe with credit-based flow control (a proxy then parks
@@ -151,6 +152,11 @@ The grid already scales this way today (`baseline_26_11_20`, 192 -> 3072: permut
    BriefKAsten direct / grid x C in {4, 16, 64} KiB, defaults otherwise, 3 iterations; cores set at job creation
    (192-3072 shows the trend). Questions: does the global phase stay flat with p; polling cost per message; which C;
    where grid overtakes direct now.
+   Suites written 2026-11-24: `experiments/briefkasten.suite.yaml` (permuted RGG N18, GNM N16, permuted RHG N18;
+   no load balancing, trimming; legacy direct / grid at threshold local-nodes vs BriefKAsten direct / grid x
+   `--buffer-size` 4096 / 16384 / 65536; 3 iterations; `--min-cores 192 --max-cores 3072`) and
+   `briefkasten-rmat.suite.yaml` (the same configurations on RMAT N16 with the default load balancing,
+   `--max-cores 768`). Memory at 3072 with 64 KiB: up to ~2 p buffers per rank with flow control, ~384 MiB.
 7. **Default BriefKAsten** after the comparison; the legacy queue (with katric's grid adapter, which it needs) stays
    behind `--message-queue legacy` for reproducing earlier results.
 
