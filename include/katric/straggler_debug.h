@@ -11,17 +11,20 @@
 // `STRAGGLER r=<rank> ` and is a list of key=value pairs, so
 // `grep '^STRAGGLER'` on the job log gives a table per line kind (`kind=`):
 //   host    host name, CPU and NUMA node the rank runs on, n / ghosts / edges
-//   array   one of the build's arrays (adjncy, owners, plus the copies below):
+//   array   one of the build's arrays (adjncy, and the two owner arrays below):
 //           address, bytes, the VMAs of /proc/self/smaps overlapping it (count,
 //           summed size / Rss / AnonHugePages, THPeligible, the first one's
 //           name, e.g. [heap]) and the NUMA nodes of its pages (move_pages
 //           without moving: `numa=N0:8192,absent:0`)
 //   time    the build's loop in stages, min of 3 runs each, in microseconds:
 //           scan (read every neighbor), is_local (+ count ghost entries),
-//           owner (+ owners[ghost index]), dedupe (+ last rank sent to; the
-//           real loop's body without the append), the same dedupe loop on
-//           owners_copy (a fresh std::vector) and owners_thp (a fresh 2 MiB
-//           aligned buffer with madvise(MADV_HUGEPAGE)), and the real build
+//           owner (+ the owner: binary search over the ghost offsets, as
+//           G.owner()), dedupe (+ last rank sent to; the real loop's body
+//           without the append), the same dedupe loop with the owner read from
+//           an array over the ghosts (2026-11-24's straggler, the code before
+//           the ghost offsets): owners_array (a std::vector) and owners_thp (a
+//           2 MiB aligned buffer with madvise(MADV_HUGEPAGE)), and the real
+//           build
 // AnonHugePages and THPeligible are per VMA (the kernel gives no per-page
 // huge-page flag without root): an array in [heap] shares its VMA with
 // everything else there.
@@ -37,7 +40,6 @@
 #include <fstream>
 #include <limits>
 #include <map>
-#include <span>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -219,7 +221,7 @@ void print_straggler_debug(Graph const& G) {
   int const rank = G.comm().rank();
   std::string const prefix = "STRAGGLER r=" + std::to_string(rank) + " ";
   std::size_t const n = G.num_local_vertices();
-  std::span<int const> const owners = G.numbering().ghost_owners();
+  std::size_t const num_ghosts = G.num_ghosts();
   auto const size = static_cast<std::size_t>(G.comm().size());
 
   // The stages of build_ghost_push_pattern()'s loop. Handles as plain
@@ -242,22 +244,20 @@ void print_straggler_debug(Graph const& G) {
     }
     return ghosts;
   };
-  auto const owner = [&G, n](std::span<int const> owner_of) {
-    return [&G, n, owner_of] {
-      std::uint64_t sum = 0;
-      for (auto const u : G.local_vertices()) {
-        for (auto const v : G.neighbors(u)) {
-          auto const h = static_cast<std::size_t>(v);
-          if (h >= n) {
-            sum += static_cast<std::uint64_t>(owner_of[h - n]);
-          }
+  auto const owner = [&G, n] {
+    std::uint64_t sum = 0;
+    for (auto const u : G.local_vertices()) {
+      for (auto const v : G.neighbors(u)) {
+        if (static_cast<std::size_t>(v) >= n) {
+          sum += static_cast<std::uint64_t>(G.owner(v));
         }
       }
-      return sum;
-    };
+    }
+    return sum;
   };
   std::vector<std::size_t> last_sent(size);
-  auto const dedupe = [&G, n, &last_sent](std::span<int const> owner_of) {
+  // owner_of(v, ghost index of v)
+  auto const dedupe = [&G, n, &last_sent](auto const& owner_of) {
     return [&G, n, owner_of, &last_sent] {
       std::ranges::fill(last_sent, std::numeric_limits<std::size_t>::max());
       std::uint64_t sent = 0;
@@ -268,7 +268,7 @@ void print_straggler_debug(Graph const& G) {
           if (h < n) {
             continue;
           }
-          auto const dest = static_cast<std::size_t>(owner_of[h - n]);
+          auto const dest = static_cast<std::size_t>(owner_of(v, h - n));
           if (last_sent[dest] == u_local) {
             continue;
           }
@@ -280,29 +280,39 @@ void print_straggler_debug(Graph const& G) {
     };
   };
 
-  // fresh copies of owners: a plain vector, and a 2 MiB aligned buffer
-  // madvised for transparent huge pages before the copy touches it
-  std::vector<int> const owners_copy(owners.begin(), owners.end());
+  // the owner of every ghost as an array: a plain vector, and a 2 MiB
+  // aligned buffer madvised for transparent huge pages before it is written
+  std::vector<int> owners_array(num_ghosts);
+  for (auto const ghost : G.ghosts()) {
+    owners_array[static_cast<std::size_t>(ghost) - n] = G.owner(ghost);
+  }
   constexpr std::size_t huge = std::size_t{2} << 20;
   std::size_t const thp_bytes =
-      std::max(huge, (owners.size_bytes() + huge - 1) / huge * huge);
+      std::max(huge, (num_ghosts * sizeof(int) + huge - 1) / huge * huge);
   auto* const owners_thp =
       static_cast<int*>(std::aligned_alloc(huge, thp_bytes));
 #ifdef __linux__
   madvise(owners_thp, thp_bytes, MADV_HUGEPAGE);
 #endif
-  std::ranges::copy(owners, owners_thp);
-  std::span<int const> const thp_span(owners_thp, owners.size());
+  std::ranges::copy(owners_array, owners_thp);
+  auto const from_search = [&G](auto v, std::size_t) { return G.owner(v); };
+  auto const from_array = [&owners_array](auto, std::size_t ghost) {
+    return owners_array[ghost];
+  };
+  auto const from_thp = [owners_thp](auto, std::size_t ghost) {
+    return owners_thp[ghost];
+  };
 
   std::uint64_t sink = 0;
   std::ostringstream times;
   times << prefix << "kind=time"
         << " scan_us=" << detail::time_min_us(scan, sink)
         << " is_local_us=" << detail::time_min_us(is_local, sink)
-        << " owner_us=" << detail::time_min_us(owner(owners), sink)
-        << " dedupe_us=" << detail::time_min_us(dedupe(owners), sink)
-        << " dedupe_copy_us=" << detail::time_min_us(dedupe(owners_copy), sink)
-        << " dedupe_thp_us=" << detail::time_min_us(dedupe(thp_span), sink)
+        << " owner_us=" << detail::time_min_us(owner, sink)
+        << " dedupe_us=" << detail::time_min_us(dedupe(from_search), sink)
+        << " dedupe_array_us="
+        << detail::time_min_us(dedupe(from_array), sink)
+        << " dedupe_thp_us=" << detail::time_min_us(dedupe(from_thp), sink)
         << " build_us="
         << detail::time_min_us(
                [&G] { return build_ghost_push_pattern(G).send_vertex.size(); },
@@ -319,19 +329,17 @@ void print_straggler_debug(Graph const& G) {
   syscall(SYS_getcpu, &cpu, &node, nullptr);
 #endif
   out << prefix << "kind=host host=" << host << " cpu=" << cpu
-      << " numa_node=" << node << " n=" << n << " ghosts=" << owners.size()
+      << " numa_node=" << node << " n=" << n << " ghosts=" << num_ghosts
       << " edges=" << G.num_local_edges() << '\n';
-  // after the timing: the copies are touched, so smaps shows their pages
+  // after the timing: the arrays are touched, so smaps shows their pages
   auto const vmas = detail::read_smaps();
   if (n > 0) {
     auto const first = G.neighbors(*G.local_vertices().begin());
     detail::print_array(out, prefix, vmas, "adjncy", first.data(),
                         G.num_local_edges() * sizeof(first[0]));
   }
-  detail::print_array(out, prefix, vmas, "owners", owners.data(),
-                      owners.size_bytes());
-  detail::print_array(out, prefix, vmas, "owners_copy", owners_copy.data(),
-                      owners_copy.size() * sizeof(int));
+  detail::print_array(out, prefix, vmas, "owners_array", owners_array.data(),
+                      num_ghosts * sizeof(int));
   detail::print_array(out, prefix, vmas, "owners_thp", owners_thp, thp_bytes);
   out << times.str();
   std::free(owners_thp);

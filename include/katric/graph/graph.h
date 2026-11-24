@@ -155,7 +155,12 @@ private:
 
 /// The numbering of every vertex this rank knows: the local vertices as in
 /// LocalNumbering (handles 0..n-1), then the ghosts (handles n..n+g-1), each
-/// in global-id order; the ghosts' global ids and owners.
+/// in global-id order; the ghosts' global ids and owners. The vertex ranges are
+/// contiguous and in rank order, so the ghosts of each owner are one block of
+/// ghost indices; the owner of a ghost is found in the block boundaries (p + 1
+/// entries, cache resident) instead of an array over the ghosts, whose random
+/// reads were up to 7.5x slower when the array lacked huge pages (the
+/// straggler, doc/refactoring-plan.md 2026-11-24).
 ///
 /// The graphs of a run (input, oriented, global ids) use the same handles: each
 /// graph holds its numbering by value, and each step consumes its input graph
@@ -173,11 +178,18 @@ public:
       : LocalNumbering(std::move(local)), ghost_ids_(std::move(ghost_ids)) {
     KASSERT(std::ranges::is_sorted(ghost_ids_));
     KASSERT(std::ranges::adjacent_find(ghost_ids_) == ghost_ids_.end());
-    owners_.reserve(ghost_ids_.size());
-    for (VertexId const gid : ghost_ids_) {
-      KASSERT(!is_local_id(gid));
-      owners_.push_back(distribution().get_owner(gid));
+    auto const size = static_cast<std::size_t>(comm().size());
+    ghost_offsets_.resize(size + 1);
+    for (std::size_t rank = 0; rank < size; ++rank) {
+      ghost_offsets_[rank] = static_cast<std::size_t>(
+          std::ranges::lower_bound(ghost_ids_,
+                                   range_of(static_cast<int>(rank)).first) -
+          ghost_ids_.begin());
     }
+    ghost_offsets_[size] = ghost_ids_.size();
+    KASSERT(ghost_offsets_[static_cast<std::size_t>(comm().rank())] ==
+                ghost_offsets_[static_cast<std::size_t>(comm().rank()) + 1],
+            "a ghost in the local range");
     num_ghosts_below_ = static_cast<std::size_t>(
         std::ranges::lower_bound(ghost_ids_, local_range().first) -
         ghost_ids_.begin());
@@ -234,12 +246,28 @@ public:
                             : ghost_ids_[to_ghost_index(vertex)];
   }
   [[nodiscard]] auto owner(VertexHandle vertex) const -> int {
-    return is_local(vertex) ? LocalNumbering::owner(vertex)
-                            : owners_[to_ghost_index(vertex)];
+    if (is_local(vertex)) {
+      return LocalNumbering::owner(vertex);
+    }
+    // the last rank whose block starts at or before the ghost (ranks without
+    // ghosts here have empty blocks and are skipped). Branchless: the owners of
+    // consecutive lookups are random, so std::upper_bound mispredicts about
+    // half of its log p branches (13x an array lookup at p = 1536, vs 3x for
+    // this; benchmark 2026-11-24)
+    std::size_t const index = to_ghost_index(vertex);
+    std::size_t const* base = ghost_offsets_.data();
+    std::size_t n = ghost_offsets_.size();
+    while (n > 1) {
+      std::size_t const half = n / 2;
+      base = base[half] <= index ? base + half : base;
+      n -= half;
+    }
+    return static_cast<int>(base - ghost_offsets_.data());
   }
-  /// The owner of every ghost, by ghost index (the straggler diagnostics).
-  [[nodiscard]] auto ghost_owners() const -> std::span<int const> {
-    return owners_;
+  /// The ghosts owned by rank r are the ghost indices [offsets[r],
+  /// offsets[r + 1]); p + 1 entries.
+  [[nodiscard]] auto ghost_offsets() const -> std::span<std::size_t const> {
+    return ghost_offsets_;
   }
 
   /// The 2D grid over the communicator's ranks for the grid exchange, built on
@@ -257,7 +285,7 @@ public:
 
 private:
   std::vector<VertexId> ghost_ids_;
-  std::vector<int> owners_;
+  std::vector<std::size_t> ghost_offsets_;  // p + 1, see ghost_offsets()
   std::size_t num_ghosts_below_ = 0;
   mutable std::optional<dstl::grid_comm<dstl::execution_policy::seq>> grid_;
 };

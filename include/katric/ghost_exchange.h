@@ -112,12 +112,11 @@ template <typename Graph>
     pattern.send_vertex[static_cast<std::size_t>(next[dest]++)] = u_local;
   }
   KASSERT(pattern.send_counts[static_cast<std::size_t>(rank)] == 0);
-  for (auto const ghost : G.ghosts()) {
-    pattern.recv_counts[static_cast<std::size_t>(G.owner(ghost))]++;
-  }
-  for (std::size_t rk = 1; rk < size; ++rk) {
-    pattern.recv_displs[rk] =
-        pattern.recv_displs[rk - 1] + pattern.recv_counts[rk - 1];
+  auto const ghost_offsets = G.numbering().ghost_offsets();
+  for (std::size_t rk = 0; rk < size; ++rk) {
+    pattern.recv_counts[rk] =
+        static_cast<int>(ghost_offsets[rk + 1] - ghost_offsets[rk]);
+    pattern.recv_displs[rk] = static_cast<int>(ghost_offsets[rk]);
   }
   return pattern;
 }

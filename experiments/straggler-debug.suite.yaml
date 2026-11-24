@@ -11,7 +11,10 @@
 #   - data or rank position: N18 with the `straggler` seed (reference) and another seed; N17 (2^27 vertices at 1536:
 #     no id >= 2^28) and N19 (ids >= 2^28 from rank 512 on). If the slow set moves to rank >= 512 at N19 and vanishes
 #     at N17, it is the id magnitude, not the rank or node
-# The Linux part (smaps, move_pages, getcpu) is untested locally (macOS): check the output of the first run.
+# Results 2026-11-24 (straggler-debug_26_11_24, doc/refactoring-plan.md): the memory backing of the owners_ array,
+# not the data, rank or ids. Since then owners_ is gone (owner = branchless search over the per-owner ghost offsets);
+# the stages now compare that search (owner, dedupe, build) against the old array (dedupe_array) and an array on huge
+# pages (dedupe_thp). Rerun: are the slow ranks gone, and what does the search cost at 1536?
 name: straggler-debug
 executable: apps/katric
 output_path_option_name: caliper-output

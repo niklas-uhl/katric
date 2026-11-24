@@ -468,6 +468,12 @@ by those `.cpp` files):
   - Fix candidates: (a) large randomly accessed arrays (owners_, also the ghost arrays) from a huge-page allocator
     (2 MiB aligned + madvise(MADV_HUGEPAGE)); (b) no `owners_` at all: owner of ghost index i = upper_bound over the
     per-owner ghost offsets (p + 1 entries, cache resident), saves 4 B per ghost
+  - Done (b), 2026-11-24: `VertexNumbering` keeps the per-owner ghost offsets instead of `owners_`; the pattern build
+    takes recv counts / displacements from them. std::upper_bound was 13x an array lookup at p = 1536 (random owners
+    mispredict its branches; laptop benchmark 8.4 M lookups: array 16 ms, upper_bound 207, branchless 52, bucket
+    table + scan 45), so the search is branchless. Locally (4 ranks, permuted RGG 2^20) the dedupe loop costs 50 ms
+    vs 45 ms with the array, same triangle count. Next: rerun `straggler-debug` (search vs array vs huge-page array
+    at 1536)
 
 ### 1. Prune
 
