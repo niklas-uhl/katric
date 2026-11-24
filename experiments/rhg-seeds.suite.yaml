@@ -7,6 +7,7 @@
 # The `phases` seed (as a reference with the new threshold) and two others; RHG with and without locality; none vs
 # IDPD at 1.5 (the defaults). DiTriC, direct, message trimming. Run at 1536 and 3072:
 # `--min-cores 1536 --max-cores 3072` when creating the job files.
+# message-queue: legacy pinned 2026-11-25, when the default became BriefKAsten (doc/briefkasten-migration.md, step 7).
 name: rhg-seeds
 executable: apps/katric
 output_path_option_name: caliper-output
@@ -32,6 +33,7 @@ graphs:
     scale_weak: true
 config:
   - primary-cost-function: [none, IDPD]
+    message-queue: legacy
     rebalance-threshold: 1.5
     message-trimming: true
     communication-policy: direct

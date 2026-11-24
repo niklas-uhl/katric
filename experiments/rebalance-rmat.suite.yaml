@@ -5,6 +5,7 @@
 # max/avg is far above). Two iterations. Cores as baseline-rmat: `--max-cores 768` (1536 ran out of memory).
 # Results 2026-11-23 in doc/refactoring-plan.md. IDD was removed afterwards (it overestimates RHG; it lives on as
 # --rebalance-precheck degree-bound): the IDD configurations no longer parse.
+# message-queue: legacy pinned 2026-11-25, when the default became BriefKAsten (doc/briefkasten-migration.md, step 7).
 name: rebalance-rmat
 executable: apps/katric
 output_path_option_name: caliper-output
@@ -21,6 +22,7 @@ graphs:
     scale_weak: true
 config:
   - primary-cost-function: [IDPD, IDD]
+    message-queue: legacy
     rebalance-threshold: 1.5
     message-trimming: true
     communication-policy: direct

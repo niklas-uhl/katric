@@ -103,7 +103,8 @@ struct Config {
   Threshold threshold = Threshold::local_nodes;
   double threshold_scale = 1.0;
   CommunicationPolicy communication_policy = CommunicationPolicy::direct;
-  MessageQueue message_queue = MessageQueue::legacy;
+  /// BriefKAsten since 2026-11-25 (doc/briefkasten-migration.md, step 7)
+  MessageQueue message_queue = MessageQueue::briefkasten;
   /// BriefKAsten: capacity of a destination's buffer in bytes (local
   /// threshold); a message larger than it is sent on its own
   std::size_t buffer_size = 4096;

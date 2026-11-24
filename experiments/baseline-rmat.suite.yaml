@@ -5,6 +5,7 @@
 # job files.
 # Defaults changed 2026-11-23 (IDPD, --rebalance-threshold 1.5, --rebalance-precheck degree-bound, message trimming
 # on); the options below pin this suite's earlier behaviour.
+# message-queue: legacy pinned 2026-11-25, when the default became BriefKAsten (doc/briefkasten-migration.md, step 7).
 name: baseline-rmat
 executable: apps/katric
 output_path_option_name: caliper-output
@@ -21,6 +22,7 @@ graphs:
     scale_weak: true
 config:
   - contraction: [false, true]
+    message-queue: legacy
     communication-policy: [direct, grid]
     primary-cost-function: IDPD
     rebalance-threshold: 1

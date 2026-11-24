@@ -3,6 +3,7 @@
 # limits were lower (europe, orkut 1, live-journal 2, uk-2007-05, twitter 5 minutes).
 # Defaults changed 2026-11-23 (IDPD, --rebalance-threshold 1.5, --rebalance-precheck degree-bound, message trimming
 # on); the options below pin this suite's earlier behaviour.
+# message-queue: legacy pinned 2026-11-25, when the default became BriefKAsten (doc/briefkasten-migration.md, step 7).
 name: paper-hybrid-real-world
 executable: apps/katric
 output_path_option_name: caliper-output
@@ -13,6 +14,7 @@ graphs:
   - import: real-world-core
 config:
   - algorithm: cetric-x
+    message-queue: legacy
     threshold: local-nodes
     threshold-scale: 1.0
     edge-partitioning: true

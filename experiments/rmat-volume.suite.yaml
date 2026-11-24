@@ -11,6 +11,7 @@
 # Question: do the heaviest senders hold more out-edges, more cut out-edges, or out-edges reaching more ranks (volume per
 # cut out-edge)? That decides between a volume term in the cost function and computing at the tail (idea 1).
 # Cores as rebalance-rmat: `--max-cores 768` when creating the job files.
+# message-queue: legacy pinned 2026-11-25, when the default became BriefKAsten (doc/briefkasten-migration.md, step 7).
 name: rmat-volume
 executable: apps/katric
 output_path_option_name: caliper-output
@@ -27,6 +28,7 @@ graphs:
     scale_weak: true
 config:
   - communication-policy: direct
+    message-queue: legacy
     threshold: local-nodes
     degree-exchange: dense
     intersection-method: merge

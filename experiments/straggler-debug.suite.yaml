@@ -15,6 +15,7 @@
 # not the data, rank or ids. Since then owners_ is gone (owner = branchless search over the per-owner ghost offsets);
 # the stages now compare that search (owner, dedupe, build) against the old array (dedupe_array) and an array on huge
 # pages (dedupe_thp). Rerun: are the slow ranks gone, and what does the search cost at 1536?
+# message-queue: legacy pinned 2026-11-25, when the default became BriefKAsten (doc/briefkasten-migration.md, step 7).
 name: straggler-debug
 executable: apps/katric
 output_path_option_name: caliper-output
@@ -47,6 +48,7 @@ graphs:
     scale_weak: true
 config:
   - primary-cost-function: none
+    message-queue: legacy
     message-trimming: true
     communication-policy: direct
     threshold: local-nodes

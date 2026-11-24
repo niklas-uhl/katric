@@ -36,6 +36,9 @@ degree-bound` and message trimming on (`no-message-trimming: true` turns it off,
 suites below pin what they relied on before; IDD was removed, so `rebalance` / `rebalance-rmat`'s IDD configurations
 no longer parse.
 
+The default message queue of the global phase changed 2026-11-25 from the legacy queue to BriefKAsten (4 KiB buffers,
+doc/briefkasten-migration.md); the suites written before pin `message-queue: legacy`.
+
 | Suite | What |
 | --- | --- |
 | `baseline` | The current code before the next steps (2026-11-20): DiTriC / CETRIC x direct / grid x load balancing none / IDPD x message trimming off / on, on the `phases` inputs and GNM (run at 192 to 3072 cores). New option names |

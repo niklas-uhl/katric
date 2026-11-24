@@ -35,7 +35,7 @@ if(TARGET katric)
   endforeach()
   set(kagen_rgg2d "rgg2d$<SEMICOLON>n=16384$<SEMICOLON>m=131072$<SEMICOLON>seed=7")
   set(example_configs "cetric" "ditric" "ditric-grid" "ditric-dense-exchange" "cetric-grid-exchange"
-      "ditric-trimming" "cetric-trimming" "ditric-briefkasten" "cetric-briefkasten-grid")
+      "ditric-trimming" "cetric-trimming" "ditric-legacy" "cetric-briefkasten-grid")
   set(args_cetric --config ${PROJECT_SOURCE_DIR}/configs/cetric.toml)
   set(args_ditric --config ${PROJECT_SOURCE_DIR}/configs/ditric.toml)
   set(args_ditric-grid --config ${PROJECT_SOURCE_DIR}/configs/ditric.toml --config
@@ -44,7 +44,8 @@ if(TARGET katric)
   set(args_cetric-grid-exchange --config ${PROJECT_SOURCE_DIR}/configs/cetric.toml --degree-exchange grid)
   set(args_ditric-trimming --config ${PROJECT_SOURCE_DIR}/configs/ditric.toml --message-trimming)
   set(args_cetric-trimming --config ${PROJECT_SOURCE_DIR}/configs/cetric.toml --message-trimming)
-  set(args_ditric-briefkasten --config ${PROJECT_SOURCE_DIR}/configs/ditric.toml --message-queue briefkasten)
+  # the legacy message queue (the default until 2026-11-25), kept for reproducing earlier results
+  set(args_ditric-legacy --config ${PROJECT_SOURCE_DIR}/configs/ditric.toml --message-queue legacy)
   # small buffers: some messages are larger than a buffer
   set(args_cetric-briefkasten-grid --config ${PROJECT_SOURCE_DIR}/configs/cetric.toml --message-queue briefkasten
                                    --communication-policy grid --buffer-size 256)

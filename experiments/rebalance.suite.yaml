@@ -7,6 +7,7 @@
 # rebalance-rmat.
 # Results 2026-11-23 in doc/refactoring-plan.md. IDD was removed afterwards (it overestimates RHG; it lives on as
 # --rebalance-precheck degree-bound): the IDD configurations no longer parse.
+# message-queue: legacy pinned 2026-11-25, when the default became BriefKAsten (doc/briefkasten-migration.md, step 7).
 name: rebalance
 executable: apps/katric
 output_path_option_name: caliper-output
@@ -24,6 +25,7 @@ graphs:
     scale_weak: true
 config:
   - primary-cost-function: none
+    message-queue: legacy
     message-trimming: true
     communication-policy: direct
     threshold: local-nodes
@@ -31,6 +33,7 @@ config:
     intersection-method: merge
     iterations: 3
   - primary-cost-function: IDPD
+    message-queue: legacy
     rebalance-threshold: 1
     message-trimming: true
     communication-policy: direct
@@ -39,6 +42,7 @@ config:
     intersection-method: merge
     iterations: 3
   - primary-cost-function: [IDPD, IDD]
+    message-queue: legacy
     rebalance-threshold: 1.5
     message-trimming: true
     communication-policy: direct

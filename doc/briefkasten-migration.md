@@ -212,6 +212,9 @@ The grid already scales this way today (`baseline_26_11_20`, 192 -> 3072: permut
    send. katric: build the trimmed messages of a hub in one pass (algorithm idea, separate from this migration).
 7. **Default BriefKAsten** after the comparison; the legacy queue (with katric's grid adapter, which it needs) stays
    behind `--message-queue legacy` for reproducing earlier results.
+   Done 2026-11-25: default `--message-queue briefkasten` (`--buffer-size 4096`, `--poll-skip 1` were already the
+   defaults); every cluster suite except `briefkasten*` pins `message-queue: legacy` (the local smoke / phases
+   suites take the new default). ctest: `ditric-legacy` keeps the legacy queue covered.
 
 ## Decisions (2026-11-24)
 

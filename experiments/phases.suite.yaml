@@ -13,6 +13,7 @@
 # Evaluate with `just notebook`. A laptop version is local/phases.suite.yaml.
 # Defaults changed 2026-11-23 (IDPD, --rebalance-threshold 1.5, --rebalance-precheck degree-bound, message trimming
 # on); the options below pin this suite's earlier behaviour.
+# message-queue: legacy pinned 2026-11-25, when the default became BriefKAsten (doc/briefkasten-migration.md, step 7).
 name: phases
 executable: apps/katric
 output_path_option_name: caliper-output
@@ -25,6 +26,7 @@ graphs:
   - import: phases
 config:
   - algorithm: [patric, cetric-x]
+    message-queue: legacy
     threshold: local-nodes
     degree-exchange: dense
     communication-policy: new
@@ -35,6 +37,7 @@ config:
   # appended (so the indices of the configurations above stay the same): pre-CETRIC, cut edges oriented outward in
   # the local phase, no ghost expansion
   - algorithm: cetric
+    message-queue: legacy
     threshold: local-nodes
     degree-exchange: dense
     communication-policy: new
@@ -44,6 +47,7 @@ config:
     iterations: 3
   # appended: the three algorithms with the 2D grid indirection in the global phase (the paper's choice at large p)
   - algorithm: [patric, cetric-x, cetric]
+    message-queue: legacy
     threshold: local-nodes
     degree-exchange: dense
     communication-policy: grid
