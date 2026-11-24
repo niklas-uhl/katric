@@ -11,6 +11,8 @@
 # it); if they still fail elsewhere, look at BriefKAsten's buffer lifetime in the grid. One core count; with
 # --copy-binary. The environment is not in the run metadata: runs c0, c1 (grid 16 / 64 KiB) have CMA on, c2, c3 (grid
 # 16 / 64 KiB) and c4 (direct 16 KiB) have I_MPI_SHM=off (the run name ends in -c<i>-s0).
+# Second run (2026-11-25): build with `cmake --preset experiments -DBRIEFKASTEN_CHECK_BUFFERS=ON` (BriefKAsten's buffer
+# lifetime check, PR #27): a violation prints `[BriefKAsten buffer check, rank r] ...` to stderr and aborts.
 # poll-skip: 1 pinned 2026-11-25, when the default became 100 (the suite ran with 1).
 name: briefkasten-cma-debug
 executable: apps/katric

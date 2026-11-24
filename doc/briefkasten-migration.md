@@ -249,8 +249,8 @@ The grid already scales this way today (`baseline_26_11_20`, 192 -> 3072: permut
    **Not a capacity problem** (2026-11-25): CMA does not go through the shared-memory cells; the receiver copies
    straight from the sender's memory (`process_vm_readv`), and a short read means part of that memory was not
    mapped any more, a buffer freed or reallocated under MPI (or an Intel MPI bug). Chunking (or `I_MPI_SHM=off`)
-   would hide either. **Buffer lifetime check:** BriefKAsten `feat/buffer-lifetime-check` @ d9bf03e (local, on
-   #26), CMake option `BRIEFKASTEN_CHECK_BUFFERS`: send buffers unchanged (address, size, checksum) from
+   would hide either. **Buffer lifetime check:** BriefKAsten `feat/buffer-lifetime-check` @ d9bf03e (PR #27,
+   on #26; katric pinned to it), CMake option `BRIEFKASTEN_CHECK_BUFFERS`: send buffers unchanged (address, size, checksum) from
    `MPI_Isend` to completion, MPI has released the request when a send is reported done, no slot reused or Sender
    destroyed with a send in flight, armed persistent receive buffers not moved. Caught an injected modification of
    in-flight buffers. Locally (Open MPI, katric `build-check`): RMAT 2^14 / 2^16, 9 / 16 / 25 / 36 ranks, grid and
