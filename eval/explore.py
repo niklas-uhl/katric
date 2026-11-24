@@ -104,16 +104,20 @@ def _(pl, r, region, runs):
 
 @app.cell(hide_code=True)
 def _(alt, mo, region, times):
-    # one chart per graph instead of a facet, so that each has its own zoom (a facet shares one between its panels)
+    import warnings
+
+    # one chart per graph instead of a facet, so that each has its own zoom (a facet shares one between its panels);
+    # they share the selections of points and legend entries, which altair merges into one (and warns about)
+    warnings.filterwarnings("ignore", message="Automatically deduplicated selection parameter")
     _select = alt.selection_point(name="points", fields=["graph", "series", "cores", "threads"])
-    _legend = alt.selection_point(fields=["series"], bind="legend")
+    _legend = alt.selection_point(name="legend", fields=["series"], bind="legend")
     _title = f"time of '{region.value}' [s]"
 
     def _graph(i, graph):
         # scroll to zoom, drag to pan, double-click to reset; marimo ignores selections named pan_zoom* in
         # chart.value, so zooming leaves the selected points as they are
         _zoom = alt.selection_interval(bind="scales", name=f"pan_zoom_{i}")
-        _base = alt.Chart(title=graph).encode(
+        _base = alt.Chart(title=graph).transform_filter(alt.datum.graph == graph).encode(
             x=alt.X("cores:Q", scale=alt.Scale(type="log", base=2),
                     axis=alt.Axis(values=sorted(times["cores"].unique()))),  # ticks at the measured core counts
             y=alt.Y("time:Q", scale=alt.Scale(type="log"), title=_title),
@@ -129,11 +133,12 @@ def _(alt, mo, region, times):
             .encode(shape=alt.Shape("threads:N", title="threads/rank")),
             # fastest and slowest iteration
             _base.mark_errorbar(ticks=True).encode(y=alt.Y("time_min:Q", title=_title), y2="time_max:Q"),
-            data=times.filter(graph=graph),
         ).properties(width=250, height=200)
 
     chart = mo.ui.altair_chart(
-        alt.concat(*[_graph(i, g) for i, g in enumerate(times["graph"].unique(maintain_order=True))], columns=3)
+        # the data on the concatenation, as marimo loads its data files only there (not in the charts of a concat)
+        alt.concat(*[_graph(i, g) for i, g in enumerate(times["graph"].unique(maintain_order=True))], columns=3,
+                   data=times)
         .resolve_scale(color="shared", shape="shared")
     )
     chart
@@ -205,8 +210,7 @@ def _(alt, breakdown, mo):
 @app.cell(hide_code=True)
 def _(chart, pl, r, runs, times):
     # the selected points' runs with the time of every region (maximum across ranks, mean over the iterations);
-    # apply_selection as the data is per graph (chart.value only sees a chart's top-level data), and it keeps all rows
-    # while no point is selected
+    # apply_selection as chart.value cannot apply the charts' filters, and it keeps all rows while no point is selected
     _points = chart.apply_selection(times) if any(chart.selections.get("points", {}).values()) else times.head(0)
     _selected = runs.join(_points.select("graph", "series", "cores", "threads"),
                           on=["graph", "series", "cores", "threads"])
