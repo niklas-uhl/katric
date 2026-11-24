@@ -24,20 +24,20 @@ add_library(katric_cxx_flags INTERFACE)
 target_compile_options(katric_cxx_flags INTERFACE ${KATRIC_CXX_FLAGS})
 
 # clang-tidy command for katric's own executables and tests (their CXX_CLANG_TIDY property; empty = off). The headers
-# in include/katric are checked through these sources (HeaderFilterRegex in .clang-tidy). -std=c++20 is passed
-# explicitly: compilers that default to C++20 (GCC >= 16) get no -std flag from CMake, so clang-tidy would parse katric
-# as C++17.
+# in include/katric are checked through these sources (HeaderFilterRegex in .clang-tidy). -std=c++23 is passed
+# explicitly: the compile commands may carry -std=gnu++23 or nothing, and clang-tidy would otherwise parse katric in its
+# own default.
 set(KATRIC_CLANG_TIDY_COMMAND "")
 if(KATRIC_ENABLE_CLANG_TIDY)
   find_program(KATRIC_CLANG_TIDY_EXE NAMES clang-tidy REQUIRED)
-  set(KATRIC_CLANG_TIDY_COMMAND ${KATRIC_CLANG_TIDY_EXE} --extra-arg=-std=c++20)
+  set(KATRIC_CLANG_TIDY_COMMAND ${KATRIC_CLANG_TIDY_EXE} --extra-arg=-std=c++23)
 endif()
 
 # The algorithms are header-only.
 add_library(katric-lib INTERFACE)
 file(GLOB_RECURSE KATRIC_HEADERS CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/include/*.h")
 target_sources(katric-lib INTERFACE FILE_SET HEADERS BASE_DIRS include FILES ${KATRIC_HEADERS})
-target_compile_features(katric-lib INTERFACE cxx_std_20)
+target_compile_features(katric-lib INTERFACE cxx_std_23)
 target_link_libraries(
   katric-lib
   INTERFACE absl::flat_hash_map
@@ -52,6 +52,7 @@ target_link_libraries(
             dstl::dstl
             KaGen::KaGen
             message-queue
+            BriefKAsten::BriefKAsten
             caliper
             adiak
             # last: a system TBB adds e.g. /opt/homebrew/include, which must not shadow pinned fmt/spdlog/abseil headers

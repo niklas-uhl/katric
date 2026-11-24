@@ -46,7 +46,7 @@ state of the art.
 
 ### Requirements
 To compile this project you need:
-- A C++20 compiler (tested with `g++` 16).
+- A C++23 compiler (tested with `g++` 15 and 16).
 - [OpenMPI](https://www.open-mpi.org/) or [Intel MPI](https://www.intel.com/content/www/us/en/developer/tools/oneapi/mpi-library.html#gs.pr0oht)
 - oneTBB: from the system (load the module on a cluster); `-DKATRIC_FETCH_TBB=ON` builds the pinned version from source
 - CMake 3.25 or higher and network access during configuration: all other dependencies (Abseil, fmt, Caliper, KaGen, ...) are fetched via `FetchContent`, pinned to a release or commit.

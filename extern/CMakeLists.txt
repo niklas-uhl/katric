@@ -156,6 +156,19 @@ FetchContent_Declare(
   GIT_TAG a36c73f84cac5a12d5137eb007adda2a0bbe10ec # katric-legacy
   SYSTEM)
 
+# BriefKAsten, the message queue of the global phase (doc/briefkasten-migration.md). The same repository as
+# message-queue above (renamed), but another branch, include path (briefkasten/), namespace and target, so both coexist:
+# the legacy queue stays behind --message-queue legacy for reproducing earlier results. Pinned to a commit (not a
+# branch, not shallow: FetchContent keeps whatever a branch pin cloned first). Its own kamping / kassert declarations
+# are shadowed by katric's (declared first). C++23, so no range-v3.
+# b94940a = feat/idle-flush + fix/oversized-messages (PR #24: messages larger than a buffer, flow-control accounting).
+set(BRIEFKASTEN_USE_CXX23 ON)
+FetchContent_Declare(
+  BriefKAsten
+  GIT_REPOSITORY https://github.com/niklas-uhl/BriefKAsten
+  GIT_TAG b94940a3791470d9432d12e3bf9baf7aa2a8787f # fix/oversized-messages (on feat/idle-flush)
+  SYSTEM)
+
 # katric's own kassert instance (kassert::kassert, used by no other dependency). Its default level applies to every target
 # linking to it; a single target can override it with the KASSERT_ASSERTION_LEVEL property.
 block()
@@ -204,7 +217,7 @@ else()
   endif()
   message(STATUS "TBB: ${TBB_VERSION} (${TBB_DIR})")
 endif()
-FetchContent_MakeAvailable(absl magic_enum kamping kamping-spdlog-adapter kamping-v2 kagen message-queue)
+FetchContent_MakeAvailable(absl magic_enum kamping kamping-spdlog-adapter kamping-v2 kagen message-queue BriefKAsten)
 
 # GCC on AArch64 emits a -Wpsabi note for every function passing std::pair<double, double> (ABI change in GCC 10.1).
 # It is irrelevant as long as nothing is mixed with objects from GCC < 10.1, and it floods the KaGen build.

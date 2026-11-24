@@ -57,6 +57,10 @@ The grid already scales this way today (`baseline_26_11_20`, 192 -> 3072: permut
 0. **Dependency.** FetchContent BriefKAsten pinned to a SHA (not a branch; not shallow), as KaCCv2 does. Which SHA:
    `feat/idle-flush` @ 1c5ed3d (newest, includes idle flush) or KaCCv2's 5664f7f; the step-1 fix goes on top of it.
    C++23 for katric (GCC 15.1 on SuperMUC-NG) or range-v3 (decision below). Build with the debug and release presets.
+   Done 2026-11-24: katric-lib `cxx_std_23` (clang-tidy / clangd flags, README), BriefKAsten fetched at b94940a
+   (`fix/oversized-messages`, PR #24 against feat/idle-flush; re-pin once merged) with `BRIEFKASTEN_USE_CXX23`,
+   linked as `BriefKAsten::BriefKAsten` next to the legacy `message-queue`. Debug and release build; same triangle
+   count as before on permuted RGG 2^20 (4 ranks). Nothing includes BriefKAsten yet (step 2 does).
 1. **Oversized messages (BriefKAsten, own branch / PR).**
    - Test first: post one message larger than the local threshold (direct, grid, flow control on / off; exactly the
      threshold, threshold + 1 element, 100x) and check that it arrives; it hangs today.
