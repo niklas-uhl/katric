@@ -19,6 +19,7 @@
 #include <bufastric.hpp>
 #include <cfastric.hpp>
 #include <hashfastric2.hpp>
+#include <inbufastric.hpp>
 
 namespace katric {
 namespace {
@@ -80,6 +81,9 @@ public:
       case TricVariant::hash2:
         count<TriangulateAggrBufferedHash2>(buffer_size,
                                              conf_.tric_sparse_ranges);
+        break;
+      case TricVariant::inrecv:
+        count<TriangulateAggrBufferedInrecv>(buffer_size);
         break;
     }
   }

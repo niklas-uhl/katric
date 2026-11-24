@@ -142,6 +142,32 @@ katric::Config parse_config(int argc, char* argv[], int rank, int size) {
            "allreduce of all 2n ranges onto every rank (O(n) memory per rank); the pruning stays the same"
     )
         ->group("TriC (--algorithm tric)");
+    app.add_option(
+           "--havoqgt-delegate-threshold",
+           conf.havoqgt_delegate_threshold,
+           "Vertices with a higher degree become delegates (split over all ranks)"
+    )
+        ->capture_default_str()
+        ->group("HavoqGT (--algorithm havoqgt)");
+    app.add_option(
+           "--havoqgt-partition-passes",
+           conf.havoqgt_partition_passes,
+           "Edge partitioning passes during graph construction (at most the ranks per node)"
+    )
+        ->capture_default_str()
+        ->check(CLI::PositiveNumber)
+        ->group("HavoqGT (--algorithm havoqgt)");
+    app.add_option("--havoqgt-chunk-size", conf.havoqgt_chunk_size, "Edges per chunk during graph construction")
+        ->capture_default_str()
+        ->check(CLI::PositiveNumber)
+        ->group("HavoqGT (--algorithm havoqgt)");
+    app.add_flag(
+           "--havoqgt-stats,!--no-havoqgt-stats",
+           conf.havoqgt_stats,
+           "Compute and print HavoqGT's diagnostics (allreduces, degree histograms) between orientation and count, "
+           "as its own driver does"
+    )
+        ->group("HavoqGT (--algorithm havoqgt)");
 
     // `new` was the name of `direct` until 2026-11-20 (job files and configs before); remove once they have run
     add_enum_option(
@@ -184,6 +210,14 @@ katric::Config parse_config(int argc, char* argv[], int rank, int size) {
             std::ranges::transform(name, name.begin(), [](unsigned char c) { return std::toupper(c); });
             std::cerr << "--algorithm " << algorithm << " is not compiled in: configure with -DKATRIC_COMPETITOR_"
                       << name << "=ON\n";
+        }
+        MPI_Finalize();
+        std::exit(1);
+    }
+    if (conf.tric_sparse_ranges && conf.tric_variant != katric::TricVariant::buffered
+        && conf.tric_variant != katric::TricVariant::hash2) {
+        if (rank == 0) {
+            std::cerr << "--tric-sparse-ranges is implemented only for --tric-variant buffered and hash2\n";
         }
         MPI_Finalize();
         std::exit(1);

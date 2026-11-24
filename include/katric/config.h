@@ -25,6 +25,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -64,14 +65,17 @@ enum class CommunicationPolicy {
 /// What runs, `--algorithm`: KaTric, or a competitor behind the same
 /// interface (apps/competitors/, each only with its CMake option
 /// KATRIC_COMPETITOR_<NAME>, doc/competitors.md).
-enum class Algorithm { katric, tric };
+enum class Algorithm { katric, tric, havoqgt };
 /// TriC's counting variant, `--tric-variant`: the classes from TriC's main.cpp
 /// (plain is its default build, buffered is `-DAGGR_BUFR`, hash2 is
-/// `-DAGGR_HASH2`).
+/// `-DAGGR_HASH2`, inrecv is `-DAGGR_BUFR_INRECV`).
 enum class TricVariant {
   plain,     ///< TriangulateAggrFatCompressed (cfastric.hpp)
   buffered,  ///< TriangulateAggrBuffered (bufastric.hpp)
   hash2,     ///< TriangulateAggrBufferedHash2 (hashfastric2.hpp)
+  inrecv,    ///< TriangulateAggrBufferedInrecv (inbufastric.hpp): counts
+             ///< each triangle once (precedence by vertex id), the variant
+             ///< TriC's README recommends
 };
 
 struct Config {
@@ -113,6 +117,16 @@ struct Config {
   /// ghosts, fetched from their owners, instead of TriC's global array of all
   /// 2 n ranges on every rank (katric fork, vertex_ranges.hpp). Same pruning.
   bool tric_sparse_ranges = false;
+  /// HavoqGT: vertices with more edges are delegates (split over all ranks);
+  /// the default of the fork's old driver
+  std::uint64_t havoqgt_delegate_threshold = 1048576;
+  /// HavoqGT: edge partitioning passes within a node (capped at ranks/node)
+  std::uint64_t havoqgt_partition_passes = 1;
+  /// HavoqGT: edges per chunk during graph construction
+  std::uint64_t havoqgt_chunk_size = 8192;
+  /// HavoqGT: compute and print its diagnostics (allreduces, degree
+  /// histograms) between orientation and count, as its own driver does
+  bool havoqgt_stats = false;
 
   bool pseudo2core = false;
   /// Global phase: each rank gets only the part of N+(v) from its first
