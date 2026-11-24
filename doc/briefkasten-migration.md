@@ -246,6 +246,18 @@ The grid already scales this way today (`baseline_26_11_20`, 192 -> 3072: permut
    code: the variable is not documented for Intel MPI 2021.15 and had no effect. The suite now uses
    `I_MPI_SHM=off` (no shared-memory transport) with `I_MPI_DEBUG=5`. Earlier, at 768 cores, the grid runs (and
    legacy grid) aborted in iteration 1, so it is timing-dependent, not a carry-over between iterations as such.
+   **Not a capacity problem** (2026-11-25): CMA does not go through the shared-memory cells; the receiver copies
+   straight from the sender's memory (`process_vm_readv`), and a short read means part of that memory was not
+   mapped any more, a buffer freed or reallocated under MPI (or an Intel MPI bug). Chunking (or `I_MPI_SHM=off`)
+   would hide either. **Buffer lifetime check:** BriefKAsten `feat/buffer-lifetime-check` @ d9bf03e (local, on
+   #26), CMake option `BRIEFKASTEN_CHECK_BUFFERS`: send buffers unchanged (address, size, checksum) from
+   `MPI_Isend` to completion, MPI has released the request when a send is reported done, no slot reused or Sender
+   destroyed with a send in flight, armed persistent receive buffers not moved. Caught an injected modification of
+   in-flight buffers. Locally (Open MPI, katric `build-check`): RMAT 2^14 / 2^16, 9 / 16 / 25 / 36 ranks, grid and
+   direct, 16 / 64 KiB, 3 iterations each: no violation, counts match. Legacy grid (a separate queue) aborts the
+   same way at 768, which points at Intel MPI rather than a shared bug. Next: the check build on SuperMUC-NG
+   (`briefkasten-cma-debug` with a binary built with `-DBRIEFKASTEN_CHECK_BUFFERS=ON`); also, `resize_buffers` of
+   the persistent receiver re-inits its receives without starting them (unused by katric).
 
 ## Decisions (2026-11-24)
 
