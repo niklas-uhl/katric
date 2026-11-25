@@ -8,7 +8,8 @@
 #   c2  grid 16 KiB, 2 buffers per peer, 2 iterations: must pass (it ran a node out of memory in iteration 1 or 2)
 # With katric >= 8fa817d (BriefKAsten 1404471, the reserve bound). Read the global phase (timers), buffer_stalls,
 # poll_ns / send_ns / handle_ns (max over ranks: where the busiest rank's time goes), peak_reserve_buffers /
-# reserve_waits (c2), mem_* (probe). Iterations vary by < 1 %, so one is enough for the time.
+# reserve_waits (c2). No memory probe: with the pool bounded its memory is buffers per peer x peers x buffer size.
+# Iterations vary by < 1 %, so one is enough for the time.
 # Generate, then `sbatch -p test <jobfile>` (kaval's --test flag is not wired to the runner):
 #   just run-supermuc-experiment briefkasten-pool-768 --copy-binary
 name: briefkasten-pool-768
@@ -36,8 +37,6 @@ config:
     degree-exchange: dense
     intersection-method: merge
     iterations: 1
-    ENV: &env
-      KATRIC_MEMORY_PROBE: 1
   - message-queue: briefkasten
     communication-policy: grid
     buffer-size: 16384
@@ -47,4 +46,3 @@ config:
     degree-exchange: dense
     intersection-method: merge
     iterations: 2
-    ENV: *env
