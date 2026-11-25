@@ -328,6 +328,17 @@ The grid already scales this way today (`baseline_26_11_20`, 192 -> 3072: permut
    grid 4 KiB): same count and time within noise of 82d1283; peak reserve 50 buffers, 11 reserve waits in total,
    and `buffer_stalls` up to 445 K per rank (0 with the leak: the pool's backpressure is back). On the cluster,
    watch `buffer_stalls` next to the global-phase time.
+   **Cluster, leak fix only** (katric 392b106 = BriefKAsten 82d1283; 2026-11-25). `rmat-memory_fix` (384): grid 16 KiB
+   passes (OOM before); busiest node's anonymous memory ~13.7 GB in every configuration (32-55 GB before); heap in use
+   per rank after termination 1.05 -> 0.10 GB (grid 4 KiB); global phase per iteration grid 4 KiB 22.1 -> 19.4 s,
+   direct 4 KiB 19.4 -> 18.9 s (all runs still hang until I_MPI_JOB_TIMEOUT after the last iteration, as before:
+   the suite, likely the per-rank recorder). `briefkasten-rmat` (768, killed after c3): **direct is slower**, global
+   phase (3 iterations, max) 4 KiB 83.5 -> 130.4 s, 16 KiB 76.4 -> 123.8 s, buffer_stalls 0 -> 60 K, polls 41 M ->
+   71 M on the busiest rank, same messages and overflows; legacy direct +3 % in the same job; legacy grid died again
+   (its own memory problem, not this pool). The pool default (2 buffers per peer, BriefKAsten ec55432) was set on
+   2026-09-18 after the leak, i.e. never measured with a working cap. Locally a larger pool is not faster (stalls do
+   not drop either: the busiest sender outruns its 8 send slots with any finite pool). katric `--buffers-per-peer`
+   (default 2); suite `briefkasten-pool-size` (768, 2 / 8 / 32 per peer, direct 4 KiB and grid 16 KiB).
 
 ## Decisions (2026-11-24)
 

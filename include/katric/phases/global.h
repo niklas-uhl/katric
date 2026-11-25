@@ -207,13 +207,14 @@ void post_trimmed_messages(graph::Graph const& G,
 }
 
 /// BriefKAsten's configuration from `--buffer-size`, `--request-slots`,
-/// `--flow-control`. Everything else is BriefKAsten's default (a capacity per
+/// `--buffers-per-peer`, `--flow-control`. Everything else is BriefKAsten's default (a capacity per
 /// destination buffer, no global threshold, idle flush of every buffer on
 /// entering `terminate`).
 inline auto briefkasten_config(Config const& conf) -> briefkasten::Config {
   briefkasten::Config config;
   config.local_threshold_bytes = conf.buffer_size;
   config.num_request_slots = conf.request_slots;
+  config.buffers_per_peer = conf.buffers_per_peer;
   config.num_credit_buffers =
       conf.flow_control ? std::nullopt : std::optional<std::size_t>(0);
   return config;

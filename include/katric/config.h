@@ -110,6 +110,11 @@ struct Config {
   std::size_t buffer_size = 4096;
   /// BriefKAsten: sends in flight at once
   std::size_t request_slots = 8;
+  /// BriefKAsten: aggregation buffer pool per peer (pool = this * peers +
+  /// request slots; only with flow control). 2 is BriefKAsten's default, set
+  /// on 2026-09-18 while its pool cap had no effect (the leak fixed in
+  /// BriefKAsten PR #29), so re-tuned with `briefkasten-pool-size`
+  std::size_t buffers_per_peer = 2;
   /// BriefKAsten: credit-based flow control (window per peer)
   bool flow_control = true;
   Receiver receiver = Receiver::persistent;
