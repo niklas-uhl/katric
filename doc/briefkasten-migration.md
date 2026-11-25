@@ -384,6 +384,15 @@ The grid already scales this way today (`baseline_26_11_20`, 192 -> 3072: permut
    the fix) and high p. The switch stays until these are measured: `briefkasten-pool-ab-grid` (768, test partition,
    grid 4 / 16 KiB) and `briefkasten-pool-ab-large` (1536-6144, direct and grid). Afterwards pin back to 675048a (or
    the merged #30) and drop `--legacy-pool` and the three suites; BriefKAsten exp/pool-fix-switch is not for main.
+   **Grid result** (`briefkasten-pool-ab-grid_26_11_25`, 768 cores, one binary, 1 iteration; global phase fix vs
+   legacy): permuted RGG 4 KiB 6.11 vs 6.45 s, 16 KiB 4.92 vs 5.51 s; RMAT 4 KiB 28.1 vs 31.5 s (-11 %), 16 KiB 23.3 s
+   vs **crash**: the legacy run died with the Intel MPI CMA assertion (`cma_read_nbytes == size`, the leak's original
+   symptom). With the fix the cap binds hard (RMAT buffer_stalls 0.7 M at 4 KiB, 1.05 M at 16 KiB; peak reserve 293 /
+   499 buffers, 3 reserve waits) and is still faster: the stalls cost less than the leak's allocations. No
+   degradation on the grid either. (Legacy peak_reserve_buffers is negative: the leaked free list outgrows the count.)
+   KaCCv2 (same switch, branch exp/briefkasten-pool-ab, notes/briefkasten-pool-fix-findings.md): grid 7-8 % faster
+   with up to 34 % less memory; flat ms-async on lake-lanier +7 % (not the cap: 12-15 % more, less full sends for
+   the same elements). Still open: `briefkasten-pool-ab-large` (katric) and KaCCv2 at 1536-6144.
 
 ## Decisions (2026-11-24)
 
