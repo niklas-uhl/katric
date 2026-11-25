@@ -279,6 +279,21 @@ The grid already scales this way today (`baseline_26_11_20`, 192 -> 3072: permut
    sender's or the receiver's address space, or the call failing for want of memory), not at one transport's bug;
    the light check rules out BriefKAsten's own send slots and armed persistent receives. Open: the errno and the
    node's memory state at the failure (no memory data in these runs; THP `always`, defrag `madvise`).
+   **CMA debug, fourth run** (2026-11-25, same directory as run 3, whose `.cali` / log / err it replaced; strace of
+   failed `process_vm_readv` and a per-node memory sampler, `briefkasten-cma-debug.command-template.txt`): **the node
+   runs out of memory.** strace: a rank is `killed by SIGKILL` first (c2: rank 340), milliseconds later a peer's
+   `process_vm_readv` from it fails with `ESRCH (No such process)` and the transport asserts (Intel shm and PSM2
+   alike); no `EFAULT`, so no buffer was freed under MPI. The node of ranks 336-383 has MemAvailable 0 in every failing
+   run (kernel OOM killer: the job cgroup has no limit and counted no OOM kill). c0 (grid 16 KiB) on that node:
+   anonymous memory 11 GB after generation, ~81 GB at the peak of iteration 1 (MemAvailable touches 0, survives),
+   **~73 GB between the iterations**, more in iteration 2 -> killed; grid 4 KiB peaks at ~49 GB and stays there
+   through iterations 2 / 3. Largest rank ~2 GB: every rank on the node grows, not one. katric keeps only the input
+   between iterations (`count_triangles` frees the rest, the queue is created per global phase), so the memory held
+   after an iteration is malloc's free memory or memory someone else holds (the user has seen MPI's eager buffers
+   stay before). BriefKAsten's aggregation pool is capped (parked buffers count against it). Not pursued: releasing
+   pages (`malloc_trim` and the like), which lost messages under MPI in an earlier project.
+   Next: suite `rmat-memory`, the read-only `KATRIC_MEMORY_PROBE` (`include/katric/memory_probe.h`): per rank RSS,
+   peak RSS, glibc heap used / free / mmap at the phase boundaries.
 
 ## Decisions (2026-11-24)
 

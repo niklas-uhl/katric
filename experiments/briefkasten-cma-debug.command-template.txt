@@ -9,7 +9,7 @@ if [ "$${MPI_LOCALRANKID:-}" = 0 ]; then
   else cg=$$(sed -n "s/^0:://p" /proc/self/cgroup 2>/dev/null); usage=/sys/fs/cgroup$$cg/memory.current; limit=/sys/fs/cgroup$$cg/memory.max; fail=/sys/fs/cgroup$$cg/memory.events; fi
   (
     echo "# $$(hostname -s) ranks $$PMI_RANK.. cgroup $$cg limit $$(cat $$limit 2>/dev/null) thp $$(cat /sys/kernel/mm/transparent_hugepage/enabled)"
-    echo "# time MemFree MemAvailable AnonPages AnonHugePages Shmem Committed_AS (kB) cgroup_usage cgroup_fail max_rank_rss_kB"
+    echo "# time MemFree MemAvailable AnonPages Shmem Committed_AS AnonHugePages (kB, /proc/meminfo order) cgroup_usage cgroup_fail max_rank_rss_kB"
     while kill -0 $$$$ 2>/dev/null; do
       echo "$$(date +%s) $$(awk "/^(MemFree|MemAvailable|AnonPages|AnonHugePages|Shmem|Committed_AS):/ {printf \"%s \", \$$2}" /proc/meminfo)$$(cat $$usage 2>/dev/null) $$(tr "\n" " " 2>/dev/null < $$fail)$$(ps -C katric -o rss= | sort -n | tail -1)"
       sleep 1

@@ -1,0 +1,76 @@
+# What fills the node on RMAT at 384 cores with BriefKAsten grid 16 KiB (doc/briefkasten-migration.md, step 8)?
+# briefkasten-cma-debug run 4 showed the "CMA abort" is the OOM killer: the node of ranks 336-383 runs out of memory
+# (anonymous memory 11 GB after generation, ~81 GB at the peak of iteration 1, still ~73 GB between the iterations,
+# more in iteration 2 -> a rank SIGKILLed, its peers' process_vm_readv fail with ESRCH). Grid 4 KiB peaks at ~49 GB
+# and stays there. katric keeps only the input between iterations, so what stays is malloc's free memory or memory
+# someone else holds (MPI's eager / unexpected-message buffers).
+#
+# KATRIC_MEMORY_PROBE (include/katric/memory_probe.h, read-only) reports RSS, peak RSS and glibc's heap (used / free /
+# own mappings) at the phase boundaries: after ingest; per iteration after input_graph, load_balancing,
+# preprocessing, local_phase, the send loop of the global phase (queue alive), termination, the global phase (queue
+# destroyed), the iteration. Per rank through Caliper's recorder, into rmat-memory-perrank/c<i>/rank-<r>.cali relative
+# to the directory the job was submitted from (eval/perrank.py --counters). Run with the node sampler of
+# briefkasten-cma-debug (strace off) to also get the node's view (meminfo, Shmem):
+#   just run-supermuc-experiment rmat-memory --copy-binary \
+#     --command-template experiments/briefkasten-cma-debug.command-template.txt
+#   c0  grid 16 KiB, 1 iteration (aborts in iteration 2, and Caliper writes the per-rank files only at the end;
+#       its iteration 2 is in run 4's node samples)
+#   c1  grid 4 KiB (passes, ~49 GB on that node)
+#   c2  direct 4 KiB (passes)
+# Reading it, ranks 336-383 first: heap used high at mem_iteration -> allocations still held after katric freed its
+# data (MPI); heap free high -> malloc keeps freed memory (fragmentation); RSS far above used + free + mmap -> memory
+# not from malloc (MPI's own mappings). mem_send_loop vs mem_terminated vs mem_global_phase: whether the peak builds
+# while sending, during termination, or stays after the queue is gone. c1 / c2 with three iterations: does it grow
+# per iteration?
+name: rmat-memory
+executable: apps/katric
+output_path_option_name: caliper-output
+threads_option_name: num-threads
+ncores: [384]
+max_cores: 384
+threads_per_rank: [1]
+time_limit: 10
+graphs:
+  - generator: kagen
+    type: rmat
+    N: 16
+    M: 20
+    seed: 28475421
+    scale_weak: true
+config:
+  - message-queue: briefkasten
+    communication-policy: grid
+    buffer-size: 16384
+    poll-skip: 1
+    message-trimming: true
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 1
+    ENV: &env
+      BRIEFKASTEN_CHECK_BUFFERS: "off"
+      KATRIC_MEMORY_PROBE: 1
+      CALI_SERVICES_ENABLE: aggregate,event,mpi,recorder,timer
+      CALI_AGGREGATE_KEY: prop:nested,mpi.rank,counter.name
+      CALI_RECORDER_FILENAME: rmat-memory-perrank/c0/rank-%mpi.rank%.cali
+  - message-queue: briefkasten
+    communication-policy: grid
+    buffer-size: 4096
+    poll-skip: 1
+    message-trimming: true
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 3
+    ENV:
+      <<: *env
+      CALI_RECORDER_FILENAME: rmat-memory-perrank/c1/rank-%mpi.rank%.cali
+  - message-queue: briefkasten
+    communication-policy: direct
+    buffer-size: 4096
+    poll-skip: 1
+    message-trimming: true
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 3
+    ENV:
+      <<: *env
+      CALI_RECORDER_FILENAME: rmat-memory-perrank/c2/rank-%mpi.rank%.cali

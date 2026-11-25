@@ -55,6 +55,7 @@
 #include "./parse_config.h"
 #include "./verify.h"
 #include "katric/caliper.h"
+#include "katric/memory_probe.h"
 #include "katric/config.h"
 #include "katric/input.h"
 
@@ -141,6 +142,7 @@ auto main(int argc, char* argv[]) -> int {
       CALI_CXX_MARK_SCOPE("ingest");
       algorithm->ingest(std::move(graph));
     }
+    katric::profiling::memory_snapshot("mem_ingest");
 
     size_t triangles = 0;
     bool mismatch = false;
@@ -164,6 +166,8 @@ auto main(int argc, char* argv[]) -> int {
         kamping::v2::barrier(comm);
         local_time = kamping::v2::clock::now() - start;
       }
+      // after the iteration, everything but the input freed by katric
+      katric::profiling::memory_snapshot("mem_iteration");
       iteration_annotation.end();
       triangles = algorithm->triangle_count();
       kamping::v2::clock::duration

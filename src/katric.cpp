@@ -12,6 +12,7 @@
 
 #include "katric/config.h"
 #include "katric/graph/graph.h"
+#include "katric/memory_probe.h"
 #include "katric/phases/global.h"
 #include "katric/phases/load_balancing.h"
 #include "katric/phases/local.h"
@@ -28,12 +29,17 @@ auto count_triangles(kagen::Graph const& input,
     CALI_CXX_MARK_SCOPE("input_graph");
     return graph::Graph::from_kagen(input, comm);
   }();
+  profiling::memory_snapshot("mem_input_graph");
   G = primary_load_balancing(std::move(G), conf);  // vertices move: a new graph
+  profiling::memory_snapshot("mem_load_balancing");
   std::size_t const threshold = get_threshold(G, conf);
   preprocessing(G, conf);
+  profiling::memory_snapshot("mem_preprocessing");
   local_phase(G, conf, triangles);
   global_ids(G, conf);
+  profiling::memory_snapshot("mem_local_phase");
   global_phase(G, conf, threshold, triangles);
+  profiling::memory_snapshot("mem_global_phase");
   return reduce(triangles, comm);
 }
 
