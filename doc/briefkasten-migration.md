@@ -354,6 +354,15 @@ The grid already scales this way today (`baseline_26_11_20`, 192 -> 3072: permut
    sender. The 11-24 baseline had no check. So the memory results stand, the 384-core runs were faster than before
    even with the check, and the 768-core time comparison is void. Next: rebuild with
    `-DBRIEFKASTEN_CHECK_BUFFERS=OFF` and re-run `briefkasten-pool-768`.
+   **Cleanup once the re-run confirms the fix** (decided 2026-11-25: remove the debugging features added on the way):
+   - [ ] BriefKAsten: drop `BRIEFKASTEN_CHECK_BUFFERS` (PR #27: CMake option, run-time modes, sender / receiver
+         checks): close #27 and move #29 / #30 onto its base (`feat/contiguous-envelope-serialization`), then re-pin.
+   - [ ] katric: `--buffers-per-peer` only if the default holds; the suite `briefkasten-pool-768`.
+   - Keep: the assertions (free list <= pool, reserve <= ceiling, no posting from handlers), `num_free_buffers`,
+     the reserve counters and katric's report of them.
+   - Open (not from this investigation, the user decides): BriefKAsten `BRIEFKASTEN_STALL_TRACE` and the 2026-09
+     transport-pressure counters (KaCCv2 reports several), katric's straggler instrumentation
+     (`straggler_debug.h`, `resource_counters.h`).
 
 ## Decisions (2026-11-24)
 
