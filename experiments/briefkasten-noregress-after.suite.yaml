@@ -1,0 +1,43 @@
+# Did the BriefKAsten pool fix (#29 / #30) degrade the tuned default? (doc/briefkasten-migration.md, step 8.) The
+# earlier before / after comparisons mixed builds (the fix, -march=native, KaMPIng assertion level, and at 768 cores
+# a baseline without #26), so this runs the tuned default (direct 4 KiB, 8 request slots, poll-skip 100, default load
+# balancing as briefkasten-tuning-rmat; briefkasten-tuning used none) with two binaries built the same way, differing
+# only in the fix.
+# AFTER: the current katric (BriefKAsten 675048a = #26 + #29 + #30), built fresh with the experiments preset:
+#   rm -rf build && cmake --preset experiments && cmake --build --preset experiments
+#   just run-supermuc-experiment briefkasten-noregress-after --copy-binary
+# 768 cores, the permuted RGG of briefkasten-tuning (~9 s per iteration) and the RMAT of briefkasten-tuning-rmat
+# (~43 s per iteration, where the pool stalls), 2 iterations, 3 minutes per run; one short job per input. Submit
+# with `sbatch -p test <jobfile>`. Compare the global phase (and buffer_stalls) between before and after.
+name: briefkasten-noregress-after
+executable: apps/katric
+output_path_option_name: caliper-output
+threads_option_name: num-threads
+ncores: [768]
+max_cores: 768
+threads_per_rank: [1]
+time_limit: 3
+graphs:
+  - generator: kagen
+    type: rgg2d
+    N: 18
+    M: 22
+    permute: 1
+    seed: 28475421
+    scale_weak: true
+  - generator: kagen
+    type: rmat
+    N: 16
+    M: 20
+    seed: 28475421
+    scale_weak: true
+config:
+  - message-queue: briefkasten
+    communication-policy: direct
+    buffer-size: 4096
+    request-slots: 8
+    poll-skip: 100
+    message-trimming: true
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 2

@@ -365,6 +365,14 @@ The grid already scales this way today (`baseline_26_11_20`, 192 -> 3072: permut
    **Verified** (`briefkasten-pool-768_no-debug`, 768 cores, one iteration, no check): direct 4 KiB global phase
    28.0 -> 25.1 s (2 buffers per peer; 27.1 s with 32), busiest rank's send loop 16.4 -> 12.7 s; grid 16 KiB passes,
    22.7 s (grid 4 KiB before the fix: 31.0 s); peak reserve 497 buffers, 1 reserve wait.
+   **Correction (same day):** these before / after numbers are not clean. The post-fix builds were configured fresh
+   with the experiments preset (-march=native, KaMPIng assertions none), the pre-fix ones (briefkasten-rmat,
+   briefkasten-tuning*, 11-24) came from an older build cache (no -march=native, KaMPIng types assertions at level
+   10), and the 768-core baseline (briefkasten-rmat_26_11_24, BriefKAsten 0062f64) predates #26. So neither the
+   speed-up nor "no degradation" is shown; 2 vs 32 buffers per peer was the only clean comparison (same build).
+   `briefkasten-noregress-before` / `-after`: the tuned default (direct 4 KiB, 8 slots, poll-skip 100) at 768 cores on
+   permuted RGG and RMAT, with katric 63d6d22 (the tuning's, BriefKAsten 75d4f95) and the current katric, both built
+   fresh with the preset.
 
 ## Decisions (2026-11-24)
 
