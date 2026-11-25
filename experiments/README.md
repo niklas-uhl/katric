@@ -49,6 +49,7 @@ doc/briefkasten-migration.md); the suites written before pin `message-queue: leg
 | `briefkasten-rmat` | `briefkasten` on RMAT with the default load balancing (large messages; up to 768 cores) |
 | `briefkasten-tuning` | BriefKAsten direct 4 KiB with `--request-slots` 8 / 32 x `--poll-skip` 1 / 100 on the inputs of `briefkasten`; `briefkasten-tuning-rmat` on RMAT (needs BriefKAsten 75d4f95) |
 | `briefkasten-pool-768` | The BriefKAsten pool fix at 768 cores, one short test-partition job: direct 4 KiB with 2 / 32 buffers per peer (the slowdown), grid 16 KiB (must pass) |
+| `briefkasten-ab-fixed`, `briefkasten-ab-leak` | The same two short runs at 768 cores with the fixed and the leaky BriefKAsten (katric 538fd75): is the slower send loop the fix or the nodes? |
 | `straggler` | Per-rank times (Caliper recorder via environment variables) of the ghost exchanges on permuted RGG at 1536 cores, IDPD / none, after fadbd12; read with `eval/perrank.py`. Since 2026-11-23 also per-rank resource counters of the pattern build (`eval/perrank.py --counters`) |
 | `rmat-volume` | Per-rank send volume and oriented-graph shape on RMAT with the defaults (IDPD at 1.5), up to 768 cores: where the volume imbalance after balancing comes from (Caliper recorder; `eval/perrank.py --counters`) |
 | `rhg-seeds` | RHG (with and without locality) at 1536 / 3072 with the `phases` seed and two others, none vs IDPD at 1.5: is the 3072 hub an outlier, and does the achievable-balance threshold keep the graph there |

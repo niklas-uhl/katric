@@ -341,6 +341,14 @@ The grid already scales this way today (`baseline_26_11_20`, 192 -> 3072: permut
    (default 2); suite `briefkasten-pool-768` (one short job: direct 4 KiB with 2 / 32 per peer, grid 16 KiB).
    The debugging suites (`briefkasten-cma-debug`, `-spread`, their command template, `rmat-memory`) and the memory
    probe were removed once the cause was fixed (2026-11-25); they are in git history before that commit.
+   **`briefkasten-pool-768`** (768, one iteration each): grid 16 KiB passes (peak reserve 500 buffers, 1 reserve
+   wait). Direct 4 KiB: global phase 42.8 s with 2 and with 32 buffers per peer (stalls 20.7 K and 0): the pool size
+   is not the cause. The time is in the busiest rank's send loop: `send_ns` 16.4 s (11-24, before the fix, iteration
+   1) -> 30.0 / 29.9 s; handle / poll times unchanged. Locally (9 ranks) the send loop also doubles (0.027 -> 0.06 s),
+   but there only through stalls: with 1000 buffers per peer it is back at 0.022 s. (Correction: the earlier local
+   "2 per peer ~ the leak" sweep compared two fixed builds; `build-perf` had re-fetched the new pin.) Next: the same
+   two runs with the fixed and the leaky build back to back (`briefkasten-ab-fixed` / `-leak`), to separate the fix
+   from the nodes.
 
 ## Decisions (2026-11-24)
 

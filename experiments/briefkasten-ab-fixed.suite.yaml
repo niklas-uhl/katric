@@ -1,0 +1,34 @@
+# Same-job-size A/B of the BriefKAsten pool fix at 768 cores (doc/briefkasten-migration.md, step 8). With the fix the
+# send loop of the busiest rank took 30 s instead of 16 s (send_ns, direct 4 KiB, one iteration), even with 32
+# buffers per peer and no stalls; the baseline ran on other nodes a day earlier, so this runs both builds back to
+# back. Two identical runs each (run-to-run variance), one iteration, 2 minutes per run.
+# The fixed build (current katric). Its twin briefkasten-ab-leak runs the same with the leaky build.
+# Generate, then `sbatch -p test <jobfile>`, the two jobs one after the other:
+#   just run-supermuc-experiment briefkasten-ab-fixed --copy-binary
+# Compare send_ns / handle_ns / poll_ns (max over ranks) and the global phase between the two.
+name: briefkasten-ab-fixed
+executable: apps/katric
+output_path_option_name: caliper-output
+threads_option_name: num-threads
+ncores: [768]
+max_cores: 768
+threads_per_rank: [1]
+time_limit: 2
+graphs:
+  - generator: kagen
+    type: rmat
+    N: 16
+    M: 20
+    seed: 28475421
+    scale_weak: true
+config:
+  - &run
+    message-queue: briefkasten
+    communication-policy: direct
+    buffer-size: 4096
+    poll-skip: 1
+    message-trimming: true
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 1
+  - *run
