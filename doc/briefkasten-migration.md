@@ -346,9 +346,14 @@ The grid already scales this way today (`baseline_26_11_20`, 192 -> 3072: permut
    is not the cause. The time is in the busiest rank's send loop: `send_ns` 16.4 s (11-24, before the fix, iteration
    1) -> 30.0 / 29.9 s; handle / poll times unchanged. Locally (9 ranks) the send loop also doubles (0.027 -> 0.06 s),
    but there only through stalls: with 1000 buffers per peer it is back at 0.022 s. (Correction: the earlier local
-   "2 per peer ~ the leak" sweep compared two fixed builds; `build-perf` had re-fetched the new pin.) Next: the same
-   two runs with the fixed and the leaky build back to back (`briefkasten-ab-fixed` / `-leak`), to separate the fix
-   from the nodes.
+   "2 per peer ~ the leak" sweep compared two fixed builds; `build-perf` had re-fetched the new pin.)
+   **Cause of the slower send loop: the buffer check was on.** Every cluster run since the fix (katric 392b106 /
+   7378e6a: `briefkasten-rmat_26_11_25`, `rmat-memory_fix`, `briefkasten-pool-768`) was built with
+   `BRIEFKASTEN_CHECK_BUFFERS` (the CMake cache of the CMA debugging, run 3) and set no environment variable, so the
+   check ran in its default mode, full (checksums of every send buffer at the send and at completion), on the
+   sender. The 11-24 baseline had no check. So the memory results stand, the 384-core runs were faster than before
+   even with the check, and the 768-core time comparison is void. Next: rebuild with
+   `-DBRIEFKASTEN_CHECK_BUFFERS=OFF` and re-run `briefkasten-pool-768`.
 
 ## Decisions (2026-11-24)
 
