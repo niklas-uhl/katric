@@ -355,14 +355,16 @@ The grid already scales this way today (`baseline_26_11_20`, 192 -> 3072: permut
    even with the check, and the 768-core time comparison is void. Next: rebuild with
    `-DBRIEFKASTEN_CHECK_BUFFERS=OFF` and re-run `briefkasten-pool-768`.
    **Cleanup once the re-run confirms the fix** (decided 2026-11-25: remove the debugging features added on the way):
-   - [ ] BriefKAsten: drop `BRIEFKASTEN_CHECK_BUFFERS` (PR #27: CMake option, run-time modes, sender / receiver
-         checks): close #27 and move #29 / #30 onto its base (`feat/contiguous-envelope-serialization`), then re-pin.
-   - [ ] katric: `--buffers-per-peer` only if the default holds; the suite `briefkasten-pool-768`.
+   - [x] BriefKAsten: `BRIEFKASTEN_CHECK_BUFFERS` dropped: #27 closed (branch kept), #29 / #30 moved onto
+         `feat/contiguous-envelope-serialization` (e694854 / 675048a); katric pins 675048a.
+   - [x] katric: `--buffers-per-peer` (the default of 2 beat 32) and the suite `briefkasten-pool-768` removed.
    - Keep: the assertions (free list <= pool, reserve <= ceiling, no posting from handlers), `num_free_buffers`,
      the reserve counters and katric's report of them.
-   - Open (not from this investigation, the user decides): BriefKAsten `BRIEFKASTEN_STALL_TRACE` and the 2026-09
-     transport-pressure counters (KaCCv2 reports several), katric's straggler instrumentation
-     (`straggler_debug.h`, `resource_counters.h`).
+   - Kept for now (user, 2026-11-25): BriefKAsten `BRIEFKASTEN_STALL_TRACE` and the 2026-09 transport-pressure
+     counters, katric's straggler instrumentation (`straggler_debug.h`, `resource_counters.h`).
+   **Verified** (`briefkasten-pool-768_no-debug`, 768 cores, one iteration, no check): direct 4 KiB global phase
+   28.0 -> 25.1 s (2 buffers per peer; 27.1 s with 32), busiest rank's send loop 16.4 -> 12.7 s; grid 16 KiB passes,
+   22.7 s (grid 4 KiB before the fix: 31.0 s); peak reserve 497 buffers, 1 reserve wait.
 
 ## Decisions (2026-11-24)
 

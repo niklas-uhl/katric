@@ -161,20 +161,19 @@ FetchContent_Declare(
 # the legacy queue stays behind --message-queue legacy for reproducing earlier results. Pinned to a commit (not a
 # branch, not shallow: FetchContent keeps whatever a branch pin cloned first). Its own kamping / kassert declarations
 # are shadowed by katric's (declared first). C++23, so no range-v3.
-# 1404471 = fix/reserve-own-pause (PR #30: own posts wait while the proxy's reserve is in use, so the reserve holds
-# forwarded payload and stays O(w p' Delta)) on top of
-# 82d1283 = fix/buffer-pool-shells (PR #29) (the aggregation buffer pool stays bounded: since 86fbe94 every overflow flush
-# leaked a buffer until the queue was destroyed, the node OOM of doc/briefkasten-migration.md step 8) on top of
-# 5a84bb9 = feat/idle-flush + PR #24 (fix/oversized-messages: messages larger than a buffer, flow-control accounting,
+# 675048a = fix/reserve-own-pause (PR #30: own posts wait while the proxy's reserve is in use, so the reserve holds
+# forwarded payload and stays O(w p' Delta)) on fix/buffer-pool-shells (PR #29: the aggregation buffer pool stays
+# bounded; since 86fbe94 every overflow flush leaked a buffer until the queue was destroyed, the node OOM of
+# doc/briefkasten-migration.md step 8), both on feat/contiguous-envelope-serialization, i.e. without the buffer
+# lifetime check of PR #27 (closed). That base is
+# feat/idle-flush + PR #24 (fix/oversized-messages: messages larger than a buffer, flow-control accounting,
 # oversize pass above half the credit window; open) + PR #25 (merged: in-place EnvelopeSerializationMerger, contiguous
-# split messages) + PR #26 (merged: poll_throttled polls while buffers wait, oversize passes counted per send) + PR #27
-# (feat/buffer-lifetime-check: the CMake option BRIEFKASTEN_CHECK_BUFFERS, off by default; -DBRIEFKASTEN_CHECK_BUFFERS=ON
-# for a checking build, the environment variable of the same name selects off / light / full at run time).
+# split messages) + PR #26 (merged: poll_throttled polls while buffers wait, oversize passes counted per send).
 set(BRIEFKASTEN_USE_CXX23 ON)
 FetchContent_Declare(
   BriefKAsten
   GIT_REPOSITORY https://github.com/niklas-uhl/BriefKAsten
-  GIT_TAG 14044716cb3e2dfbb6f3597eaa3ef86364008a28 # fix/reserve-own-pause (PR #30)
+  GIT_TAG 675048af47f950997209363fd1fb4ce83060c685 # fix/reserve-own-pause (PR #30)
   SYSTEM)
 
 # katric's own kassert instance (kassert::kassert, used by no other dependency). Its default level applies to every target

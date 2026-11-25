@@ -151,10 +151,6 @@ auto parse_config(std::span<char*> argv, kamping::v2::comm_view comm)
   app.add_option("--request-slots", conf.request_slots,
                  "BriefKAsten: sends in flight at once")
       ->check(CLI::PositiveNumber);
-  app.add_option("--buffers-per-peer", conf.buffers_per_peer,
-                 "BriefKAsten: aggregation buffer pool per peer (with flow "
-                 "control)")
-      ->check(CLI::PositiveNumber);
   app.add_flag("--flow-control,!--no-flow-control", conf.flow_control,
                "BriefKAsten: credit-based flow control")
       ->default_str("true");
