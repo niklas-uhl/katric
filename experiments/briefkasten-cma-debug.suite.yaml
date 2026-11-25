@@ -1,23 +1,31 @@
 # Is the Intel MPI abort of `briefkasten-rmat` a BriefKAsten bug or the transport? (doc/briefkasten-migration.md,
 # step 6 "Crashes" and step 8.) On RMAT at 384 and 768 cores, BriefKAsten grid with 16 / 64 KiB buffers (and legacy
 # grid at 768) aborted in Intel MPI's single-copy path for large intra-node messages
-# (`intel_transport_recv.h:1267: cma_read_nbytes == size`), in iteration 1 or 2; 4 KiB grid and every direct run passed.
-# History: run 1 (I_MPI_SHM_CMA=0, not an Intel MPI 2021.15 variable, no effect): every grid run aborted. Run 2, with
-# BriefKAsten's buffer lifetime check (full, checksums every send buffer twice, ~45 % slower): everything passed, no
-# check fired; inconclusive, as the check changes the timing.
+# (`intel_transport_recv.h:1267: cma_read_nbytes == size`); 4 KiB grid and every direct run passed.
+# History: run 1 (I_MPI_SHM_CMA=0, no effect): every grid run aborted. Run 2 (buffer check full): all passed. Run 3
+# (checks off / light / full, I_MPI_SHM=off): only full passed; light never fired; with I_MPI_SHM=off PSM2's
+# intra-node CMA failed the same way (`ptl_am/ptl.c:153`). Always in iteration 2, always with the node of ranks
+# 336-383 involved.
 #
-# Run 3: build with `cmake --preset experiments -DBRIEFKASTEN_CHECK_BUFFERS=ON` (BriefKAsten PR #27); the environment
-# variable BRIEFKASTEN_CHECK_BUFFERS selects the mode per run. The environment is not in the run metadata; by the run
-# name's -c<i>-s0:
-#   c0, c1  grid 16 / 64 KiB, checks off      (as the crashing runs: does it still abort?)
-#   c2, c3  grid 16 / 64 KiB, checks light    (addresses, sizes, requests; nearly the original timing)
-#   c4, c5  grid 16 / 64 KiB, checks full     (as run 2)
-#   c6, c7  grid 16 / 64 KiB, checks off, I_MPI_SHM=off (the workaround, without check overhead; I_MPI_DEBUG=5 logs the
-#           transport)
-# Reading it: a violation prints `[BriefKAsten buffer check, rank r] ...` to stderr and aborts (a BriefKAsten bug).
-# c0 / c1 abort but c2 / c3 abort in Intel MPI without a check message: the transport. c0 / c1 pass: not reproducible
-# at the moment, more repetitions needed before relying on the workaround. 5 iterations (the abort came in iteration
-# 2 before), poll-skip 1 as the earlier runs. One core count; with --copy-binary.
+# Run 4: why does process_vm_readv fail? Run with the command template next to this file:
+#   just run-supermuc-experiment briefkasten-cma-debug --copy-binary \
+#     --command-template experiments/briefkasten-cma-debug.command-template.txt
+# (and the same for briefkasten-cma-debug-spread). The check build of run 3 is fine (every config sets
+# BRIEFKASTEN_CHECK_BUFFERS=off; the build's default would be full). The template wraps every rank in bash:
+# local rank 0 of each node samples /proc/meminfo, the job's memory cgroup (usage, failcnt / events) and the largest
+# katric RSS once a second into <run>.mem.<host>; with CMA_DEBUG_STRACE=1 each rank runs under
+# `strace -f --seccomp-bpf -Z -e trace=process_vm_readv,process_vm_writev` (only failed calls, with errno) into
+# <run>.strace.<rank>. Needs strace >= 5.3 for --seccomp-bpf (`strace -V`).
+#   c0, c1  grid 16 / 64 KiB, memory sampler only (the memory state when it aborts)
+#   c2, c3  grid 16 / 64 KiB, + strace, Intel shm transport
+#   c4, c5  grid 16 / 64 KiB, + strace, I_MPI_SHM=off (PSM2's CMA returned -1 in run 3, so strace sees the errno)
+#   c6      grid 4 KiB (passed so far), memory sampler: the memory of a passing grid run
+#   c7      direct 4 KiB (passed so far), memory sampler
+# Reading it: `grep -h process_vm_readv *.strace.*` gives the errno. EFAULT: an address range not mapped (any more)
+# in one of the two processes, the iovecs say which buffer; ENOMEM: the kernel could not get the pages, with the
+# .mem files near the limit / failcnt rising: memory pressure; ESRCH / EPERM: the peer process. If the strace runs
+# pass, strace changed the timing (as the full check did). The suite briefkasten-cma-debug-spread runs c0 / c1 with
+# 24 ranks per node (16 nodes, twice the memory per rank, same ranks).
 name: briefkasten-cma-debug
 executable: apps/katric
 output_path_option_name: caliper-output
@@ -25,7 +33,7 @@ threads_option_name: num-threads
 ncores: [384]
 max_cores: 384
 threads_per_rank: [1]
-time_limit: 45
+time_limit: 10
 graphs:
   - generator: kagen
     type: rmat
@@ -41,7 +49,7 @@ config:
     message-trimming: true
     degree-exchange: dense
     intersection-method: merge
-    iterations: 5
+    iterations: 3
     ENV:
       BRIEFKASTEN_CHECK_BUFFERS: "off"
   - message-queue: briefkasten
@@ -51,28 +59,39 @@ config:
     message-trimming: true
     degree-exchange: dense
     intersection-method: merge
-    iterations: 5
-    ENV:
-      BRIEFKASTEN_CHECK_BUFFERS: light
-  - message-queue: briefkasten
-    communication-policy: grid
-    buffer-size: [16384, 65536]
-    poll-skip: 1
-    message-trimming: true
-    degree-exchange: dense
-    intersection-method: merge
-    iterations: 5
-    ENV:
-      BRIEFKASTEN_CHECK_BUFFERS: full
-  - message-queue: briefkasten
-    communication-policy: grid
-    buffer-size: [16384, 65536]
-    poll-skip: 1
-    message-trimming: true
-    degree-exchange: dense
-    intersection-method: merge
-    iterations: 5
+    iterations: 3
     ENV:
       BRIEFKASTEN_CHECK_BUFFERS: "off"
+      CMA_DEBUG_STRACE: 1
+  - message-queue: briefkasten
+    communication-policy: grid
+    buffer-size: [16384, 65536]
+    poll-skip: 1
+    message-trimming: true
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 3
+    ENV:
+      BRIEFKASTEN_CHECK_BUFFERS: "off"
+      CMA_DEBUG_STRACE: 1
       I_MPI_SHM: "off"
-      I_MPI_DEBUG: 5
+  - message-queue: briefkasten
+    communication-policy: grid
+    buffer-size: 4096
+    poll-skip: 1
+    message-trimming: true
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 3
+    ENV:
+      BRIEFKASTEN_CHECK_BUFFERS: "off"
+  - message-queue: briefkasten
+    communication-policy: direct
+    buffer-size: 4096
+    poll-skip: 1
+    message-trimming: true
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 3
+    ENV:
+      BRIEFKASTEN_CHECK_BUFFERS: "off"

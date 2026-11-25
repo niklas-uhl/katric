@@ -1,0 +1,26 @@
+echo "[LOG] Starting ${jobname}"
+start=$$(date +%s.%N)
+OMP_NUM_THREADS=${threads_per_rank} OMP_PLACES=cores OMP_PROC_BIND=close I_MPI_PIN_CELL=core I_MPI_PIN_DOMAIN=${threads_per_rank}:compact I_MPI_JOB_TIMEOUT=${timeout} ${env} mpiexec -n ${mpi_ranks} --perhost ${ranks_per_node} bash -c '
+out=; prev=
+for a in "$$@"; do [ "$$prev" = --caliper-output ] && out=$$a; prev=$$a; done
+if [ "$${MPI_LOCALRANKID:-}" = 0 ]; then
+  cg=$$(sed -n "s/^[0-9]*:memory:\(.*\)/\1/p" /proc/self/cgroup 2>/dev/null)
+  if [ -n "$$cg" ]; then usage=/sys/fs/cgroup/memory$$cg/memory.usage_in_bytes; limit=/sys/fs/cgroup/memory$$cg/memory.limit_in_bytes; fail=/sys/fs/cgroup/memory$$cg/memory.failcnt
+  else cg=$$(sed -n "s/^0:://p" /proc/self/cgroup 2>/dev/null); usage=/sys/fs/cgroup$$cg/memory.current; limit=/sys/fs/cgroup$$cg/memory.max; fail=/sys/fs/cgroup$$cg/memory.events; fi
+  (
+    echo "# $$(hostname -s) ranks $$PMI_RANK.. cgroup $$cg limit $$(cat $$limit 2>/dev/null) thp $$(cat /sys/kernel/mm/transparent_hugepage/enabled)"
+    echo "# time MemFree MemAvailable AnonPages AnonHugePages Shmem Committed_AS (kB) cgroup_usage cgroup_fail max_rank_rss_kB"
+    while kill -0 $$$$ 2>/dev/null; do
+      echo "$$(date +%s) $$(awk "/^(MemFree|MemAvailable|AnonPages|AnonHugePages|Shmem|Committed_AS):/ {printf \"%s \", \$$2}" /proc/meminfo)$$(cat $$usage 2>/dev/null) $$(tr "\n" " " 2>/dev/null < $$fail)$$(ps -C katric -o rss= | sort -n | tail -1)"
+      sleep 1
+    done
+  ) > "$$out.mem.$$(hostname -s)" 2>&1 &
+fi
+if [ "$${CMA_DEBUG_STRACE:-0}" = 1 ]; then
+  exec strace -f --seccomp-bpf -Z -tt -e trace=process_vm_readv,process_vm_writev -o "$$out.strace.$$PMI_RANK" "$$@"
+fi
+exec "$$@"
+' cma-debug ${cmd}
+end=$$(date +%s.%N)
+diff=$$(echo "$$end - $$start" | bc)
+echo "[LOG] Finished ${jobname} in $${diff} seconds"

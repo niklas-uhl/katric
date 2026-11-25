@@ -267,6 +267,18 @@ The grid already scales this way today (`baseline_26_11_20`, 192 -> 3072: permut
    only, `off`), and katric pins 5a84bb9 (PR #26 was squash-merged as 9c4bbf0 and #27 rebased onto it, so the
    earlier pin d9bf03e is on no branch any more). **Third run:** `briefkasten-cma-debug`, grid 16 / 64 KiB x checks
    off / light / full, plus `I_MPI_SHM=off` with checks off, 5 iterations each.
+   **CMA debug, third run** (`briefkasten-cma-debug_26_11_25`, 8 nodes i01r01c02s[06-11], c04s[04-05]): only c4 / c5
+   (full check) passed, 5 iterations, ~46.5 s each, right count. c0-c3 (off, light) and c6 / c7 (`I_MPI_SHM=off`)
+   all completed iteration 1 (~31 s, right count) and aborted in iteration 2. The light check never fired.
+   c0-c3: the Intel shm CMA assertion as before. c6 / c7: PSM2's intra-node path (libfabric psm2 provider, ptl_am)
+   fails the same way, `Reading from remote process' memory failed. Disabling CMA support`, then
+   `ptl.c:153: nbytes == req->req_data.recv_msglen`. So `I_MPI_SHM=off` is **no workaround**: it only swaps one
+   `process_vm_readv` user for another. Every abort at 384 (this run and `briefkasten-rmat_26_11_24`) involves the
+   last node (ranks 336-383), sometimes also the node of ranks 192-239. Two independent CMA implementations plus
+   the legacy queue failing alike point at `process_vm_readv` itself failing on that node (memory gone from the
+   sender's or the receiver's address space, or the call failing for want of memory), not at one transport's bug;
+   the light check rules out BriefKAsten's own send slots and armed persistent receives. Open: the errno and the
+   node's memory state at the failure (no memory data in these runs; THP `always`, defrag `madvise`).
 
 ## Decisions (2026-11-24)
 
