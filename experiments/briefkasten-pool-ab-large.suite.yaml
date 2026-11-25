@@ -1,0 +1,47 @@
+# The pool-fix A/B (briefkasten-pool-ab, briefkasten-pool-ab-grid) at high core counts: does the fix (#29 / #30)
+# degrade the global phase where the backpressure it restores bites hardest? Direct: the cap (~2 p buffers) grows
+# with p, but so do RMAT's overflow flushes (busiest rank 0.47 M at 192 -> 0.96 M at 768). Grid: the cap grows only
+# with sqrt(p) (~2 sqrt(p) peers) while the volume per rank stays constant under weak scaling, so stalls and reserve
+# pauses should grow with p. Expected net effect: less memory for sure, time open (fewer allocations vs stalls).
+# Same binary as briefkasten-pool-ab (BriefKAsten exp/pool-fix-switch, --legacy-pool); the tuned default otherwise
+# (4 KiB, 8 request slots, poll-skip 100, default load balancing), 1 iteration (RMAT iterations vary < 1 %):
+#   permuted RGG, RMAT  x  direct, grid  x  fix / --legacy-pool    (8 runs per core count)
+# Run at `--min-cores 1536 --max-cores 6144` (768 is covered by the other two suites). Time per run: RMAT grows
+# ~1.45x per doubling (global phase 21 -> 31 -> 45 s from 192 to 768), i.e. ~100 s at 3072 and ~150 s at 6144 plus
+# input and start-up; RGG stays at ~1 min. Without the fix, RMAT leaked ~1 GB per rank at 384 cores (which ran a node
+# out of memory) -- a legacy RMAT run that fails at high p is a result too: check the err file, then compare the rest.
+#   just run-supermuc-experiment briefkasten-pool-ab-large --copy-binary
+# Compare per pair: the global phase, the busiest rank's send loop, buffer_stalls, reserve_waits,
+# peak_reserve_buffers; the run globals (build flags, git_commit) must match within a pair.
+name: briefkasten-pool-ab-large
+executable: apps/katric
+output_path_option_name: caliper-output
+threads_option_name: num-threads
+ncores: node-size-pow2
+threads_per_rank: [1]
+time_limit: 6
+graphs:
+  - generator: kagen
+    type: rgg2d
+    N: 18
+    M: 22
+    permute: 1
+    seed: 28475421
+    scale_weak: true
+  - generator: kagen
+    type: rmat
+    N: 16
+    M: 20
+    seed: 28475421
+    scale_weak: true
+config:
+  - message-queue: briefkasten
+    communication-policy: [direct, grid]
+    buffer-size: 4096
+    request-slots: 8
+    poll-skip: 100
+    legacy-pool: [false, true]
+    message-trimming: true
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 1

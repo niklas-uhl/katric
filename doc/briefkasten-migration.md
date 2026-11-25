@@ -374,7 +374,16 @@ The grid already scales this way today (`baseline_26_11_20`, 192 -> 3072: permut
    (d2b5a24 = 675048a + `Config::bounded_pool`, a run-time switch back to the pool handling from before #29; not for
    main), katric `--legacy-pool` and a temporary pin to it. Suite `briefkasten-pool-ab`: the tuned default (direct
    4 KiB, 8 slots, poll-skip 100, default load balancing) at 768 cores on permuted RGG and RMAT, fix vs
-   `--legacy-pool`. Afterwards: pin back to 675048a (or the merged #30), drop `--legacy-pool`.
+   `--legacy-pool`.
+   **Result** (`briefkasten-pool-ab_26_11_25`, one binary, 2 iterations): permuted RGG global phase 4.46 / 4.41 s
+   with the fix vs 4.51 / 4.28 s without (no stalls either way: no difference); RMAT 25.0 / 25.0 s vs 28.1 / 28.2 s
+   (-11 %; busiest rank's send loop 13.1 vs 16.6 s; ~20 K stalls with the fix). The legacy setting reproduces the
+   pre-fix baselines (28.0 s briefkasten-rmat, 27.6 s briefkasten-tuning-rmat), so the build differences did not
+   matter there. **No degradation for direct at 768; the tuned defaults stay.**
+   Open: the grid (small cap ~2 sqrt(p) peers, the only policy with the reserve pause; most overflow flushes before
+   the fix) and high p. The switch stays until these are measured: `briefkasten-pool-ab-grid` (768, test partition,
+   grid 4 / 16 KiB) and `briefkasten-pool-ab-large` (1536-6144, direct and grid). Afterwards pin back to 675048a (or
+   the merged #30) and drop `--legacy-pool` and the three suites; BriefKAsten exp/pool-fix-switch is not for main.
 
 ## Decisions (2026-11-24)
 

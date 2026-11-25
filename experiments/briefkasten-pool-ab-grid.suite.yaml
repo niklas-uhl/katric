@@ -1,0 +1,47 @@
+# Did the BriefKAsten pool fix (#29 / #30) slow down the grid? (doc/briefkasten-migration.md, step 8.) The first
+# A/B (briefkasten-pool-ab) covered direct only, where the pool cap (2 buffers per peer + request slots, ~2 p) rarely
+# binds. The grid has ~2 sqrt(p) peers, so its cap is small (~120 buffers at 768 cores), and it is the only policy with
+# the reserve pause of #30 (own posts wait while the proxy's reserve holds more than one buffer per peer). Before the
+# fix it also had the most overflow flushes (RMAT 768, 4 KiB: 1.2 M on the busiest rank vs 0.96 M direct), i.e. the
+# largest leak that hid the cap. Same binary as briefkasten-pool-ab (BriefKAsten exp/pool-fix-switch, --legacy-pool).
+# Grid with the tuned default otherwise (8 request slots, poll-skip 100, default load balancing), 1 iteration:
+#   permuted RGG (control, low skew) and RMAT (skewed, the direct A/B stalled there)  x  4 / 16 KiB  x  fix /
+#   --legacy-pool (16 KiB: fewer, larger buffers; the post-fix grid run on RMAT had a peak reserve of 497 there)
+# For the test partition: `--min-cores 768 --max-cores 768`, one job per input, 4 runs and ~5 min each (RGG ~1 min
+# per run; RMAT grid 4 KiB ~31 s global phase before the fix, 16 KiB ~23 s after it, ~1.3 min per run), then
+# `sbatch -p test`:
+#   just run-supermuc-experiment briefkasten-pool-ab-grid --copy-binary
+# Compare the global phase, buffer_stalls, reserve_waits and peak_reserve_buffers per pair; the run globals (build
+# flags, git_commit) must match within a pair.
+name: briefkasten-pool-ab-grid
+executable: apps/katric
+output_path_option_name: caliper-output
+threads_option_name: num-threads
+ncores: node-size-pow2
+threads_per_rank: [1]
+time_limit: 3
+graphs:
+  - generator: kagen
+    type: rgg2d
+    N: 18
+    M: 22
+    permute: 1
+    seed: 28475421
+    scale_weak: true
+  - generator: kagen
+    type: rmat
+    N: 16
+    M: 20
+    seed: 28475421
+    scale_weak: true
+config:
+  - message-queue: briefkasten
+    communication-policy: grid
+    buffer-size: [4096, 16384]
+    request-slots: 8
+    poll-skip: 100
+    legacy-pool: [false, true]
+    message-trimming: true
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 1
