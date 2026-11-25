@@ -294,6 +294,28 @@ The grid already scales this way today (`baseline_26_11_20`, 192 -> 3072: permut
    pages (`malloc_trim` and the like), which lost messages under MPI in an earlier project.
    Next: suite `rmat-memory`, the read-only `KATRIC_MEMORY_PROBE` (`include/katric/memory_probe.h`): per rank RSS,
    peak RSS, glibc heap used / free / mmap at the phase boundaries.
+   **Root cause: a leak in BriefKAsten's buffer pool** (`rmat-memory_26_11_25`, 2026-11-25). Grid 4 KiB, node of ranks
+   336-383: heap in use 2.4 GB after the local phase, 28.3 GB at the end of the send loop, 37.5 GB after termination
+   (everything delivered, queue alive), 2.4 GB once the queue is destroyed (then 36.4 GB free in malloc, reused by the
+   next iteration, so 4 KiB plateaus); up to 1.05 GB on one rank. Direct 4 KiB: 5 GB. Grid 16 KiB was killed in
+   iteration 1. So the queue held it, not MPI. Since BriefKAsten 86fbe94 (2026-09-18) the overflow path flushed the
+   current buffer with `erase=false`, leaving a moved-from shell (capacity 0) in the destination's entry, and
+   `replace_flushed_buffer` recycled that shell into the free list; the sent buffer came back as well. One extra
+   free-list entry per overflow flush, filling a shell allocated a buffer the pool never counted, and the free list
+   was never empty, so the pool cap and buffer stalls never took effect (`buffer_stalls` = 0 in every BriefKAsten
+   run). Locally (RMAT 2^18, 16 ranks, grid 4 KiB): free list 19 249 entries / 45 MB against a counted pool of 8.
+   **Fix** BriefKAsten 82d1283 (`fix/buffer-pool-shells`, on `feat/buffer-lifetime-check`; katric pins it): a flush
+   that moves the current buffer out erases the entry; `recycle_buffer` asserts free list <= pool; test
+   `buffer_pool_test` (failed on every variant before). With the pool bounded the proxy's overdraft path became
+   reachable and two latent problems surfaced: own messages could take the overdraft buffers (now they acquire only
+   below the cap), and the overdraft ceiling assumed buffers full of redirected payload, while the proxy's buffer for
+   a destination also carries own messages (bound now `redirect_high_water + 1` buffers, per element; KASSERT only,
+   level 0 in experiment builds). Open design question: own payload riding in overdraft buffers. Locally (RMAT 2^18,
+   9 ranks, 3 iterations, Release) same counts; max rank RSS 164-175 -> 131-133 MB; min time grid 4 / 16 KiB
+   0.52-0.53 -> 0.50-0.52 s, direct 4 KiB 0.54 -> 0.48 s. Consequences: every BriefKAsten measurement since
+   2026-11-24 ran with the leak (absolute times and memory; no pool stalls); KaCCv2 pins it since 2026-09-18
+   (`5664f7f`), with 7-50 K overflows per second on the busiest rank in its async configurations. Next: re-run
+   `rmat-memory` and `briefkasten-rmat` with 82d1283.
 
 ## Decisions (2026-11-24)
 

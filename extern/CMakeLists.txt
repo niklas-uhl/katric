@@ -161,6 +161,8 @@ FetchContent_Declare(
 # the legacy queue stays behind --message-queue legacy for reproducing earlier results. Pinned to a commit (not a
 # branch, not shallow: FetchContent keeps whatever a branch pin cloned first). Its own kamping / kassert declarations
 # are shadowed by katric's (declared first). C++23, so no range-v3.
+# 82d1283 = fix/buffer-pool-shells (the aggregation buffer pool stays bounded: since 86fbe94 every overflow flush
+# leaked a buffer until the queue was destroyed, the node OOM of doc/briefkasten-migration.md step 8) on top of
 # 5a84bb9 = feat/idle-flush + PR #24 (fix/oversized-messages: messages larger than a buffer, flow-control accounting,
 # oversize pass above half the credit window; open) + PR #25 (merged: in-place EnvelopeSerializationMerger, contiguous
 # split messages) + PR #26 (merged: poll_throttled polls while buffers wait, oversize passes counted per send) + PR #27
@@ -170,7 +172,7 @@ set(BRIEFKASTEN_USE_CXX23 ON)
 FetchContent_Declare(
   BriefKAsten
   GIT_REPOSITORY https://github.com/niklas-uhl/BriefKAsten
-  GIT_TAG 5a84bb9f97437ef0f9efaca6085f6b1a741536f9 # feat/buffer-lifetime-check (PR #27)
+  GIT_TAG 82d12839be96c886b358eb909ec9360a65a20e98 # fix/buffer-pool-shells
   SYSTEM)
 
 # katric's own kassert instance (kassert::kassert, used by no other dependency). Its default level applies to every target
