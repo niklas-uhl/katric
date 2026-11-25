@@ -30,7 +30,6 @@
 #include "katric/graph/graph.h"
 #include "katric/indirect_message_queue.h"
 #include "katric/intersection.h"
-#include "katric/memory_probe.h"
 #include "katric/message_statistics.h"
 #include "katric/triangle_counter.h"
 
@@ -392,13 +391,10 @@ inline void global_phase(graph::Graph const& G,
       poll_time += (send_start - poll_start) - (handle_time - handle_before);
     }
     send_time += (clock::now() - send_start) - (handle_time - handle_before_send);
-    // all posted, the queue alive: what it and MPI hold at the end of sending
-    profiling::memory_snapshot("mem_send_loop");
     CALI_CXX_MARK_SCOPE("termination");
     auto const handle_before = handle_time;
     terminate();
     termination_handle_time = handle_time - handle_before;
-    profiling::memory_snapshot("mem_terminated");
   };
   if (conf.message_queue == MessageQueue::legacy) {
     // the legacy message queue communicates on MPI_COMM_WORLD, whatever the

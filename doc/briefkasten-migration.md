@@ -339,6 +339,8 @@ The grid already scales this way today (`baseline_26_11_20`, 192 -> 3072: permut
    2026-09-18 after the leak, i.e. never measured with a working cap. Locally a larger pool is not faster (stalls do
    not drop either: the busiest sender outruns its 8 send slots with any finite pool). katric `--buffers-per-peer`
    (default 2); suite `briefkasten-pool-768` (one short job: direct 4 KiB with 2 / 32 per peer, grid 16 KiB).
+   The debugging suites (`briefkasten-cma-debug`, `-spread`, their command template, `rmat-memory`) and the memory
+   probe were removed once the cause was fixed (2026-11-25); they are in git history before that commit.
 
 ## Decisions (2026-11-24)
 
