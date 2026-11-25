@@ -316,6 +316,18 @@ The grid already scales this way today (`baseline_26_11_20`, 192 -> 3072: permut
    2026-11-24 ran with the leak (absolute times and memory; no pool stalls); KaCCv2 pins it since 2026-09-18
    (`5664f7f`), with 7-50 K overflows per second on the busiest rank in its async configurations. Next: re-run
    `rmat-memory` and `briefkasten-rmat` with 82d1283.
+   **Reserve bound** (BriefKAsten 1404471, `fix/reserve-own-pause`, PR #30 on #29; katric pins it). With #29 the
+   proxy's reserve (buffers beyond the pool cap) was bounded only per forwarded element: own messages merge into the
+   proxy's shared buffer for a destination without acquiring, a forwarded message overflows it, and the next
+   forwarded message draws another reserve buffer, so memory could exceed O(w p' Delta) (the cc-paper's claim) by up
+   to Delta / message size. Now an own post (outside a handler; only forwarding posts from handlers, asserted in
+   `split_handler`) waits while the reserve holds more than one buffer per peer. No deadlock: forwarding never
+   waits, so every rank keeps consuming and granting while it polls. Reserve <= 2 ceil(redirect_high_water / buffer)
+   + 3 p' + send slots + 2, asserted. Shared buffers (aggregation) unchanged. katric reports
+   `peak_reserve_buffers`, `redirect_overdraft`, `reserve_waits` in the global phase. Locally (RMAT 2^18, 9 ranks,
+   grid 4 KiB): same count and time within noise of 82d1283; peak reserve 50 buffers, 11 reserve waits in total,
+   and `buffer_stalls` up to 445 K per rank (0 with the leak: the pool's backpressure is back). On the cluster,
+   watch `buffer_stalls` next to the global-phase time.
 
 ## Decisions (2026-11-24)
 

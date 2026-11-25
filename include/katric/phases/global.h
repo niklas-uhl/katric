@@ -302,6 +302,11 @@ void report_briefkasten_counters(Queue const& queue,
   add("termination_rounds", queue.num_termination_rounds());
   // the most buffers waiting for a send slot at once (use the max over ranks)
   add("peak_send_backlog", queue.peak_send_backlog());
+  // the proxy's reserve (buffers beyond the pool cap): most at once, the overdraft it allocated, and own posts
+  // that waited for it to drain (use the max over ranks)
+  add("peak_reserve_buffers", queue.peak_reserve_buffers());
+  add("redirect_overdraft", queue.redirect_overdraft());
+  add("reserve_waits", queue.num_reserve_waits());
 }
 
 /// The global phase: sends the message of every local vertex v with cut edges
