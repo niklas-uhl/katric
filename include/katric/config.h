@@ -112,6 +112,10 @@ struct Config {
   std::size_t request_slots = 8;
   /// BriefKAsten: credit-based flow control (window per peer)
   bool flow_control = true;
+  /// BriefKAsten EXPERIMENT (pin exp/pool-fix-switch, temporary): the pool
+  /// handling from before the fix (BriefKAsten #29 / #30), for an A/B in one
+  /// binary (`briefkasten-pool-ab`)
+  bool legacy_pool = false;
   Receiver receiver = Receiver::persistent;
   /// BriefKAsten: poll only on every n-th sender vertex (1: on every one, as
   /// the legacy queue); BriefKAsten polls on every call anyway while buffers

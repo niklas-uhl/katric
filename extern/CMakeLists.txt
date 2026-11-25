@@ -173,7 +173,9 @@ set(BRIEFKASTEN_USE_CXX23 ON)
 FetchContent_Declare(
   BriefKAsten
   GIT_REPOSITORY https://github.com/niklas-uhl/BriefKAsten
-  GIT_TAG 675048af47f950997209363fd1fb4ce83060c685 # fix/reserve-own-pause (PR #30)
+  # TEMPORARY: exp/pool-fix-switch (d2b5a24) = 675048a + Config::bounded_pool, the run-time switch behind
+  # --legacy-pool, for the A/B briefkasten-pool-ab; back to 675048a (or the merged #30) afterwards.
+  GIT_TAG d2b5a243a5950203e789634620ce881adbf1f047 # exp/pool-fix-switch
   SYSTEM)
 
 # katric's own kassert instance (kassert::kassert, used by no other dependency). Its default level applies to every target

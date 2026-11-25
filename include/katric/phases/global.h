@@ -213,6 +213,7 @@ inline auto briefkasten_config(Config const& conf) -> briefkasten::Config {
   briefkasten::Config config;
   config.local_threshold_bytes = conf.buffer_size;
   config.num_request_slots = conf.request_slots;
+  config.bounded_pool = !conf.legacy_pool;
   config.num_credit_buffers =
       conf.flow_control ? std::nullopt : std::optional<std::size_t>(0);
   return config;

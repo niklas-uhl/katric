@@ -1,0 +1,43 @@
+# Did the BriefKAsten pool fix (#29 / #30) degrade the tuned default? (doc/briefkasten-migration.md, step 8.) The
+# earlier before / after comparisons mixed the fix with build differences, so this runs both from one binary:
+# katric pins BriefKAsten exp/pool-fix-switch (675048a + a run-time switch), and --legacy-pool restores the pool
+# handling from before the fix. The tuned default (direct 4 KiB, 8 request slots, poll-skip 100, default load
+# balancing; briefkasten-tuning / -rmat_26_11_24) at 768 cores, on the permuted RGG of briefkasten-tuning (~9 s per
+# iteration) and RMAT (~43 s per iteration, where the pool stalls), 2 iterations:
+#   c0  the fix      c1  --legacy-pool (before the fix)
+# One job per input (2 runs each; RGG ~1 min, RMAT ~4 min), 3 minutes per run. Generate, then `sbatch -p test`:
+#   just run-supermuc-experiment briefkasten-pool-ab --copy-binary
+# Compare the global phase and buffer_stalls between c0 and c1; check the run globals (build flags, git_commit) match.
+name: briefkasten-pool-ab
+executable: apps/katric
+output_path_option_name: caliper-output
+threads_option_name: num-threads
+ncores: [768]
+max_cores: 768
+threads_per_rank: [1]
+time_limit: 3
+graphs:
+  - generator: kagen
+    type: rgg2d
+    N: 18
+    M: 22
+    permute: 1
+    seed: 28475421
+    scale_weak: true
+  - generator: kagen
+    type: rmat
+    N: 16
+    M: 20
+    seed: 28475421
+    scale_weak: true
+config:
+  - message-queue: briefkasten
+    communication-policy: direct
+    buffer-size: 4096
+    request-slots: 8
+    poll-skip: 100
+    legacy-pool: [false, true]
+    message-trimming: true
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 2

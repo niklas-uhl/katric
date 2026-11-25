@@ -154,6 +154,9 @@ auto parse_config(std::span<char*> argv, kamping::v2::comm_view comm)
   app.add_flag("--flow-control,!--no-flow-control", conf.flow_control,
                "BriefKAsten: credit-based flow control")
       ->default_str("true");
+  app.add_flag("--legacy-pool", conf.legacy_pool,
+               "BriefKAsten experiment: the pool handling from before the "
+               "pool fix (A/B only)");
   add_enum_option(app, "--receiver", conf.receiver);
   app.add_option("--poll-skip", conf.poll_skip,
                  "BriefKAsten: poll after every n-th sender vertex only")

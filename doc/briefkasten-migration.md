@@ -370,9 +370,11 @@ The grid already scales this way today (`baseline_26_11_20`, 192 -> 3072: permut
    briefkasten-tuning*, 11-24) came from an older build cache (no -march=native, KaMPIng types assertions at level
    10), and the 768-core baseline (briefkasten-rmat_26_11_24, BriefKAsten 0062f64) predates #26. So neither the
    speed-up nor "no degradation" is shown; 2 vs 32 buffers per peer was the only clean comparison (same build).
-   `briefkasten-noregress-before` / `-after`: the tuned default (direct 4 KiB, 8 slots, poll-skip 100) at 768 cores on
-   permuted RGG and RMAT, with katric 63d6d22 (the tuning's, BriefKAsten 75d4f95) and the current katric, both built
-   fresh with the preset.
+   Instead of two builds (separate build directories mix build states), one binary: BriefKAsten exp/pool-fix-switch
+   (d2b5a24 = 675048a + `Config::bounded_pool`, a run-time switch back to the pool handling from before #29; not for
+   main), katric `--legacy-pool` and a temporary pin to it. Suite `briefkasten-pool-ab`: the tuned default (direct
+   4 KiB, 8 slots, poll-skip 100, default load balancing) at 768 cores on permuted RGG and RMAT, fix vs
+   `--legacy-pool`. Afterwards: pin back to 675048a (or the merged #30), drop `--legacy-pool`.
 
 ## Decisions (2026-11-24)
 
