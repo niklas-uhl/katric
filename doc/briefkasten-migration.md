@@ -338,7 +338,7 @@ The grid already scales this way today (`baseline_26_11_20`, 192 -> 3072: permut
    (its own memory problem, not this pool). The pool default (2 buffers per peer, BriefKAsten ec55432) was set on
    2026-09-18 after the leak, i.e. never measured with a working cap. Locally a larger pool is not faster (stalls do
    not drop either: the busiest sender outruns its 8 send slots with any finite pool). katric `--buffers-per-peer`
-   (default 2); suite `briefkasten-pool-size` (768, 2 / 8 / 32 per peer, direct 4 KiB and grid 16 KiB).
+   (default 2); suite `briefkasten-pool-768` (one short job: direct 4 KiB with 2 / 32 per peer, grid 16 KiB).
 
 ## Decisions (2026-11-24)
 

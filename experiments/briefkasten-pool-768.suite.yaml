@@ -1,0 +1,51 @@
+# The BriefKAsten pool fix at 768 cores, one short job for the test partition (doc/briefkasten-migration.md, step 8).
+# With the leak fixed (BriefKAsten 82d1283) the busiest node needs ~13.7 GB instead of 32-55 GB and 384 cores got
+# faster, but at 768 cores direct got slower: global phase per iteration ~27.8 -> 43.5 s (4 KiB; 3 iterations
+# 83.5 -> 130.4 s, briefkasten-rmat_26_11_24 -> _26_11_25), buffer_stalls 0 -> 60 K on the busiest rank, same
+# messages. BriefKAsten's pool default (2 buffers per peer) was set while the cap had no effect (2026-09-18).
+#   c0  direct 4 KiB, 2 buffers per peer (the default), 1 iteration: the reference in the same job
+#   c1  direct 4 KiB, 32 buffers per peer, 1 iteration: does a larger pool bring the time back? (locally it did not)
+#   c2  grid 16 KiB, 2 buffers per peer, 2 iterations: must pass (it ran a node out of memory in iteration 1 or 2)
+# With katric >= 8fa817d (BriefKAsten 1404471, the reserve bound). Read the global phase (timers), buffer_stalls,
+# poll_ns / send_ns / handle_ns (max over ranks: where the busiest rank's time goes), peak_reserve_buffers /
+# reserve_waits (c2), mem_* (probe). Iterations vary by < 1 %, so one is enough for the time.
+# Generate, then `sbatch -p test <jobfile>` (kaval's --test flag is not wired to the runner):
+#   just run-supermuc-experiment briefkasten-pool-768 --copy-binary \
+#     --command-template experiments/briefkasten-cma-debug.command-template.txt
+name: briefkasten-pool-768
+executable: apps/katric
+output_path_option_name: caliper-output
+threads_option_name: num-threads
+ncores: [768]
+max_cores: 768
+threads_per_rank: [1]
+time_limit: 4
+graphs:
+  - generator: kagen
+    type: rmat
+    N: 16
+    M: 20
+    seed: 28475421
+    scale_weak: true
+config:
+  - message-queue: briefkasten
+    communication-policy: direct
+    buffer-size: 4096
+    buffers-per-peer: [2, 32]
+    poll-skip: 1
+    message-trimming: true
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 1
+    ENV: &env
+      KATRIC_MEMORY_PROBE: 1
+  - message-queue: briefkasten
+    communication-policy: grid
+    buffer-size: 16384
+    buffers-per-peer: 2
+    poll-skip: 1
+    message-trimming: true
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 2
+    ENV: *env
