@@ -5,11 +5,12 @@
 # messages. BriefKAsten's pool default (2 buffers per peer) was set while the cap had no effect (2026-09-18).
 #   c0  direct 4 KiB, 2 buffers per peer (the default), 1 iteration: the reference in the same job
 #   c1  direct 4 KiB, 32 buffers per peer, 1 iteration: does a larger pool bring the time back? (locally it did not)
-#   c2  grid 16 KiB, 2 buffers per peer, 2 iterations: must pass (it ran a node out of memory in iteration 1 or 2)
+#   c2  grid 16 KiB, 2 buffers per peer, 1 iteration: must pass (at 768 it ran a node out of memory in iteration 1)
 # With katric >= 8fa817d (BriefKAsten 1404471, the reserve bound). Read the global phase (timers), buffer_stalls,
 # poll_ns / send_ns / handle_ns (max over ranks: where the busiest rank's time goes), peak_reserve_buffers /
 # reserve_waits (c2). No memory probe: with the pool bounded its memory is buffers per peer x peers x buffer size.
-# Iterations vary by < 1 %, so one is enough for the time.
+# Iterations vary by < 1 %, so one is enough for the time. A run takes ~75 s (61 s per iteration at 768 cores plus
+# ~15 s of start-up and generation); the limit of 2 minutes applies to each run (mpiexec), so the job asks for 6.
 # Generate, then `sbatch -p test <jobfile>` (kaval's --test flag is not wired to the runner):
 #   just run-supermuc-experiment briefkasten-pool-768 --copy-binary
 name: briefkasten-pool-768
@@ -19,7 +20,7 @@ threads_option_name: num-threads
 ncores: [768]
 max_cores: 768
 threads_per_rank: [1]
-time_limit: 4
+time_limit: 2
 graphs:
   - generator: kagen
     type: rmat
@@ -45,4 +46,4 @@ config:
     message-trimming: true
     degree-exchange: dense
     intersection-method: merge
-    iterations: 2
+    iterations: 1
