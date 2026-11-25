@@ -1,19 +1,23 @@
-# Is the Intel MPI abort of `briefkasten-rmat` the transport? (doc/briefkasten-migration.md, step 6, "Crashes".) On
-# RMAT at 384 and 768 cores, BriefKAsten grid with 16 / 64 KiB buffers (and legacy grid at 768) aborted with
-# `intel_transport_recv.h:1267: cma_read_nbytes == size`, the single-copy (CMA) path for large intra-node messages;
-# 4 KiB grid and every direct run passed. Intel support suggested I_MPI_SHM_CMA=0 for this assertion (community thread
-# 1329425), but that variable is not documented for 2021.15 and had no effect (first run 2026-11-25: the CMA-off runs
-# aborted in the same CMA code; every grid run passed iteration 1 and died in iteration 2). I_MPI_SHM=off is the
-# documented switch; I_MPI_DEBUG=5 logs the transport in use. Here the crashing configurations at 384 cores (where all
-# three crashed), each with the transport as before and with
-# the shared-memory transport off (I_MPI_SHM=off, intra-node messages go through the fabric), plus direct 16 KiB with it
-# off for the cost (25.5 s at 768, 19.6 at 384 before). If the CMA-off runs pass, the abort is in the transport (or in how the relayed buffers meet
-# it); if they still fail elsewhere, look at BriefKAsten's buffer lifetime in the grid. One core count; with
-# --copy-binary. The environment is not in the run metadata: runs c0, c1 (grid 16 / 64 KiB) have CMA on, c2, c3 (grid
-# 16 / 64 KiB) and c4 (direct 16 KiB) have I_MPI_SHM=off (the run name ends in -c<i>-s0).
-# Second run (2026-11-25): build with `cmake --preset experiments -DBRIEFKASTEN_CHECK_BUFFERS=ON` (BriefKAsten's buffer
-# lifetime check, PR #27): a violation prints `[BriefKAsten buffer check, rank r] ...` to stderr and aborts.
-# poll-skip: 1 pinned 2026-11-25, when the default became 100 (the suite ran with 1).
+# Is the Intel MPI abort of `briefkasten-rmat` a BriefKAsten bug or the transport? (doc/briefkasten-migration.md,
+# step 6 "Crashes" and step 8.) On RMAT at 384 and 768 cores, BriefKAsten grid with 16 / 64 KiB buffers (and legacy
+# grid at 768) aborted in Intel MPI's single-copy path for large intra-node messages
+# (`intel_transport_recv.h:1267: cma_read_nbytes == size`), in iteration 1 or 2; 4 KiB grid and every direct run passed.
+# History: run 1 (I_MPI_SHM_CMA=0, not an Intel MPI 2021.15 variable, no effect): every grid run aborted. Run 2, with
+# BriefKAsten's buffer lifetime check (full, checksums every send buffer twice, ~45 % slower): everything passed, no
+# check fired; inconclusive, as the check changes the timing.
+#
+# Run 3: build with `cmake --preset experiments -DBRIEFKASTEN_CHECK_BUFFERS=ON` (BriefKAsten PR #27); the environment
+# variable BRIEFKASTEN_CHECK_BUFFERS selects the mode per run. The environment is not in the run metadata; by the run
+# name's -c<i>-s0:
+#   c0, c1  grid 16 / 64 KiB, checks off      (as the crashing runs: does it still abort?)
+#   c2, c3  grid 16 / 64 KiB, checks light    (addresses, sizes, requests; nearly the original timing)
+#   c4, c5  grid 16 / 64 KiB, checks full     (as run 2)
+#   c6, c7  grid 16 / 64 KiB, checks off, I_MPI_SHM=off (the workaround, without check overhead; I_MPI_DEBUG=5 logs the
+#           transport)
+# Reading it: a violation prints `[BriefKAsten buffer check, rank r] ...` to stderr and aborts (a BriefKAsten bug).
+# c0 / c1 abort but c2 / c3 abort in Intel MPI without a check message: the transport. c0 / c1 pass: not reproducible
+# at the moment, more repetitions needed before relying on the workaround. 5 iterations (the abort came in iteration
+# 2 before), poll-skip 1 as the earlier runs. One core count; with --copy-binary.
 name: briefkasten-cma-debug
 executable: apps/katric
 output_path_option_name: caliper-output
@@ -21,7 +25,7 @@ threads_option_name: num-threads
 ncores: [384]
 max_cores: 384
 threads_per_rank: [1]
-time_limit: 15
+time_limit: 45
 graphs:
   - generator: kagen
     type: rmat
@@ -37,7 +41,9 @@ config:
     message-trimming: true
     degree-exchange: dense
     intersection-method: merge
-    iterations: 3
+    iterations: 5
+    ENV:
+      BRIEFKASTEN_CHECK_BUFFERS: "off"
   - message-queue: briefkasten
     communication-policy: grid
     buffer-size: [16384, 65536]
@@ -45,18 +51,28 @@ config:
     message-trimming: true
     degree-exchange: dense
     intersection-method: merge
-    iterations: 3
+    iterations: 5
     ENV:
-      I_MPI_SHM: "off"
-      I_MPI_DEBUG: 5
+      BRIEFKASTEN_CHECK_BUFFERS: light
   - message-queue: briefkasten
-    communication-policy: direct
-    buffer-size: 16384
+    communication-policy: grid
+    buffer-size: [16384, 65536]
     poll-skip: 1
     message-trimming: true
     degree-exchange: dense
     intersection-method: merge
-    iterations: 3
+    iterations: 5
     ENV:
+      BRIEFKASTEN_CHECK_BUFFERS: full
+  - message-queue: briefkasten
+    communication-policy: grid
+    buffer-size: [16384, 65536]
+    poll-skip: 1
+    message-trimming: true
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 5
+    ENV:
+      BRIEFKASTEN_CHECK_BUFFERS: "off"
       I_MPI_SHM: "off"
       I_MPI_DEBUG: 5

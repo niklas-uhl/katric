@@ -258,6 +258,15 @@ The grid already scales this way today (`baseline_26_11_20`, 192 -> 3072: permut
    same way at 768, which points at Intel MPI rather than a shared bug. Next: the check build on SuperMUC-NG
    (`briefkasten-cma-debug` with a binary built with `-DBRIEFKASTEN_CHECK_BUFFERS=ON`); also, `resize_buffers` of
    the persistent receiver re-inits its receives without starting them (unused by katric).
+   **CMA debug, second run** (check build, `full`, 3 iterations, same directory as the first run, which it replaced):
+   all five runs passed, also grid 16 / 64 KiB with the normal transport, which had aborted every time; no check
+   fired. Inconclusive: the full check reads every send buffer twice and made an iteration ~45 % slower (45 vs 31 s),
+   and the abort is timing-dependent. `I_MPI_SHM=off` took effect (`I_MPI_DEBUG`: psm2 provider for intra-node
+   traffic) and cost nothing measurable in that build. Hence the check mode is chosen at run time now (BriefKAsten
+   5a84bb9, environment variable `BRIEFKASTEN_CHECK_BUFFERS`: `full` default, `light` = addresses / sizes / requests
+   only, `off`), and katric pins 5a84bb9 (PR #26 was squash-merged as 9c4bbf0 and #27 rebased onto it, so the
+   earlier pin d9bf03e is on no branch any more). **Third run:** `briefkasten-cma-debug`, grid 16 / 64 KiB x checks
+   off / light / full, plus `I_MPI_SHM=off` with checks off, 5 iterations each.
 
 ## Decisions (2026-11-24)
 

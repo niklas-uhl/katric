@@ -161,16 +161,16 @@ FetchContent_Declare(
 # the legacy queue stays behind --message-queue legacy for reproducing earlier results. Pinned to a commit (not a
 # branch, not shallow: FetchContent keeps whatever a branch pin cloned first). Its own kamping / kassert declarations
 # are shadowed by katric's (declared first). C++23, so no range-v3.
-# d9bf03e = feat/idle-flush + PR #24 (fix/oversized-messages: messages larger than a buffer, flow-control accounting,
-# oversize pass above half the credit window) + PR #25 (feat/contiguous-envelope-serialization: in-place
-# EnvelopeSerializationMerger, contiguous split messages) + PR #26 (feat/throttled-poll-and-pass-count: poll_throttled
-# polls while buffers wait, oversize passes counted per send) + PR #27 (feat/buffer-lifetime-check: the CMake option
-# BRIEFKASTEN_CHECK_BUFFERS, off by default; -DBRIEFKASTEN_CHECK_BUFFERS=ON for a checking build).
+# 5a84bb9 = feat/idle-flush + PR #24 (fix/oversized-messages: messages larger than a buffer, flow-control accounting,
+# oversize pass above half the credit window; open) + PR #25 (merged: in-place EnvelopeSerializationMerger, contiguous
+# split messages) + PR #26 (merged: poll_throttled polls while buffers wait, oversize passes counted per send) + PR #27
+# (feat/buffer-lifetime-check: the CMake option BRIEFKASTEN_CHECK_BUFFERS, off by default; -DBRIEFKASTEN_CHECK_BUFFERS=ON
+# for a checking build, the environment variable of the same name selects off / light / full at run time).
 set(BRIEFKASTEN_USE_CXX23 ON)
 FetchContent_Declare(
   BriefKAsten
   GIT_REPOSITORY https://github.com/niklas-uhl/BriefKAsten
-  GIT_TAG d9bf03e359f0f2c5cab85243b83f8f1e5fc98005 # feat/buffer-lifetime-check (PR #27, stacked on #26, #25, #24)
+  GIT_TAG 5a84bb9f97437ef0f9efaca6085f6b1a741536f9 # feat/buffer-lifetime-check (PR #27)
   SYSTEM)
 
 # katric's own kassert instance (kassert::kassert, used by no other dependency). Its default level applies to every target
