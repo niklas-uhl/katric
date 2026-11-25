@@ -10,8 +10,7 @@
 # poll_ns / send_ns / handle_ns (max over ranks: where the busiest rank's time goes), peak_reserve_buffers /
 # reserve_waits (c2), mem_* (probe). Iterations vary by < 1 %, so one is enough for the time.
 # Generate, then `sbatch -p test <jobfile>` (kaval's --test flag is not wired to the runner):
-#   just run-supermuc-experiment briefkasten-pool-768 --copy-binary \
-#     --command-template experiments/briefkasten-cma-debug.command-template.txt
+#   just run-supermuc-experiment briefkasten-pool-768 --copy-binary
 name: briefkasten-pool-768
 executable: apps/katric
 output_path_option_name: caliper-output
