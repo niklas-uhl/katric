@@ -403,6 +403,16 @@ The grid already scales this way today (`baseline_26_11_20`, 192 -> 3072: permut
    same elements. Not the cap; the trigger is open (KaCCv2 notes/briefkasten-pool-fix-findings.md, suite
    `briefkasten-pool-ab-rgg` for a synthetic repro). katric cannot show this effect: its global phase calls
    `terminate()` once, after all posts, so there is no repeated idle / drain cycle.
+   **3072 / 6144** (same suite and binary, 81e91dc; 1 iteration; global phase fix vs legacy): RMAT direct 97.9 vs
+   148.0 s at 3072 (-34 %; busiest send loop 77 vs 126 s, 9.3 M stalls), at 6144 fix 224 s while legacy exceeded
+   the 6-minute run limit; RMAT grid 64.4 s at 3072 and 81.0 s at 6144 with the fix, legacy **killed by signal 9
+   on whole nodes** at both (3 nodes at 3072, 2 at 6144: the OOM killer, the leak); permuted RGG grid 6.29 vs
+   7.69 s (-18 %) and 7.17 vs 8.55 s (-16 %), direct equal (4.87 / 4.90 s, 8.39 / 8.33 s). Peak reserve 765 / 1083
+   buffers, no reserve waits. **The fix wins more the higher p, and legacy does not run RMAT at high p at all.**
+   KaCCv2 (notes on exp/briefkasten-pool-ab, 2026-11-26): the flat slowdown there comes from the overflow erase
+   changing the termination drain's order (libstdc++ iteration order), not from the bounded pool; BriefKAsten
+   `Config::drop_shells` (drop the moved-from shells instead of erasing the entry) is as fast as legacy and as lean
+   as the fix. Candidate replacement for the erase of #29; katric needs to be checked with it.
 
 ## Decisions (2026-11-24)
 
