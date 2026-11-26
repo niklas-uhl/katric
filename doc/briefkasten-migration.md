@@ -413,6 +413,12 @@ The grid already scales this way today (`baseline_26_11_20`, 192 -> 3072: permut
    changing the termination drain's order (libstdc++ iteration order), not from the bounded pool; BriefKAsten
    `Config::drop_shells` (drop the moved-from shells instead of erasing the entry) is as fast as legacy and as lean
    as the fix. Candidate replacement for the erase of #29; katric needs to be checked with it.
+   **Candidate checked** (`briefkasten-drop-shells_26_11_26`, BriefKAsten exp/drain-policy cad2789, 768, one binary;
+   `--drop-shells` = the pool fix with #30, overflow flushes keep the entry and drop the shell instead of #29's
+   erase): global phase equal to the fix within 0.5 % (RMAT direct 24.94 vs 25.08 s, grid 27.70 vs 27.82 s; permuted
+   RGG direct 4.53 / 4.53 s, grid 5.70 / 5.65 s), same stalls and reserve. Found on the way: with the entry kept, a
+   proxy's handler could merge into the shell and grow it into an uncounted buffer (RMAT grid abort, fixed in
+   cad2789). KaCCv2 on the same base: candidate = fix as well; the base's idle flush makes the drain order moot.
 
 ## Decisions (2026-11-24)
 
