@@ -268,6 +268,15 @@ if(KATRIC_COMPETITOR_HAVOQGT)
     SYSTEM EXCLUDE_FROM_ALL)
   FetchContent_MakeAvailable(havoqgt)
 endif()
+if(KATRIC_COMPETITOR_GRAPE)
+  # The fork fetches glog (pinned) itself.
+  FetchContent_Declare(
+    grape
+    GIT_REPOSITORY https://github.com/niklas-uhl/libgrape-lite
+    GIT_TAG 682485d906f6e0a600723866f46728a53243cb92 # katric (on alibaba/libgrape-lite master beaa6e8)
+    SYSTEM EXCLUDE_FROM_ALL)
+  FetchContent_MakeAvailable(grape)
+endif()
 if(KATRIC_COMPETITOR_TOM2D)
   FetchContent_Declare(
     tom2d

@@ -190,6 +190,26 @@ katric::Config parse_config(int argc, char* argv[], int rank, int size) {
         ->group("LCC (--algorithm lcc)");
     add_enum_option(app, "--tripoll-variant", conf.tripoll_variant)->group("TriPoll (--algorithm tripoll)");
     add_enum_option(app, "--tripoll-routing", conf.tripoll_routing)->group("TriPoll (--algorithm tripoll)");
+    app.add_option(
+           "--grape-threads",
+           conf.grape_threads,
+           "Threads per rank; 0 = GRAPE's default (the node's hardware threads / ranks on the node)"
+    )
+        ->capture_default_str()
+        ->group("GRAPE (--algorithm grape)");
+    app.add_flag(
+           "--grape-global-count",
+           conf.grape_global_count,
+           "Only the global count, without LCC's per-vertex counts and their sync superstep (katric fork switch)"
+    )
+        ->group("GRAPE (--algorithm grape)");
+    app.add_flag(
+           "--grape-local-vertex-map",
+           conf.grape_local_vertex_map,
+           "GRAPE's local loader (O(local) vertex index, vertices hashed to ranks) instead of the global vertex map "
+           "and map partitioner of its published runs"
+    )
+        ->group("GRAPE (--algorithm grape)");
 
     // `new` was the name of `direct` until 2026-11-20 (job files and configs before); remove once they have run
     add_enum_option(

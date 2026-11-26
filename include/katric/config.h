@@ -65,7 +65,7 @@ enum class CommunicationPolicy {
 /// What runs, `--algorithm`: KaTric, or a competitor behind the same
 /// interface (apps/competitors/, each only with its CMake option
 /// KATRIC_COMPETITOR_<NAME>, doc/competitors.md).
-enum class Algorithm { katric, tric, havoqgt, xxtric, lcc, tripoll, tom2d };
+enum class Algorithm { katric, tric, havoqgt, xxtric, lcc, tripoll, tom2d, grape };
 /// TriC's counting variant, `--tric-variant`: the classes from TriC's main.cpp
 /// (plain is its default build, buffered is `-DAGGR_BUFR`, hash2 is
 /// `-DAGGR_HASH2`, inrecv is `-DAGGR_BUFR_INRECV`).
@@ -151,6 +151,15 @@ struct Config {
   TripollVariant tripoll_variant = TripollVariant::push_pull;
   /// TriPoll: YGM's routing scheme
   TripollRouting tripoll_routing = TripollRouting::none;
+  /// GRAPE: threads per rank (its ParallelEngineSpec); 0 = its default, the
+  /// node's hardware threads divided by the ranks on the node
+  int grape_threads = 0;
+  /// GRAPE: only the global count (katric fork switch), not LCC's per-vertex
+  /// counts and their sync superstep
+  bool grape_global_count = false;
+  /// GRAPE: its local loader (O(local) vertex index, vertices hashed to ranks)
+  /// instead of the global vertex map + map partitioner of its published runs
+  bool grape_local_vertex_map = false;
 
   bool pseudo2core = false;
   /// Global phase: each rank gets only the part of N+(v) from its first

@@ -34,6 +34,9 @@
 #ifdef KATRIC_HAVE_TOM2D
 #include "./competitors/tom2d.h"
 #endif
+#ifdef KATRIC_HAVE_GRAPE
+#include "./competitors/grape.h"
+#endif
 
 namespace katric {
 
@@ -144,6 +147,12 @@ auto make_algorithm(Config const& conf, kamping::v2::comm_view comm)
 #else
       break;
 #endif
+    case Algorithm::grape:
+#ifdef KATRIC_HAVE_GRAPE
+      return make_grape(conf, comm);
+#else
+      break;
+#endif
   }
   throw std::invalid_argument("--algorithm " + cli_name(conf.algorithm) +
                               " is not compiled in");
@@ -185,6 +194,12 @@ auto is_compiled_in(Algorithm algorithm) -> bool {
 #endif
     case Algorithm::tom2d:
 #ifdef KATRIC_HAVE_TOM2D
+      return true;
+#else
+      return false;
+#endif
+    case Algorithm::grape:
+#ifdef KATRIC_HAVE_GRAPE
       return true;
 #else
       return false;

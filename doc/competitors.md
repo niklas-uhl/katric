@@ -110,7 +110,7 @@ enough to decide whether to drop one.
 | 4 | TriPoll / YGM (Steil et al., SC'21) | `niklas-uhl/tripoll` (`katric` on `LLNL/tripoll` main `ccfe8a0`), YGM master `0072d87` | See "TriPoll: findings" |
 | 5 | Tom2D (Tom & Karypis 2019) | `niklas-uhl/2DTriangleCounting` (`katric` on `KarypisLab/2DTriangleCounting` master `f704a53`) | See "Tom2D: findings". Square p only |
 | 6 | ~~CombBLAS masked SpGEMM~~ (dropped) | `niklas-uhl/CombBLAS@46ebfc31` | Decision 6. `preprocessing` builds L and U; `counting` is the SpGEMM plus the reduce |
-| 7 | GRAPE / libgrape-lite LCC (Fan et al., SIGMOD'17) | new fork of `alibaba/libgrape-lite` (`master`, `beaa6e8a`) | See below |
+| 7 | GRAPE / libgrape-lite LCC (Fan et al., SIGMOD'17) | `niklas-uhl/libgrape-lite` (`katric` on `alibaba/libgrape-lite` master `beaa6e8`) | See "GRAPE: findings" |
 
 - **TriC.** Header-only. `run_kagen` (`graph.hpp:786`) already builds TriC's `Graph` from KaGen's CSR, so moving it
   into `ingest` is the whole conversion. The variants are distinct classes (`TriangulateAggrBuffered`, `...Hash2`,
@@ -189,7 +189,7 @@ For each competitor:
 - [x] TriPoll / YGM
 - [x] Tom2D
 - [x] ~~CombBLAS~~ dropped (see "CombBLAS: dropped")
-- [ ] GRAPE
+- [x] GRAPE (open: empty-fragment crash, see findings)
 
 Record for each, once it is done:
 - fork SHA
@@ -213,6 +213,8 @@ and pinned in `extern/CMakeLists.txt` (LCC pins CLaMPI); a clean build of all fi
 - [ ] `niklas-uhl/CLaMPI` `katric`: `bb55272..82a4e6c` (3 commits; CMake, macOS `aligned_alloc`, window-mode fix)
 - [ ] `niklas-uhl/2DTriangleCounting` `katric`: `f704a53..db9fbd9` (2 commits; cherry-pick of `650d720` from
       `nuhl-integration`, static library + API split, counter and communicator fixes)
+- [ ] `niklas-uhl/libgrape-lite` `katric`: `beaa6e8..682485d` (1 commit; CMake target, LCCOpt global-count switch,
+      `.data()` for possibly empty vectors, macOS portability)
 - [ ] `niklas-uhl/tripoll` `katric`: `ccfe8a0..437572c` (1 commit; port to YGM master, own `tripoll::ygm` target,
       drivers removed)
 - [ ] The adapters in `apps/competitors/` and their findings sections below
@@ -229,6 +231,51 @@ and pinned in `extern/CMakeLists.txt` (LCC pins CLaMPI); a clean build of all fi
 Upstream TriC since 2022: new variants `ibufastric`/`inbufastric` (single counting, the README's recommendation,
 `-DAGGR_BUFR_INRECV`), self-loops skipped in `cfastric`, C++20. The three variants we use are unchanged apart from
 that (`bufastric`, `hashfastric2` identical).
+
+### GRAPE: findings (2026-11-26)
+
+- **Corrections to the plan above:** GRAPE's Graphalytics runs used `--opt` with all other flags at their defaults:
+  map partitioner, hash-map idxer, **no** rebalancing, with a vertex file (not "segment partitioner + rebalancing").
+  Their build: `-DUSE_HUGEPAGES=ON -DUSE_SIMD=ON`. The `--opt` driver instantiates every app with `int64_t` ids outside
+  and `uint32_t` `vid_t` inside, which is what selects the SIMD specialization of `LCCOpt`.
+- **Fork:** `niklas-uhl/libgrape-lite`, branch `katric` on upstream `beaa6e8` (Apache-2.0; the GitHub fork does not
+  exist yet, the user creates it): target `grape::grape-lite` (the two `.cc` files, static) with the LCC app's headers.
+  Upstream's global CMake settings are target properties; the ones that change GRAPE's header code (`-O3`,
+  `-march=native` outside macOS, SIMD + `-mavx2`, hugepages) are INTERFACE, i.e. they reach only `katric-grape`.
+  `GRAPE_USE_SIMD` defaults to ON on x86-64 (as published), `GRAPE_USE_HUGEPAGES` to OFF (it needs a preallocated
+  hugetlb pool on the nodes, which SuperMUC does not have by default; deviation from the published build). glog v0.7.1
+  fetched by SHA; no gflags, tests, docs, CUDA, jemalloc, rdkafka.
+- **Native input:** what its vertex and edge file readers hand the loader: on each rank some vertex ids and each
+  undirected edge once (u < v from KaGen's CSR; the fragment adds the reverse direction).
+- **Loading (`preprocessing`):** GRAPE's own loader (`AddVertex`, `ConstructVertices`, `AddEdge`, `ConstructFragment`)
+  plus `Worker::Init` (per-vertex message routing, message pool). Default = the published configuration: global
+  vertex map + map partitioner. That is O(n) per rank: the map partitioner all-gathers every vertex id and keeps an
+  id → fragment hash map, and the global vertex map gives every rank every fragment's id index (built in O(p) ring
+  rounds). The map partitioner cuts the sorted ids into equal contiguous chunks, i.e. a balanced 1D distribution.
+  So the largest weak-scaling inputs cannot run in this configuration (a GRAPE limit). `--grape-local-vertex-map`
+  (user decision: both): its local loader, O(local) index, but vertices hashed to ranks (no locality).
+- **`counting`:** `Worker::Query` (degree exchange; each N⁺(v) sent once to each rank holding an out-neighbour;
+  intersections; unless `--grape-global-count` the per-vertex counts and the ghost-count superstep), then a sum (÷ 3
+  for the per-vertex counts). This is exactly what GRAPE's driver times as "run algorithm". `count_t` = `uint64_t`.
+- **`--grape-global-count`** (fork switch in both `LCCOpt` variants): the same intersections, counted per thread
+  instead of added to all three vertices, no sync superstep; each triangle is found once, at its lowest-ordered vertex.
+- **Threads:** `--grape-threads`, 0 = its default (`MultiProcessSpec`: hardware threads / ranks on the node); ctests 1.
+  `main` requests `MPI_THREAD_MULTIPLE` when `--algorithm grape` is on the command line; the adapter checks the level.
+- **Constraints:** `MPI_COMM_WORLD`; `vid_t` = `uint32_t` as published, so a fragment's local ids (inner + ghost
+  vertices) have 32 − log₂(fragments) bits; O(n) per rank in the default loading (above).
+- **Fixed (marked `// katric:`), no change in behaviour:** `&v[0]` → `v.data()` where the vector can be empty (the
+  fragment's ghost list with one rank, MPI request vectors, the archives' byte copies of an empty vector; libstdc++
+  assertions abort there, Release reads nothing); `get_available_memory()` falls back to `sysconf` without
+  `/proc/meminfo` (macOS); `local_io_adaptor.cc` includes `<unistd.h>`.
+- **Open (asked the user):** a rank whose fragment has no inner vertex crashes: `OEDestsSize()` asserts, and in
+  Release `LCCOpt::EstimateMessageSize` divides by `GetInnerVerticesNum()` = 0. Only `triangle.metis` (3 vertices) on
+  4 ranks hits it; the three ctests `katric.triangle.grape*.4cores` fail until this is decided.
+- **Validation:** `--verify --iterations 2` at 1, 2, 4 ranks, all three modes (default, global count, local vertex
+  map): RGG2D, RHG, GNM, RMAT (n=2^14, m=2^17); 2 and 4 threads per rank; ctests on the example set (21 of 24 pass, see
+  open). The SIMD specialization (x86-64) is untested here (ARM Mac); check on the cluster.
+- **Against the original:** upstream `beaa6e8` `run_app --opt --application lcc` (+ only the macOS fixes; glog/gflags
+  built in the job's tmp) vs. the adapter, com-amazon, 4 ranks × 1 thread, Release: "run algorithm" 0.040–0.043 s vs.
+  `counting` 0.035–0.044 s, same count. Loading 0.116 s (with file reading) vs. `preprocessing` 0.072–0.075 s.
 
 ### CombBLAS: dropped (2026-11-26)
 

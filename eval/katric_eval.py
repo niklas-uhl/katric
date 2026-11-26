@@ -163,6 +163,7 @@ COMPETITORS = {
     "lcc": ("LCC", None),
     "tripoll": ("TriPoll", "tripoll-variant"),
     "tom2d": ("Tom2D", None),
+    "grape": ("GRAPE", None),
 }
 
 

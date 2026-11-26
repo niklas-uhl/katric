@@ -38,6 +38,7 @@
 #include <kassert/kassert.hpp>
 #include <magic_enum/magic_enum.hpp>
 #include <mpi.h>
+#include <string_view>
 #include <spdlog/cfg/env.h>
 #include <spdlog/spdlog.h>
 
@@ -55,8 +56,18 @@
 #include "katric/input.h"
 
 int main(int argc, char* argv[]) {
+    // GRAPE's message manager sends and receives from its own threads, so it needs MPI_THREAD_MULTIPLE, requested
+    // only when --algorithm grape is on the command line (MPI is initialized before the configuration is parsed)
+    int required_thread_level = MPI_THREAD_FUNNELED;
+    for (int i = 1; i < argc; ++i) {
+        std::string_view const arg = argv[i];
+        if (arg == "--algorithm=grape"
+            || (arg == "--algorithm" && i + 1 < argc && std::string_view(argv[i + 1]) == "grape")) {
+            required_thread_level = MPI_THREAD_MULTIPLE;
+        }
+    }
     int thread_support_level;
-    MPI_Init_thread(&argc, &argv, MPI_THREAD_FUNNELED, &thread_support_level);
+    MPI_Init_thread(&argc, &argv, required_thread_level, &thread_support_level);
     spdlog::cfg::load_env_levels();
     kamping::logging::setup_logging();
     if (thread_support_level < MPI_THREAD_FUNNELED) {

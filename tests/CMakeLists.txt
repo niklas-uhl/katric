@@ -96,6 +96,13 @@ if(TARGET katric)
     set(args_tom2d --algorithm tom2d --iterations 2)
     set(ranks_tom2d 1 4) # square p only
   endif()
+  if(KATRIC_COMPETITOR_GRAPE)
+    list(APPEND example_configs grape grape-global-count grape-local-vertex-map)
+    list(APPEND competitor_configs grape grape-global-count grape-local-vertex-map)
+    set(args_grape --algorithm grape --grape-threads 1 --iterations 2)
+    set(args_grape-global-count --algorithm grape --grape-threads 1 --grape-global-count --iterations 2)
+    set(args_grape-local-vertex-map --algorithm grape --grape-threads 1 --grape-local-vertex-map)
+  endif()
   # the hybrid configuration (configs/hybrid.toml, --num-threads > 1) is disabled until the hybrid path is re-ported
   # (doc/refactoring-plan.md)
   foreach(entry IN LISTS example_graphs)
