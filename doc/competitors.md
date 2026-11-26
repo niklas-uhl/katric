@@ -50,7 +50,7 @@ competitor, and a factory that switches on `--algorithm`. KaCCv2's weak spots, a
      clashes. Known clash to come: HavoqGT bundles an old YGM in `namespace ygm`, TriPoll uses the real one.
 5. **LCC is GPL-3.0** (`fvella/lcc` + `spcl/CLaMPI`). It is linked only with `KATRIC_COMPETITOR_LCC=ON`. Binaries
    built with it are GPL and not distributed, and the README says so.
-6. **CombBLAS builds on KaCCv2's adapter and fork** `niklas-uhl/CombBLAS@46ebfc31`, which carries the fixes.
+6. **Dropped (2026-11-26, user decision):** see "CombBLAS: dropped" below. Original plan: **CombBLAS builds on KaCCv2's adapter and fork** `niklas-uhl/CombBLAS@46ebfc31`, which carries the fixes.
    - Reused from `KaCCv2/benchmark/detail/combblas_algorithm.cpp`: `ImplBase`'s edge list → `ReadFromLocalEdgeList`
      ingest, and the `par::Mpi_datatype<unsigned long long>` specialization.
    - Written ourselves, the Azad/Buluç/Gilbert (IPDPS-W'15) count: L and U from A via `Prune`, the masked `PSpGEMM`
@@ -109,7 +109,7 @@ enough to decide whether to drop one.
 | 3 | LCC (Strausz et al., IPDPS'22) | new forks of `fvella/lcc` and `spcl/CLaMPI` | See below |
 | 4 | TriPoll / YGM (Steil et al., SC'21) | `niklas-uhl/tripoll` (`katric` on `LLNL/tripoll` main `ccfe8a0`), YGM master `0072d87` | See "TriPoll: findings" |
 | 5 | Tom2D (Tom & Karypis 2019) | `niklas-uhl/2DTriangleCounting` (`katric` on `KarypisLab/2DTriangleCounting` master `f704a53`) | See "Tom2D: findings". Square p only |
-| 6 | CombBLAS masked SpGEMM | `niklas-uhl/CombBLAS@46ebfc31` | Decision 6. `preprocessing` builds L and U; `counting` is the SpGEMM plus the reduce |
+| 6 | ~~CombBLAS masked SpGEMM~~ (dropped) | `niklas-uhl/CombBLAS@46ebfc31` | Decision 6. `preprocessing` builds L and U; `counting` is the SpGEMM plus the reduce |
 | 7 | GRAPE / libgrape-lite LCC (Fan et al., SIGMOD'17) | new fork of `alibaba/libgrape-lite` (`master`, `beaa6e8a`) | See below |
 
 - **TriC.** Header-only. `run_kagen` (`graph.hpp:786`) already builds TriC's `Graph` from KaGen's CSR, so moving it
@@ -188,7 +188,7 @@ For each competitor:
 - [x] LCC
 - [x] TriPoll / YGM
 - [x] Tom2D
-- [ ] CombBLAS
+- [x] ~~CombBLAS~~ dropped (see "CombBLAS: dropped")
 - [ ] GRAPE
 
 Record for each, once it is done:
@@ -229,6 +229,19 @@ and pinned in `extern/CMakeLists.txt` (LCC pins CLaMPI); a clean build of all fi
 Upstream TriC since 2022: new variants `ibufastric`/`inbufastric` (single counting, the README's recommendation,
 `-DAGGR_BUFR_INRECV`), self-loops skipped in `cfastric`, C++20. The three variants we use are unchanged apart from
 that (`bufastric`, `hashfastric2` identical).
+
+### CombBLAS: dropped (2026-11-26)
+
+User decision after checking what a port would be (fork `46ebfc31` = upstream master + KaCCv2's fixes builds fine):
+- CombBLAS has no triangle counting. The Azad/Buluç/Gilbert (IPDPS-W'15) algorithms (basic and masked) are their own 1D
+  SpGEMM codes, not CombBLAS, and this CombBLAS has no masked SpGEMM (`PSpGEMM` = unmasked 2D SUMMA).
+- So the counter would be entirely our design: degree ordering (sorting rows by degree puts all hubs into the last
+  block row/column of the 2D grid; the degree-consistent split without reordering is what the paper mentions but did
+  not try), and an unmasked L·U that materializes one entry per distinct wedge endpoint pair (memory ~ wedges, likely
+  out of memory on RMAT at scale). Either way a weak result would reflect our choices, not CombBLAS (straw man).
+- The 2D family is covered by Tom2D (published, tuned; fastest on Friendster/Twitter at 1024 cores in TriPoll's
+  comparison). For the paper: one sentence in related work (CombBLAS/GraphBLAS TC is masked SpGEMM; no public
+  distributed implementation).
 
 ### Tom2D: findings (2026-11-26)
 
@@ -444,7 +457,7 @@ adapter-vs-original-`main` timing comparison and the SuperMUC comparison with th
 - [ ] `experiments/competitors-real-world.suite.yaml` and `competitors-weak-scaling.suite.yaml`. They `import` the
       existing instance sets, so the inputs are the same as KaTric's. The old log2 generator-flag problem is gone,
       because the input comes from `--kagen_option_string`
-- [ ] Separate suites for square-p competitors (Tom2D, CombBLAS) with kaval's `--cores sqr` / `sqr-pow2`, as in
+- [ ] Separate suites for square-p competitors (Tom2D) with kaval's `--cores sqr` / `sqr-pow2`, as in
       KaCCv2's `paper-combblas`
 - [ ] TriPoll runs both `--tripoll-routing none` (the paper's setup) and `nlnr` (its best on current YGM at high p);
       user decision 2026-11-26
