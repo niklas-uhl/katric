@@ -65,7 +65,7 @@ enum class CommunicationPolicy {
 /// What runs, `--algorithm`: KaTric, or a competitor behind the same
 /// interface (apps/competitors/, each only with its CMake option
 /// KATRIC_COMPETITOR_<NAME>, doc/competitors.md).
-enum class Algorithm { katric, tric, havoqgt, xxtric, lcc, tripoll };
+enum class Algorithm { katric, tric, havoqgt, xxtric, lcc, tripoll, tom2d };
 /// TriC's counting variant, `--tric-variant`: the classes from TriC's main.cpp
 /// (plain is its default build, buffered is `-DAGGR_BUFR`, hash2 is
 /// `-DAGGR_HASH2`, inrecv is `-DAGGR_BUFR_INRECV`).

@@ -108,7 +108,7 @@ enough to decide whether to drop one.
 | 2 | HavoqGT (Pearce et al.) | `niklas-uhl/havoqgt` (`master`, `fa09fbe3`) | See below. Equal ranks per node (32 of 48 on SuperMUC in the paper) |
 | 3 | LCC (Strausz et al., IPDPS'22) | new forks of `fvella/lcc` and `spcl/CLaMPI` | See below |
 | 4 | TriPoll / YGM (Steil et al., SC'21) | `niklas-uhl/tripoll` (`katric` on `LLNL/tripoll` main `ccfe8a0`), YGM master `0072d87` | See "TriPoll: findings" |
-| 5 | Tom2D (Tom & Karypis 2019) | `niklas-uhl/2DTriangleCounting` (`nuhl-integration`, `650d7203`) | See below. Square p only |
+| 5 | Tom2D (Tom & Karypis 2019) | `niklas-uhl/2DTriangleCounting` (`katric` on `KarypisLab/2DTriangleCounting` master `f704a53`) | See "Tom2D: findings". Square p only |
 | 6 | CombBLAS masked SpGEMM | `niklas-uhl/CombBLAS@46ebfc31` | Decision 6. `preprocessing` builds L and U; `counting` is the SpGEMM plus the reduce |
 | 7 | GRAPE / libgrape-lite LCC (Fan et al., SIGMOD'17) | new fork of `alibaba/libgrape-lite` (`master`, `beaa6e8a`) | See below |
 
@@ -187,7 +187,7 @@ For each competitor:
 - [x] HavoqGT
 - [x] LCC
 - [x] TriPoll / YGM
-- [ ] Tom2D
+- [x] Tom2D
 - [ ] CombBLAS
 - [ ] GRAPE
 
@@ -211,6 +211,8 @@ and pinned in `extern/CMakeLists.txt` (LCC pins CLaMPI); a clean build of all fi
       MPI buffer and empty-rank fixes, bundled YGM → `havoqgt::ygm`)
 - [ ] `niklas-uhl/lcc` `katric`: `42c30b0..cf0f9f1` (4 commits; CMake, `lcc_api.h`, window and degree-reduction fixes)
 - [ ] `niklas-uhl/CLaMPI` `katric`: `bb55272..82a4e6c` (3 commits; CMake, macOS `aligned_alloc`, window-mode fix)
+- [ ] `niklas-uhl/2DTriangleCounting` `katric`: `f704a53..db9fbd9` (2 commits; cherry-pick of `650d720` from
+      `nuhl-integration`, static library + API split, counter and communicator fixes)
 - [ ] `niklas-uhl/tripoll` `katric`: `ccfe8a0..437572c` (1 commit; port to YGM master, own `tripoll::ygm` target,
       drivers removed)
 - [ ] The adapters in `apps/competitors/` and their findings sections below
@@ -227,6 +229,38 @@ and pinned in `extern/CMakeLists.txt` (LCC pins CLaMPI); a clean build of all fi
 Upstream TriC since 2022: new variants `ibufastric`/`inbufastric` (single counting, the README's recommendation,
 `-DAGGR_BUFR_INRECV`), self-loops skipped in `cfastric`, C++20. The three variants we use are unchanged apart from
 that (`bufastric`, `hashfastric2` identical).
+
+### Tom2D: findings (2026-11-26)
+
+- **Fork:** `niklas-uhl/2DTriangleCounting`, branch `katric` on upstream master `f704a53` (2019, frozen) + a
+  cherry-pick of `650d720` from `nuhl-integration` (heap request arrays instead of the hard `NPROCS = 1024`; without
+  it Tom2D cannot run above 1024 ranks, which the TriPoll paper ran into). The rest of `nuhl-integration` (KaGen
+  submodule and generator path, binary reader) is not needed. Static C library `tom2d::tom2d`, interface
+  `include/tom2d.h`, built from `mpi_tc.c`, `io.c`'s exchange helpers and GKlib with GKlib's flags PRIVATE
+  (`-O3 -march=native` outside Debug, as upstream's build; no `-Werror`). `GKlibSystem.cmake` (global
+  `CMAKE_C_FLAGS`), `main`, `cmdline`, the readers, the Grappa RMAT generator and the committed build directory are
+  gone. All other functions are `static`; exported are `tom2d_*`, `ancy_all2allv*` and GKlib's symbols (`gk_*`,
+  `errexit`, `HTable_*`, ...), none of which anything else in katric defines.
+- **Native input:** its readers' output, a 1D-distributed CSR (`vtxdist`, local `xadj`, 64-bit global ids in `adjncy`,
+  both directions). KaGen's distribution is kept. Tom2D sorts the neighbourhoods itself (in preprocessing).
+- **Regions:** `mpitc_MapJIK2D` split at its own timer boundary. `preprocessing` = `tom2d_preprocess` (its `timer_1`:
+  cyclic redistribution, degree ordering by a distributed counting sort, upper/lower split, transposes); `counting` =
+  `tom2d_count` (its `timer_2`: row/column communicators, Cannon's √p shifts with the kernel, global sum). It takes
+  ownership of the CSR and frees it, so `reset()` hands it fresh `malloc`'d copies (untimed).
+- **Constraints:** `MPI_COMM_WORLD`, perfect square p (both checked in the constructor), < 2^31 local vertices per rank
+  (checked). Pure MPI (no OpenMP in the counter). Whether a global n ≥ 2^31 works is untested.
+- **Fixed (marked `// katric:`, user decision):** the kernel's per-vertex counter `ltriangles` was `int32_t` (the
+  authors' comment asks whether it should be `int64_t`); the row and column communicators were never freed (two per
+  call); the count is `MPI_Allreduce`d instead of reduced to rank 0. Upstream also declares
+  `mpitc_blobBytesBlockCyclic` as `int64_t` in `proto.h` but defines it `ssize_t` (only an error on macOS); on the
+  fork the function is static with a matching prototype.
+- **Validation:** `--verify --iterations 2` at 1, 4, 9 ranks: RGG2D, RHG, GNM, RMAT (n=2^14, m=2^17); ctests
+  `katric.<graph>.tom2d.<1,4>cores` on the example set. The harness got a per-p expected count
+  (`expected_<graph>_<p>`): KaGen's rgg2d is a different graph on 1 rank (416390 triangles = its reference count).
+  Non-square p is rejected.
+- **Against the original:** upstream `f704a53` + `650d720` (its own METIS reader) vs. the adapter (KaGen's METIS
+  reader, `balance-vertices`), com-amazon, 4 ranks, Release, 5 runs each: preprocessing 0.044–0.049 s vs.
+  0.041–0.050 s, counting 0.009 s vs. 0.008–0.010 s, same count. Within noise.
 
 ### TriPoll: findings (2026-11-26)
 

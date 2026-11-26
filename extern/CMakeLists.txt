@@ -268,6 +268,14 @@ if(KATRIC_COMPETITOR_HAVOQGT)
     SYSTEM EXCLUDE_FROM_ALL)
   FetchContent_MakeAvailable(havoqgt)
 endif()
+if(KATRIC_COMPETITOR_TOM2D)
+  FetchContent_Declare(
+    tom2d
+    GIT_REPOSITORY https://github.com/niklas-uhl/2DTriangleCounting
+    GIT_TAG db9fbd9bb87afc878ba9099d4f1a9593f3a47b6f # katric (on KarypisLab/2DTriangleCounting master f704a53)
+    SYSTEM EXCLUDE_FROM_ALL)
+  FetchContent_MakeAvailable(tom2d)
+endif()
 if(KATRIC_COMPETITOR_TRIPOLL)
   # The fork pins YGM (master) and cereal by SHA and takes spdlog and Boost from here when they exist.
   FetchContent_Declare(
