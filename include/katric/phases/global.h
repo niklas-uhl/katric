@@ -214,6 +214,9 @@ inline auto briefkasten_config(Config const& conf) -> briefkasten::Config {
   config.local_threshold_bytes = conf.buffer_size;
   config.num_request_slots = conf.request_slots;
   config.bounded_pool = !conf.legacy_pool;
+  // messages larger than a buffer occur (a vertex's out-neighborhood: RMAT ~25 KB at 768 cores); BriefKAsten
+  // makes them opt-in, since the large-message receive costs every poll an extra probe
+  config.allow_large_messages = true;
   config.drop_shells = conf.drop_shells;
   config.num_credit_buffers =
       conf.flow_control ? std::nullopt : std::optional<std::size_t>(0);
