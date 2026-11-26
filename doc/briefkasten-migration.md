@@ -393,6 +393,16 @@ The grid already scales this way today (`baseline_26_11_20`, 192 -> 3072: permut
    KaCCv2 (same switch, branch exp/briefkasten-pool-ab, notes/briefkasten-pool-fix-findings.md): grid 7-8 % faster
    with up to 34 % less memory; flat ms-async on lake-lanier +7 % (not the cap: 12-15 % more, less full sends for
    the same elements). Still open: `briefkasten-pool-ab-large` (katric) and KaCCv2 at 1536-6144.
+   **1536 cores** (`briefkasten-pool-ab-large_26_11_25`, one binary, 1 iteration; 3072 / 6144 pending; global
+   phase fix vs legacy): RMAT direct 39.2 vs 51.5 s (-24 %; busiest rank's send loop 23.7 vs 38.9 s, with 2.2 M
+   stalls), RMAT grid 40.8 vs 49.1 s (-17 %; 0.88 M stalls, peak reserve 458 buffers, no reserve waits), permuted
+   RGG grid 5.91 vs 6.67 s (-11 %), direct 4.55 vs 4.62 s (no difference). The fix's lead grows with p (RMAT direct
+   -11 % at 768, -24 % at 1536). No memory numbers: the suite records no RSS.
+   KaCCv2 at 1536: grid lake-lanier -8 % and 24 % less RSS; flat ms-async on lake-lanier now +24 % (+7 % at 384),
+   in label propagation with zero stalls: +39 % `terminate()` calls and so +28 % drain flushes of partial buffers,
+   same elements. Not the cap; the trigger is open (KaCCv2 notes/briefkasten-pool-fix-findings.md, suite
+   `briefkasten-pool-ab-rgg` for a synthetic repro). katric cannot show this effect: its global phase calls
+   `terminate()` once, after all posts, so there is no repeated idle / drain cycle.
 
 ## Decisions (2026-11-24)
 
