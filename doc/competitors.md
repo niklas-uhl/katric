@@ -395,6 +395,8 @@ adapter-vs-original-`main` timing comparison and the SuperMUC comparison with th
       because the input comes from `--kagen_option_string`
 - [ ] Separate suites for square-p competitors (Tom2D, CombBLAS) with kaval's `--cores sqr` / `sqr-pow2`, as in
       KaCCv2's `paper-combblas`
+- [ ] TriPoll runs both `--tripoll-routing none` (the paper's setup) and `nlnr` (its best on current YGM at high p);
+      user decision 2026-11-26
 - [ ] A HavoqGT suite with 32 tasks per node (check that kaval supports `tasks_per_node` per suite)
 - [ ] Core ranges go only in the suite header comments (no `max_cores`)
 - [x] (TriC) `eval/katric_eval.py`: the `variant` column takes the `algorithm` value (plus `tric-variant` and similar).
