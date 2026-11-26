@@ -230,8 +230,16 @@ that (`bufastric`, `hashfastric2` identical).
   the drivers call this preprocessing too); `counting` = `tc_push_only` / `tc_push_pull` + a sum. Both graphs live only
   in `run()`, `reset()` is a no-op. The `ygm::comm` is created once in the constructor (untimed), from katric's
   communicator (no `MPI_COMM_WORLD` restriction, no MPI thread level: YGM has no threads).
-- **Options:** `--tripoll-variant push-only|push-pull` (default push-only), `--tripoll-routing none|nr|nlnr` (sets
-  `YGM_COMM_ROUTING` before the communicator is created; default `none`, YGM's default). YGM's logger is off and its
+- **Options:** `--tripoll-variant push-pull|push-only` (default push-pull), `--tripoll-routing none|nr|nlnr` (sets
+  `YGM_COMM_ROUTING` before the communicator is created; default `none`, YGM's default).
+- **The paper's setup** (Steil et al., SC'21, `~/Documents/References/Steil2021`; the repo has no experiment scripts):
+  - Push-Pull everywhere (strong and weak scaling, the competitor table); push-only only as the baseline of its §5.10.
+  - YGM of 2021 aggregated per rank only, i.e. today's `none`. The authors blame their slowdown from 128 to 256 nodes
+    on that and name node-level aggregation as the remedy (§5.4). The later YGM paper (Steil et al. 2023) shows the
+    effect of routing on an embedding benchmark from 64 to 512 nodes: parallel efficiency 26 % without routing, 61 %
+    NR, 98 % NLNR.
+  - 24 ranks per node (all cores of Catalyst, MPI only) for the scaling runs; 1024 cores on 64 nodes (16 per node) for
+    the comparison with HavoqGT (Pearce et al.), Tom2D and TriC. YGM's logger is off and its
   welcome message is not printed by default.
 - **As published, not changed:** the triangle callback is called through an uninitialized pointer to its (stateless)
   type, so it counts into a global; `tc_push_*` print a few `cout0` lines; their `static num_edges_sent` is never reset,

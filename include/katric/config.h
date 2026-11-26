@@ -147,8 +147,8 @@ struct Config {
   std::uint64_t lcc_cache_size = 8589934592ULL;
   /// LCC's -H 1: remove degree-1 vertices first (off by default, as in LCC)
   bool lcc_degree_reduction = false;
-  /// TriPoll: push-only (its tc_push_only) or push-pull
-  TripollVariant tripoll_variant = TripollVariant::push_only;
+  /// TriPoll: push-pull (the paper's algorithm, all its results) or push-only
+  TripollVariant tripoll_variant = TripollVariant::push_pull;
   /// TriPoll: YGM's routing scheme
   TripollRouting tripoll_routing = TripollRouting::none;
 
