@@ -1,0 +1,43 @@
+# Does the candidate pool fix keep katric's gains? KaCCv2 showed that #29's overflow erase (not the bounded pool)
+# slows drain-heavy workloads by changing the termination drain's map order; the candidate, --drop-shells, keeps the
+# entry and drops the moved-from shell, with all of #30's reserve rules (BriefKAsten exp/drain-policy cad2789). katric
+# calls terminate() once, so the drain order should not matter here; this checks that the candidate is not slower
+# than the fix where the fix won most (briefkasten-pool-ab*, legacy vs fix at 768: RMAT direct -11 %, RMAT grid
+# -11 %, permuted RGG grid -5 %). One binary, tuned default (4 KiB, 8 slots, poll-skip 100), 1 iteration:
+#   RMAT direct / grid, permuted RGG grid  x  fix / --drop-shells
+#   just run-supermuc-experiment briefkasten-drop-shells --min-cores 768 --max-cores 768 --pack-jobs --test --copy-binary
+# Compare the global phase, the busiest rank's send loop, buffer_stalls, dropped_shells (~ overflows with
+# --drop-shells), peak_reserve_buffers, reserve_waits.
+name: briefkasten-drop-shells
+executable: apps/katric
+output_path_option_name: caliper-output
+threads_option_name: num-threads
+ncores: node-size-pow2
+threads_per_rank: [1]
+graphs:
+  - generator: kagen
+    type: rmat
+    N: 16
+    M: 20
+    seed: 28475421
+    scale_weak: true
+    time_limit: 2
+  - generator: kagen
+    type: rgg2d
+    N: 18
+    M: 22
+    permute: 1
+    seed: 28475421
+    scale_weak: true
+    time_limit: 1
+config:
+  - message-queue: briefkasten
+    communication-policy: [direct, grid]
+    buffer-size: 4096
+    request-slots: 8
+    poll-skip: 100
+    drop-shells: [false, true]
+    message-trimming: true
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 1

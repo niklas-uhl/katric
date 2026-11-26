@@ -214,6 +214,7 @@ inline auto briefkasten_config(Config const& conf) -> briefkasten::Config {
   config.local_threshold_bytes = conf.buffer_size;
   config.num_request_slots = conf.request_slots;
   config.bounded_pool = !conf.legacy_pool;
+  config.drop_shells = conf.drop_shells;
   config.num_credit_buffers =
       conf.flow_control ? std::nullopt : std::optional<std::size_t>(0);
   return config;
@@ -307,6 +308,7 @@ void report_briefkasten_counters(Queue const& queue,
   add("peak_reserve_buffers", queue.peak_reserve_buffers());
   add("redirect_overdraft", queue.redirect_overdraft());
   add("reserve_waits", queue.num_reserve_waits());
+  add("dropped_shells", queue.num_dropped_shells());
 }
 
 /// The global phase: sends the message of every local vertex v with cut edges

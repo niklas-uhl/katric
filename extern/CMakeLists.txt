@@ -173,9 +173,10 @@ set(BRIEFKASTEN_USE_CXX23 ON)
 FetchContent_Declare(
   BriefKAsten
   GIT_REPOSITORY https://github.com/niklas-uhl/BriefKAsten
-  # TEMPORARY: exp/pool-fix-switch (d2b5a24) = 675048a + Config::bounded_pool, the run-time switch behind
-  # --legacy-pool, for the A/B briefkasten-pool-ab; back to 675048a (or the merged #30) afterwards.
-  GIT_TAG d2b5a243a5950203e789634620ce881adbf1f047 # exp/pool-fix-switch
+  # TEMPORARY: exp/drain-policy = exp/pool-fix-switch (d2b5a24 = 675048a + Config::bounded_pool, the run-time switch
+  # behind --legacy-pool) + Config::drop_shells (--drop-shells: the pool fix without #29's overflow erase, see
+  # doc/briefkasten-migration.md step 8) and KaCCv2's drain-policy switches; back to the merged pool fix afterwards.
+  GIT_TAG cad2789a4bde16b95fca2e2f2e55638ace30101d # exp/drain-policy
   SYSTEM)
 
 # katric's own kassert instance (kassert::kassert, used by no other dependency). Its default level applies to every target

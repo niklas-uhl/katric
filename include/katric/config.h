@@ -116,6 +116,9 @@ struct Config {
   /// handling from before the fix (BriefKAsten #29 / #30), for an A/B in one
   /// binary (`briefkasten-pool-ab`)
   bool legacy_pool = false;
+  /// BriefKAsten EXPERIMENT (pin exp/drain-policy, temporary): the pool fix without #29's overflow erase (the
+  /// entry is kept and its moved-from shell dropped); with legacy_pool the legacy handling minus the leak
+  bool drop_shells = false;
   Receiver receiver = Receiver::persistent;
   /// BriefKAsten: poll only on every n-th sender vertex (1: on every one, as
   /// the legacy queue); BriefKAsten polls on every call anyway while buffers

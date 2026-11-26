@@ -157,6 +157,10 @@ auto parse_config(std::span<char*> argv, kamping::v2::comm_view comm)
   app.add_flag("--legacy-pool", conf.legacy_pool,
                "BriefKAsten experiment: the pool handling from before the "
                "pool fix (A/B only)");
+  app.add_flag("--drop-shells", conf.drop_shells,
+               "BriefKAsten experiment: keep the entry on overflow and drop "
+               "the moved-from shell instead of erasing (the pool fix without "
+               "#29's erase; A/B only)");
   add_enum_option(app, "--receiver", conf.receiver);
   app.add_option("--poll-skip", conf.poll_skip,
                  "BriefKAsten: poll after every n-th sender vertex only")
