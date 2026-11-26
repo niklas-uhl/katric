@@ -264,9 +264,18 @@ if(KATRIC_COMPETITOR_HAVOQGT)
   FetchContent_Declare(
     havoqgt
     GIT_REPOSITORY https://github.com/niklas-uhl/havoqgt
-    GIT_TAG dd3f7cc5b0bdbcaa04a5a43e869b4ac98dbc47d3 # katric (on llnl/havoqgt master 2e8b2a8)
+    GIT_TAG a06e177c58e675cafb82ef0af995e9ddbf7bcd7a # katric (on llnl/havoqgt master 2e8b2a8)
     SYSTEM EXCLUDE_FROM_ALL)
   FetchContent_MakeAvailable(havoqgt)
+endif()
+if(KATRIC_COMPETITOR_TRIPOLL)
+  # The fork pins YGM (master) and cereal by SHA and takes spdlog and Boost from here when they exist.
+  FetchContent_Declare(
+    tripoll
+    GIT_REPOSITORY https://github.com/niklas-uhl/tripoll
+    GIT_TAG 437572c8b809e23fa1d1e4cb60872921a3e5d868 # katric (on LLNL/tripoll main ccfe8a0)
+    SYSTEM EXCLUDE_FROM_ALL)
+  FetchContent_MakeAvailable(tripoll)
 endif()
 
 if(KATRIC_BUILD_TESTS)

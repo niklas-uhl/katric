@@ -65,7 +65,7 @@ enum class CommunicationPolicy {
 /// What runs, `--algorithm`: KaTric, or a competitor behind the same
 /// interface (apps/competitors/, each only with its CMake option
 /// KATRIC_COMPETITOR_<NAME>, doc/competitors.md).
-enum class Algorithm { katric, tric, havoqgt, xxtric, lcc };
+enum class Algorithm { katric, tric, havoqgt, xxtric, lcc, tripoll };
 /// TriC's counting variant, `--tric-variant`: the classes from TriC's main.cpp
 /// (plain is its default build, buffered is `-DAGGR_BUFR`, hash2 is
 /// `-DAGGR_HASH2`, inrecv is `-DAGGR_BUFR_INRECV`).
@@ -76,6 +76,19 @@ enum class TricVariant {
   inrecv,    ///< TriangulateAggrBufferedInrecv (inbufastric.hpp): counts
              ///< each triangle once (precedence by vertex id), the variant
              ///< TriC's README recommends
+};
+
+/// TriPoll's counting algorithm, `--tripoll-variant` (its tc_push_only and
+/// tc_push_pull).
+enum class TripollVariant {
+  push_only,  ///< every wedge's truncated adjacency list is pushed to q
+  push_pull,  ///< hubs' adjacency lists are pulled once per rank instead
+};
+/// YGM's message routing, `--tripoll-routing` (its YGM_COMM_ROUTING).
+enum class TripollRouting {
+  none,  ///< direct to the destination rank (YGM's default)
+  nr,    ///< node-remote: through one rank of the destination node
+  nlnr,  ///< node-local, then node-remote
 };
 
 struct Config {
@@ -134,6 +147,10 @@ struct Config {
   std::uint64_t lcc_cache_size = 8589934592ULL;
   /// LCC's -H 1: remove degree-1 vertices first (off by default, as in LCC)
   bool lcc_degree_reduction = false;
+  /// TriPoll: push-only (its tc_push_only) or push-pull
+  TripollVariant tripoll_variant = TripollVariant::push_only;
+  /// TriPoll: YGM's routing scheme
+  TripollRouting tripoll_routing = TripollRouting::none;
 
   bool pseudo2core = false;
   /// Global phase: each rank gets only the part of N+(v) from its first

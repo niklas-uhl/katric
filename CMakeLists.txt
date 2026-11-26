@@ -12,6 +12,7 @@ option(KATRIC_COMPETITOR_TRIC "Build TriC (Ghosh & Halappanavar) into katric as 
 option(KATRIC_COMPETITOR_XXTRIC "Build xxtric's CPU path (Ghosh, TriC's successor) into katric as --algorithm xxtric" OFF)
 option(KATRIC_COMPETITOR_LCC "Build LCC (Strausz et al., with CLaMPI) into katric as --algorithm lcc; GPL-3.0, makes the binary GPL" OFF)
 option(KATRIC_COMPETITOR_HAVOQGT "Build HavoqGT's triangle count (Pearce et al.) into katric as --algorithm havoqgt; needs Boost" OFF)
+option(KATRIC_COMPETITOR_TRIPOLL "Build TriPoll (Steil et al., on YGM) into katric as --algorithm tripoll; needs Boost" OFF)
 set(KATRIC_CXX_FLAGS "" CACHE STRING "Additional compile options for katric's own targets (semicolon-separated)")
 set(KATRIC_ACTIVE_LOG_LEVEL "INFO" CACHE STRING
     "Compile-time spdlog level; SPDLOG_DEBUG/SPDLOG_TRACE calls below it are compiled out")

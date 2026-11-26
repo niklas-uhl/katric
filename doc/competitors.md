@@ -107,7 +107,7 @@ enough to decide whether to drop one.
 | 1b | xxtric (Ghosh, arXiv 2610.29988, 2026), TriC's successor, CPU path | fork of `sg0/xxtric` (`main`, `eb797a32`) | `--algorithm xxtric`; same `Graph` as TriC, single counting |
 | 2 | HavoqGT (Pearce et al.) | `niklas-uhl/havoqgt` (`master`, `fa09fbe3`) | See below. Equal ranks per node (32 of 48 on SuperMUC in the paper) |
 | 3 | LCC (Strausz et al., IPDPS'22) | new forks of `fvella/lcc` and `spcl/CLaMPI` | See below |
-| 4 | TriPoll / YGM (Steil et al., SC'21) | new fork of `LLNL/tripoll` | See below |
+| 4 | TriPoll / YGM (Steil et al., SC'21) | `niklas-uhl/tripoll` (`katric` on `LLNL/tripoll` main `ccfe8a0`), YGM master `0072d87` | See "TriPoll: findings" |
 | 5 | Tom2D (Tom & Karypis 2019) | `niklas-uhl/2DTriangleCounting` (`nuhl-integration`, `650d7203`) | See below. Square p only |
 | 6 | CombBLAS masked SpGEMM | `niklas-uhl/CombBLAS@46ebfc31` | Decision 6. `preprocessing` builds L and U; `counting` is the SpGEMM plus the reduce |
 | 7 | GRAPE / libgrape-lite LCC (Fan et al., SIGMOD'17) | new fork of `alibaba/libgrape-lite` (`master`, `beaa6e8a`) | See below |
@@ -184,9 +184,9 @@ enough to decide whether to drop one.
 
 For each competitor:
 - [x] TriC (see "TriC: findings" below)
-- [ ] HavoqGT
-- [ ] LCC
-- [ ] TriPoll / YGM
+- [x] HavoqGT
+- [x] LCC
+- [x] TriPoll / YGM
 - [ ] Tom2D
 - [ ] CombBLAS
 - [ ] GRAPE
@@ -211,7 +211,40 @@ Upstream TriC since 2022: new variants `ibufastric`/`inbufastric` (single counti
 `-DAGGR_BUFR_INRECV`), self-loops skipped in `cfastric`, C++20. The three variants we use are unchanged apart from
 that (`bufastric`, `hashfastric2` identical).
 
+### TriPoll: findings (2026-11-26)
+
+- **YGM version:** TriPoll's CMake fetched YGM's `develop` branch, which no longer exists, so upstream TriPoll does not
+  build today. Its code was last updated 2023-07 "to current YGM develop", which YGM squash-merged into v0.6. Both v0.6
+  (one missing `<algorithm>` include) and master were easy to build; the user chose **YGM master** (`0072d87`, v0.9 +
+  hubcast, 2026-08) as the fairer comparison (2.5 more years of YGM's communication layer), no A/B against v0.6.
+- **Fork:** `niklas-uhl/tripoll`, branch `katric` on `LLNL/tripoll` main `ccfe8a0` (MIT): INTERFACE `tripoll::tripoll`
+  over `tripoll::ygm`, an INTERFACE target the fork declares over YGM's `include/` (YGM's own CMake is not run: it
+  downloads Boost from source and builds Arrow/Parquet and Boost.JSON, none used here). Dependencies: MPI, Boost
+  headers, spdlog (header-only; katric's), cereal v1.3.2 headers. Drivers, RMAT generator and `hash.hpp` removed.
+  Port to YGM master, no algorithmic change: `ygm::utility::timer`, `YGM_ASSERT_RELEASE`, `partitioner.owner`,
+  `gather_topk`, missing std includes, `std::max<uint64_t>` (macOS `size_t` ≠ `uint64_t`).
+- **Native input:** an edge list fed to `undirected_graph::async_add_edge`, which stores both directions on the ranks
+  YGM's hash partitioner picks. `ingest` keeps only u < v (KaGen has both directions), so the drivers'
+  `uniquify_edges` (sort + dedup for RMAT's duplicates) is skipped, as LCC's `mirror()`.
+- **Regions:** `preprocessing` = `async_add_edge` of all edges + `make_dodgr` (degree order, `uint32_t` as its drivers;
+  the drivers call this preprocessing too); `counting` = `tc_push_only` / `tc_push_pull` + a sum. Both graphs live only
+  in `run()`, `reset()` is a no-op. The `ygm::comm` is created once in the constructor (untimed), from katric's
+  communicator (no `MPI_COMM_WORLD` restriction, no MPI thread level: YGM has no threads).
+- **Options:** `--tripoll-variant push-only|push-pull` (default push-only), `--tripoll-routing none|nr|nlnr` (sets
+  `YGM_COMM_ROUTING` before the communicator is created; default `none`, YGM's default). YGM's logger is off and its
+  welcome message is not printed by default.
+- **As published, not changed:** the triangle callback is called through an uninitialized pointer to its (stateless)
+  type, so it counts into a global; `tc_push_*` print a few `cout0` lines; their `static num_edges_sent` is never reset,
+  so the "Sent a total of N edges" line accumulates over iterations (log only).
+- **Validation:** `--verify --iterations 2` at 1, 2, 4 ranks, both variants: RGG2D, RHG, GNM, RMAT (n=2^14, m=2^17); ctests
+  `katric.<graph>.tripoll-{push-only,push-pull,nlnr}.<2,4>cores` on the full example set (24 tests). The comparison
+  with the original driver is not possible: upstream does not build (see YGM version).
+
 ### HavoqGT: findings (2026-11-24)
+
+- **2026-11-26:** HavoqGT's bundled old YGM (mailboxes, `comm_exchanger`, `mpi.hpp`) moved to `include/havoqgt/ygm/`,
+  namespace `havoqgt::ygm`, so that it cannot clash (ODR) with the real YGM that TriPoll links into the same binary.
+
 
 - **Fork:** `niklas-uhl/havoqgt`, branch `katric` on upstream master (via `fa09fbe3`): INTERFACE target
   `havoqgt::havoqgt` (MPI, Boost headers, Threads); Metall, KaGen, CGAL, UMap, HDF5, executables and tests dropped.

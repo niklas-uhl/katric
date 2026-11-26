@@ -156,7 +156,13 @@ ALGORITHMS = {"patric": "DiTriC", "cetric-x": "CETRIC", "cetric_x": "CETRIC", "c
 
 
 # Competitors (--algorithm <name>, doc/competitors.md) and the option that picks their variant, if any
-COMPETITORS = {"tric": ("TriC", "tric-variant")}
+COMPETITORS = {
+    "tric": ("TriC", "tric-variant"),
+    "xxtric": ("xxtric", None),
+    "havoqgt": ("HavoqGT", None),
+    "lcc": ("LCC", None),
+    "tripoll": ("TriPoll", "tripoll-variant"),
+}
 
 
 def _variant(runs):

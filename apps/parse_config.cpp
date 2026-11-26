@@ -188,6 +188,8 @@ katric::Config parse_config(int argc, char* argv[], int rank, int size) {
            "Remove degree-1 vertices before partitioning (LCC's -H 1)"
     )
         ->group("LCC (--algorithm lcc)");
+    add_enum_option(app, "--tripoll-variant", conf.tripoll_variant)->group("TriPoll (--algorithm tripoll)");
+    add_enum_option(app, "--tripoll-routing", conf.tripoll_routing)->group("TriPoll (--algorithm tripoll)");
 
     // `new` was the name of `direct` until 2026-11-20 (job files and configs before); remove once they have run
     add_enum_option(
