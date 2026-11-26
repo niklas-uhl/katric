@@ -198,6 +198,23 @@ Record for each, once it is done:
 - constraints
 - validation results
 
+### Review of the fork work (open, user)
+
+Niklas still has to review all fork changes made with Claude (2026-11-21 to 2026-11-26). Every `katric` branch is pushed
+and pinned in `extern/CMakeLists.txt` (LCC pins CLaMPI); a clean build of all five competitors from these SHAs works
+(2026-11-26). Review with `git log -p <base>..<head>` in the sibling checkout; fixes are marked `// katric:`.
+
+- [ ] `niklas-uhl/tric` `katric`: `6939dbe..f1dec08` (5 commits; library target, `namespace tric`, inrecv, bug fixes,
+      `vertex_ranges.hpp` for `--tric-sparse-ranges`)
+- [ ] `niklas-uhl/xxtric` `katric`: `eb797a3..4521532` (3 commits; CPU path as library, TriC's fixes)
+- [ ] `niklas-uhl/havoqgt` `katric`: `fa09fbe..a06e177` (6 commits; library target, count split, `--havoqgt-stats`,
+      MPI buffer and empty-rank fixes, bundled YGM → `havoqgt::ygm`)
+- [ ] `niklas-uhl/lcc` `katric`: `42c30b0..cf0f9f1` (4 commits; CMake, `lcc_api.h`, window and degree-reduction fixes)
+- [ ] `niklas-uhl/CLaMPI` `katric`: `bb55272..82a4e6c` (3 commits; CMake, macOS `aligned_alloc`, window-mode fix)
+- [ ] `niklas-uhl/tripoll` `katric`: `ccfe8a0..437572c` (1 commit; port to YGM master, own `tripoll::ygm` target,
+      drivers removed)
+- [ ] The adapters in `apps/competitors/` and their findings sections below
+
 ### Upstreams (checked 2026-11-24)
 
 | Fork | Upstream | State |
