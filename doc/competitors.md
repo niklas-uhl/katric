@@ -189,7 +189,7 @@ For each competitor:
 - [x] TriPoll / YGM
 - [x] Tom2D
 - [x] ~~CombBLAS~~ dropped (see "CombBLAS: dropped")
-- [x] GRAPE (open: empty-fragment crash, see findings)
+- [x] GRAPE
 
 Record for each, once it is done:
 - fork SHA
@@ -213,8 +213,8 @@ and pinned in `extern/CMakeLists.txt` (LCC pins CLaMPI); a clean build of all fi
 - [ ] `niklas-uhl/CLaMPI` `katric`: `bb55272..82a4e6c` (3 commits; CMake, macOS `aligned_alloc`, window-mode fix)
 - [ ] `niklas-uhl/2DTriangleCounting` `katric`: `f704a53..db9fbd9` (2 commits; cherry-pick of `650d720` from
       `nuhl-integration`, static library + API split, counter and communicator fixes)
-- [ ] `niklas-uhl/libgrape-lite` `katric`: `beaa6e8..682485d` (1 commit; CMake target, LCCOpt global-count switch,
-      `.data()` for possibly empty vectors, macOS portability)
+- [ ] `niklas-uhl/libgrape-lite` `katric`: `beaa6e8..851c82b` (2 commits; CMake target, LCCOpt global-count switch,
+      `.data()` for possibly empty vectors, macOS portability, empty-fragment guard)
 - [ ] `niklas-uhl/tripoll` `katric`: `ccfe8a0..437572c` (1 commit; port to YGM master, own `tripoll::ygm` target,
       drivers removed)
 - [ ] The adapters in `apps/competitors/` and their findings sections below
@@ -238,8 +238,7 @@ that (`bufastric`, `hashfastric2` identical).
   map partitioner, hash-map idxer, **no** rebalancing, with a vertex file (not "segment partitioner + rebalancing").
   Their build: `-DUSE_HUGEPAGES=ON -DUSE_SIMD=ON`. The `--opt` driver instantiates every app with `int64_t` ids outside
   and `uint32_t` `vid_t` inside, which is what selects the SIMD specialization of `LCCOpt`.
-- **Fork:** `niklas-uhl/libgrape-lite`, branch `katric` on upstream `beaa6e8` (Apache-2.0; the GitHub fork does not
-  exist yet, the user creates it): target `grape::grape-lite` (the two `.cc` files, static) with the LCC app's headers.
+- **Fork:** `niklas-uhl/libgrape-lite`, branch `katric` on upstream `beaa6e8` (Apache-2.0): target `grape::grape-lite` (the two `.cc` files, static) with the LCC app's headers.
   Upstream's global CMake settings are target properties; the ones that change GRAPE's header code (`-O3`,
   `-march=native` outside macOS, SIMD + `-mavx2`, hugepages) are INTERFACE, i.e. they reach only `katric-grape`.
   `GRAPE_USE_SIMD` defaults to ON on x86-64 (as published), `GRAPE_USE_HUGEPAGES` to OFF (it needs a preallocated
@@ -267,12 +266,11 @@ that (`bufastric`, `hashfastric2` identical).
   fragment's ghost list with one rank, MPI request vectors, the archives' byte copies of an empty vector; libstdc++
   assertions abort there, Release reads nothing); `get_available_memory()` falls back to `sysconf` without
   `/proc/meminfo` (macOS); `local_io_adaptor.cc` includes `<unistd.h>`.
-- **Open (asked the user):** a rank whose fragment has no inner vertex crashes: `OEDestsSize()` asserts, and in
-  Release `LCCOpt::EstimateMessageSize` divides by `GetInnerVerticesNum()` = 0. Only `triangle.metis` (3 vertices) on
-  4 ranks hits it; the three ctests `katric.triangle.grape*.4cores` fail until this is decided.
+- **Fixed (user decision):** a rank whose fragment has no inner vertex (more ranks than vertices) crashed:
+  `OEDestsSize()` asserts, and in Release `LCCOpt::EstimateMessageSize` divided by `GetInnerVerticesNum()` = 0. Such a
+  fragment has no edges, so the estimate is now 0 for it (both `LCCOpt` variants); unchanged otherwise.
 - **Validation:** `--verify --iterations 2` at 1, 2, 4 ranks, all three modes (default, global count, local vertex
-  map): RGG2D, RHG, GNM, RMAT (n=2^14, m=2^17); 2 and 4 threads per rank; ctests on the example set (21 of 24 pass, see
-  open). The SIMD specialization (x86-64) is untested here (ARM Mac); check on the cluster.
+  map): RGG2D, RHG, GNM, RMAT (n=2^14, m=2^17); 2 and 4 threads per rank; ctests on the example set (24). The SIMD specialization (x86-64) is untested here (ARM Mac); check on the cluster.
 - **Against the original:** upstream `beaa6e8` `run_app --opt --application lcc` (+ only the macOS fixes; glog/gflags
   built in the job's tmp) vs. the adapter, com-amazon, 4 ranks × 1 thread, Release: "run algorithm" 0.040–0.043 s vs.
   `counting` 0.035–0.044 s, same count. Loading 0.116 s (with file reading) vs. `preprocessing` 0.072–0.075 s.

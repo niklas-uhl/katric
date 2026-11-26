@@ -273,7 +273,7 @@ if(KATRIC_COMPETITOR_GRAPE)
   FetchContent_Declare(
     grape
     GIT_REPOSITORY https://github.com/niklas-uhl/libgrape-lite
-    GIT_TAG 682485d906f6e0a600723866f46728a53243cb92 # katric (on alibaba/libgrape-lite master beaa6e8)
+    GIT_TAG 851c82bf0bfba366bb6fb44d62bb1b3c0d13af0b # katric (on alibaba/libgrape-lite master beaa6e8)
     SYSTEM EXCLUDE_FROM_ALL)
   FetchContent_MakeAvailable(grape)
 endif()
