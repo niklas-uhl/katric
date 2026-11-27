@@ -546,6 +546,14 @@ The grid already scales this way today (`baseline_26_11_20`, 192 -> 3072: permut
    congested payload comes from all row peers a little each, so stalling the feeders earlier does not stop the
    limit from filling. Dropped. Peak RSS is the same in every arm (katric RGG 536-538 MiB, RMAT 1982-1984 MiB):
    the 200 buffers between C = 8 and C = 4 (0.8 MiB) do not show at 768.
+   **`briefkasten-grant-cost_26_11_27`** (KaCCv2 lake-lanier 768, both switches, median cc; `grant_divisor` d: a grant
+   falls due after 1/d of the window, default 2): C = 8 d = 2 7.47 s; C = 8 d = 4 +0.7 % (label propagation grants
+   33.5 M, as many as C = 4); C = 8 d = 8 +3.0 % (65.0 M); C = 4 +3.5 % (33.5 M, withheld 240 K vs 20 K, withheld
+   link-s 17.9 vs 1.0); C = 4 + delivery 8 +1.8 % (25.4 M, withheld 248 K). **The grants explain about 0.7 of C = 4's
+   3.5 %; the rest is the halved window / redirect limit** (12x the withholds, more payload parked for onward credit).
+   The delivery window removes about half of that rest, more than its saved grants account for (parked for credit
+   638 K -> 570 K, reachability withheld link-s 32.8 -> 25.3): proxies pass forwarded payload on faster. Batching or
+   piggybacking grants would gain at most ~0.7 %: not pursued.
    **Not counted in the bound: MPI's unexpected messages.** Only the receive slots are posted, so a buffer beyond
    them arrives as an eager unexpected message that MPI buffers internally. Per receiver that is at most the credit
    granted to it, C B per sender: C B p for direct sending (8 x 4 KiB x 6144 = 192 MiB at 6144 cores if every
