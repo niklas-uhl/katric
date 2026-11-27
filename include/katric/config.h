@@ -133,6 +133,14 @@ struct Config {
   /// buffers per peer; 0: fixed windows of credit_buffers. Otherwise links
   /// start at two buffers and grow up to credit_buffers within the budget.
   std::size_t credit_budget = 0;
+  /// BriefKAsten EXPERIMENT (pin exp/credit-budget): window of delivery
+  /// links (proxy -> final receiver) in buffers; 0: credit_buffers. The
+  /// proxy's bound depends only on credit_buffers.
+  std::size_t delivery_credit_buffers = 0;
+  /// BriefKAsten EXPERIMENT (pin exp/credit-budget): above 3/4 of the
+  /// redirect limit, a proxy withholds first from the feeders of the
+  /// congestion (needs --exact-redirect-limit)
+  bool feeder_first = false;
   Receiver receiver = Receiver::persistent;
   /// BriefKAsten: poll only on every n-th sender vertex (1: on every one, as
   /// the legacy queue); BriefKAsten polls on every call anyway while buffers

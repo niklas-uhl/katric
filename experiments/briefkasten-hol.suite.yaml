@@ -1,0 +1,127 @@
+# Head-of-line blocking at the proxies (doc/briefkasten-migration.md step 9): katric's side of KaCCv2's
+# briefkasten-hol, same arms (BriefKAsten exp/credit-budget 288781b), all with both switches:
+#   c0  C = 8                               (19 p' + 16)
+#   c1  C = 4                               (11 p' + 16, as all below except c6)
+#   c2  C = 4, --delivery-credit-buffers 8
+#   c3  C = 4, --delivery-credit-buffers 16
+#   c4  C = 4, --feeder-first
+#   c5  C = 4, --delivery-credit-buffers 8, --feeder-first
+#   c6  C = 8, --feeder-first
+# katric was indifferent to the window; this checks that the switches cost it nothing. Grid, 4 KiB, tuned default,
+# 2 iterations, permuted RGG and RMAT, two test jobs:
+#   just run-supermuc-experiment briefkasten-hol --cores 768 --test --copy-binary --pack-jobs --pack-name briefkasten-hol \
+#     --max-job-time 30m
+# Compare the global phase, then grants_withheld, withhold_episodes, withheld_us, feeder_withholds, allocated_buffers.
+name: briefkasten-hol
+executable: apps/katric
+output_path_option_name: caliper-output
+threads_option_name: num-threads
+ncores: node-size-pow2
+threads_per_rank: [1]
+graphs:
+  - generator: kagen
+    type: rgg2d
+    N: 18
+    M: 22
+    permute: 1
+    seed: 28475421
+    scale_weak: true
+    time_limit: 1.5  # ~0.7 min per run with 3 iterations (briefkasten-bound-candidate)
+  - generator: kagen
+    type: rmat
+    N: 16
+    M: 20
+    seed: 28475421
+    scale_weak: true
+    time_limit: 3  # ~2.5 min per run with 3 iterations (briefkasten-bound-candidate)
+config:
+  - message-queue: briefkasten
+    communication-policy: grid
+    buffer-size: 4096
+    request-slots: 8
+    poll-skip: 100
+    separate-forwarding: true
+    exact-redirect-limit: true
+    message-trimming: true
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 2
+    credit-buffers: 8
+  - message-queue: briefkasten
+    communication-policy: grid
+    buffer-size: 4096
+    request-slots: 8
+    poll-skip: 100
+    separate-forwarding: true
+    exact-redirect-limit: true
+    message-trimming: true
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 2
+    credit-buffers: 4
+  - message-queue: briefkasten
+    communication-policy: grid
+    buffer-size: 4096
+    request-slots: 8
+    poll-skip: 100
+    separate-forwarding: true
+    exact-redirect-limit: true
+    message-trimming: true
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 2
+    credit-buffers: 4
+    delivery-credit-buffers: 8
+  - message-queue: briefkasten
+    communication-policy: grid
+    buffer-size: 4096
+    request-slots: 8
+    poll-skip: 100
+    separate-forwarding: true
+    exact-redirect-limit: true
+    message-trimming: true
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 2
+    credit-buffers: 4
+    delivery-credit-buffers: 16
+  - message-queue: briefkasten
+    communication-policy: grid
+    buffer-size: 4096
+    request-slots: 8
+    poll-skip: 100
+    separate-forwarding: true
+    exact-redirect-limit: true
+    message-trimming: true
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 2
+    credit-buffers: 4
+    feeder-first: true
+  - message-queue: briefkasten
+    communication-policy: grid
+    buffer-size: 4096
+    request-slots: 8
+    poll-skip: 100
+    separate-forwarding: true
+    exact-redirect-limit: true
+    message-trimming: true
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 2
+    credit-buffers: 4
+    delivery-credit-buffers: 8
+    feeder-first: true
+  - message-queue: briefkasten
+    communication-policy: grid
+    buffer-size: 4096
+    request-slots: 8
+    poll-skip: 100
+    separate-forwarding: true
+    exact-redirect-limit: true
+    message-trimming: true
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 2
+    credit-buffers: 8
+    feeder-first: true

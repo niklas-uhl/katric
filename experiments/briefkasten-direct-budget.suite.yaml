@@ -1,0 +1,68 @@
+# Credit budget with direct sending at large p (doc/briefkasten-migration.md step 9): with fixed windows a rank grants
+# C B to each of its p peers, so up to C B p elements may arrive unasked (MPI buffers what finds no posted receive:
+# 8 x 4 KiB x 6144 = 192 MiB at 6144 cores). In the grid the budget only matched fixed C = 4 (demand spread over all
+# links); with direct sending most of the p links should be idle, so a budget could cut the inbound credit without
+# costing time. BriefKAsten exp/credit-budget 288781b:
+#   c0  fixed C = 8              inbound credit C B p
+#   c1  budget 2, windows <= 8   at most 2 B p (every link at its initial window)
+#   c2  budget 4, windows <= 8   at most 4 B p
+# Direct, 4 KiB, tuned default, 1 iteration, permuted RGG and RMAT; general partition, one job per input and p
+# (no packing):
+#   just run-supermuc-experiment briefkasten-direct-budget --cores 3072 6144 --copy-binary
+# Compare the global phase, peak_inbound_credit (max over ranks), parked_for_credit, window_grows / window_shrinks,
+# allocated_buffers, and the peak RSS.
+name: briefkasten-direct-budget
+executable: apps/katric
+output_path_option_name: caliper-output
+threads_option_name: num-threads
+ncores: node-size-pow2
+threads_per_rank: [1]
+graphs:
+  - generator: kagen
+    type: rgg2d
+    N: 18
+    M: 22
+    permute: 1
+    seed: 28475421
+    scale_weak: true
+    time_limit: 3
+  - generator: kagen
+    type: rmat
+    N: 16
+    M: 20
+    seed: 28475421
+    scale_weak: true
+    time_limit: 6
+config:
+  - message-queue: briefkasten
+    communication-policy: direct
+    buffer-size: 4096
+    request-slots: 8
+    poll-skip: 100
+    message-trimming: true
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 1
+    credit-buffers: 8
+  - message-queue: briefkasten
+    communication-policy: direct
+    buffer-size: 4096
+    request-slots: 8
+    poll-skip: 100
+    message-trimming: true
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 1
+    credit-buffers: 8
+    credit-budget: 2
+  - message-queue: briefkasten
+    communication-policy: direct
+    buffer-size: 4096
+    request-slots: 8
+    poll-skip: 100
+    message-trimming: true
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 1
+    credit-buffers: 8
+    credit-budget: 4

@@ -220,6 +220,10 @@ inline auto briefkasten_config(Config const& conf) -> briefkasten::Config {
   config.drop_shells = conf.drop_shells;
   config.separate_forwarding = conf.separate_forwarding;
   config.exact_redirect_limit = conf.exact_redirect_limit;
+  config.feeder_first = conf.feeder_first;
+  if (conf.delivery_credit_buffers > 0) {
+    config.num_delivery_credit_buffers = conf.delivery_credit_buffers;
+  }
   if (conf.credit_budget > 0) {
     config.credit_budget_buffers = conf.credit_budget;
   }
@@ -352,6 +356,7 @@ void report_briefkasten_counters(Queue const& queue,
   add("window_grows", queue.num_window_grows());
   add("window_shrinks", queue.num_window_shrinks());
   add("peak_inbound_credit", queue.peak_inbound_credit());
+  add("feeder_withholds", queue.num_feeder_withholds());
   add("withhold_samples", queue.num_withhold_samples());
   auto const& withhold = queue.withhold_sum();
   add("withhold_credit_sum", withhold.credit);

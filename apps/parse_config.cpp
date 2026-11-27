@@ -174,6 +174,14 @@ auto parse_config(std::span<char*> argv, kamping::v2::comm_view comm)
                  "BriefKAsten experiment: credit budget per rank in buffers "
                  "per peer, links grow from two buffers up to "
                  "--credit-buffers within it (0: fixed windows)");
+  app.add_option("--delivery-credit-buffers", conf.delivery_credit_buffers,
+                 "BriefKAsten experiment: window of links that are only "
+                 "delivered over (proxy -> final receiver), in buffers "
+                 "(0: --credit-buffers)");
+  app.add_flag("--feeder-first", conf.feeder_first,
+               "BriefKAsten experiment: above 3/4 of the redirect limit, "
+               "withhold first from the proxied peers that feed the "
+               "congestion");
   add_enum_option(app, "--receiver", conf.receiver);
   app.add_option("--poll-skip", conf.poll_skip,
                  "BriefKAsten: poll after every n-th sender vertex only")
