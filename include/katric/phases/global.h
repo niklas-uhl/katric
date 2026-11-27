@@ -206,7 +206,7 @@ void post_trimmed_messages(graph::Graph const& G,
 }
 
 /// BriefKAsten's configuration from `--buffer-size`, `--request-slots`,
-/// `--flow-control`. Everything else is BriefKAsten's default (a capacity per
+/// `--flow-control`, `--credit-buffers`. Everything else is BriefKAsten's default (a capacity per
 /// destination buffer, no global threshold, idle flush of every buffer on
 /// entering `terminate`).
 inline auto briefkasten_config(Config const& conf) -> briefkasten::Config {
@@ -218,8 +218,7 @@ inline auto briefkasten_config(Config const& conf) -> briefkasten::Config {
   // makes them opt-in, since the large-message receive costs every poll an extra probe
   config.allow_large_messages = true;
   config.drop_shells = conf.drop_shells;
-  config.num_credit_buffers =
-      conf.flow_control ? std::nullopt : std::optional<std::size_t>(0);
+  config.num_credit_buffers = conf.flow_control ? conf.credit_buffers : 0;
   return config;
 }
 
@@ -311,6 +310,19 @@ void report_briefkasten_counters(Queue const& queue,
   add("peak_reserve_buffers", queue.peak_reserve_buffers());
   add("redirect_overdraft", queue.redirect_overdraft());
   add("reserve_waits", queue.num_reserve_waits());
+  // aggregation buffers allocated at the end (the pool never frees one): the buffer memory, with the pool cap
+  add("allocated_buffers", queue.num_allocated_buffers());
+  add("max_aggregation_buffers", queue.max_num_aggregation_buffers());
+  // per-rank constants to compare peak_reserve_buffers with: the reserve size above which own posts wait (one
+  // buffer per peer), the reserve bound, and the most buffers forwarded payload alone can occupy (2 per buffer of
+  // redirect_high_water plus one partial per peer; the ceiling minus 2 per peer, the send slots and 2). A peak
+  // above the last one needs own payload in the reserve.
+  auto const pause_threshold = queue.reserve_pause_threshold();
+  auto const ceiling = queue.redirect_pool_ceiling();
+  add("reserve_pause_threshold", pause_threshold);
+  add("redirect_pool_ceiling", ceiling);
+  add("reserve_forwarded_only_max",
+      ceiling - (2 * pause_threshold) - queue.config().num_request_slots - 2);
   add("dropped_shells", queue.num_dropped_shells());
 }
 

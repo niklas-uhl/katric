@@ -1,0 +1,45 @@
+# How small can the grid's credit window be? A grid proxy forwards from inside the receive handler and never waits,
+# so it must hold whatever its senders may send: up to a window from every peer. That window (C buffers per peer,
+# BriefKAsten default 8) sets almost all of the per-rank worst case, (2C + 5) p' + 2C + 18 aggregation buffers with
+# b = 2 and 8 request slots (p' = ceil(p/g) + g peers, g = round(sqrt p)): 1210 buffers at 768 cores with C = 8,
+# 754 with C = 4, 526 with C = 2. The measured peak reserve is ~30 % of the bound (RMAT 768: 293 of 1090).
+# Locally (RMAT, 16 / 36 ranks) C = 2 and 4 ran as fast as 8 with the same number of sends; the question is whether
+# that holds at scale, where credits bind (parked_for_credit) and the window limits each sender's buffers in flight.
+#   permuted RGG (low skew) and RMAT (skewed)  x  --credit-buffers 2 / 4 / 8, grid, 4 KiB, tuned default, 1 iteration
+# For the test partition: `--min-cores 768 --max-cores 768`, one job per input, 3 runs each (RMAT ~1.3 min, RGG ~1 min
+# per run), then `sbatch -p test`:
+#   just run-supermuc-experiment briefkasten-credit-window --copy-binary
+# Compare the global phase time, allocated_buffers / redirect_overdraft (avg = sum / p, max), parked_for_credit and
+# buffer_stalls per C.
+name: briefkasten-credit-window
+executable: apps/katric
+output_path_option_name: caliper-output
+threads_option_name: num-threads
+ncores: node-size-pow2
+threads_per_rank: [1]
+time_limit: 3
+graphs:
+  - generator: kagen
+    type: rgg2d
+    N: 18
+    M: 22
+    permute: 1
+    seed: 28475421
+    scale_weak: true
+  - generator: kagen
+    type: rmat
+    N: 16
+    M: 20
+    seed: 28475421
+    scale_weak: true
+config:
+  - message-queue: briefkasten
+    communication-policy: grid
+    buffer-size: 4096
+    credit-buffers: [2, 4, 8]
+    request-slots: 8
+    poll-skip: 100
+    message-trimming: true
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 1

@@ -112,6 +112,10 @@ struct Config {
   std::size_t request_slots = 8;
   /// BriefKAsten: credit-based flow control (window per peer)
   bool flow_control = true;
+  /// BriefKAsten: the credit window per peer, in buffers (BriefKAsten's
+  /// default). With the grid it also sets the proxy's reserve: a proxy holds up
+  /// to a window from every peer.
+  std::size_t credit_buffers = 8;
   /// BriefKAsten EXPERIMENT (pin exp/pool-fix-switch, temporary): the pool
   /// handling from before the fix (BriefKAsten #29 / #30), for an A/B in one
   /// binary (`briefkasten-pool-ab`)
