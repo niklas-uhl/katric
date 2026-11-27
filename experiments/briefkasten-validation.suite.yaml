@@ -1,0 +1,113 @@
+# Acceptance test for the one BriefKAsten setup (doc/briefkasten-migration.md step 9) on real-world graphs: katric
+# has only run RGG / RMAT with the window and the switches so far. Same arms as KaCCv2's briefkasten-validation:
+#   c0  grid C = 8, switches off     today's default
+#   c1  grid C = 8, both switches    candidate (bound 19 p' + 16)
+#   c2  grid C = 4, both switches    candidate with the tighter bound (11 p' + 16)
+#   c3  direct C = 8                 the switches only act at proxies; direct sees the window alone
+#   c4  direct C = 4
+# 768 cores, 2 iterations, tuned default, one job per input (all arms on the same nodes), test partition. Runtimes
+# at 768 are not known for twitter / friendster (time_limit is per run); check the first job before the rest:
+#   just run-supermuc-experiment briefkasten-validation --min-cores 768 --max-cores 768 --copy-binary
+# Compare the global phase (mean, spread) per arm, plus parked_for_credit, withhold_episodes, withheld_us.
+name: briefkasten-validation
+executable: apps/katric
+output_path_option_name: caliper-output
+threads_option_name: num-threads
+ncores: node-size-pow2
+threads_per_rank: [1]
+graphs:
+  - generator: kagen
+    type: file
+    graph_name: orkut
+    root: ${WORK_pn72pu}/graphs
+    filename: snap/com-orkut.ungraph.parhip
+    input_format: parhip
+    distribution: balance-edges
+    time_limit: 3
+  - generator: kagen
+    type: file
+    graph_name: live-journal
+    root: ${WORK_pn72pu}/graphs
+    filename: snap/com-lj.ungraph.parhip
+    input_format: parhip
+    distribution: balance-edges
+    time_limit: 3
+  - generator: kagen
+    type: file
+    graph_name: twitter
+    root: ${WORK_pn72pu}/graphs
+    filename: misc/twitter-2010.parhip
+    input_format: parhip
+    distribution: balance-edges
+    time_limit: 5
+  - generator: kagen
+    type: file
+    graph_name: friendster
+    root: ${WORK_pn72pu}/graphs
+    filename: snap/com-Friendster.parhip
+    input_format: parhip
+    distribution: balance-edges
+    time_limit: 5
+  - generator: kagen
+    type: file
+    graph_name: webbase-2001
+    root: ${WORK_pn72pu}/graphs
+    filename: misc/webbase-2001.parhip
+    input_format: parhip
+    distribution: balance-edges
+    time_limit: 3
+config:
+  - communication-policy: grid
+    credit-buffers: 8
+    message-queue: briefkasten
+    buffer-size: 4096
+    request-slots: 8
+    poll-skip: 100
+    message-trimming: true
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 2
+  - communication-policy: grid
+    credit-buffers: 8
+    separate-forwarding: true
+    exact-redirect-limit: true
+    message-queue: briefkasten
+    buffer-size: 4096
+    request-slots: 8
+    poll-skip: 100
+    message-trimming: true
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 2
+  - communication-policy: grid
+    credit-buffers: 4
+    separate-forwarding: true
+    exact-redirect-limit: true
+    message-queue: briefkasten
+    buffer-size: 4096
+    request-slots: 8
+    poll-skip: 100
+    message-trimming: true
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 2
+  - communication-policy: direct
+    credit-buffers: 8
+    message-queue: briefkasten
+    buffer-size: 4096
+    request-slots: 8
+    poll-skip: 100
+    message-trimming: true
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 2
+  - communication-policy: direct
+    credit-buffers: 4
+    message-queue: briefkasten
+    buffer-size: 4096
+    request-slots: 8
+    poll-skip: 100
+    message-trimming: true
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 2
