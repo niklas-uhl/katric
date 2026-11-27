@@ -524,6 +524,28 @@ The grid already scales this way today (`baseline_26_11_20`, 192 -> 3072: permut
    direct case at large p (C B p of inbound credit, mostly idle), not the grid. **Not pursued for the grid; fixed
    C = 8 stays.** Open: direct sending at large p, where the budget would cut the C B p of inbound credit (what MPI
    may have to buffer) if the idle links really are idle.
+   **Head-of-line switches (BriefKAsten exp/credit-budget 288781b), `briefkasten-hol_26_11_27`** (768, both switches):
+   the delivery window (`--delivery-credit-buffers`: links that are only delivered over, proxy -> final receiver, get
+   a larger window; the proxy's bound depends only on the window of the proxied links, so C = 4 keeps 11 p' + 16) and
+   feeder-first (above 3/4 of the redirect limit, withhold first from proxied peers whose recent forwarded payload
+   went >= 25 % to destinations with payload parked). Relative to C = 8 (median cc / mean global phase):
+   | arm | KaCCv2 lake-lanier | webbase-2001 | katric RGG perm | katric RMAT |
+   |---|---|---|---|---|
+   | C = 8 | 7.49 s | 0.409 s | 5.71 s | 27.34 s |
+   | C = 4 | +3.6 % | +1.4 % | +1.4 % | +0.8 % |
+   | C = 4, delivery 8 | **+1.3 %** | +0.9 % | +0.8 % | +1.3 % |
+   | C = 4, delivery 16 | +1.7 % | +0.6 % | +1.3 % | +0.3 % |
+   | C = 4, feeder-first | +4.5 % | +2.4 % | +2.6 % | +1.2 % |
+   | C = 4, delivery 8, feeder-first | +3.9 % | +2.1 % | +2.8 % | +1.4 % |
+   | C = 8, feeder-first | +2.0 % | +1.2 % | +1.1 % | 0.0 % |
+   (KaCCv2 rgg2d perm: C = 8's iterations spread 1.68-2.13 s, all other arms 1.72-1.86 s; no signal.) **The
+   delivery window recovers about two thirds of lake-lanier's C = 4 cost at C = 4's bound**; it does so through
+   fewer grants (label propagation 33.4 M at C = 4, 25.4 M with delivery 8, 17.0 M at C = 8), not fewer withholds
+   (256 K vs 247 K), and 16 is no better than 8. **Feeder-first makes it worse everywhere**: it withholds more (lake-
+   lanier 664 K, 700 K of them feeder withholds) without keeping the bystanders' grants flowing, because the
+   congested payload comes from all row peers a little each, so stalling the feeders earlier does not stop the
+   limit from filling. Dropped. Peak RSS is the same in every arm (katric RGG 536-538 MiB, RMAT 1982-1984 MiB):
+   the 200 buffers between C = 8 and C = 4 (0.8 MiB) do not show at 768.
    **Not counted in the bound: MPI's unexpected messages.** Only the receive slots are posted, so a buffer beyond
    them arrives as an eager unexpected message that MPI buffers internally. Per receiver that is at most the credit
    granted to it, C B per sender: C B p for direct sending (8 x 4 KiB x 6144 = 192 MiB at 6144 cores if every
