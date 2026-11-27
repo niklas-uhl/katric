@@ -453,6 +453,13 @@ The grid already scales this way today (`baseline_26_11_20`, 192 -> 3072: permut
    7.42 s (mean), +5.0 % sends and +6 % idle flushes with separate forwarding (own and forwarded messages no longer
    share partial flushes), 153 reserve waits in the base arm and none with it; twitter, rgg3d perm, RMAT neutral;
    peak RSS equal. The switches cost nothing measurable; they shorten the analysis, not the memory used.
+   **`briefkasten-bound-candidate_26_11_27`** (768, 3 iterations, C = 8 off / C = 4 both / C = 2 both; iterations
+   within 0.3 % of each other): global phase RMAT 26.30 / 25.97 / 26.46 s, permuted RGG 5.58 / 5.58 / 5.64 s; busiest
+   rank's buffers RMAT 418 / 266 / 196, RGG 504 / 285 / 188; same sends. **C = 4 with both switches is free for
+   katric, C = 2 costs ~1 %.** KaCCv2 differs: lake-lanier +3.9 % (C = 4) / +7.3 % (C = 2), more `terminate()`
+   cycles and idle flushes, not credit waits (KaCCv2 notes; suite `briefkasten-window-mechanism` there). With its
+   tiny messages KaCCv2 has the factor ~1 instead of 2, so C = 8 gives it ~11 p' + 16 as well: same bound, window
+   per application.
    **Open:** C = 4 / C = 2 with both switches against today's default, 3 iterations (`briefkasten-bound-candidate`,
    768, test partition; `briefkasten-bound-candidate-large`, 1536-6144, general partition, 2 iterations; KaCCv2
    suites of the same names). Risk at larger p: separate forwarding on strong-scaled lake-lanier (smaller flushes,
