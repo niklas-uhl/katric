@@ -222,6 +222,7 @@ inline auto briefkasten_config(Config const& conf) -> briefkasten::Config {
   config.separate_forwarding = conf.separate_forwarding;
   config.exact_redirect_limit = conf.exact_redirect_limit;
   config.feeder_first = conf.feeder_first;
+  config.grant_divisor = conf.grant_divisor;
   if (conf.delivery_credit_buffers > 0) {
     config.num_delivery_credit_buffers = conf.delivery_credit_buffers;
   }

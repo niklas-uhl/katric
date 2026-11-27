@@ -141,6 +141,9 @@ struct Config {
   /// redirect limit, a proxy withholds first from the feeders of the
   /// congestion (needs --exact-redirect-limit)
   bool feeder_first = false;
+  /// BriefKAsten EXPERIMENT (pin exp/credit-budget): grants due after 1/d of
+  /// the window (2: half, the default)
+  std::size_t grant_divisor = 2;
   Receiver receiver = Receiver::persistent;
   /// BriefKAsten: poll only on every n-th sender vertex (1: on every one, as
   /// the legacy queue); BriefKAsten polls on every call anyway while buffers

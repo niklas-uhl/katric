@@ -178,7 +178,7 @@ FetchContent_Declare(
   # doc/briefkasten-migration.md step 8) and KaCCv2's drain-policy switches, + exp/split-forwarding (7736e33:
   # Config::separate_forwarding / exact_redirect_limit behind --separate-forwarding / --exact-redirect-limit, both off
   # by default, i.e. cad2789's behaviour); back to the merged pool fix afterwards.
-  GIT_TAG 288781b7c4b7acf73c35b88b4fad5df00c0f3003 # exp/credit-budget (exp/split-forwarding + diagnostics + credit budget)
+  GIT_TAG 25963b27993ae8ac9c85551371e37ae87285f7f3 # exp/credit-budget (exp/split-forwarding + diagnostics + credit budget)
   SYSTEM)
 
 # katric's own kassert instance (kassert::kassert, used by no other dependency). Its default level applies to every target

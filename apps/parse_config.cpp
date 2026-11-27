@@ -182,6 +182,9 @@ auto parse_config(std::span<char*> argv, kamping::v2::comm_view comm)
                "BriefKAsten experiment: above 3/4 of the redirect limit, "
                "withhold first from the proxied peers that feed the "
                "congestion");
+  app.add_option("--grant-divisor", conf.grant_divisor,
+                 "BriefKAsten experiment: grants due after 1/d of the window "
+                 "(2: half, the default)");
   add_enum_option(app, "--receiver", conf.receiver);
   app.add_option("--poll-skip", conf.poll_skip,
                  "BriefKAsten: poll after every n-th sender vertex only")
