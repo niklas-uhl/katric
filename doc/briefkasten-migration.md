@@ -498,6 +498,15 @@ The grid already scales this way today (`baseline_26_11_20`, 192 -> 3072: permut
    -0.7 / 0 %, live-journal 0 / 0 %, twitter +0.8 / +0.4 %, friendster -1.9 / -2.2 %, webbase-2001 +1.9 / 0 %;
    the candidate withholds less often in total (twitter 5093 -> 2449 link-s). **No regression on any input**: the
    candidate stands.
+   **`briefkasten-bound-candidate-large_26_11_27`** (2 iterations, global phase mean; C = 8 off / C = 4 both / C = 2
+   both): RGG perm 1536 5.75 / 5.92 / 6.01 s, 3072 6.23 / 6.28 / 6.32 s; RMAT 1536 39.06 / 38.73 / 39.66 s, 3072
+   63.25 / 62.05 / 62.64 s (6144 not back yet). Within +-3 % (RGG's spread between iterations is that large), no
+   trend with p: katric stays indifferent to the window. Busiest rank's buffers 708 / 414 / 262 (RGG 1536), 937 / 567
+   / 369 (RGG 3072), 606 / 394 / 294 (RMAT 1536), 698 / 496 / 367 (RMAT 3072), i.e. 33-66 % of the pool ceiling
+   (1527 / 719 / 403 at 1536, 2135 / 1007 / 563 at 3072); the average rank uses 165-421.
+   KaCCv2 `briefkasten-window-mechanism` at 1536 (lake-lanier, 3 iterations, median cc): C = 8 off 3.86 s, C = 4 off
+   4.02 s (+4 %), C = 8 both 3.92 s (+1.6 %; one slow first iteration, mean +4 %), C = 4 both 4.02 s (+4 %). The +9 %
+   of the single -large job at 1536 does not repeat; the window costs ~4 % at 1536 as at 768, and nothing at 3072.
    **Not counted in the bound: MPI's unexpected messages.** Only the receive slots are posted, so a buffer beyond
    them arrives as an eager unexpected message that MPI buffers internally. Per receiver that is at most the credit
    granted to it, C B per sender: C B p for direct sending (8 x 4 KiB x 6144 = 192 MiB at 6144 cores if every
