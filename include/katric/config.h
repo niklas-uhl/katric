@@ -129,6 +129,10 @@ struct Config {
   /// for the simpler reserve bound (`briefkasten-split-forwarding`)
   bool separate_forwarding = false;
   bool exact_redirect_limit = false;
+  /// BriefKAsten EXPERIMENT (pin exp/credit-budget): credit budget per rank in
+  /// buffers per peer; 0: fixed windows of credit_buffers. Otherwise links
+  /// start at two buffers and grow up to credit_buffers within the budget.
+  std::size_t credit_budget = 0;
   Receiver receiver = Receiver::persistent;
   /// BriefKAsten: poll only on every n-th sender vertex (1: on every one, as
   /// the legacy queue); BriefKAsten polls on every call anyway while buffers

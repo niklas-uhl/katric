@@ -170,6 +170,10 @@ auto parse_config(std::span<char*> argv, kamping::v2::comm_view comm)
   app.add_flag("--exact-redirect-limit", conf.exact_redirect_limit,
                "BriefKAsten experiment: grid proxies grant only within the "
                "exact redirect limit (A/B only)");
+  app.add_option("--credit-budget", conf.credit_budget,
+                 "BriefKAsten experiment: credit budget per rank in buffers "
+                 "per peer, links grow from two buffers up to "
+                 "--credit-buffers within it (0: fixed windows)");
   add_enum_option(app, "--receiver", conf.receiver);
   app.add_option("--poll-skip", conf.poll_skip,
                  "BriefKAsten: poll after every n-th sender vertex only")

@@ -220,6 +220,9 @@ inline auto briefkasten_config(Config const& conf) -> briefkasten::Config {
   config.drop_shells = conf.drop_shells;
   config.separate_forwarding = conf.separate_forwarding;
   config.exact_redirect_limit = conf.exact_redirect_limit;
+  if (conf.credit_budget > 0) {
+    config.credit_budget_buffers = conf.credit_budget;
+  }
   config.num_credit_buffers = conf.flow_control ? conf.credit_buffers : 0;
   return config;
 }
@@ -343,6 +346,12 @@ void report_briefkasten_counters(Queue const& queue,
   // granted to proxied peers and unused, forwarded elements filling a buffer, parked without credit, parked
   // without a send slot, in flight
   add("redirect_limit", queue.max_num_redirect_elements());
+  // credit budget (exp/credit-budget): the budget in elements (0: fixed windows), window grows / halvings, and the
+  // most credit outstanding on all inbound links at once (what could arrive unasked; use the max over ranks)
+  add("credit_budget", queue.credit_budget_elements());
+  add("window_grows", queue.num_window_grows());
+  add("window_shrinks", queue.num_window_shrinks());
+  add("peak_inbound_credit", queue.peak_inbound_credit());
   add("withhold_samples", queue.num_withhold_samples());
   auto const& withhold = queue.withhold_sum();
   add("withhold_credit_sum", withhold.credit);
