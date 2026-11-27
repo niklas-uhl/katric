@@ -175,8 +175,10 @@ FetchContent_Declare(
   GIT_REPOSITORY https://github.com/niklas-uhl/BriefKAsten
   # TEMPORARY: exp/drain-policy = exp/pool-fix-switch (d2b5a24 = 675048a + Config::bounded_pool, the run-time switch
   # behind --legacy-pool) + Config::drop_shells (--drop-shells: the pool fix without #29's overflow erase, see
-  # doc/briefkasten-migration.md step 8) and KaCCv2's drain-policy switches; back to the merged pool fix afterwards.
-  GIT_TAG cad2789a4bde16b95fca2e2f2e55638ace30101d # exp/drain-policy
+  # doc/briefkasten-migration.md step 8) and KaCCv2's drain-policy switches, + exp/split-forwarding (7736e33:
+  # Config::separate_forwarding / exact_redirect_limit behind --separate-forwarding / --exact-redirect-limit, both off
+  # by default, i.e. cad2789's behaviour); back to the merged pool fix afterwards.
+  GIT_TAG 7736e3351d8e176be6aebc57e5a618743a1a8600 # exp/split-forwarding
   SYSTEM)
 
 # katric's own kassert instance (kassert::kassert, used by no other dependency). Its default level applies to every target

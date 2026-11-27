@@ -1,0 +1,47 @@
+# Does the simpler reserve bound cost time? BriefKAsten exp/split-forwarding (7736e33) adds two switches for the grid:
+#   --separate-forwarding: a proxy forwards in buffers of its own instead of sharing each destination's buffer with
+#     own messages; #30's pause is off, and the termination drain does not park partially filled forwarded buffers.
+#   --exact-redirect-limit: a proxy grants only if the whole grant fits the redirect limit (no overshoot by a window).
+# Worst case per rank with both: 19 p' + 16 aggregation buffers instead of 21 p' + 34 (p' = ceil(p/g) + g peers,
+# g = round(sqrt p); 1080 instead of 1210 at 768 cores). Locally (RMAT grid 16 / 36 ranks) all four arms ran within
+# noise with the same number of sends. Expected cost, if any: more partially filled sends at idle / drain flushes,
+# since own and forwarded messages to the same peer no longer share a buffer (katric's buffers mostly leave full).
+#   permuted RGG and RMAT  x  grid, 4 KiB, tuned default, 1 iteration  x  base / separate / exact / both
+# For the test partition: `--min-cores 768 --max-cores 768`, one job per input, 4 runs each (RMAT ~1.3 min, RGG
+# ~1 min per run), then `sbatch -p test`:
+#   just run-supermuc-experiment briefkasten-split-forwarding --copy-binary
+# Compare the global phase time, sent_messages, forced_flushes, idle_flushes, drain_forward_deferred, reserve_waits,
+# allocated_buffers / redirect_overdraft (avg = sum / p, max) per arm.
+name: briefkasten-split-forwarding
+executable: apps/katric
+output_path_option_name: caliper-output
+threads_option_name: num-threads
+ncores: node-size-pow2
+threads_per_rank: [1]
+time_limit: 3
+graphs:
+  - generator: kagen
+    type: rgg2d
+    N: 18
+    M: 22
+    permute: 1
+    seed: 28475421
+    scale_weak: true
+  - generator: kagen
+    type: rmat
+    N: 16
+    M: 20
+    seed: 28475421
+    scale_weak: true
+config:
+  - message-queue: briefkasten
+    communication-policy: grid
+    buffer-size: 4096
+    request-slots: 8
+    poll-skip: 100
+    separate-forwarding: [false, true]
+    exact-redirect-limit: [false, true]
+    message-trimming: true
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 1

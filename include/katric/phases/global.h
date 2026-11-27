@@ -218,6 +218,8 @@ inline auto briefkasten_config(Config const& conf) -> briefkasten::Config {
   // makes them opt-in, since the large-message receive costs every poll an extra probe
   config.allow_large_messages = true;
   config.drop_shells = conf.drop_shells;
+  config.separate_forwarding = conf.separate_forwarding;
+  config.exact_redirect_limit = conf.exact_redirect_limit;
   config.num_credit_buffers = conf.flow_control ? conf.credit_buffers : 0;
   return config;
 }
@@ -316,13 +318,18 @@ void report_briefkasten_counters(Queue const& queue,
   // per-rank constants to compare peak_reserve_buffers with: the reserve size above which own posts wait (one
   // buffer per peer), the reserve bound, and the most buffers forwarded payload alone can occupy (2 per buffer of
   // redirect_high_water plus one partial per peer; the ceiling minus 2 per peer, the send slots and 2). A peak
-  // above the last one needs own payload in the reserve.
+  // above the last one needs own payload in the reserve. With separate_forwarding (no pause, no own payload in
+  // the reserve) the ceiling is that bound.
   auto const pause_threshold = queue.reserve_pause_threshold();
   auto const ceiling = queue.redirect_pool_ceiling();
   add("reserve_pause_threshold", pause_threshold);
   add("redirect_pool_ceiling", ceiling);
   add("reserve_forwarded_only_max",
-      ceiling - (2 * pause_threshold) - queue.config().num_request_slots - 2);
+      queue.config().separate_forwarding
+          ? ceiling
+          : ceiling - (2 * pause_threshold) - queue.config().num_request_slots - 2);
+  // forwarded buffers the termination drain left in place (no credit or slot), separate_forwarding only
+  add("drain_forward_deferred", queue.num_drain_forward_deferred());
   add("dropped_shells", queue.num_dropped_shells());
 }
 

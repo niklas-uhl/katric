@@ -123,6 +123,12 @@ struct Config {
   /// BriefKAsten EXPERIMENT (pin exp/drain-policy, temporary): the pool fix without #29's overflow erase (the
   /// entry is kept and its moved-from shell dropped); with legacy_pool the legacy handling minus the leak
   bool drop_shells = false;
+  /// BriefKAsten EXPERIMENT (pin exp/split-forwarding, temporary): a grid
+  /// proxy keeps forwarded messages in buffers of their own (no shared
+  /// buffers, no #30 pause), and grants only within the exact redirect limit;
+  /// for the simpler reserve bound (`briefkasten-split-forwarding`)
+  bool separate_forwarding = false;
+  bool exact_redirect_limit = false;
   Receiver receiver = Receiver::persistent;
   /// BriefKAsten: poll only on every n-th sender vertex (1: on every one, as
   /// the legacy queue); BriefKAsten polls on every call anyway while buffers

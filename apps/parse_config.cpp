@@ -164,6 +164,12 @@ auto parse_config(std::span<char*> argv, kamping::v2::comm_view comm)
                "BriefKAsten experiment: keep the entry on overflow and drop "
                "the moved-from shell instead of erasing (the pool fix without "
                "#29's erase; A/B only)");
+  app.add_flag("--separate-forwarding", conf.separate_forwarding,
+               "BriefKAsten experiment: grid proxies forward in buffers of "
+               "their own, without #30's pause (A/B only)");
+  app.add_flag("--exact-redirect-limit", conf.exact_redirect_limit,
+               "BriefKAsten experiment: grid proxies grant only within the "
+               "exact redirect limit (A/B only)");
   add_enum_option(app, "--receiver", conf.receiver);
   app.add_option("--poll-skip", conf.poll_skip,
                  "BriefKAsten: poll after every n-th sender vertex only")
