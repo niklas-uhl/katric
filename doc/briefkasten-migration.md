@@ -419,6 +419,45 @@ The grid already scales this way today (`baseline_26_11_20`, 192 -> 3072: permut
    RGG direct 4.53 / 4.53 s, grid 5.70 / 5.65 s), same stalls and reserve. Found on the way: with the entry kept, a
    proxy's handler could merge into the shell and grow it into an uncounted buffer (RMAT grid abort, fixed in
    cad2789). KaCCv2 on the same base: candidate = fix as well; the base's idle flush makes the drain order moot.
+9. **Buffer memory bound** (2026-11-27). Goal: O(B p') aggregation buffer memory per rank for direct and grid, with
+   B the buffer size (local threshold, in elements) and p' the peers (direct p, grid ceil(p/g) + g with
+   g = round(sqrt p), i.e. ~2 sqrt p). C = credit window per peer in buffers (`--credit-buffers`, default 8),
+   b = pool buffers per peer (2), s = send slots (8). **Assumptions:** no large messages (every message fits a
+   buffer), flow control with C >= 2, and for the grid BriefKAsten `separate_forwarding` + `exact_redirect_limit`
+   (exp/split-forwarding 7736e33, `--separate-forwarding --exact-redirect-limit`).
+   - **Direct:** at most **b p' + s** buffers. Own posts wait at the pool cap, nothing is forwarded.
+   - **Grid:** own + forwarded <= (b p' + s) + (2 C p' + p' + s) = **(2C + b + 1) p' + 2s** buffers.
+     Own: as direct (own posts wait at the cap and never merge into forwarded buffers).
+     Forwarded: (1) the exact limit keeps the forwarded elements a proxy holds (filling, parked, in flight)
+     <= C B p'; only buffers larger than half the window may pass with too little credit, and with C >= 2 and no
+     large messages there are none. (2) Per destination, a forwarded buffer that leaves before it overflowed (idle
+     flush, termination drain) is sent at once and holds a send slot; every other one was flushed by the message
+     that went into the next, so two consecutive ones hold more than B elements: <= 2 E_d / B + 1 + (in slots).
+     (3) Summed: <= 2 C p' + p' + s.
+   - Defaults: C = 8: 19 p' + 16; C = 4: **11 p' + 16**; C = 2: 7 p' + 16 (768 cores, p' = 56: 1080 / 632 / 408
+     buffers, 2.5 MiB at 4 KiB for C = 4). Direct 2p + 8. The grid's bound is lower above p ~ 120 (11 * 2 sqrt p
+     = 2p), 7x lower at 6144.
+   - **Without the switches** (#30 as is): (2C + b + 3) p' + 2C + 2s + 2 (21 p' + 34), still O(B p'): #30's pause
+     threshold (one buffer per peer of own payload in the reserve), a second partial buffer per destination, and one
+     window of overshoot at the redirect limit. The old bound also missed the termination drain parking partial
+     forwarded buffers drain after drain (bounded only per element); `separate_forwarding` closes that.
+   - Not counted: receive buffers (a fixed number of slots x B) and the credit state (O(p') words).
+   - Measured, busiest rank: 22-30 % of the bound at 768-6144 cores (RMAT grid, pool A/B), so usage scales with it.
+   **`briefkasten-credit-window_26_11_27`** (768, grid 4 KiB, 1 iteration, C = 8 / 4 / 2): global phase RMAT 26.77 /
+   26.93 / 27.47 s, permuted RGG 5.73 / 5.68 / 5.81 s; busiest rank's buffers RMAT 421 / 268 / 204, RGG 504 / 280 /
+   165; same sends; parked for credit RMAT 6 K / 18 K / 62 K. C = 4 is free; C = 2's +2.6 % is within the run-to-run
+   noise (identical configurations differ by 1.8-3.6 % between suites).
+   **`briefkasten-split-forwarding_26_11_27`** (768, 4 KiB, C = 8; base / separate / exact / both): katric global
+   phase RMAT 26.30 / 25.83 / 26.26 / 25.87 s, RGG 5.53 / 5.58 / 5.70 / 5.56 s, same sends, no reserve waits.
+   KaCCv2 (exp/split-forwarding 0e0f81e, grid best setting, 2 iterations): lake-lanier cc 7.40 / 7.43 / 7.37 /
+   7.42 s (mean), +5.0 % sends and +6 % idle flushes with separate forwarding (own and forwarded messages no longer
+   share partial flushes), 153 reserve waits in the base arm and none with it; twitter, rgg3d perm, RMAT neutral;
+   peak RSS equal. The switches cost nothing measurable; they shorten the analysis, not the memory used.
+   **Open:** C = 4 / C = 2 with both switches against today's default, 3 iterations (`briefkasten-bound-candidate`,
+   768, test partition; `briefkasten-bound-candidate-large`, 1536-6144, general partition, 2 iterations; KaCCv2
+   suites of the same names). Risk at larger p: separate forwarding on strong-scaled lake-lanier (smaller flushes,
+   more of them partial). Not pursued: a shared forwarding budget R < C p' (needs a guaranteed window per link,
+   since credit cannot be revoked; ~1 MiB per rank at 768).
 
 ## Decisions (2026-11-24)
 

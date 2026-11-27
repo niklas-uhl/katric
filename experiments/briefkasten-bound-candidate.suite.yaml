@@ -1,0 +1,67 @@
+# The O(B p') buffer bound (doc/briefkasten-migration.md, step 9): today's default against the two candidates, with
+# enough iterations to see through the run-to-run noise (1.8-3.6 % between suites for identical configurations).
+#   c0  C = 8, switches off                     today's default, worst case 21 p' + 34 buffers (1210 at 768)
+#   c1  C = 4, separate forwarding + exact      11 p' + 16 (632 at 768)
+#   c2  C = 2, separate forwarding + exact       7 p' + 16 (408 at 768); 1 iteration had RMAT +2.6 % (noise?)
+# Grid, 4 KiB, tuned default, 3 iterations, permuted RGG and RMAT. For the test partition:
+# `--min-cores 768 --max-cores 768`, one job per input, 3 runs each (RMAT ~2.5 min, RGG ~0.7 min per run), then
+# `sbatch -p test`:
+#   just run-supermuc-experiment briefkasten-bound-candidate --copy-binary
+# Higher p: briefkasten-bound-candidate-large. Compare the global phase (mean and spread over the iterations),
+# allocated_buffers (avg = sum / p, max), parked_for_credit, buffer_stalls, sent_messages per arm.
+name: briefkasten-bound-candidate
+executable: apps/katric
+output_path_option_name: caliper-output
+threads_option_name: num-threads
+ncores: node-size-pow2
+threads_per_rank: [1]
+time_limit: 5
+graphs:
+  - generator: kagen
+    type: rgg2d
+    N: 18
+    M: 22
+    permute: 1
+    seed: 28475421
+    scale_weak: true
+  - generator: kagen
+    type: rmat
+    N: 16
+    M: 20
+    seed: 28475421
+    scale_weak: true
+config:
+  - message-queue: briefkasten
+    communication-policy: grid
+    buffer-size: 4096
+    request-slots: 8
+    poll-skip: 100
+    credit-buffers: 8
+    message-trimming: true
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 3
+  - message-queue: briefkasten
+    communication-policy: grid
+    buffer-size: 4096
+    request-slots: 8
+    poll-skip: 100
+    credit-buffers: 4
+    separate-forwarding: true
+    exact-redirect-limit: true
+    message-trimming: true
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 3
+  - message-queue: briefkasten
+    communication-policy: grid
+    buffer-size: 4096
+    request-slots: 8
+    poll-skip: 100
+    credit-buffers: 2
+    separate-forwarding: true
+    exact-redirect-limit: true
+    message-trimming: true
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 3

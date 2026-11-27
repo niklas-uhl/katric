@@ -1,0 +1,63 @@
+# briefkasten-bound-candidate at higher p (doc/briefkasten-migration.md, step 9), for the general partition:
+#   c0  C = 8, switches off   c1  C = 4, separate forwarding + exact   c2  C = 2, separate forwarding + exact
+# Grid, 4 KiB, tuned default, 2 iterations. Credit binds more with skew at higher p (RMAT's hot destinations), so
+# this is where C = 2 / 4 could cost. Run times with C = 8 (pool A/B, 1 iteration): RMAT grid 70 / 112 / 159 s per
+# iteration at 1536 / 3072 / 6144 (+18 / 28 / 43 s input), RGG < 12 s; so an RMAT run at 6144 takes ~6 min, the job
+# ~18 min. `--min-cores 1536 --max-cores 6144` (one job per input and core count):
+#   just run-supermuc-experiment briefkasten-bound-candidate-large --copy-binary
+name: briefkasten-bound-candidate-large
+executable: apps/katric
+output_path_option_name: caliper-output
+threads_option_name: num-threads
+ncores: node-size-pow2
+threads_per_rank: [1]
+time_limit: 10
+graphs:
+  - generator: kagen
+    type: rgg2d
+    N: 18
+    M: 22
+    permute: 1
+    seed: 28475421
+    scale_weak: true
+  - generator: kagen
+    type: rmat
+    N: 16
+    M: 20
+    seed: 28475421
+    scale_weak: true
+config:
+  - message-queue: briefkasten
+    communication-policy: grid
+    buffer-size: 4096
+    request-slots: 8
+    poll-skip: 100
+    credit-buffers: 8
+    message-trimming: true
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 2
+  - message-queue: briefkasten
+    communication-policy: grid
+    buffer-size: 4096
+    request-slots: 8
+    poll-skip: 100
+    credit-buffers: 4
+    separate-forwarding: true
+    exact-redirect-limit: true
+    message-trimming: true
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 2
+  - message-queue: briefkasten
+    communication-policy: grid
+    buffer-size: 4096
+    request-slots: 8
+    poll-skip: 100
+    credit-buffers: 2
+    separate-forwarding: true
+    exact-redirect-limit: true
+    message-trimming: true
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 2
