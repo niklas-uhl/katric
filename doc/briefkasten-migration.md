@@ -560,6 +560,12 @@ The grid already scales this way today (`baseline_26_11_20`, 192 -> 3072: permut
    neither shrink nor save sends. Where buffers fill and duplicates exist (KaCCv2 reachability on web and social
    graphs), sender-side caching in KaCCv2 removes them; that is a KaCCv2 question (KaCCv2 notes: forward caching
    -55 % on uk-2007-05, +67 % on rgg2d perm, decided by the share of messages it removes).
+   **Poll cadence (KaCCv2 `--briefkasten-poll-skip`, `briefkasten-poll-cadence_26_11_27`):** busy receivers grant only
+   when they poll; polling more often cuts lake-lanier's withholds (239 K -> 70 K) but costs far more (C = 4: skip 25
+   +3.9 %, 10 +10 %, 1 +83 % vs skip 100's +2.3 %). Not a lever. **Flow control settled (2026-11-27):** C = 8 with
+   separate forwarding and the exact redirect limit; the delivery window as an optional switch for the tighter bound;
+   credit budget, feeder-first, grant batching, combining and poll cadence tried and rejected. Large scale is a
+   "nothing breaks" check of the merged version, not tuning.
    **Not counted in the bound: MPI's unexpected messages.** Only the receive slots are posted, so a buffer beyond
    them arrives as an eager unexpected message that MPI buffers internally. Per receiver that is at most the credit
    granted to it, C B per sender: C B p for direct sending (8 x 4 KiB x 6144 = 192 MiB at 6144 cores if every
