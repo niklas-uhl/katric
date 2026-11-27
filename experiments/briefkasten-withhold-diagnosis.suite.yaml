@@ -7,15 +7,15 @@
 # were held back (withheld_us, max_withheld_us), against KaCCv2's briefkasten-withhold-diagnosis.
 #   c0  C = 8, separate forwarding + exact
 #   c1  C = 4, separate forwarding + exact
-# Grid, 4 KiB, tuned default, 2 iterations, permuted RGG and RMAT, test partition:
-#   just run-supermuc-experiment briefkasten-withhold-diagnosis --min-cores 768 --max-cores 768 --copy-binary
+# Grid, 4 KiB, tuned default, 2 iterations, permuted RGG and RMAT; packed with briefkasten-validation, test partition:
+#   just run-supermuc-experiment briefkasten-withhold-diagnosis briefkasten-validation --min-cores 768 --max-cores 768 \
+#     --test --copy-binary --pack-jobs --pack-name briefkasten-diag-val --max-job-time 30m
 name: briefkasten-withhold-diagnosis
 executable: apps/katric
 output_path_option_name: caliper-output
 threads_option_name: num-threads
 ncores: node-size-pow2
 threads_per_rank: [1]
-time_limit: 5
 graphs:
   - generator: kagen
     type: rgg2d
@@ -24,12 +24,14 @@ graphs:
     permute: 1
     seed: 28475421
     scale_weak: true
+    time_limit: 1.5  # ~0.7 min per run with 3 iterations (briefkasten-bound-candidate)
   - generator: kagen
     type: rmat
     N: 16
     M: 20
     seed: 28475421
     scale_weak: true
+    time_limit: 3  # ~2.5 min per run with 3 iterations (briefkasten-bound-candidate)
 config:
   - message-queue: briefkasten
     communication-policy: grid

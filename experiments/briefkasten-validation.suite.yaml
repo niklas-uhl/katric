@@ -1,13 +1,13 @@
 # Acceptance test for the one BriefKAsten setup (doc/briefkasten-migration.md step 9) on real-world graphs: katric
 # has only run RGG / RMAT with the window and the switches so far. Same arms as KaCCv2's briefkasten-validation:
 #   c0  grid C = 8, switches off     today's default
-#   c1  grid C = 8, both switches    candidate (bound 19 p' + 16)
-#   c2  grid C = 4, both switches    candidate with the tighter bound (11 p' + 16)
-#   c3  direct C = 8                 the switches only act at proxies; direct sees the window alone
-#   c4  direct C = 4
-# 768 cores, 2 iterations, tuned default, one job per input (all arms on the same nodes), test partition. Runtimes
-# at 768 are not known for twitter / friendster (time_limit is per run); check the first job before the rest:
-#   just run-supermuc-experiment briefkasten-validation --min-cores 768 --max-cores 768 --copy-binary
+#   c1  grid C = 8, both switches    the candidate (bound 19 p' + 16)
+# Direct runs are unchanged by the candidate (the switches only act at proxies, C stays 8). C = 4 arms (grid and
+# direct) only if briefkasten-withhold-diagnosis yields a fix that makes C = 4 the candidate.
+# 768 cores, 2 iterations, tuned default. Per-run time limits are I_MPI_JOB_TIMEOUTs; the runtimes of twitter /
+# friendster at 768 are not known (guesses below). Packed with the diagnosis into two test jobs:
+#   just run-supermuc-experiment briefkasten-withhold-diagnosis briefkasten-validation --min-cores 768 --max-cores 768 \
+#     --test --copy-binary --pack-jobs --pack-name briefkasten-diag-val --max-job-time 30m
 # Compare the global phase (mean, spread) per arm, plus parked_for_credit, withhold_episodes, withheld_us.
 name: briefkasten-validation
 executable: apps/katric
@@ -23,7 +23,7 @@ graphs:
     filename: snap/com-orkut.ungraph.parhip
     input_format: parhip
     distribution: balance-edges
-    time_limit: 3
+    time_limit: 1
   - generator: kagen
     type: file
     graph_name: live-journal
@@ -31,7 +31,7 @@ graphs:
     filename: snap/com-lj.ungraph.parhip
     input_format: parhip
     distribution: balance-edges
-    time_limit: 3
+    time_limit: 1
   - generator: kagen
     type: file
     graph_name: twitter
@@ -39,7 +39,7 @@ graphs:
     filename: misc/twitter-2010.parhip
     input_format: parhip
     distribution: balance-edges
-    time_limit: 5
+    time_limit: 3
   - generator: kagen
     type: file
     graph_name: friendster
@@ -47,7 +47,7 @@ graphs:
     filename: snap/com-Friendster.parhip
     input_format: parhip
     distribution: balance-edges
-    time_limit: 5
+    time_limit: 4
   - generator: kagen
     type: file
     graph_name: webbase-2001
@@ -55,7 +55,7 @@ graphs:
     filename: misc/webbase-2001.parhip
     input_format: parhip
     distribution: balance-edges
-    time_limit: 3
+    time_limit: 2
 config:
   - communication-policy: grid
     credit-buffers: 8
@@ -71,38 +71,6 @@ config:
     credit-buffers: 8
     separate-forwarding: true
     exact-redirect-limit: true
-    message-queue: briefkasten
-    buffer-size: 4096
-    request-slots: 8
-    poll-skip: 100
-    message-trimming: true
-    degree-exchange: dense
-    intersection-method: merge
-    iterations: 2
-  - communication-policy: grid
-    credit-buffers: 4
-    separate-forwarding: true
-    exact-redirect-limit: true
-    message-queue: briefkasten
-    buffer-size: 4096
-    request-slots: 8
-    poll-skip: 100
-    message-trimming: true
-    degree-exchange: dense
-    intersection-method: merge
-    iterations: 2
-  - communication-policy: direct
-    credit-buffers: 8
-    message-queue: briefkasten
-    buffer-size: 4096
-    request-slots: 8
-    poll-skip: 100
-    message-trimming: true
-    degree-exchange: dense
-    intersection-method: merge
-    iterations: 2
-  - communication-policy: direct
-    credit-buffers: 4
     message-queue: briefkasten
     buffer-size: 4096
     request-slots: 8
