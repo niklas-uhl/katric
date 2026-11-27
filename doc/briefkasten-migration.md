@@ -467,6 +467,45 @@ The grid already scales this way today (`baseline_26_11_20`, 192 -> 3072: permut
    suites of the same names). Risk at larger p: separate forwarding on strong-scaled lake-lanier (smaller flushes,
    more of them partial). Not pursued: a shared forwarding budget R < C p' (needs a guaranteed window per link,
    since credit cannot be revoked; ~1 MiB per rank at 768).
+   **One setup for both applications (2026-11-27): C = 8 with both switches**, unless a later run contradicts it.
+   KaCCv2's lake-lanier pays for C = 4 (+1.5-3.9 % at 768, +9 % at 1536 in one job, 0 at 3072) and katric gains
+   nothing from it, so C = 4 would trade time for a tighter constant (11 p' vs 19 p'; ~5 MiB per rank at 6144).
+   **`briefkasten-withhold-diagnosis_26_11_27`** (768, both switches, C = 8 / 4; BriefKAsten 9a7e264 samples a
+   proxy's redirect budget whenever it starts withholding a grant: unused credit of proxied peers, forwarded
+   elements filling / parked for credit / parked for a send slot / in flight, as share of the budget C B p'):
+   | input | C = 8 / 4 | withhold episodes | withheld link-s | credit / filling / parked credit / parked slot / in flight |
+   |---|---|---|---|---|
+   | KaCCv2 lake-lanier, label propagation | 7.34 / 7.57 s cc (+3.1 %) | 1.2 K / 22.7 K | 0.9 / 19.0 | 37 / 6 / 34 / 21 / 2 % (C = 4) |
+   | KaCCv2 lake-lanier, reachability | | 1.4 K / 5.8 K | 9 / 36 | 26 / 4 / 67 / 1 / 0 % |
+   | KaCCv2 webbase-2001, reachability | 0.416 / 0.415 s | 0.6 K / 1.3 K | 0.1 / 0.2 | 39 / 6 / 37 / 16 / 1 % |
+   | katric RMAT | 25.91 / 26.15 s global (+0.9 %) | 136 K / 375 K | 548 / 1379 | 25 / 4 / 56 / 13 / 3 % |
+   | katric RGG perm | 5.66 / 5.63 s | 3.5 K / 7.6 K | 22 / 32 | 13 / 6 / 2 / 76 / 3 % |
+   (link-s summed over ranks and links, first iteration.) Of the three suspects, **onward credit wins**: forwarded
+   payload parked because the final receiver has not granted is the largest data share (34-67 %), then forwarded
+   payload waiting for a send slot; filling buffers (2-6 %) and in-flight sends (0-3 %) are small, so neither a
+   flush on withhold nor more polling at the proxy would help. The rest is credit granted to row peers and not yet
+   used (13-39 %), reserved whether a peer sends or not. Withholding then blocks the whole link from a row peer,
+   also for destinations that are not congested: head-of-line blocking at the proxy, behind slow receivers. katric
+   withholds far more (RMAT 1379 link-s at C = 4) without paying for it (its exchange is one bulk transfer, ending
+   when the volume is through); in KaCCv2 the time goes into label propagation (cc +0.23 s: coloring +0.17 s,
+   reachability +0.06 s), whose many dependent rounds wait on the stalled links. The window is therefore not
+   oversized for KaCCv2: C = 8 is the buffer that absorbs hot receivers.
+   **`briefkasten-validation_26_11_27`** (768, today's default grid C = 8 off vs the candidate C = 8 with both
+   switches; mean / best of the iterations): KaCCv2 (3 iterations, cc) twitter -5.6 / -1.6 %, friendster -4.2 /
+   -2.4 %, uk-2007-05 -0.9 / -1.4 %, webbase-2001 -2.0 / -2.4 %, lake-lanier 0.0 / +1.0 %, rgg2d(18,21) -9.5 /
+   -22.5 %, permuted -10.1 / -2.3 %, rgg3d(20,21) perm +3.8 / +0.9 %, rmat(16,19) +6.3 / -2.1 % (rgg3d and rmat
+   with one slow iteration each, spread larger than the difference). katric (2 iterations, global phase) orkut
+   -0.7 / 0 %, live-journal 0 / 0 %, twitter +0.8 / +0.4 %, friendster -1.9 / -2.2 %, webbase-2001 +1.9 / 0 %;
+   the candidate withholds less often in total (twitter 5093 -> 2449 link-s). **No regression on any input**: the
+   candidate stands.
+   **Not counted in the bound: MPI's unexpected messages.** Only the receive slots are posted, so a buffer beyond
+   them arrives as an eager unexpected message that MPI buffers internally. Per receiver that is at most the credit
+   granted to it, C B per sender: C B p for direct sending (8 x 4 KiB x 6144 = 192 MiB at 6144 cores if every
+   rank sends to one), C B p' with indirection. Not measured; in practice senders rarely target one rank at once.
+   **Open design direction (dissertation): a per-receiver credit budget** (credit where the traffic is, a minimum
+   of two buffers per link, active links growing up to a larger window), which would bound what a receiver can be
+   sent independently of p and stop reserving a full window for idle row peers. It would not remove the
+   head-of-line blocking behind slow receivers, which the diagnosis shows is what C = 4 costs KaCCv2.
 
 ## Decisions (2026-11-24)
 
