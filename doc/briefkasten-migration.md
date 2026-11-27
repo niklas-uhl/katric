@@ -456,10 +456,12 @@ The grid already scales this way today (`baseline_26_11_20`, 192 -> 3072: permut
    **`briefkasten-bound-candidate_26_11_27`** (768, 3 iterations, C = 8 off / C = 4 both / C = 2 both; iterations
    within 0.3 % of each other): global phase RMAT 26.30 / 25.97 / 26.46 s, permuted RGG 5.58 / 5.58 / 5.64 s; busiest
    rank's buffers RMAT 418 / 266 / 196, RGG 504 / 285 / 188; same sends. **C = 4 with both switches is free for
-   katric, C = 2 costs ~1 %.** KaCCv2 differs: lake-lanier +3.9 % (C = 4) / +7.3 % (C = 2), more `terminate()`
-   cycles and idle flushes, not credit waits (KaCCv2 notes; suite `briefkasten-window-mechanism` there). With its
-   tiny messages KaCCv2 has the factor ~1 instead of 2, so C = 8 gives it ~11 p' + 16 as well: same bound, window
-   per application.
+   katric, C = 2 costs ~1 %.** KaCCv2 differs: lake-lanier +3.9 % (C = 4) / +7.3 % (C = 2). The 2 x 2
+   `briefkasten-window-mechanism` (KaCCv2 notes) separates it: separate forwarding +0.2 % (more sends and idle
+   flushes, but cheap), C = 4 alone +1.5 % through flow control at the proxies (grants x2, withheld grants x16 with
+   the halved redirect limit), not idle cycles. With its tiny messages KaCCv2 has the factor ~1 instead of 2, so
+   C = 8 gives it ~11 p' + 16 as well. **Decision candidate: same bound, window per application: katric C = 4,
+   KaCCv2 C = 8, both with both switches** (KaCCv2 lake-lanier then 7.44 s at 768, -12 % vs the paper).
    **Open:** C = 4 / C = 2 with both switches against today's default, 3 iterations (`briefkasten-bound-candidate`,
    768, test partition; `briefkasten-bound-candidate-large`, 1536-6144, general partition, 2 iterations; KaCCv2
    suites of the same names). Risk at larger p: separate forwarding on strong-scaled lake-lanier (smaller flushes,
