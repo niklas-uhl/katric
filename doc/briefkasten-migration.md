@@ -507,6 +507,23 @@ The grid already scales this way today (`baseline_26_11_20`, 192 -> 3072: permut
    KaCCv2 `briefkasten-window-mechanism` at 1536 (lake-lanier, 3 iterations, median cc): C = 8 off 3.86 s, C = 4 off
    4.02 s (+4 %), C = 8 both 3.92 s (+1.6 %; one slow first iteration, mean +4 %), C = 4 both 4.02 s (+4 %). The +9 %
    of the single -large job at 1536 does not repeat; the window costs ~4 % at 1536 as at 768, and nothing at 3072.
+   **Credit budget, first version (BriefKAsten exp/credit-budget f776a37, `--credit-budget`):** links start at two
+   buffers, grow by one buffer per due grant up to the largest window while all inbound windows plus the forwarded
+   payload held fit the budget, and halve at their next grant when they do not; the budget is also the redirect
+   limit, so a budget of 4 per peer has fixed C = 4's bound. **`briefkasten-credit-budget_26_11_27`** (768, both
+   switches; fixed C = 8 / fixed C = 4 / budget 4 up to 8 / budget 4 up to 16): KaCCv2 lake-lanier (median cc) 7.42 /
+   7.65 / 7.77 / 7.72 s (+3.0 / +4.6 / +4.0 %), webbase-2001 0.410 / 0.413 / 0.415 / 0.415 s, rgg2d(18,21) perm 1.71
+   / 1.74 / 2.02 / 1.78 s (budget up to 8 noisy: 2.25 / 2.02 / 1.79); katric (global phase mean) RGG perm 5.65 / 5.71
+   / 5.73 / 5.76 s, RMAT 27.13 / 27.31 / 27.52 / 27.53 s. **The budget is no better than fixed C = 4 at the same
+   bound, slightly worse.** The budget stays full (peak inbound credit 103-111 K of 115 K elements) and the windows
+   churn: lake-lanier label propagation 8.5 M grows and 5.1 M halvings, grants 17.0 M (C = 8) / 33.5 M (C = 4) /
+   39.8 M (budget); katric RMAT 68 M grows, 41 M halvings, grants +18 % over C = 4. It withholds less than C = 4
+   (lake-lanier 117 K vs 255 K) but does not recover C = 8's time. Reason: the demand is spread over many links at
+   once (as the feeder split showed, most withheld row peers send a little everywhere), so a budget of 4 per peer
+   ends up near 4 per link plus the churn. A budget only helps where few links are busy at a time; that is the
+   direct case at large p (C B p of inbound credit, mostly idle), not the grid. **Not pursued for the grid; fixed
+   C = 8 stays.** Open: direct sending at large p, where the budget would cut the C B p of inbound credit (what MPI
+   may have to buffer) if the idle links really are idle.
    **Not counted in the bound: MPI's unexpected messages.** Only the receive slots are posted, so a buffer beyond
    them arrives as an eager unexpected message that MPI buffers internally. Per receiver that is at most the credit
    granted to it, C B per sender: C B p for direct sending (8 x 4 KiB x 6144 = 192 MiB at 6144 cores if every
