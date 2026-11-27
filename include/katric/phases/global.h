@@ -23,6 +23,7 @@
 #include <briefkasten/queue_builder.hpp>
 #include <message-queue/buffered_queue.h>
 #include <mpi.h>
+#include <sys/resource.h>
 
 #include "kassert/kassert.hpp"
 #include "katric/caliper.h"
@@ -357,6 +358,10 @@ void report_briefkasten_counters(Queue const& queue,
   add("window_shrinks", queue.num_window_shrinks());
   add("peak_inbound_credit", queue.peak_inbound_credit());
   add("feeder_withholds", queue.num_feeder_withholds());
+  // peak resident set of the process so far (KiB on Linux), including what MPI buffered for unexpected messages
+  rusage usage{};
+  getrusage(RUSAGE_SELF, &usage);
+  add("peak_rss_kib", static_cast<std::size_t>(usage.ru_maxrss));
   add("withhold_samples", queue.num_withhold_samples());
   auto const& withhold = queue.withhold_sum();
   add("withhold_credit_sum", withhold.credit);
