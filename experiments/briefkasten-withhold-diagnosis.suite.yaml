@@ -1,0 +1,57 @@
+# Why is katric indifferent to the credit window while KaCCv2 lake-lanier slows down at C = 4 (doc/briefkasten-
+# migration.md step 9)? KaCCv2's cost sits in grants the proxies withhold under the redirect limit C B p'. This run
+# reports, at each withhold, where the proxy's redirect budget is (BriefKAsten exp/split-forwarding 9a7e264):
+# withhold_credit_sum (credit granted to proxied peers, unused), withhold_filling_sum (forwarded elements in filling
+# buffers), withhold_parked_credit_sum / withhold_parked_slot_sum (parked without credit / without a send slot),
+# withhold_in_flight_sum (posted, send not completed), each summed over withhold_samples; and how long due grants
+# were held back (withheld_us, max_withheld_us), against KaCCv2's briefkasten-withhold-diagnosis.
+#   c0  C = 8, separate forwarding + exact
+#   c1  C = 4, separate forwarding + exact
+# Grid, 4 KiB, tuned default, 2 iterations, permuted RGG and RMAT, test partition:
+#   just run-supermuc-experiment briefkasten-withhold-diagnosis --min-cores 768 --max-cores 768 --copy-binary
+name: briefkasten-withhold-diagnosis
+executable: apps/katric
+output_path_option_name: caliper-output
+threads_option_name: num-threads
+ncores: node-size-pow2
+threads_per_rank: [1]
+time_limit: 5
+graphs:
+  - generator: kagen
+    type: rgg2d
+    N: 18
+    M: 22
+    permute: 1
+    seed: 28475421
+    scale_weak: true
+  - generator: kagen
+    type: rmat
+    N: 16
+    M: 20
+    seed: 28475421
+    scale_weak: true
+config:
+  - message-queue: briefkasten
+    communication-policy: grid
+    buffer-size: 4096
+    request-slots: 8
+    poll-skip: 100
+    credit-buffers: 8
+    separate-forwarding: true
+    exact-redirect-limit: true
+    message-trimming: true
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 2
+  - message-queue: briefkasten
+    communication-policy: grid
+    buffer-size: 4096
+    request-slots: 8
+    poll-skip: 100
+    credit-buffers: 4
+    separate-forwarding: true
+    exact-redirect-limit: true
+    message-trimming: true
+    degree-exchange: dense
+    intersection-method: merge
+    iterations: 2

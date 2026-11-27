@@ -331,6 +331,25 @@ void report_briefkasten_counters(Queue const& queue,
   // forwarded buffers the termination drain left in place (no credit or slot), separate_forwarding only
   add("drain_forward_deferred", queue.num_drain_forward_deferred());
   add("dropped_shells", queue.num_dropped_shells());
+  // flow control at proxies: grants sent, withheld (retries included) and withhold episodes (first withhold until
+  // the grant goes out), and the link-microseconds due grants were held back (use sum and max over ranks)
+  add("grants_sent", queue.num_grants_sent());
+  add("grants_withheld", queue.num_grants_withheld());
+  add("withhold_episodes", queue.num_withhold_episodes());
+  add("withheld_us", static_cast<std::size_t>(queue.withheld_seconds() * 1e6));
+  add("max_withheld_us", static_cast<std::size_t>(queue.max_withheld_seconds() * 1e6));
+  // DIAGNOSTIC (BriefKAsten exp/split-forwarding 9a7e264): what holds the redirect budget (redirect_limit
+  // elements) when a proxy starts withholding, summed over the samples (divide by withhold_samples): credit
+  // granted to proxied peers and unused, forwarded elements filling a buffer, parked without credit, parked
+  // without a send slot, in flight
+  add("redirect_limit", queue.max_num_redirect_elements());
+  add("withhold_samples", queue.num_withhold_samples());
+  auto const& withhold = queue.withhold_sum();
+  add("withhold_credit_sum", withhold.credit);
+  add("withhold_filling_sum", withhold.filling);
+  add("withhold_parked_credit_sum", withhold.parked_credit);
+  add("withhold_parked_slot_sum", withhold.parked_slot);
+  add("withhold_in_flight_sum", withhold.in_flight);
 }
 
 /// The global phase: sends the message of every local vertex v with cut edges
