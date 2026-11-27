@@ -554,6 +554,12 @@ The grid already scales this way today (`baseline_26_11_20`, 192 -> 3072: permut
    The delivery window removes about half of that rest, more than its saved grants account for (parked for credit
    638 K -> 570 K, reachability withheld link-s 32.8 -> 25.3): proxies pass forwarded payload on faster. Batching or
    piggybacking grants would gain at most ~0.7 %: not pursued.
+   **Combining at proxies (the classic hot-spot remedy): not worth it.** On lake-lanier, where the C = 4 cost lives,
+   92 % of reachability and 76 % of label propagation sends are idle flushes of 5-18 % full buffers, and only 0-1 %
+   of the messages in a buffer share a target vertex (`briefkasten-combine-potential_26_11_27`), so combining would
+   neither shrink nor save sends. Where buffers fill and duplicates exist (KaCCv2 reachability on web and social
+   graphs), sender-side caching in KaCCv2 removes them; that is a KaCCv2 question (KaCCv2 notes: forward caching
+   -55 % on uk-2007-05, +67 % on rgg2d perm, decided by the share of messages it removes).
    **Not counted in the bound: MPI's unexpected messages.** Only the receive slots are posted, so a buffer beyond
    them arrives as an eager unexpected message that MPI buffers internally. Per receiver that is at most the credit
    granted to it, C B per sender: C B p for direct sending (8 x 4 KiB x 6144 = 192 MiB at 6144 cores if every
