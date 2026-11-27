@@ -8,7 +8,7 @@
 #   c0  C = 8, separate forwarding + exact
 #   c1  C = 4, separate forwarding + exact
 # Grid, 4 KiB, tuned default, 2 iterations, permuted RGG and RMAT; packed with briefkasten-validation, test partition:
-#   just run-supermuc-experiment briefkasten-withhold-diagnosis briefkasten-validation --min-cores 768 --max-cores 768 \
+#   just run-supermuc-experiment briefkasten-withhold-diagnosis briefkasten-validation --cores 768 \
 #     --test --copy-binary --pack-jobs --pack-name briefkasten-diag-val --max-job-time 30m
 name: briefkasten-withhold-diagnosis
 executable: apps/katric

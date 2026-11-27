@@ -6,7 +6,7 @@
 # direct) only if briefkasten-withhold-diagnosis yields a fix that makes C = 4 the candidate.
 # 768 cores, 2 iterations, tuned default. Per-run time limits are I_MPI_JOB_TIMEOUTs; the runtimes of twitter /
 # friendster at 768 are not known (guesses below). Packed with the diagnosis into two test jobs:
-#   just run-supermuc-experiment briefkasten-withhold-diagnosis briefkasten-validation --min-cores 768 --max-cores 768 \
+#   just run-supermuc-experiment briefkasten-withhold-diagnosis briefkasten-validation --cores 768 \
 #     --test --copy-binary --pack-jobs --pack-name briefkasten-diag-val --max-job-time 30m
 # Compare the global phase (mean, spread) per arm, plus parked_for_credit, withhold_episodes, withheld_us.
 name: briefkasten-validation
